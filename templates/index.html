@@ -14,10 +14,10 @@
                 <option value="">-- Select batch --</option>
             </select>
             <div class="custom-select" id="active-batch-custom">
-                <button class="custom-select-toggle" id="active-batch-toggle" type="button" aria-haspopup="listbox" aria-expanded="false">
-                    <span class="custom-select-value" id="active-batch-display">-- Select batch --</span>
-                    <span class="custom-select-arrow">&#9662;</span>
-                </button>
+                <input class="custom-select-input" id="active-batch-input" type="text"
+                       placeholder="Select batch..." autocomplete="off" spellcheck="false"
+                       aria-haspopup="listbox" aria-expanded="false" aria-autocomplete="list">
+                <span class="custom-select-arrow" id="active-batch-arrow">&#9662;</span>
                 <ul class="custom-select-dropdown" id="active-batch-dropdown" role="listbox" tabindex="-1"></ul>
             </div>
             <div id="pending-info" class="pending-bar hidden">

@@ -25,9 +25,6 @@
         let pendingActiveBatchSelection = null;
         let _initialLoadDone = false;
         let _lastBatchListKey = null;
-        let _customSelectFocusIndex = -1;
-        let _customSelectSearchBuffer = '';
-        let _customSelectSearchTimer = null;
         const SIDEBAR_WIDTH_DEFAULT = 240;
         const SIDEBAR_WIDTH_MIN = 220;
         const SIDEBAR_WIDTH_MAX = 520;
@@ -357,23 +354,30 @@
             list.replaceChildren(fragment);
         }
 
-        // --- Custom batch dropdown (replaces native <select> rendering) ---
+        // --- Custom batch dropdown (combobox: live-filter input + dropdown list) ---
 
-        function _populateCustomDropdown() {
+        let _customSelectPrevValue = '';
+        let _customSelectBlurTimer = null;
+
+        function _populateCustomDropdown(filter = '') {
             const select = document.getElementById('active-batch-select');
             const dropdown = document.getElementById('active-batch-dropdown');
             if (!select || !dropdown) return;
+            const q = filter.toLowerCase();
             dropdown.replaceChildren();
             for (let i = 0; i < select.options.length; i++) {
                 const opt = select.options[i];
+                const text = opt.textContent;
+                if (q && !text.toLowerCase().includes(q)) continue;
                 const li = document.createElement('li');
                 li.className = 'custom-select-option' + (opt.selected ? ' selected' : '');
                 li.dataset.value = opt.value;
-                li.textContent = opt.textContent;
+                li.textContent = text;
                 li.setAttribute('role', 'option');
                 li.addEventListener('mousedown', (e) => {
-                    e.preventDefault();  // prevent toggle blur before click fires
-                    _selectCustomDropdownOption(opt.value);
+                    e.preventDefault();  // keep focus on input
+                    clearTimeout(_customSelectBlurTimer);
+                    _commitCustomSelectSelection(opt.value);
                 });
                 dropdown.appendChild(li);
             }
@@ -381,11 +385,15 @@
 
         function _syncCustomSelectDisplay() {
             const select = document.getElementById('active-batch-select');
-            const display = document.getElementById('active-batch-display');
+            const input = document.getElementById('active-batch-input');
+            const arrow = document.getElementById('active-batch-arrow');
             const dropdown = document.getElementById('active-batch-dropdown');
-            if (!select || !display) return;
+            if (!select || !input) return;
             const selectedOpt = select.options[select.selectedIndex];
-            display.textContent = selectedOpt ? selectedOpt.textContent : '-- Select batch --';
+            const name = selectedOpt ? selectedOpt.textContent : '';
+            input.value = name;
+            input.placeholder = name ? '' : 'Select batch...';
+            if (arrow) arrow.style.display = '';
             if (dropdown) {
                 const value = select.value;
                 dropdown.querySelectorAll('.custom-select-option').forEach(el => {
@@ -394,7 +402,7 @@
             }
         }
 
-        function _selectCustomDropdownOption(value) {
+        function _commitCustomSelectSelection(value) {
             const select = document.getElementById('active-batch-select');
             select.value = value || '';
             _syncCustomSelectDisplay();
@@ -404,132 +412,103 @@
 
         function _openCustomDropdown() {
             const wrapper = document.getElementById('active-batch-custom');
-            const toggle = document.getElementById('active-batch-toggle');
-            if (!wrapper || wrapper.classList.contains('open')) return;
-            _populateCustomDropdown();
+            const input = document.getElementById('active-batch-input');
+            const arrow = document.getElementById('active-batch-arrow');
+            if (!wrapper || !input || wrapper.classList.contains('open')) return;
+            _customSelectPrevValue = input.value;
+            input.value = '';
+            if (arrow) arrow.style.display = 'none';
+            _populateCustomDropdown('');
             wrapper.classList.add('open');
-            toggle.setAttribute('aria-expanded', 'true');
-            // Initialize keyboard focus to the selected option (or first)
-            const dropdown = document.getElementById('active-batch-dropdown');
-            const selected = dropdown ? dropdown.querySelector('.selected') : null;
-            _customSelectFocusIndex = selected
-                ? Array.from(dropdown.children).indexOf(selected)
-                : 0;
-            _updateCustomSelectFocus();
+            input.setAttribute('aria-expanded', 'true');
         }
 
-        function _closeCustomDropdown() {
+        function _closeCustomDropdown(restoreInput = false) {
             const wrapper = document.getElementById('active-batch-custom');
-            const toggle = document.getElementById('active-batch-toggle');
+            const input = document.getElementById('active-batch-input');
+            const arrow = document.getElementById('active-batch-arrow');
             if (!wrapper) return;
             wrapper.classList.remove('open');
-            if (toggle) toggle.setAttribute('aria-expanded', 'false');
-            _customSelectFocusIndex = -1;
-            _customSelectSearchBuffer = '';
-            clearTimeout(_customSelectSearchTimer);
-            _customSelectSearchTimer = null;
-        }
-
-        function _updateCustomSelectFocus() {
-            const dropdown = document.getElementById('active-batch-dropdown');
-            if (!dropdown) return;
-            const options = dropdown.querySelectorAll('.custom-select-option');
-            options.forEach((opt, i) => opt.classList.toggle('focus', i === _customSelectFocusIndex));
-            if (_customSelectFocusIndex >= 0 && _customSelectFocusIndex < options.length) {
-                options[_customSelectFocusIndex].scrollIntoView({block: 'nearest'});
+            if (input) {
+                if (restoreInput && _customSelectPrevValue) {
+                    input.value = _customSelectPrevValue;
+                }
+                input.setAttribute('aria-expanded', 'false');
             }
+            if (arrow) arrow.style.display = '';
+            clearTimeout(_customSelectBlurTimer);
+            _customSelectBlurTimer = null;
         }
 
         function _customSelectMoveFocus(delta) {
+            // Move .focus class among visible (non-display:none) options
             const dropdown = document.getElementById('active-batch-dropdown');
             if (!dropdown) return;
-            const options = dropdown.querySelectorAll('.custom-select-option');
-            if (options.length === 0) return;
-            _customSelectFocusIndex = ((_customSelectFocusIndex + delta) % options.length + options.length) % options.length;
-            _updateCustomSelectFocus();
+            const visible = Array.from(dropdown.querySelectorAll('.custom-select-option'))
+                .filter(el => el.style.display !== 'none' && el.offsetParent !== null);
+            if (visible.length === 0) return;
+            const current = visible.findIndex(el => el.classList.contains('focus'));
+            const next = current < 0 ? 0 : (current + delta + visible.length) % visible.length;
+            visible.forEach(el => el.classList.remove('focus'));
+            visible[next].classList.add('focus');
+            visible[next].scrollIntoView({block: 'nearest'});
         }
 
-        function _customSelectJumpTo(char) {
-            const dropdown = document.getElementById('active-batch-dropdown');
-            if (!dropdown) return;
-            // Accumulate into search buffer, reset after 500 ms of inactivity
-            if (_customSelectSearchBuffer.length > 20) _customSelectSearchBuffer = '';
-            _customSelectSearchBuffer += char.toLowerCase();
-            clearTimeout(_customSelectSearchTimer);
-            _customSelectSearchTimer = setTimeout(() => { _customSelectSearchBuffer = ''; }, 500);
-
-            const options = dropdown.querySelectorAll('.custom-select-option');
-            const buffer = _customSelectSearchBuffer;
-            // Try startsWith first, then contains as fallback
-            for (const strategy of ['startsWith', 'includes']) {
-                for (let i = 0; i < options.length; i++) {
-                    const text = (options[i].textContent || '').toLowerCase();
-                    if (strategy === 'startsWith' ? text.startsWith(buffer) : text.includes(buffer)) {
-                        _customSelectFocusIndex = i;
-                        _updateCustomSelectFocus();
-                        return;
-                    }
-                }
-            }
-        }
-
-        // Keyboard navigation for the custom dropdown
+        // Keyboard navigation + live-filter (input-based, no stopPropagation needed
+        // because the document keyboard handler already skips INPUT elements)
         (function _bindCustomSelectKeys() {
-            const el = document.getElementById('active-batch-custom');
-            if (!el) return;
-            el.addEventListener('keydown', (e) => {
-            const wrapper = document.getElementById('active-batch-custom');
-            if (!wrapper || !wrapper.classList.contains('open')) return;
-            switch (e.key) {
-                case 'ArrowDown':
-                    e.preventDefault(); e.stopPropagation();
-                    _customSelectMoveFocus(1);
-                    break;
-                case 'ArrowUp':
-                    e.preventDefault(); e.stopPropagation();
-                    _customSelectMoveFocus(-1);
-                    break;
-                case 'Enter':
-                    e.preventDefault(); e.stopPropagation();
-                    if (_customSelectFocusIndex >= 0) {
-                        const dropdown = document.getElementById('active-batch-dropdown');
-                        const options = dropdown ? dropdown.querySelectorAll('.custom-select-option') : [];
-                        if (_customSelectFocusIndex < options.length) {
-                            _selectCustomDropdownOption(options[_customSelectFocusIndex].dataset.value);
-                        }
-                    }
-                    break;
-                case 'Escape':
-                    // handled by document listener
-                    break;
-                default:
-                    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                        e.preventDefault(); e.stopPropagation();
-                        _customSelectJumpTo(e.key);
-                    }
-                    break;
-            }
-        });
-            })();
+            const input = document.getElementById('active-batch-input');
+            if (!input) return;
 
-        function _toggleCustomDropdown() {
-            const wrapper = document.getElementById('active-batch-custom');
-            (wrapper && wrapper.classList.contains('open')) ? _closeCustomDropdown() : _openCustomDropdown();
-        }
+            input.addEventListener('focus', () => {
+                _openCustomDropdown();
+            });
+
+            input.addEventListener('blur', () => {
+                _customSelectBlurTimer = setTimeout(() => {
+                    _closeCustomDropdown(true);
+                }, 150);
+            });
+
+            input.addEventListener('input', () => {
+                if (!document.getElementById('active-batch-custom').classList.contains('open')) {
+                    _openCustomDropdown();
+                }
+                _populateCustomDropdown(input.value);
+            });
+
+            input.addEventListener('keydown', (e) => {
+                const wrapper = document.getElementById('active-batch-custom');
+                if (!wrapper || !wrapper.classList.contains('open')) return;
+                switch (e.key) {
+                    case 'ArrowDown':
+                        e.preventDefault();
+                        _customSelectMoveFocus(1);
+                        break;
+                    case 'ArrowUp':
+                        e.preventDefault();
+                        _customSelectMoveFocus(-1);
+                        break;
+                    case 'Enter':
+                        e.preventDefault();
+                        const focused = document.querySelector('#active-batch-dropdown .custom-select-option.focus');
+                        if (focused) {
+                            clearTimeout(_customSelectBlurTimer);
+                            _commitCustomSelectSelection(focused.dataset.value);
+                        }
+                        break;
+                    case 'Escape':
+                        _closeCustomDropdown(true);
+                        break;
+                }
+            });
+        })();
 
         // Close custom dropdown when clicking outside
         document.addEventListener('mousedown', (e) => {
             const wrapper = document.getElementById('active-batch-custom');
             if (wrapper && wrapper.classList.contains('open') && !wrapper.contains(e.target)) {
-                _closeCustomDropdown();
-            }
-        });
-
-        // Keyboard: Escape closes open custom dropdown
-        document.addEventListener('keydown', (e) => {
-            const wrapper = document.getElementById('active-batch-custom');
-            if (e.key === 'Escape' && wrapper && wrapper.classList.contains('open')) {
-                _closeCustomDropdown();
+                _closeCustomDropdown(true);
             }
         });
 
@@ -2446,9 +2425,6 @@
         // --- Event delegation (replaces inline handlers for CSP compatibility) ---
 
         function _bindDelegatedEvents() {
-            // Batch sidebar controls -- custom dropdown toggle
-            const activeBatchToggle = document.getElementById('active-batch-toggle');
-            if (activeBatchToggle) activeBatchToggle.addEventListener('click', _toggleCustomDropdown);
 
             const importBtn = document.querySelector('.import-btn');
             if (importBtn) importBtn.addEventListener('click', importAll);
