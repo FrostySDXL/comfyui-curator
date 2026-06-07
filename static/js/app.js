@@ -367,6 +367,7 @@
             dropdown.replaceChildren();
             for (let i = 0; i < select.options.length; i++) {
                 const opt = select.options[i];
+                if (!opt.value) continue; // skip "-- Select batch --" placeholder
                 const text = opt.textContent;
                 if (q && !text.toLowerCase().includes(q)) continue;
                 const li = document.createElement('li');
@@ -391,9 +392,14 @@
             if (!select || !input) return;
             const selectedOpt = select.options[select.selectedIndex];
             const name = selectedOpt ? selectedOpt.textContent : '';
-            input.value = name;
-            input.placeholder = name ? '' : 'Select batch...';
-            if (arrow) arrow.style.display = '';
+            // Don't overwrite input while dropdown is open (user is typing/searching)
+            const wrapper = document.getElementById('active-batch-custom');
+            const isOpen = wrapper && wrapper.classList.contains('open');
+            if (!isOpen) {
+                input.value = name;
+                input.placeholder = name ? '' : 'Select batch...';
+                if (arrow) arrow.style.display = '';
+            }
             if (dropdown) {
                 const value = select.value;
                 dropdown.querySelectorAll('.custom-select-option').forEach(el => {
@@ -404,8 +410,15 @@
 
         function _commitCustomSelectSelection(value) {
             const select = document.getElementById('active-batch-select');
+            const input = document.getElementById('active-batch-input');
             select.value = value || '';
-            _syncCustomSelectDisplay();
+            // Update input display directly (syncCustomSelectDisplay skips while open)
+            const selectedOpt = select.options[select.selectedIndex];
+            if (input) {
+                input.value = selectedOpt ? selectedOpt.textContent : '';
+                input.placeholder = selectedOpt ? '' : 'Select batch...';
+            }
+            _customSelectPrevValue = ''; // selection committed, no restore needed
             _closeCustomDropdown();
             setActiveBatch(value || null);
         }
@@ -466,7 +479,20 @@
 
             input.addEventListener('blur', () => {
                 _customSelectBlurTimer = setTimeout(() => {
-                    _closeCustomDropdown(true);
+                    const wrapper = document.getElementById('active-batch-custom');
+                    if (!wrapper || !wrapper.classList.contains('open')) return;
+                    const query = (input.value || '').trim();
+                    // Case-insensitive exact match against option text
+                    const options = document.querySelectorAll('#active-batch-dropdown .custom-select-option');
+                    for (const opt of options) {
+                        if (opt.textContent.trim().toLowerCase() === query.toLowerCase() && opt.dataset.value) {
+                            _commitCustomSelectSelection(opt.dataset.value);
+                            return;
+                        }
+                    }
+                    // No match found — close dropdown but leave input as-is
+                    // so the user can return and correct their search
+                    _closeCustomDropdown(false);
                 }, 150);
             });
 
