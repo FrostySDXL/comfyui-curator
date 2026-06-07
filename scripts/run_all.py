@@ -55,6 +55,10 @@ def _all_checks() -> dict[str, Check]:
             "ruff-format-check",
             _python_module("ruff", "format", "--check", *PYTHON_TARGETS),
         ),
+        "ruff-check": Check(
+            "ruff-check",
+            _python_module("ruff", "check", *PYTHON_TARGETS),
+        ),
         "ruff-format": Check(
             "ruff-format",
             _python_module("ruff", "format", *PYTHON_TARGETS),
@@ -108,6 +112,7 @@ def build_checks(mode: str = "default", skip_js: bool = False) -> list[Check]:
         ],
         "full": [
             "ruff-format-check",
+            "ruff-check",
             "compileall",
             "unit-tests",
             "component-tests",

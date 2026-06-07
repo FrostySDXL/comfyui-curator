@@ -3,7 +3,6 @@ import pytest
 from image_curator import batch_store
 
 
-@pytest.mark.unit
 def test_batch_store_creates_batches_and_counts_supported_images(tmp_path):
     batches_dir = tmp_path / "batches"
     batch_store.create_batch(batches_dir, "alpha")
@@ -20,7 +19,6 @@ def test_batch_store_creates_batches_and_counts_supported_images(tmp_path):
     }
 
 
-@pytest.mark.unit
 def test_batch_store_imports_pending_images(tmp_path):
     batches_dir = tmp_path / "batches"
     output_dir = tmp_path / "comfyui-outputs"
@@ -38,7 +36,6 @@ def test_batch_store_imports_pending_images(tmp_path):
     assert (output_dir / "skip.txt").exists()
 
 
-@pytest.mark.unit
 def test_batch_store_import_all_pending_continues_after_move_failure(tmp_path, monkeypatch):
     batches_dir = tmp_path / "batches"
     output_dir = tmp_path / "comfyui-outputs"
@@ -61,3 +58,54 @@ def test_batch_store_import_all_pending_continues_after_move_failure(tmp_path, m
     assert count == 1
     assert (output_dir / "fails.png").exists()
     assert (batches_dir / "alpha" / "inbox" / "moves.jpg").exists()
+
+
+# ---------------------------------------------------------------------------
+# _validate_name tests
+# ---------------------------------------------------------------------------
+
+
+def test_validate_name_empty():
+    """_validate_name raises ValueError for empty name."""
+    with pytest.raises(ValueError, match="empty"):
+        batch_store._validate_name("")
+
+
+def test_validate_name_whitespace_only():
+    """_validate_name raises ValueError for whitespace-only name."""
+    with pytest.raises(ValueError, match="empty"):
+        batch_store._validate_name("   ")
+
+
+def test_validate_name_forward_slash():
+    """_validate_name raises ValueError for names with forward slash."""
+    with pytest.raises(ValueError, match="path separators"):
+        batch_store._validate_name("foo/bar")
+
+
+def test_validate_name_backslash():
+    """_validate_name raises ValueError for names with backslash."""
+    with pytest.raises(ValueError, match="path separators"):
+        batch_store._validate_name("foo\\bar")
+
+
+def test_validate_name_dot():
+    """_validate_name raises ValueError for '.' name."""
+    with pytest.raises(ValueError, match="reserved path component"):
+        batch_store._validate_name(".")
+
+
+def test_validate_name_dotdot():
+    """_validate_name raises ValueError for '..' name."""
+    with pytest.raises(ValueError, match="reserved path component"):
+        batch_store._validate_name("..")
+
+
+def test_validate_name_valid_simple():
+    """_validate_name returns None for a valid simple name."""
+    assert batch_store._validate_name("my-batch") is None
+
+
+def test_validate_name_valid_with_underscores():
+    """_validate_name returns None for a valid name with underscores."""
+    assert batch_store._validate_name("batch_2026_v2") is None

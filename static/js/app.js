@@ -1116,7 +1116,7 @@
         async function createBatch() {
             const name = document.getElementById('new-batch-name').value.trim();
             if (!name) return;
-            const safeName = name.toLowerCase().replace(/\\s+/g, '-').replace(/[^a-z0-9-_]/g, '');
+            const safeName = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '');
             const resp = await fetch('/api/batches', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},

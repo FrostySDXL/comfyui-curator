@@ -3,12 +3,10 @@ import pytest
 from pathlib import Path
 
 
-@pytest.mark.unit
 def test_load_state_defaults_to_no_active_batch(app_module):
     assert app_module.load_state() == {"active_batch": None}
 
 
-@pytest.mark.unit
 def test_save_state_round_trips_state_file(app_module):
     expected = {"active_batch": "test-batch"}
 
@@ -17,7 +15,6 @@ def test_save_state_round_trips_state_file(app_module):
     assert app_module.load_state() == expected
 
 
-@pytest.mark.unit
 def test_create_batch_creates_expected_folder_structure(app_module):
     created = app_module.create_batch("alpha")
 
@@ -26,14 +23,12 @@ def test_create_batch_creates_expected_folder_structure(app_module):
         assert (app_module.BATCHES_DIR / "alpha" / folder).is_dir()
 
 
-@pytest.mark.unit
 def test_create_batch_returns_false_when_batch_exists(app_module):
     app_module.create_batch("alpha")
 
     assert app_module.create_batch("alpha") is False
 
 
-@pytest.mark.unit
 def test_get_images_filters_non_images_and_sorts_by_name(app_module, tmp_path, make_file):
     image_dir = tmp_path / "images"
     make_file(image_dir / "b.png")
@@ -45,7 +40,6 @@ def test_get_images_filters_non_images_and_sorts_by_name(app_module, tmp_path, m
     assert [img.name for img in images] == ["a.jpg", "b.png"]
 
 
-@pytest.mark.unit
 def test_get_batch_counts_counts_only_supported_image_types(app_module, make_file):
     app_module.create_batch("alpha")
     make_file(app_module.BATCHES_DIR / "alpha" / "inbox" / "one.png")
@@ -62,7 +56,6 @@ def test_get_batch_counts_counts_only_supported_image_types(app_module, make_fil
     }
 
 
-@pytest.mark.unit
 def test_get_batch_metadata_returns_modified_time(app_module):
     app_module.create_batch("alpha")
 
@@ -77,7 +70,6 @@ def test_get_batch_metadata_returns_modified_time(app_module):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 def test_safe_path_normal_file(app_module, tmp_path):
     base = tmp_path / "base"
     base.mkdir()
@@ -89,7 +81,6 @@ def test_safe_path_normal_file(app_module, tmp_path):
     assert resolved == (base / "file.png").resolve()
 
 
-@pytest.mark.unit
 def test_safe_path_subdirectory(app_module, tmp_path):
     base = tmp_path / "base"
     base.mkdir()
@@ -101,7 +92,6 @@ def test_safe_path_subdirectory(app_module, tmp_path):
     assert resolved == (base / "sub" / "file.png").resolve()
 
 
-@pytest.mark.unit
 def test_safe_path_empty_parts(app_module, tmp_path):
     base = tmp_path / "base"
     base.mkdir()
@@ -112,7 +102,6 @@ def test_safe_path_empty_parts(app_module, tmp_path):
     assert resolved == base.resolve()
 
 
-@pytest.mark.unit
 def test_safe_path_blocks_single_dotdot(app_module, tmp_path):
     base = tmp_path / "base"
     base.mkdir()
@@ -123,7 +112,6 @@ def test_safe_path_blocks_single_dotdot(app_module, tmp_path):
     assert resolved is None
 
 
-@pytest.mark.unit
 def test_safe_path_blocks_deep_dotdot(app_module, tmp_path):
     base = tmp_path / "base" / "nested"
     base.mkdir(parents=True)
@@ -134,7 +122,6 @@ def test_safe_path_blocks_deep_dotdot(app_module, tmp_path):
     assert resolved is None
 
 
-@pytest.mark.unit
 def test_safe_path_blocks_absolute_path(app_module, tmp_path):
     base = tmp_path / "base"
     base.mkdir()
@@ -151,7 +138,6 @@ def test_safe_path_blocks_absolute_path(app_module, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 def test_validate_ai_curate_missing_batch(app_module):
     params, err = app_module._validate_ai_curate_request({})
     assert params is None
@@ -159,7 +145,6 @@ def test_validate_ai_curate_missing_batch(app_module):
     assert err[1] == 400
 
 
-@pytest.mark.unit
 def test_validate_ai_curate_nonexistent_batch(app_module):
     params, err = app_module._validate_ai_curate_request({"batch": "nope"})
     assert params is None
@@ -167,7 +152,6 @@ def test_validate_ai_curate_nonexistent_batch(app_module):
     assert err[1] == 400
 
 
-@pytest.mark.unit
 def test_validate_ai_curate_missing_prompt(app_module):
     app_module.create_batch("alpha")
     params, err = app_module._validate_ai_curate_request({"batch": "alpha"})
@@ -176,7 +160,6 @@ def test_validate_ai_curate_missing_prompt(app_module):
     assert err[1] == 400
 
 
-@pytest.mark.unit
 def test_validate_ai_curate_invalid_source_folder(app_module):
     app_module.create_batch("alpha")
     params, err = app_module._validate_ai_curate_request(
@@ -187,7 +170,6 @@ def test_validate_ai_curate_invalid_source_folder(app_module):
     assert err[1] == 400
 
 
-@pytest.mark.unit
 def test_validate_ai_curate_elements_not_list(app_module):
     app_module.create_batch("alpha")
     params, err = app_module._validate_ai_curate_request(
@@ -198,7 +180,6 @@ def test_validate_ai_curate_elements_not_list(app_module):
     assert err[1] == 400
 
 
-@pytest.mark.unit
 def test_validate_ai_curate_elements_exceed_cap(app_module):
     app_module.create_batch("alpha")
     too_many = [f"element-{i}" for i in range(20)]
@@ -210,7 +191,6 @@ def test_validate_ai_curate_elements_exceed_cap(app_module):
     assert err[1] == 400
 
 
-@pytest.mark.unit
 def test_validate_ai_curate_top_n_not_integer(app_module):
     app_module.create_batch("alpha")
     params, err = app_module._validate_ai_curate_request(
@@ -221,7 +201,6 @@ def test_validate_ai_curate_top_n_not_integer(app_module):
     assert err[1] == 400
 
 
-@pytest.mark.unit
 def test_validate_ai_curate_top_n_out_of_range(app_module):
     app_module.create_batch("alpha")
     params, err = app_module._validate_ai_curate_request(
@@ -232,7 +211,6 @@ def test_validate_ai_curate_top_n_out_of_range(app_module):
     assert err[1] == 400
 
 
-@pytest.mark.unit
 def test_validate_ai_curate_move_without_destination(app_module):
     app_module.create_batch("alpha")
     params, err = app_module._validate_ai_curate_request(
@@ -243,7 +221,6 @@ def test_validate_ai_curate_move_without_destination(app_module):
     assert err[1] == 400
 
 
-@pytest.mark.unit
 def test_validate_ai_curate_move_invalid_destination(app_module):
     app_module.create_batch("alpha")
     params, err = app_module._validate_ai_curate_request(
@@ -259,7 +236,6 @@ def test_validate_ai_curate_move_invalid_destination(app_module):
     assert err[1] == 400
 
 
-@pytest.mark.unit
 def test_validate_ai_curate_missing_model(app_module, monkeypatch):
     app_module.create_batch("alpha")
     # Ensure DEFAULT_MODEL is empty
@@ -270,7 +246,6 @@ def test_validate_ai_curate_missing_model(app_module, monkeypatch):
     assert err[1] == 400
 
 
-@pytest.mark.unit
 def test_validate_ai_curate_valid_minimal_request(app_module, monkeypatch):
     app_module.create_batch("alpha")
     monkeypatch.setattr(app_module, "DEFAULT_MODEL", "vl-scorer")
@@ -287,7 +262,6 @@ def test_validate_ai_curate_valid_minimal_request(app_module, monkeypatch):
     assert params["elements"] is None
 
 
-@pytest.mark.unit
 def test_validate_ai_curate_valid_with_elements_and_move(app_module, monkeypatch):
     app_module.create_batch("alpha")
     monkeypatch.setattr(app_module, "DEFAULT_MODEL", "vl-scorer")
@@ -315,7 +289,6 @@ def test_validate_ai_curate_valid_with_elements_and_move(app_module, monkeypatch
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 def test_watcher_start_stop_lifecycle(app_module):
     watcher = app_module.ImageWatcher()
     # Override COMFYUI_OUTPUT in the watcher's constructor scope by patching
@@ -337,7 +310,6 @@ def test_watcher_start_stop_lifecycle(app_module):
     assert not w.thread.is_alive() or not w.running
 
 
-@pytest.mark.unit
 def test_watcher_no_active_batch_does_not_import(app_module, tmp_path, make_file):
     """When no active batch is set, the watcher should not move files."""
     import app as app_mod

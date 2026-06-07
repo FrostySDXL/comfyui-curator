@@ -25,7 +25,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ai_curate.config import BATCHES_DIR, DEFAULT_MODEL, DEFAULT_TOP_N, TOP_N_CAP
+from ai_curate.config import BATCHES_DIR, DEFAULT_MODEL, DEFAULT_TOP_N, TOP_N_CAP, ELEMENT_CAP
 from ai_curate.config import ALLOWED_SOURCE_FOLDERS, ALLOWED_DEST_FOLDERS
 from ai_curate.elements import extract_elements, build_element_list
 from ai_curate.client import VisionClient
@@ -130,6 +130,11 @@ def main():
         elements = build_element_list([e.strip() for e in args.elements.split(",") if e.strip()])
     else:
         elements = extract_elements(prompt)
+
+    # Cap elements
+    if len(elements) > ELEMENT_CAP:
+        print(f"Warning: capping elements from {len(elements)} to {ELEMENT_CAP}", file=sys.stderr)
+        elements = elements[:ELEMENT_CAP]
 
     # Show elements
     print("Checking elements:", file=sys.stderr)

@@ -222,7 +222,7 @@ def _safe_path(base: Path, *parts: str) -> tuple[Path | None, str | None]:
     """
     try:
         resolved = (base / Path(*parts)).resolve()
-    except (ValueError, OSError):
+    except (ValueError, OSError, TypeError):
         return None, "Invalid path"
     try:
         resolved.relative_to(base.resolve())
@@ -415,13 +415,15 @@ def api_delete_rejects(batch):
         return jsonify({"error": "No rejects folder"}), 404
 
     count = 0
+    failed = 0
     cache_dir = BATCHES_DIR / batch_name / ".thumbs"
     for f in rejects_dir.iterdir():
         if f.suffix.lower() in IMAGE_EXTENSIONS:
             try:
                 f.unlink()
             except OSError:
-                pass
+                failed += 1
+                continue
             # Remove cached thumbnail too
             cache_file = cache_dir / (f.stem + ".webp")
             if cache_file.exists():
@@ -430,7 +432,7 @@ def api_delete_rejects(batch):
                 except OSError:
                     pass
             count += 1
-    return jsonify({"success": True, "count": count})
+    return jsonify({"success": True, "count": count, "failed": failed})
 
 
 @app.route("/thumb/<batch>/<folder>/<filename>")
@@ -641,6 +643,11 @@ def _run_scoring_worker(run_id):
     # Move phase (only if move_enabled and scoring completed)
     moved = 0
     if run.move_enabled and run.destination_folder:
+        # Check if cancelled between scoring and move
+        if _ai_queue.is_cancel_requested(run_id):
+            _ai_queue.finalize_cancelled(run_id)
+            return
+
         # Only move top-N non-failed images
         scored.sort(key=lambda r: r.score, reverse=True)
         top_results = scored[: run.top_n]
@@ -649,6 +656,8 @@ def _run_scoring_worker(run_id):
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         for r in top_results:
+            if _ai_queue.is_cancel_requested(run_id):
+                break
             src_path = image_dir / r.filename
             dst_path = dest_dir / r.filename
             if src_path.exists():
@@ -787,7 +796,10 @@ def api_ai_curate_batch_runs(batch):
     Returns:
         {"runs": ["run001", "run002", ...]}
     """
-    run_ids = _ai_storage.list_runs(batch)
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
+    run_ids = _ai_storage.list_runs(batch_name)
     return jsonify({"runs": run_ids})
 
 
@@ -798,7 +810,10 @@ def api_ai_curate_get_latest_run(batch):
     Returns:
         Full CurationRun dict or 404.
     """
-    run = _ai_storage.load_latest(batch)
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
+    run = _ai_storage.load_latest(batch_name)
     if run is None:
         return jsonify({"error": "no runs found"}), 404
     return jsonify(run.to_dict())
@@ -811,7 +826,10 @@ def api_ai_curate_get_run(batch, run_id):
     Returns:
         Full CurationRun dict or 404.
     """
-    run = _ai_storage.load_run(batch, run_id)
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
+    run = _ai_storage.load_run(batch_name, run_id)
     if run is None:
         return jsonify({"error": "run not found"}), 404
     return jsonify(run.to_dict())

@@ -1,5 +1,7 @@
 # Security Policy
 
+**Last Updated:** 2026-06-07
+
 ## Supported Versions
 
 This is a single-user, operator-maintained curation tool.

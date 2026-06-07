@@ -288,3 +288,92 @@ class TestBatchRuns:
         """GET /api/ai-curate/batches/<batch>/runs/latest returns 404 when no runs."""
         resp = client.get("/api/ai-curate/batches/test-batch/runs/latest")
         assert resp.status_code == 404
+
+    def test_list_runs_with_persisted_data(self, client):
+        """GET .../runs returns persisted run IDs after a run is saved."""
+        from ai_curate.models import CurationRun, JobState
+
+        # Use the app's storage so data is visible to API routes
+        storage = app_module._ai_storage
+
+        run1 = CurationRun(
+            run_id="run-001",
+            batch="test-batch",
+            prompt="a test prompt",
+            status=JobState.COMPLETED,
+        )
+        storage.save_run(run1)
+
+        run2 = CurationRun(
+            run_id="run-002",
+            batch="test-batch",
+            prompt="another test prompt",
+            status=JobState.COMPLETED,
+        )
+        storage.save_run(run2)
+
+        resp = client.get("/api/ai-curate/batches/test-batch/runs")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "runs" in data
+        assert len(data["runs"]) >= 2
+        assert "run-001" in data["runs"]
+        assert "run-002" in data["runs"]
+
+    def test_get_run_with_persisted_data(self, client):
+        """GET .../runs/<run_id> returns full run data after persistence."""
+        from ai_curate.models import CurationRun, RunTotals, JobState
+
+        storage = app_module._ai_storage
+
+        run = CurationRun(
+            run_id="run-003",
+            batch="test-batch",
+            prompt="detailed prompt",
+            status=JobState.COMPLETED,
+            totals=RunTotals(images=10, scored=8, failed=2, moved=0),
+        )
+        storage.save_run(run)
+
+        resp = client.get("/api/ai-curate/batches/test-batch/runs/run-003")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["run_id"] == "run-003"
+        assert data["batch"] == "test-batch"
+        assert data["prompt"] == "detailed prompt"
+        assert data["status"] == "completed"
+        assert data["totals"]["images"] == 10
+        assert data["totals"]["scored"] == 8
+
+    def test_get_latest_run_with_persisted_data(self, client):
+        """GET .../runs/latest returns the most recent run."""
+        from ai_curate.models import CurationRun, JobState
+
+        storage = app_module._ai_storage
+
+        run1 = CurationRun(
+            run_id="run-old",
+            batch="test-batch",
+            prompt="old prompt",
+            status=JobState.COMPLETED,
+        )
+        storage.save_run(run1)
+
+        run2 = CurationRun(
+            run_id="run-latest",
+            batch="test-batch",
+            prompt="latest prompt",
+            status=JobState.COMPLETED,
+        )
+        storage.save_run(run2)
+
+        resp = client.get("/api/ai-curate/batches/test-batch/runs/latest")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["run_id"] == "run-latest"
+        assert data["prompt"] == "latest prompt"
+
+    def test_batch_runs_nonexistent_batch(self, client):
+        """GET .../runs returns 404 for a batch that does not exist."""
+        resp = client.get("/api/ai-curate/batches/nonexistent-batch/runs")
+        assert resp.status_code == 404
