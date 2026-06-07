@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "image-curator"
+version = "0.1.0"
+description = "Operator-focused web application and curation toolkit for reviewing generated images with optional AI-assisted scoring"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "FrostySDXL" }]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+exclude = [".venv", "venv", "__pycache__", ".git"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+ignore_missing_imports = true

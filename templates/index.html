@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Image Curator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+    <div class="sidebar" id="batch-sidebar">
+        <div class="sidebar-section active-batch">
+            <h2>Auto-import</h2>
+            <select id="active-batch-select" onchange="setActiveBatch(this.value)">
+                <option value="">-- Select batch --</option>
+            </select>
+            <div id="pending-info" class="pending-bar" style="display: none;">
+                <span><span id="pending-count">0</span> pending</span>
+                <button class="import-btn" onclick="importAll()">Import All</button>
+            </div>
+        </div>
+        <div class="sidebar-section sidebar-batches">
+            <div class="batch-controls">
+                <div class="batch-controls-row">
+                    <h2 style="margin-bottom:0;">Batches</h2>
+                    <div class="sort-group" style="border-color:#2a2a2a;">
+                        <button class="sort-btn batch-sort-btn active" data-bsort="alpha" onclick="setBatchSort('alpha')" title="A-Z">A-Z</button>
+                        <button class="sort-btn batch-sort-btn" data-bsort="count" onclick="setBatchSort('count')" title="By image count">#</button>
+                        <button class="sort-btn batch-sort-btn" data-bsort="recent" onclick="setBatchSort('recent')" title="Most recent">Recent</button>
+                    </div>
+                </div>
+                <div id="batch-count-label" class="batch-count-label">Batches 0 (0 shown)</div>
+                <div class="batch-search-wrap">
+                    <input id="batch-search" class="batch-search" type="text" placeholder="Search batches..." oninput="setBatchFilter(this.value)" autocomplete="off">
+                    <button id="batch-search-clear" class="batch-search-clear" onclick="clearBatchSearch()" aria-label="Clear batch search" title="Clear">x</button>
+                </div>
+            </div>
+            <ul id="batch-list" class="batch-list"></ul>
+            <button class="new-batch-btn" onclick="showNewBatchModal()">+ New Batch</button>
+        </div>
+    </div>
+    <div id="sidebar-resizer" class="sidebar-resizer" onmousedown="startSidebarResize(event)" onpointerdown="startSidebarResize(event)"></div>
+
+    <div class="main">
+        <div class="header">
+            <h1><span id="current-path">Select a batch</span><span id="img-count" class="img-count"></span></h1>
+            <div class="header-actions">
+                <button id="batch-sidebar-toggle-btn" class="batch-sidebar-toggle-btn" onclick="toggleBatchSidebar()" type="button">Hide Batches</button>
+                <button id="ai-sidebar-toggle-btn" class="ai-sidebar-toggle-btn" onclick="toggleAiSidebar()" type="button" style="display:none;">Hide AI</button>
+                <button id="help-btn" class="help-btn" onclick="showHelpModal()" type="button">Help</button>
+                <button id="set-auto-import-btn" class="set-auto-import-btn" onclick="setCurrentBatchAsAutoImport()" style="display:none;" type="button">Set as Auto-import</button>
+            </div>
+            <div class="sort-controls" id="sort-controls" style="display: none;">
+                <span class="sort-label">Sort</span>
+                <div class="sort-group">
+                    <button class="sort-btn active" data-sort="date" onclick="setSort('date')">Date</button>
+                    <button class="sort-btn" data-sort="shuffle" onclick="setSort('shuffle')">Shuffle</button>
+                    <button class="sort-btn" data-sort="score-desc" onclick="setSort('score-desc')" id="sort-btn-score-desc" style="display:none;">Score</button>
+                </div>
+                <button class="sort-dir" id="sort-dir-btn" title="Toggle direction" onclick="toggleOrder()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 5v14M5 12l7 7 7-7"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <div class="folder-tabs" id="folder-tabs">
+            <div class="folder-tab" data-folder="inbox" onclick="selectFolder(currentBatch,'inbox')"
+                 ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'inbox')">
+                inbox <span class="tab-count" id="tc-inbox">0</span>
+            </div>
+            <div class="folder-tab" data-folder="shortlisted" onclick="selectFolder(currentBatch,'shortlisted')"
+                 ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'shortlisted')">
+                shortlisted <span class="tab-count" id="tc-shortlisted">0</span>
+            </div>
+            <div class="folder-tab" data-folder="finals" onclick="selectFolder(currentBatch,'finals')"
+                 ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'finals')">
+                finals <span class="tab-count" id="tc-finals">0</span>
+            </div>
+            <div class="folder-tab" data-folder="rejects" onclick="selectFolder(currentBatch,'rejects')"
+                 ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'rejects')">
+                rejects <span class="tab-count" id="tc-rejects">0</span>
+            </div>
+            <div class="folder-tabs-spacer"></div>
+            <button class="delete-rejects-btn" id="delete-rejects-btn" onclick="showDeleteModal()">Empty Rejects</button>
+        </div>
+
+        <div class="workspace">
+            <div class="content">
+                <div id="grid" class="grid">
+                    <div class="empty">Select a batch from the sidebar</div>
+                </div>
+            </div>
+
+            <div class="ai-sidebar-shell" id="ai-sidebar-shell" style="display:none;">
+                <div class="ai-sidebar-resizer" id="ai-sidebar-resizer" onmousedown="startAiSidebarResize(event)" onpointerdown="startAiSidebarResize(event)"></div>
+                <aside class="ai-curate-panel" id="ai-curate-panel">
+                    <div class="ai-curate-header" onclick="toggleAiCuratePanel()">
+                        <div>
+                            <h3>AI Curate</h3>
+                            <div class="ai-curate-advisory">Scores are advisory</div>
+                        </div>
+                        <span class="ai-curate-toggle" id="ai-curate-toggle">−</span>
+                    </div>
+                    <div class="ai-curate-body" id="ai-curate-body">
+                        <div class="ai-display-controls" id="ai-display-controls" style="display:none;">
+                            <label class="ai-checkbox-label ai-header-toggle">
+                                <input type="checkbox" id="ai-overlay-toggle" onchange="aiToggleOverlays()">
+                                AI badges <span class="shortcut-hint">B</span>
+                            </label>
+                            <select id="ai-filter-mode" class="ai-select ai-select-sm" onchange="aiApplyFilter()">
+                                <option value="all">All</option>
+                                <option value="scored">Scored</option>
+                                <option value="failed">Failed</option>
+                                <option value="top-n">Top-N</option>
+                            </select>
+                        </div>
+
+                        <div class="ai-curate-form">
+                            <label class="ai-label" for="ai-prompt">Prompt</label>
+                            <textarea id="ai-prompt" class="ai-textarea" rows="2" placeholder="Describe what to look for in images..."></textarea>
+
+                            <label class="ai-label" for="ai-elements">Exact elements <span class="ai-optional">(optional, overrides auto-extraction)</span></label>
+                            <textarea id="ai-elements" class="ai-textarea" rows="2" placeholder="One element per line, or leave blank for auto-extraction"></textarea>
+
+                            <button class="ai-btn ai-btn-secondary" onclick="aiPreviewElements()">Preview elements</button>
+                            <div id="ai-elements-preview" class="ai-elements-preview" style="display:none;"></div>
+
+                            <div class="ai-form-row">
+                                <div class="ai-form-field">
+                                    <label class="ai-label" for="ai-source-folder">Source folder</label>
+                                    <select id="ai-source-folder" class="ai-select">
+                                        <option value="inbox" selected>inbox</option>
+                                        <option value="shortlisted">shortlisted</option>
+                                        <option value="finals">finals</option>
+                                        <option value="rejects">rejects</option>
+                                    </select>
+                                </div>
+                                <div class="ai-form-field">
+                                    <label class="ai-label" for="ai-top-n">Top N</label>
+                                    <input id="ai-top-n" class="ai-input" type="number" value="15" min="1" max="100">
+                                </div>
+                                <div class="ai-form-field">
+                                    <label class="ai-label" for="ai-model">Model</label>
+                                    {% if available_models %}
+                                    <select id="ai-model" class="ai-select">
+                                        {% for model in available_models %}
+                                        <option value="{{ model }}"{% if model == default_model %} selected{% endif %}>{{ model }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    {% else %}
+                                    <input id="ai-model" class="ai-input" type="text" placeholder="model name (required)">
+                                    <small class="ai-hint">No models configured — set IMAGE_CURATOR_MODEL in .env</small>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="ai-form-row">
+                                <div class="ai-form-field ai-toggle-field">
+                                    <label class="ai-checkbox-label">
+                                        <input type="checkbox" id="ai-move-toggle" onchange="aiToggleMoveMode()">
+                                        Move top-N after scoring
+                                    </label>
+                                </div>
+                                <div class="ai-form-field" id="ai-dest-field" style="display:none;">
+                                    <label class="ai-label" for="ai-dest-folder">Destination</label>
+                                    <select id="ai-dest-folder" class="ai-select">
+                                        <option value="shortlisted">shortlisted</option>
+                                        <option value="finals">finals</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <button class="ai-btn ai-btn-primary" id="ai-submit-btn" onclick="aiSubmitJob()">Score only</button>
+                        </div>
+
+                        <div class="ai-job-section" id="ai-job-section" style="display:none;">
+                            <div class="ai-job-status">
+                                <span class="ai-job-label">Job status:</span>
+                                <span class="ai-job-state" id="ai-job-state">--</span>
+                                <span class="ai-job-progress" id="ai-job-progress"></span>
+                            </div>
+                            <button class="ai-btn ai-btn-danger" id="ai-cancel-btn" onclick="aiCancelJob()" style="display:none;">Cancel</button>
+                        </div>
+
+                        <div class="ai-history-section" id="ai-history-section" style="display:none;">
+                            <div class="ai-history-controls">
+                                <div class="ai-form-field">
+                                    <label class="ai-label" for="ai-run-select">View run</label>
+                                    <select id="ai-run-select" class="ai-select" onchange="aiLoadRun(this.value)">
+                                        <option value="">-- Active run --</option>
+                                    </select>
+                                </div>
+                                <div class="ai-form-field">
+                                    <label class="ai-label" for="ai-compare-run-select">Compare against</label>
+                                    <select id="ai-compare-run-select" class="ai-select" onchange="aiSetCompareRun(this.value)">
+                                        <option value="latest">Latest completed run</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="ai-run-summary" class="ai-run-summary" style="display:none;"></div>
+                            <div id="ai-run-diff" class="ai-run-diff" style="display:none;"></div>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action bar for multi-select -->
+    <div class="action-bar" id="action-bar">
+        <span class="action-count" id="action-count">0 selected</span>
+        <button class="action-btn" data-dest="inbox" onclick="moveSelected('inbox')">Inbox</button>
+        <button class="action-btn" data-dest="shortlisted" onclick="moveSelected('shortlisted')">Shortlist</button>
+        <button class="action-btn" data-dest="finals" onclick="moveSelected('finals')">Finals</button>
+        <button class="action-btn" data-dest="rejects" onclick="moveSelected('rejects')">Reject</button>
+        <button class="action-btn action-clear" onclick="clearSelection()">Clear</button>
+    </div>
+
+    <!-- Lightbox -->
+    <div id="lightbox" class="lightbox">
+        <span class="lightbox-close" onclick="closeLightbox()">&times;</span>
+        <span class="lightbox-info" id="lightbox-info"></span>
+        <aside class="lightbox-metadata-panel" id="lightbox-metadata-panel" aria-live="polite"></aside>
+        <span class="lightbox-nav prev" onclick="navigate(-1)">&#8249;</span>
+        <div class="lightbox-image-wrap" id="lightbox-image-wrap">
+        <img id="lightbox-img" src="">
+        </div>
+        <span class="lightbox-nav next" onclick="navigate(1)">&#8250;</span>
+        <div class="lightbox-controls">
+            <div><button class="btn btn-secondary" onclick="navigateScored(-1)">Prev scored</button><div class="key-hint">[</div></div>
+            <div><button class="btn btn-secondary" onclick="zoomLightbox(-0.2)">Zoom −</button><div class="key-hint">-</div></div>
+            <div><button class="btn btn-secondary" onclick="resetLightboxZoom()">Reset zoom</button><div class="key-hint">0</div></div>
+            <div><button class="btn btn-secondary" onclick="zoomLightbox(0.2)">Zoom +</button><div class="key-hint">+</div></div>
+            <div><button class="btn btn-secondary" onclick="navigateScored(1)">Next scored</button><div class="key-hint">]</div></div>
+            <div><button class="btn btn-secondary" id="metadata-toggle-btn" onclick="toggleLightboxMetadata()" disabled>Metadata</button><div class="key-hint">M</div></div>
+            <div><button class="btn btn-shortlist" onclick="moveImage('shortlisted')">Shortlisted</button><div class="key-hint">S</div></div>
+            <div><button class="btn btn-finals" onclick="moveImage('finals')">Finals</button><div class="key-hint">F</div></div>
+            <div><button class="btn btn-reject" onclick="moveImage('rejects')">Reject</button><div class="key-hint">R</div></div>
+        </div>
+    </div>
+
+    <!-- New batch modal -->
+    <div id="new-batch-modal" class="modal">
+        <div class="modal-content">
+            <h3>Create New Batch</h3>
+            <input type="text" id="new-batch-name" placeholder="batch-name" onkeypress="if(event.key==='Enter')createBatch()">
+            <div class="modal-buttons">
+                <button class="cancel" onclick="hideNewBatchModal()">Cancel</button>
+                <button class="create" onclick="createBatch()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete rejects modal -->
+    <div id="delete-modal" class="modal">
+        <div class="modal-content">
+            <h3>Empty Rejects</h3>
+            <p>Permanently delete <strong id="delete-count">0</strong> rejected images from this batch. This cannot be undone.</p>
+            <div class="modal-buttons">
+                <button class="cancel" onclick="hideDeleteModal()">Cancel</button>
+                <button class="delete-confirm" onclick="confirmDeleteRejects()">Delete All</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="help-modal" class="modal">
+        <div class="modal-content help-modal-content">
+            <h3>Operator Help</h3>
+            <div class="help-section">
+                <h4>Keyboard shortcuts</h4>
+                <ul class="help-list">
+                    <li><strong>/</strong> open batch sidebar if closed, then focus batch search</li>
+                    <li><strong>Ctrl/Cmd+K</strong> open batch sidebar if closed, then focus and select batch search</li>
+                    <li><strong>Ctrl/Cmd+A</strong> select all images in current folder (not in lightbox)</li>
+                    <li><strong>Ctrl/Cmd+Z</strong> undo last move while undo is available</li>
+                    <li><strong>U</strong> toggle the batch sidebar</li>
+                    <li><strong>B</strong> toggle AI badges</li>
+                    <li><strong>V</strong> toggle score sort</li>
+                    <li><strong>I</strong> toggle AI sidebar</li>
+                </ul>
+            </div>
+            <div class="help-section">
+                <h4>Lightbox shortcuts</h4>
+                <ul class="help-list">
+                    <li><strong>Left / Right</strong> previous or next image</li>
+                    <li><strong>[ / ]</strong> previous or next scored image</li>
+                    <li><strong>M</strong> toggle PNG generation metadata when available</li>
+                    <li><strong>S / F / R</strong> move to shortlisted, finals, or rejects</li>
+                    <li><strong>+ / - / 0</strong> zoom in, zoom out, reset zoom</li>
+                    <li><strong>Ctrl+wheel</strong> zoom in/out</li>
+                    <li><strong>Esc</strong> close lightbox, close this modal, or clear focused search (context-dependent)</li>
+                </ul>
+            </div>
+            <div class="help-section">
+                <h4>Service notes</h4>
+                <ul class="help-list">
+                    <li>The center grid is the primary review surface.</li>
+                    <li>AI scores are advisory and batch-scoped.</li>
+                    <li>Background polling avoids interrupting lightbox, drag, and resize interactions.</li>
+                    <li>Auto-import targets the batch selected in the left sidebar dropdown.</li>
+                </ul>
+            </div>
+            <div class="modal-buttons">
+                <button class="cancel" onclick="hideHelpModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast">
+        <span id="toast-text"></span>
+        <button class="toast-undo" id="toast-undo" onclick="undoLastMove()" style="display:none;">Undo</button>
+    </div>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

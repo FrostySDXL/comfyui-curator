@@ -1,0 +1,26 @@
+[Unit]
+Description=Image Curator Web UI
+After=network.target
+
+# Placeholder guide:
+#   {{USER}} — Linux user to run the service (e.g. www-data or your username)
+#   {{GROUP}} — Linux group (usually same as user)
+#   {{WORK_DIR}} — absolute path to the cloned repository
+#   {{VENV_BIN}} — path to venv python, typically {{WORK_DIR}}/.venv/bin/python
+
+[Service]
+Type=simple
+User={{USER}}
+Group={{GROUP}}
+WorkingDirectory={{WORK_DIR}}
+ExecStart={{VENV_BIN}} {{WORK_DIR}}/app.py
+Restart=on-failure
+RestartSec=5
+
+# Environment variables (optional — defaults are documented in .env.example)
+# Environment=IMAGE_CURATOR_BATCHES=/path/to/batches
+# Environment=IMAGE_CURATOR_HOST=127.0.0.1
+# Environment=IMAGE_CURATOR_PORT=5000
+
+[Install]
+WantedBy=multi-user.target

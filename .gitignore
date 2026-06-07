@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+artifacts/
+.mypy_cache/
+.ruff_cache/
+tmp/
+docs/plans
+
+# Runtime state
+state.json
+.env
+*.log
+
+# Thumbnail cache (per batch)
+**/.thumbs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.opencode/
+opencode.json
