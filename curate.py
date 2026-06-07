@@ -20,10 +20,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import argparse
+import logging
 import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from ai_curate.config import BATCHES_DIR, DEFAULT_MODEL, DEFAULT_TOP_N, TOP_N_CAP, ELEMENT_CAP
 from ai_curate.config import ALLOWED_SOURCE_FOLDERS, ALLOWED_DEST_FOLDERS
@@ -90,6 +93,20 @@ def main():
     )
     args = parser.parse_args()
 
+    # Validate batch name to prevent path traversal
+    batch = args.batch.strip()
+    if not batch:
+        parser.error("--batch is required")
+    if "\0" in batch or "/" in batch or "\\" in batch:
+        parser.error(
+            f"Invalid --batch value '{args.batch}': batch name must not contain "
+            "path separators or null bytes"
+        )
+    if batch in (".", "..") or batch.startswith("."):
+        parser.error(
+            f"Invalid --batch value '{args.batch}': batch name is a reserved name"
+        )
+
     # Resolve prompt (support legacy --panel alias)
     prompt = args.prompt or args.panel
     if not prompt:
@@ -147,7 +164,7 @@ def main():
         return
 
     # Default images dir: batch source folder
-    images_dir = args.images or str(Path(BATCHES_DIR) / args.batch / args.source)
+    images_dir = args.images or str(BATCHES_DIR / batch / args.source)
     image_dir_path = Path(images_dir)
 
     # Find images
@@ -155,7 +172,7 @@ def main():
     if not images:
         print(f"No images found in {images_dir}", file=sys.stderr)
         run = CurationRun(
-            batch=args.batch,
+            batch=batch,
             source_folder=args.source,
             destination_folder=args.dest if args.move else None,
             move_enabled=args.move,
@@ -165,6 +182,7 @@ def main():
             top_n=top_n,
             status=JobState.FAILED,
             error_message=f"No images found in {images_dir}",
+            completed_at=datetime.now(timezone.utc).isoformat(),
         )
         storage = RunStorage()
         storage.save_run(run)
@@ -202,7 +220,7 @@ def main():
     moved = 0
     if args.move:
         shortlist = scored[:top_n]
-        dest_dir = Path(BATCHES_DIR) / args.batch / args.dest
+        dest_dir = Path(BATCHES_DIR) / batch / args.dest
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         for r in shortlist:
@@ -248,7 +266,7 @@ def main():
         file=sys.stderr,
     )
     if args.move:
-        dest_dir = Path(BATCHES_DIR) / args.batch / args.dest
+        dest_dir = Path(BATCHES_DIR) / batch / args.dest
         print(f"Moved to: {dest_dir}", file=sys.stderr)
     print(f"Run ID: {run.run_id}", file=sys.stderr)
 

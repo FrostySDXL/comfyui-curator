@@ -1,5 +1,6 @@
 """Integration tests for AI curation Flask API routes."""
 
+import importlib
 import json
 import pytest
 from unittest.mock import patch, MagicMock
@@ -7,17 +8,33 @@ from pathlib import Path
 
 pytestmark = pytest.mark.integration
 
-# Import the Flask app
-import app as app_module
 from ai_curate.models import JobState, CurationRun, ImageResult, RunTotals
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    """Create a Flask test client with temp directories."""
-    # Patch the batch/state directories to use tmp_path
+def app_module(monkeypatch, tmp_path):
+    """Import app module with patched paths to avoid module-level I/O."""
+    module = importlib.import_module("app")
     batches_dir = tmp_path / "batches"
+    comfyui_output = tmp_path / "comfyui-outputs"
+    state_file = tmp_path / "state.json"
+
     batches_dir.mkdir()
+    comfyui_output.mkdir()
+
+    monkeypatch.setattr(module, "BATCHES_DIR", batches_dir)
+    monkeypatch.setattr(module, "COMFYUI_OUTPUT", comfyui_output)
+    monkeypatch.setattr(module, "STATE_FILE", state_file)
+    module.watcher.seen_files = set()
+    module.app.config.update(TESTING=True)
+
+    return module
+
+
+@pytest.fixture
+def client(app_module, monkeypatch, tmp_path):
+    """Create a Flask test client with temp directories."""
+    batches_dir = app_module.BATCHES_DIR
     state_file = tmp_path / "state.json"
 
     # Create a test batch
@@ -86,7 +103,7 @@ class TestPreviewElements:
 
 
 class TestSubmitJob:
-    def test_submit_valid_job(self, client):
+    def test_submit_valid_job(self, client, app_module):
         """POST /api/ai-curate/jobs with valid data returns 201."""
         with patch.object(app_module, "_run_scoring_worker"):
             resp = client.post(
@@ -184,7 +201,7 @@ class TestSubmitJob:
         )
         assert resp.status_code == 400
 
-    def test_submit_defaults_applied(self, client):
+    def test_submit_defaults_applied(self, client, app_module):
         """POST with minimal data gets default values."""
         with patch.object(app_module, "_run_scoring_worker"):
             resp = client.post(
@@ -205,7 +222,7 @@ class TestSubmitJob:
 
 
 class TestGetJob:
-    def test_get_existing_job(self, client):
+    def test_get_existing_job(self, client, app_module):
         """GET /api/ai-curate/jobs/<id> returns the job."""
         with patch.object(app_module, "_run_scoring_worker"):
             submit_resp = client.post(
@@ -239,7 +256,7 @@ class TestListJobs:
 
 
 class TestCancelJob:
-    def test_cancel_queued_job(self, client):
+    def test_cancel_queued_job(self, client, app_module):
         """POST /api/ai-curate/jobs/<id>/cancel cancels a queued job."""
         with patch.object(app_module, "_run_scoring_worker"):
             # Submit two jobs so second is queued
@@ -289,7 +306,7 @@ class TestBatchRuns:
         resp = client.get("/api/ai-curate/batches/test-batch/runs/latest")
         assert resp.status_code == 404
 
-    def test_list_runs_with_persisted_data(self, client):
+    def test_list_runs_with_persisted_data(self, client, app_module):
         """GET .../runs returns persisted run IDs after a run is saved."""
         from ai_curate.models import CurationRun, JobState
 
@@ -320,7 +337,7 @@ class TestBatchRuns:
         assert "run-001" in data["runs"]
         assert "run-002" in data["runs"]
 
-    def test_get_run_with_persisted_data(self, client):
+    def test_get_run_with_persisted_data(self, client, app_module):
         """GET .../runs/<run_id> returns full run data after persistence."""
         from ai_curate.models import CurationRun, RunTotals, JobState
 
@@ -345,7 +362,7 @@ class TestBatchRuns:
         assert data["totals"]["images"] == 10
         assert data["totals"]["scored"] == 8
 
-    def test_get_latest_run_with_persisted_data(self, client):
+    def test_get_latest_run_with_persisted_data(self, client, app_module):
         """GET .../runs/latest returns the most recent run."""
         from ai_curate.models import CurationRun, JobState
 
@@ -376,4 +393,23 @@ class TestBatchRuns:
     def test_batch_runs_nonexistent_batch(self, client):
         """GET .../runs returns 404 for a batch that does not exist."""
         resp = client.get("/api/ai-curate/batches/nonexistent-batch/runs")
+        assert resp.status_code == 404
+
+
+class TestPathTraversal:
+    """Verify that route parameters block path traversal."""
+
+    def test_traversal_run_id_rejected_by_storage(self, client, app_module):
+        """A run_id containing ../ is either blocked by Flask routing or storage."""
+        # Create a valid batch first
+        client.post("/api/batches", json={"name": "traversal-test"})
+        # Flask string converter may reject the slashes; either 404 or 500 is acceptable
+        resp = client.get(
+            "/api/ai-curate/batches/traversal-test/runs/..%2Fescape"
+        )
+        assert resp.status_code in (404, 500)
+
+    def test_traversal_batch_name_not_found(self, client):
+        """A batch name containing ../ returns 404 (batch not found)."""
+        resp = client.get("/api/ai-curate/batches/../escape/runs")
         assert resp.status_code == 404

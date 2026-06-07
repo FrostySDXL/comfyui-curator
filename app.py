@@ -4,6 +4,7 @@ Web UI for reviewing and organizing AI-generated images.
 """
 
 import os
+import logging
 import shutil
 import threading
 import time
@@ -17,6 +18,8 @@ from flask import Flask, render_template, send_file, jsonify, request
 from PIL import Image
 from image_curator import batch_store
 from image_curator.png_metadata import extract_png_metadata
+
+logger = logging.getLogger(__name__)
 
 # AI curation imports
 from ai_curate.config import (
@@ -125,8 +128,7 @@ def import_all_pending(batch_name):
     count = batch_store.import_all_pending(COMFYUI_OUTPUT, BATCHES_DIR, batch_name)
 
     # Reset watcher's seen files since we moved everything
-    with watcher._seen_lock:
-        watcher.seen_files = set()
+    watcher.reset_seen()
     return count
 
 
@@ -155,6 +157,15 @@ class ImageWatcher:
         self.running = False
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=3)
+
+    def reset_seen(self):
+        """Clear the seen-files set after a manual import.
+
+        External callers (e.g. import_all_pending) must be able to
+        reset tracking without touching internal state directly.
+        """
+        with self._seen_lock:
+            self.seen_files = set()
 
     def _watch_loop(self):
         while self.running:
@@ -576,7 +587,7 @@ def _validate_ai_curate_request(data):
                 400,
             )
 
-    model = (data.get("model", "") or DEFAULT_MODEL).strip()
+    model = (data.get("model") or DEFAULT_MODEL or "").strip()
     if not model:
         return None, (
             {"error": "model is required — set IMAGE_CURATOR_MODEL or pass model in request"},

@@ -60,6 +60,6 @@ class TestModelConfig:
         # When IMAGE_CURATOR_MODEL is not set, AVAILABLE_MODELS is []
         # (unless the env var is set in the test environment)
 
-    def test_default_model_defaults_to_empty_string(self):
-        """DEFAULT_MODEL is an empty string when env var is not set."""
-        assert config.DEFAULT_MODEL == "" or isinstance(config.DEFAULT_MODEL, str)
+    def test_default_model_defaults_to_none(self):
+        """DEFAULT_MODEL is None when env var is not set."""
+        assert config.DEFAULT_MODEL is None

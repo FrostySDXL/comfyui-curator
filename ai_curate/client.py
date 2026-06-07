@@ -8,6 +8,7 @@ llama-swap. Uses the OpenAI-compatible /v1/chat/completions endpoint.
 
 import base64
 import json
+import logging
 import mimetypes
 import re
 import socket
@@ -17,6 +18,8 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 from ai_curate.config import DEFAULT_BASE_URL, DEFAULT_MODEL, REQUEST_TIMEOUT
+
+logger = logging.getLogger(__name__)
 
 # Prompt template for element scoring
 ELEMENT_PROMPT = """Check if each element is visible in this image.
@@ -88,7 +91,7 @@ def parse_score_response(
 
     for line in content.strip().split("\n"):
         line = line.strip()
-        match = re.match(r"(\d+)\s*[:\.]\s*(YES|NO)", line, re.IGNORECASE)
+        match = re.match(r"(\d+)\s*[:\.]\s*(YES|NO)$", line, re.IGNORECASE)
         if match:
             num = int(match.group(1))
             answer = match.group(2).upper()
@@ -113,7 +116,7 @@ class VisionClient:
     def __init__(
         self,
         base_url: str = DEFAULT_BASE_URL,
-        model: str = DEFAULT_MODEL,
+        model: Optional[str] = DEFAULT_MODEL,
         timeout: int = REQUEST_TIMEOUT,
     ):
         self.base_url = base_url.rstrip("/")
@@ -141,6 +144,8 @@ class VisionClient:
             Tuple of (score, total, details, error_message).
         """
         model = model or self.default_model
+        if not model:
+            return -1, len(elements), {}, "error: no model configured"
         payload = build_score_payload(model, prompt_text, image_b64, content_type=content_type)
         payload_bytes = json.dumps(payload).encode("utf-8")
 
@@ -158,7 +163,12 @@ class VisionClient:
                     data = json.loads(resp.read().decode())
                 # OpenAI-compatible response format
                 choices = data.get("choices") or [{}]
-                content = (choices[0].get("message", {}) if isinstance(choices, list) and choices else {}).get("content") or ""
+                if isinstance(choices, list) and choices:
+                    content = choices[0].get("message", {}).get("content")
+                else:
+                    content = None
+                if content is None:
+                    return -1, len(elements), {}, "failed to parse response"
                 return parse_score_response(content, len(elements))
 
             except (urllib.error.URLError, socket.timeout) as e:

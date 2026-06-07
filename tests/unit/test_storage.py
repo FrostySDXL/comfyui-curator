@@ -162,3 +162,13 @@ class TestRunStorage:
         latest_file.write_text("garbage not json", encoding="utf-8")
         result = storage.load_latest("test-batch")
         assert result is None
+
+    def test_load_run_rejects_path_traversal_run_id(self, storage):
+        """run_id with path separators raises ValueError."""
+        with pytest.raises(ValueError, match="run_id"):
+            storage.load_run("test-batch", "../escape")
+
+    def test_load_run_rejects_null_byte_run_id(self, storage):
+        """run_id with null byte raises ValueError."""
+        with pytest.raises(ValueError, match="run_id"):
+            storage.load_run("test-batch", "abc\0def")

@@ -328,6 +328,8 @@ so you can configure paths, host, and model without environment variables.
 
 - Standard local verification:
   - `python scripts/run_all.py`
+- Full verification suite including integration tests:
+  - `python scripts/run_all.py --full`
 - Fast edit-loop verification:
   - `python scripts/run_all.py --quick`
 - Apply Ruff formatting:

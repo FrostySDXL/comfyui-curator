@@ -9,12 +9,15 @@ Cancelled runs are never persisted. Saved runs are immutable history.
 """
 
 import json
+import logging
 import threading
 from pathlib import Path
 from typing import List, Optional
 
 from ai_curate.config import BATCHES_DIR, AI_CURATE_DIR, RUNS_SUBDIR, LATEST_FILE
 from ai_curate.models import CurationRun, JobState
+
+logger = logging.getLogger(__name__)
 
 
 class RunStorage:
@@ -23,6 +26,18 @@ class RunStorage:
     def __init__(self, batches_dir: Optional[Path] = None):
         self.batches_dir = Path(batches_dir) if batches_dir is not None else BATCHES_DIR
         self._lock = threading.RLock()
+
+    @staticmethod
+    def _validate_run_id(run_id: str) -> None:
+        """Raise ValueError if run_id contains unsafe characters."""
+        if not run_id or not run_id.strip():
+            raise ValueError("run_id must not be empty")
+        if "\0" in run_id:
+            raise ValueError("run_id contains null byte")
+        if "/" in run_id or "\\" in run_id:
+            raise ValueError("run_id contains path separators")
+        if run_id in (".", ".."):
+            raise ValueError("run_id is a reserved path component")
 
     def _ai_curate_dir(self, batch: str) -> Path:
         return self.batches_dir / batch / AI_CURATE_DIR
@@ -34,6 +49,7 @@ class RunStorage:
         return self._ai_curate_dir(batch) / LATEST_FILE
 
     def _run_path(self, batch: str, run_id: str) -> Path:
+        self._validate_run_id(run_id)
         return self._runs_dir(batch) / f"{run_id}.json"
 
     def save_run(self, run: CurationRun) -> bool:

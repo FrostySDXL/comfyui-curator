@@ -109,3 +109,42 @@ def test_validate_name_valid_simple():
 def test_validate_name_valid_with_underscores():
     """_validate_name returns None for a valid name with underscores."""
     assert batch_store._validate_name("batch_2026_v2") is None
+
+
+def test_validate_name_null_byte():
+    """_validate_name raises ValueError for names containing null byte."""
+    with pytest.raises(ValueError, match="null byte"):
+        batch_store._validate_name("batch\0name")
+
+
+def test_get_batch_folder_rejects_nonstandard_folder(tmp_path):
+    """get_batch_folder raises ValueError for folders not in BATCH_FOLDERS."""
+    batches_dir = tmp_path / "batches"
+    batch_store.create_batch(batches_dir, "alpha")
+    with pytest.raises(ValueError, match="Invalid folder"):
+        batch_store.get_batch_folder(batches_dir, "alpha", "not-a-real-folder")
+
+
+def test_import_all_pending_handles_duplicate_filenames(tmp_path):
+    """duplicate filenames get collision-safe names instead of overwriting."""
+    batches_dir = tmp_path / "batches"
+    output_dir = tmp_path / "comfyui-outputs"
+    output_dir.mkdir()
+    batch_store.create_batch(batches_dir, "alpha")
+    # Pre-populate inbox with a file of the same name
+    (batches_dir / "alpha" / "inbox" / "dup.png").write_bytes(b"existing")
+    (output_dir / "dup.png").write_bytes(b"new-import")
+    (output_dir / "unique.jpg").write_bytes(b"unique-file")
+
+    count = batch_store.import_all_pending(output_dir, batches_dir, "alpha")
+
+    # The existing file must still contain the original content
+    assert (batches_dir / "alpha" / "inbox" / "dup.png").read_bytes() == b"existing"
+    # A collision-safe file must exist for the duplicate name
+    collision_files = list((batches_dir / "alpha" / "inbox").glob("dup_*.png"))
+    assert len(collision_files) >= 1
+    # The collision-safe file must contain the new content
+    assert collision_files[0].read_bytes() == b"new-import"
+    # The unique file is imported normally
+    assert (batches_dir / "alpha" / "inbox" / "unique.jpg").exists()
+    assert count == 2

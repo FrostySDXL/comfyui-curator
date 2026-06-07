@@ -90,15 +90,75 @@ class TestParseScoreResponse:
         assert score == 1
         assert details[1] == "YES"
 
+    def test_parse_rejects_trailing_characters(self):
+        """Trailing characters after YES/NO cause the line to be rejected."""
+        content = "1:YESextra\n2:NO"
+        score, total, details, err = parse_score_response(content, num_elements=2)
+        # Only line 2 should parse; line 1 should be rejected
+        assert score == 0
+        assert total == 2
+        assert details == {2: "NO"}
+
+    def test_parse_with_junk_lines(self):
+        """Lines with extra junk after YES/NO are ignored."""
+        content = "1:YES more text here\n2:NO"
+        score, total, details, err = parse_score_response(content, num_elements=2)
+        assert score == 0
+        assert total == 2
+        assert details == {2: "NO"}
+
+
+class TestVisionClientResponseHandling:
+    """Test how the client handles various response shapes."""
+
+    @patch("ai_curate.client.urllib.request.urlopen")
+    def test_missing_content_field_returns_failure(self, mock_urlopen):
+        """When response has no content field, it should return failure, not empty string."""
+        mock_resp = MagicMock()
+        # Response with choices but no content field at all
+        mock_resp.read.return_value = json.dumps(
+            {"choices": [{"message": {}}]}
+        ).encode("utf-8")
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        client = VisionClient(model="test-model")
+        score, total, details, err = client.score_image(
+            image_b64="fakebase64",
+            prompt_text="test",
+            elements=["elem1", "elem2"],
+        )
+        assert score == -1
+        assert "failed to parse" in err
+
+    @patch("ai_curate.client.urllib.request.urlopen")
+    def test_no_choices_in_response_returns_failure(self, mock_urlopen):
+        """When response has no choices array, it should return failure."""
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps({}).encode("utf-8")
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        client = VisionClient(model="test-model")
+        score, total, details, err = client.score_image(
+            image_b64="fakebase64",
+            prompt_text="test",
+            elements=["elem1"],
+        )
+        assert score == -1
+        assert "failed to parse" in err
+
 
 class TestVisionClient:
     """Test the VisionClient class (mocked network calls)."""
 
     def test_init_defaults(self):
-        """Client initializes with default config values (model default is empty)."""
+        """Client initializes with default config values."""
         client = VisionClient()
         assert client.base_url is not None
-        assert client.default_model == ""
+        assert client.default_model is None
         assert client.timeout > 0
 
     def test_init_custom(self):
@@ -106,6 +166,32 @@ class TestVisionClient:
         client = VisionClient(base_url="http://custom:9999", model="my-model")
         assert client.base_url == "http://custom:9999"
         assert client.default_model == "my-model"
+
+    def test_encode_image_returns_base64(self, tmp_path):
+        """encode_image base64-encodes file contents."""
+        img_path = tmp_path / "test.png"
+        img_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+        result = VisionClient.encode_image(str(img_path))
+        import base64
+        assert result == base64.b64encode(b"\x89PNG\r\n\x1a\n").decode("utf-8")
+
+    def test_content_type_for_png(self):
+        """content_type_for returns image/png for .png files."""
+        assert VisionClient.content_type_for("file.png") == "image/png"
+
+    def test_content_type_for_jpeg(self):
+        """content_type_for returns image/jpeg for .jpg and .jpeg files."""
+        assert VisionClient.content_type_for("file.jpg") == "image/jpeg"
+        assert VisionClient.content_type_for("file.jpeg") == "image/jpeg"
+
+    def test_content_type_for_webp(self):
+        """content_type_for returns image/webp for .webp files."""
+        assert VisionClient.content_type_for("file.webp") == "image/webp"
+
+    def test_content_type_for_unknown_falls_back_to_png(self):
+        """content_type_for returns image/png for unrecognized extensions."""
+        assert VisionClient.content_type_for("file.txt") == "image/png"
+        assert VisionClient.content_type_for("file") == "image/png"
 
     @patch("ai_curate.client.urllib.request.urlopen")
     def test_score_image_success(self, mock_urlopen):
@@ -119,7 +205,7 @@ class TestVisionClient:
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_resp
 
-        client = VisionClient()
+        client = VisionClient(model="test-model")
         score, total, details, err = client.score_image(
             image_b64="fakebase64",
             prompt_text="Check these elements",

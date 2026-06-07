@@ -5,10 +5,13 @@ stay focused on route wiring and operator-facing service concerns.
 """
 
 import json
+import logging
 import random
 import shutil
 from pathlib import Path
 from typing import Iterable
+
+logger = logging.getLogger(__name__)
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
@@ -19,6 +22,8 @@ def _validate_name(name: str, label: str = "name") -> None:
     """Raise ValueError if a name looks like a path traversal attempt."""
     if not name or not name.strip():
         raise ValueError(f"empty {label}")
+    if "\0" in name:
+        raise ValueError(f"{label} contains null byte")
     if "/" in name or "\\" in name:
         raise ValueError(f"{label} contains path separators")
     if name in (".", ".."):
@@ -80,6 +85,10 @@ def get_batch_folder(batches_dir: Path, batch_name: str, folder: str) -> Path:
     """Return a path to a batch subfolder."""
     _validate_name(batch_name, "batch name")
     _validate_name(folder, "folder name")
+    if folder not in BATCH_FOLDERS:
+        raise ValueError(
+            f"Invalid folder '{folder}'. Must be one of: {', '.join(BATCH_FOLDERS)}"
+        )
     return Path(batches_dir) / batch_name / folder
 
 
@@ -145,6 +154,18 @@ def get_pending_count(comfyui_output: Path) -> int:
     return len([f for f in comfyui_output.iterdir() if _is_supported_image(f)])
 
 
+def _collision_safe_name(dest_dir: Path, name: str) -> str:
+    """Return a filename that doesn't conflict with existing files in dest_dir."""
+    stem = Path(name).stem
+    suffix = Path(name).suffix
+    candidate = name
+    counter = 1
+    while (dest_dir / candidate).exists():
+        candidate = f"{stem}_{counter}{suffix}"
+        counter += 1
+    return candidate
+
+
 def import_all_pending(comfyui_output: Path, batches_dir: Path, batch_name: str) -> int:
     """Move all pending supported images into a batch inbox."""
     comfyui_output = Path(comfyui_output)
@@ -157,10 +178,11 @@ def import_all_pending(comfyui_output: Path, batches_dir: Path, batch_name: str)
     count = 0
     for path in comfyui_output.iterdir():
         if _is_supported_image(path):
-            dst = dest_inbox / path.name
+            safe_name = _collision_safe_name(dest_inbox, path.name)
+            dst = dest_inbox / safe_name
             try:
                 shutil.move(str(path), str(dst))
                 count += 1
-            except Exception as exc:
+            except (OSError, shutil.Error) as exc:
                 print(f"Failed to import {path.name}: {exc}")
     return count

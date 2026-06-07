@@ -760,6 +760,7 @@
         let currentLightboxMetadataError = null;
         let currentLightboxDimensions = {w: null, h: null};
         const lightboxMetadataCache = new Map();
+        const LIGHTBOX_METADATA_CACHE_MAX = 200;
 
         function openLightbox(index) {
             currentIndex = index;
@@ -911,6 +912,11 @@
                 const data = await resp.json();
                 if (token !== lightboxMetadataRequestToken) return;
                 lightboxMetadataCache.set(cacheKey, data);
+                // Evict oldest entries if cache exceeds limit
+                while (lightboxMetadataCache.size > LIGHTBOX_METADATA_CACHE_MAX) {
+                    const firstKey = lightboxMetadataCache.keys().next().value;
+                    lightboxMetadataCache.delete(firstKey);
+                }
                 currentLightboxMetadata = data;
                 currentLightboxMetadataError = null;
             } catch (error) {
@@ -1494,6 +1500,13 @@
             return pieces.join(' · ');
         }
 
+        function _escapeHtml(text) {
+            if (!text && text !== 0) return '';
+            const div = document.createElement('div');
+            div.appendChild(document.createTextNode(String(text)));
+            return div.innerHTML;
+        }
+
         async function aiFetchRun(runId) {
             if (!runId) return null;
             if (aiRunDetails[runId]) return aiRunDetails[runId];
@@ -1804,16 +1817,16 @@
         function aiShowRunSummary(run) {
             const summary = document.getElementById('ai-run-summary');
             const t = run.totals || {};
-            const modeLabel = run.move_enabled ? `Move top-${run.top_n} to ${run.destination_folder}` : 'Score only';
+            const modeLabel = run.move_enabled ? `Move top-${run.top_n} to ${_escapeHtml(run.destination_folder)}` : 'Score only';
             summary.innerHTML = `
                 <div class="ai-run-summary-header">
                     <div>
-                        <div class="ai-run-summary-title">${formatAiRunLabel(run)}</div>
-                        <div class="ai-run-summary-subtitle">Run ID: ${run.run_id}</div>
+                        <div class="ai-run-summary-title">${_escapeHtml(formatAiRunLabel(run))}</div>
+                        <div class="ai-run-summary-subtitle">Run ID: ${_escapeHtml(run.run_id)}</div>
                     </div>
                     <div class="ai-run-summary-badges">
-                        <span class="ai-run-badge">${run.status || 'completed'}</span>
-                        <span class="ai-run-badge">Top-N ${run.top_n}</span>
+                        <span class="ai-run-badge">${_escapeHtml(run.status || 'completed')}</span>
+                        <span class="ai-run-badge">Top-N ${_escapeHtml(run.top_n)}</span>
                     </div>
                 </div>
                 <div class="ai-run-summary-stats">
@@ -1823,8 +1836,8 @@
                     <div class="ai-stat-card"><div class="ai-stat-label">Moved</div><div class="ai-stat-value">${t.moved || 0}</div></div>
                 </div>
                 <div class="ai-run-summary-meta">
-                    <div class="ai-meta-row"><div class="ai-meta-label">Model</div><div class="ai-meta-value">${run.model || '—'}</div></div>
-                    <div class="ai-meta-row"><div class="ai-meta-label">Mode</div><div class="ai-meta-value">${modeLabel}</div></div>
+                    <div class="ai-meta-row"><div class="ai-meta-label">Model</div><div class="ai-meta-value">${_escapeHtml(run.model) || '—'}</div></div>
+                    <div class="ai-meta-row"><div class="ai-meta-label">Mode</div><div class="ai-meta-value">${_escapeHtml(modeLabel)}</div></div>
                 </div>
             `;
             summary.style.display = 'block';
@@ -1894,18 +1907,18 @@
             }
             const totalCompared = Object.keys(currentResults).filter(name => compareResults[name]).length;
             const notes = [];
-            if ((run.model || '') !== (compareRun.model || '')) notes.push(`Model changed: ${compareRun.model || '—'} → ${run.model || '—'}`);
+            if ((run.model || '') !== (compareRun.model || '')) notes.push(`Model changed: ${_escapeHtml(compareRun.model) || '—'} → ${_escapeHtml(run.model) || '—'}`);
             if ((run.top_n || 0) !== (compareRun.top_n || 0)) notes.push(`Top-N changed: ${compareRun.top_n || 0} → ${run.top_n || 0}`);
             if (!!run.move_enabled !== !!compareRun.move_enabled || (run.destination_folder || '') !== (compareRun.destination_folder || '')) {
-                const fromMode = compareRun.move_enabled ? `Move to ${compareRun.destination_folder}` : 'Score only';
-                const toMode = run.move_enabled ? `Move to ${run.destination_folder}` : 'Score only';
+                const fromMode = compareRun.move_enabled ? `Move to ${_escapeHtml(compareRun.destination_folder)}` : 'Score only';
+                const toMode = run.move_enabled ? `Move to ${_escapeHtml(run.destination_folder)}` : 'Score only';
                 notes.push(`Mode changed: ${fromMode} → ${toMode}`);
             }
 
             diffEl.innerHTML = `
                 <div class="ai-diff-header">
-                    <div class="ai-diff-title">Comparing ${formatAiRunTimestamp(run)}</div>
-                    <div class="ai-diff-subtitle">against ${formatAiRunLabel(compareRun)}</div>
+                    <div class="ai-diff-title">Comparing ${_escapeHtml(formatAiRunTimestamp(run))}</div>
+                    <div class="ai-diff-subtitle">against ${_escapeHtml(formatAiRunLabel(compareRun))}</div>
                 </div>
                 <div class="ai-diff-grid">
                     <div class="ai-diff-card"><div class="ai-stat-label">Scores changed</div><div class="ai-stat-value">${scoreChanged}</div></div>
@@ -1918,7 +1931,7 @@
                     : `<div class="ai-diff-notes">
                         <span class="ai-diff-note">Shared images compared: ${totalCompared}</span>
                         <span class="ai-diff-note">Unchanged scores: ${identicalScores}</span>
-                        ${notes.map(note => `<span class="ai-diff-note">${note}</span>`).join('')}
+                        ${notes.map(note => `<span class="ai-diff-note">${_escapeHtml(note)}</span>`).join('')}
                     </div>`}
             `;
             diffEl.style.display = 'block';

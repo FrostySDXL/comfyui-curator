@@ -40,7 +40,7 @@
     </div>
     <div id="sidebar-resizer" class="sidebar-resizer" onmousedown="startSidebarResize(event)" onpointerdown="startSidebarResize(event)"></div>
 
-    <div class="main">
+    <main class="main">
         <div class="header">
             <h1><span id="current-path">Select a batch</span><span id="img-count" class="img-count"></span></h1>
             <div class="header-actions">
@@ -66,18 +66,22 @@
 
         <div class="folder-tabs" id="folder-tabs">
             <div class="folder-tab" data-folder="inbox" onclick="selectFolder(currentBatch,'inbox')"
+                 role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' ')selectFolder(currentBatch,'inbox')"
                  ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'inbox')">
                 inbox <span class="tab-count" id="tc-inbox">0</span>
             </div>
             <div class="folder-tab" data-folder="shortlisted" onclick="selectFolder(currentBatch,'shortlisted')"
+                 role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' ')selectFolder(currentBatch,'shortlisted')"
                  ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'shortlisted')">
                 shortlisted <span class="tab-count" id="tc-shortlisted">0</span>
             </div>
             <div class="folder-tab" data-folder="finals" onclick="selectFolder(currentBatch,'finals')"
+                 role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' ')selectFolder(currentBatch,'finals')"
                  ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'finals')">
                 finals <span class="tab-count" id="tc-finals">0</span>
             </div>
             <div class="folder-tab" data-folder="rejects" onclick="selectFolder(currentBatch,'rejects')"
+                 role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' ')selectFolder(currentBatch,'rejects')"
                  ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'rejects')">
                 rejects <span class="tab-count" id="tc-rejects">0</span>
             </div>
@@ -95,7 +99,7 @@
             <div class="ai-sidebar-shell hidden" id="ai-sidebar-shell">
                 <div class="ai-sidebar-resizer" id="ai-sidebar-resizer" onmousedown="startAiSidebarResize(event)" onpointerdown="startAiSidebarResize(event)"></div>
                 <aside class="ai-curate-panel" id="ai-curate-panel">
-                    <div class="ai-curate-header" onclick="toggleAiCuratePanel()">
+                    <div class="ai-curate-header" onclick="toggleAiCuratePanel()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' ')toggleAiCuratePanel()">
                         <div>
                             <h3>AI Curate</h3>
                             <div class="ai-curate-advisory">Scores are advisory</div>
@@ -183,7 +187,7 @@
                             <button class="ai-btn ai-btn-danger hidden" id="ai-cancel-btn" onclick="aiCancelJob()">Cancel</button>
                         </div>
 
-                        <div class="ai-history-section" id="ai-history-section" class="hidden">
+                        <div class="ai-history-section hidden" id="ai-history-section">
                             <div class="ai-history-controls">
                                 <div class="ai-form-field">
                                     <label class="ai-label" for="ai-run-select">View run</label>
@@ -205,7 +209,7 @@
                 </aside>
             </div>
         </div>
-    </div>
+    </main>
 
     <!-- Action bar for multi-select -->
     <div class="action-bar" id="action-bar">

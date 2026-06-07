@@ -9,6 +9,7 @@ Supports:
 - Cancelled runs are never persisted to history
 """
 
+import logging
 import threading
 from collections import OrderedDict, deque
 from datetime import datetime, timezone
@@ -17,6 +18,8 @@ from typing import Callable, Dict, List, Optional
 from ai_curate.models import CurationRun, ImageResult, JobState, RunTotals
 from ai_curate.config import DEFAULT_MODEL, DEFAULT_TOP_N
 from ai_curate.storage import RunStorage
+
+logger = logging.getLogger(__name__)
 
 
 class QueueManager:
@@ -60,7 +63,7 @@ class QueueManager:
             move_enabled=job_params.get("move_enabled", False),
             prompt=job_params.get("prompt", ""),
             elements=job_params.get("elements") or [],
-            model=job_params.get("model") or DEFAULT_MODEL,
+            model=job_params.get("model") or DEFAULT_MODEL or "",
             top_n=job_params.get("top_n", DEFAULT_TOP_N),
         )
 
@@ -127,10 +130,10 @@ class QueueManager:
         """Request cancellation of a job.
 
         - Queued jobs: immediately set to CANCELLED.
-        - Running jobs during scoring: set to CANCELLING (caller must
-          finalize after scoring loop exits).
-        - Running jobs in move phase: returns False (cancellation
-          disabled during move in v1).
+        - Running jobs: set to CANCELLING (caller must finalize after
+          scoring loop exits). Cancellation is accepted during both the
+          scoring and move phases; callers are responsible for stopping
+          their work and calling finalize_cancelled().
 
         Args:
             run_id: The job to cancel.
@@ -216,15 +219,16 @@ class QueueManager:
             run.totals = totals
             run.completed_at = datetime.now(timezone.utc).isoformat()
 
-            # Persist to storage
-            if self._storage:
-                self._storage.save_run(run)
-
             # Clear the running slot and promote next queued job
             promoted_id = None
             if self._running_id == run_id:
                 self._running_id = None
                 promoted_id = self._promote_next()
+
+        # Persist to storage outside the lock to avoid blocking queue
+        # operations during disk I/O.
+        if self._storage:
+            self._storage.save_run(run)
 
         self._notify_promote(promoted_id)
         self.prune()
@@ -248,13 +252,15 @@ class QueueManager:
             run.status = JobState.FAILED
             run.completed_at = datetime.now(timezone.utc).isoformat()
 
-            if self._storage:
-                self._storage.save_run(run)
-
             promoted_id = None
             if self._running_id == run_id:
                 self._running_id = None
                 promoted_id = self._promote_next()
+
+        # Persist to storage outside the lock to avoid blocking queue
+        # operations during disk I/O.
+        if self._storage:
+            self._storage.save_run(run)
 
         self._notify_promote(promoted_id)
         self.prune()

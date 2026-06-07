@@ -25,6 +25,10 @@ markupsafe==3.0.3
     #   flask
     #   jinja2
     #   werkzeug
+mypy==1.19.0
+    # via -r requirements-dev.in
+mypy-extensions==1.1.0
+    # via mypy
 packaging==26.2
     # via pytest
 pillow==11.3.0
@@ -43,5 +47,7 @@ python-dotenv==1.2.2
     # via -r requirements.in
 ruff==0.15.15
     # via -r requirements-dev.in
+typing-extensions==4.15.0
+    # via mypy
 werkzeug==3.1.8
     # via flask

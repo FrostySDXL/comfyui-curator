@@ -7,6 +7,7 @@ environment variables where noted.
 
 import os
 from pathlib import Path
+from typing import Optional
 
 # --- Paths ---
 BATCHES_DIR = Path(
@@ -28,11 +29,13 @@ DEFAULT_BASE_URL = os.environ.get("IMAGE_CURATOR_LLM_URL", "http://localhost:808
 _raw_model = os.environ.get("IMAGE_CURATOR_MODEL", "")
 _models = [m.strip() for m in _raw_model.split(",") if m.strip()]
 AVAILABLE_MODELS: list[str] = _models if _models else []
-DEFAULT_MODEL = _models[0] if _models else ""
+DEFAULT_MODEL: Optional[str] = _models[0] if _models else None
 # ^^ IMAGE_CURATOR_MODEL accepts a comma-separated list of model
 # names/aliases (e.g. "vl-scorer,qwen-vl,gemini-pro").
 # The first entry is the default selection in the UI dropdown.
 # Set to a single value (no commas) for backward compatibility.
+# Returns None when IMAGE_CURATOR_MODEL is not set to distinguish
+# "unset" from an explicit empty string.
 try:
     REQUEST_TIMEOUT = int(os.environ.get("IMAGE_CURATOR_TIMEOUT", "120"))
 except ValueError:
