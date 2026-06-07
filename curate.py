@@ -37,7 +37,7 @@ from ai_curate.storage import RunStorage
 from ai_curate.models import CurationRun, ImageResult, RunTotals, JobState
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Score images against visual elements using a vision model."
     )
@@ -103,14 +103,12 @@ def main():
             "path separators or null bytes"
         )
     if batch in (".", "..") or batch.startswith("."):
-        parser.error(
-            f"Invalid --batch value '{args.batch}': batch name is a reserved name"
-        )
+        parser.error(f"Invalid --batch value '{args.batch}': batch name is a reserved name")
 
     # Resolve prompt (support legacy --panel alias)
     prompt = args.prompt or args.panel
     if not prompt:
-        parser.error("Either --prompt or --panel is required")
+        parser.error("--prompt is required")
 
     if args.panel and not args.prompt:
         print("NOTE: --panel is deprecated, use --prompt instead", file=sys.stderr)
@@ -121,7 +119,7 @@ def main():
             f"Invalid source folder '{args.source}'. "
             f"Must be one of: {', '.join(sorted(ALLOWED_SOURCE_FOLDERS))}"
         )
-    if args.dest not in ALLOWED_DEST_FOLDERS:
+    if args.move and args.dest not in ALLOWED_DEST_FOLDERS:
         parser.error(
             f"Invalid destination folder '{args.dest}'. "
             f"Must be one of: {', '.join(sorted(ALLOWED_DEST_FOLDERS))}"
@@ -130,13 +128,6 @@ def main():
         parser.error(
             f"Source and destination folders are both '{args.source}'. "
             "Moving to the same folder is a no-op."
-        )
-
-    # Validate model
-    if not args.model:
-        parser.error(
-            "No model configured. Set IMAGE_CURATOR_MODEL environment variable "
-            "or pass --model explicitly. See .env.example for details."
         )
 
     # Cap top_n
@@ -162,6 +153,13 @@ def main():
     if args.dry_run:
         print("Dry run -- exiting without scoring.", file=sys.stderr)
         return
+
+    # Validate model (after dry-run so dry-run works without a model)
+    if not args.model:
+        parser.error(
+            "No model configured. Set IMAGE_CURATOR_MODEL environment variable "
+            "or pass --model explicitly. See .env.example for details."
+        )
 
     # Default images dir: batch source folder
     images_dir = args.images or str(BATCHES_DIR / batch / args.source)

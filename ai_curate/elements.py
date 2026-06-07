@@ -28,9 +28,11 @@ _SHOT_TYPES = [
     ("over-the-shoulder", "Over-the-shoulder framing"),
 ]
 
-# Delimiters for splitting prompt text into fragments
+# Delimiters for splitting prompt text into fragments.
+# Comma splitting uses \s{2,} (two+ spaces) to avoid fragmenting
+# noun phrases like "tall, dark-haired warrior".
 _FRAGMENT_DELIMITERS = re.compile(
-    r"\s*[-\u2013]\s+|\s*,\s+|\s+with\s+|\s+and\s+|\s+adorned\s+with\s+|\s+dressed\s+in\s+"
+    r"\s*[-\u2013]\s+|\s*,\s{2,}|\s+with\s+|\s+and\s+|\s+adorned\s+with\s+|\s+dressed\s+in\s+"
 )
 
 # Leading articles and pronouns to strip

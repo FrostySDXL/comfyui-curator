@@ -56,11 +56,19 @@ class ImageResult:
         self.error_message = error_message
         self.moved_to = moved_to
 
+    @property
+    def normalized_score(self) -> int:
+        """Return score normalized to 0-100, or -1 for failed images."""
+        if self.failed or self.total <= 0:
+            return -1
+        return round(self.score / self.total * 100)
+
     def to_dict(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {
             "filename": self.filename,
             "score": self.score,
             "total": self.total,
+            "normalized_score": self.normalized_score,
             "details": {str(k): v for k, v in self.details.items()},
             "failed": self.failed,
         }

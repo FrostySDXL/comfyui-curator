@@ -54,12 +54,20 @@ class TestRequestTimeout:
 
 
 class TestModelConfig:
-    def test_available_models_defaults_to_empty(self):
-        """AVAILABLE_MODELS is an empty list when env var is not set."""
+    def test_available_models_is_list(self):
+        """AVAILABLE_MODELS is always a list regardless of env."""
         assert isinstance(config.AVAILABLE_MODELS, list)
-        # When IMAGE_CURATOR_MODEL is not set, AVAILABLE_MODELS is []
-        # (unless the env var is set in the test environment)
 
-    def test_default_model_defaults_to_none(self):
-        """DEFAULT_MODEL is None when env var is not set."""
-        assert config.DEFAULT_MODEL is None
+    def test_default_model_is_none_when_env_unset(self, monkeypatch):
+        """DEFAULT_MODEL is None when IMAGE_CURATOR_MODEL is not set."""
+        monkeypatch.delenv("IMAGE_CURATOR_MODEL", raising=False)
+        # Re-import to pick up the patched env
+        import importlib
+        import ai_curate.config as cfg
+
+        importlib.reload(cfg)
+        try:
+            assert cfg.DEFAULT_MODEL is None
+        finally:
+            # Restore original config module state
+            importlib.reload(config)

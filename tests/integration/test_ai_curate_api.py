@@ -1,6 +1,5 @@
 """Integration tests for AI curation Flask API routes."""
 
-import importlib
 import json
 import pytest
 from unittest.mock import patch, MagicMock
@@ -9,26 +8,6 @@ from pathlib import Path
 pytestmark = pytest.mark.integration
 
 from ai_curate.models import JobState, CurationRun, ImageResult, RunTotals
-
-
-@pytest.fixture
-def app_module(monkeypatch, tmp_path):
-    """Import app module with patched paths to avoid module-level I/O."""
-    module = importlib.import_module("app")
-    batches_dir = tmp_path / "batches"
-    comfyui_output = tmp_path / "comfyui-outputs"
-    state_file = tmp_path / "state.json"
-
-    batches_dir.mkdir()
-    comfyui_output.mkdir()
-
-    monkeypatch.setattr(module, "BATCHES_DIR", batches_dir)
-    monkeypatch.setattr(module, "COMFYUI_OUTPUT", comfyui_output)
-    monkeypatch.setattr(module, "STATE_FILE", state_file)
-    module.watcher.seen_files = set()
-    module.app.config.update(TESTING=True)
-
-    return module
 
 
 @pytest.fixture
@@ -404,9 +383,7 @@ class TestPathTraversal:
         # Create a valid batch first
         client.post("/api/batches", json={"name": "traversal-test"})
         # Flask string converter may reject the slashes; either 404 or 500 is acceptable
-        resp = client.get(
-            "/api/ai-curate/batches/traversal-test/runs/..%2Fescape"
-        )
+        resp = client.get("/api/ai-curate/batches/traversal-test/runs/..%2Fescape")
         assert resp.status_code in (404, 500)
 
     def test_traversal_batch_name_not_found(self, client):

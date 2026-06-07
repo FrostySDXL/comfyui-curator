@@ -67,6 +67,7 @@ def score_images(
     """
     images = find_images(image_dir)
     from ai_curate.config import ELEMENT_CAP
+
     if len(elements) > ELEMENT_CAP:
         elements = elements[:ELEMENT_CAP]
     prompt_text = build_scoring_prompt(elements)

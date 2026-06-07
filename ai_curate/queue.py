@@ -161,13 +161,22 @@ class QueueManager:
             # Cannot cancel completed, failed, or already cancelled jobs
             return False
 
-    def finalize_cancelled(self, run_id: str) -> bool:
+    def finalize_cancelled(
+        self,
+        run_id: str,
+        results: Optional[list] = None,
+        totals: Optional[object] = None,
+    ) -> bool:
         """Finalize a cancelling job after the scoring loop has stopped.
 
-        Discards partial results and does NOT persist history.
+        Discards partial results and does NOT persist history by default.
+        If results and totals are provided, they are retained on the cancelled
+        run record (e.g., for partial move audit trails).
 
         Args:
             run_id: The job to finalize as cancelled.
+            results: Optional partial results to retain on the cancelled run.
+            totals: Optional partial totals to retain on the cancelled run.
 
         Returns:
             True if finalized, False if not in CANCELLING state.
@@ -178,7 +187,12 @@ class QueueManager:
                 return False
 
             run.status = JobState.CANCELLED
-            run.results = []  # Discard partial results
+            if results is not None:
+                run.results = results
+            else:
+                run.results = []  # Discard partial results
+            if totals is not None:
+                run.totals = totals
             run.completed_at = datetime.now(timezone.utc).isoformat()
 
             # Clear the running slot and promote next queued job

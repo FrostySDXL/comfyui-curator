@@ -25,6 +25,9 @@ COMFYUI_OUTPUT = Path(
 
 # --- Llama-swap / vision model ---
 DEFAULT_BASE_URL = os.environ.get("IMAGE_CURATOR_LLM_URL", "http://localhost:8080")
+API_KEY = os.environ.get("IMAGE_CURATOR_API_KEY", "") or None
+# ^^ Optional API key sent as Bearer token in Authorization header.
+# Set to empty string or leave unset to skip authentication.
 
 _raw_model = os.environ.get("IMAGE_CURATOR_MODEL", "")
 _models = [m.strip() for m in _raw_model.split(",") if m.strip()]

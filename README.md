@@ -326,9 +326,9 @@ so you can configure paths, host, and model without environment variables.
 
 ## Verification tiers
 
-- Standard local verification:
+- Standard local verification (default):
   - `python scripts/run_all.py`
-- Full verification suite including integration tests:
+- Full verification suite including mypy type checking:
   - `python scripts/run_all.py --full`
 - Fast edit-loop verification:
   - `python scripts/run_all.py --quick`

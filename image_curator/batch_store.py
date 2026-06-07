@@ -86,9 +86,7 @@ def get_batch_folder(batches_dir: Path, batch_name: str, folder: str) -> Path:
     _validate_name(batch_name, "batch name")
     _validate_name(folder, "folder name")
     if folder not in BATCH_FOLDERS:
-        raise ValueError(
-            f"Invalid folder '{folder}'. Must be one of: {', '.join(BATCH_FOLDERS)}"
-        )
+        raise ValueError(f"Invalid folder '{folder}'. Must be one of: {', '.join(BATCH_FOLDERS)}")
     return Path(batches_dir) / batch_name / folder
 
 

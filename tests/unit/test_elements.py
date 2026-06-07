@@ -82,4 +82,3 @@ class TestExtractElements:
         assert "Wearing a cape" in result
         for qe in QUALITY_ELEMENTS:
             assert qe in result
-

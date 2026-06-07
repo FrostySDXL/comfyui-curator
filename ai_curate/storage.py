@@ -71,17 +71,14 @@ class RunStorage:
             runs_dir = self._runs_dir(run.batch)
             runs_dir.mkdir(parents=True, exist_ok=True)
 
-            # Write the run file atomically with a temp file
+            # Write the run file atomically with a temp file.
+            # os.replace() is atomic on both POSIX and Windows (Python 3.3+).
             run_path = self._run_path(run.batch, run.run_id)
             tmp_path = run_path.with_suffix(run_path.suffix + ".tmp")
             tmp_path.write_text(
                 json.dumps(run.to_dict(), indent=2),
                 encoding="utf-8",
             )
-            # On Windows, Path.replace() raises FileExistsError if target
-            # exists; remove the old file first so the rename is cross-platform.
-            if run_path.exists():
-                run_path.unlink()
             tmp_path.replace(run_path)
 
             # Update latest pointer atomically (under lock to prevent TOCTOU)
@@ -91,8 +88,6 @@ class RunStorage:
                 json.dumps({"run_id": run.run_id}, indent=2),
                 encoding="utf-8",
             )
-            if latest_path.exists():
-                latest_path.unlink()
             latest_tmp.replace(latest_path)
 
         return True

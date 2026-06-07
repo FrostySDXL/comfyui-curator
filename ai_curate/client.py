@@ -17,7 +17,7 @@ import urllib.request
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-from ai_curate.config import DEFAULT_BASE_URL, DEFAULT_MODEL, REQUEST_TIMEOUT
+from ai_curate.config import DEFAULT_BASE_URL, DEFAULT_MODEL, REQUEST_TIMEOUT, API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ def parse_score_response(
     yes_count = 0
     details: Dict[int, str] = {}
 
-    for line in content.strip().split("\n"):
+    for line in content.strip().replace("\r\n", "\n").split("\n"):
         line = line.strip()
         match = re.match(r"(\d+)\s*[:\.]\s*(YES|NO)$", line, re.IGNORECASE)
         if match:
@@ -118,10 +118,12 @@ class VisionClient:
         base_url: str = DEFAULT_BASE_URL,
         model: Optional[str] = DEFAULT_MODEL,
         timeout: int = REQUEST_TIMEOUT,
+        api_key: Optional[str] = API_KEY,
     ):
         self.base_url = base_url.rstrip("/")
         self.default_model = model
         self.timeout = timeout
+        self.api_key = api_key
 
     def score_image(
         self,
@@ -150,10 +152,13 @@ class VisionClient:
         payload_bytes = json.dumps(payload).encode("utf-8")
 
         url = f"{self.base_url}/v1/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         req = urllib.request.Request(
             url,
             data=payload_bytes,
-            headers={"Content-Type": "application/json"},
+            headers=headers,
         )
 
         max_retries = 1  # One retry on transient network errors
@@ -171,13 +176,16 @@ class VisionClient:
                     return -1, len(elements), {}, "failed to parse response"
                 return parse_score_response(content, len(elements))
 
-            except (urllib.error.URLError, socket.timeout) as e:
+            except (urllib.error.URLError, urllib.error.HTTPError, socket.timeout) as e:
                 if attempt < max_retries:
                     continue
                 return -1, len(elements), {}, f"error: {e}"
 
-            except (urllib.error.HTTPError, json.JSONDecodeError) as e:
+            except json.JSONDecodeError as e:
                 return -1, len(elements), {}, f"error: {e}"
+
+    # Maximum image file size for base64 encoding (default 50 MB)
+    MAX_IMAGE_SIZE_BYTES: int = 50 * 1024 * 1024
 
     @staticmethod
     def encode_image(path: str) -> str:
@@ -188,7 +196,16 @@ class VisionClient:
 
         Returns:
             Base64-encoded string of the file contents.
+
+        Raises:
+            ValueError: If the file exceeds MAX_IMAGE_SIZE_BYTES.
         """
+        file_path = Path(path)
+        file_size = file_path.stat().st_size
+        if file_size > VisionClient.MAX_IMAGE_SIZE_BYTES:
+            raise ValueError(
+                f"Image file too large: {file_size} bytes (max {VisionClient.MAX_IMAGE_SIZE_BYTES})"
+            )
         with open(path, "rb") as f:
             return base64.b64encode(f.read()).decode("utf-8")
 

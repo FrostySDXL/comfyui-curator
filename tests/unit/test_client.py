@@ -107,6 +107,22 @@ class TestParseScoreResponse:
         assert total == 2
         assert details == {2: "NO"}
 
+    def test_parse_handles_crlf_line_endings(self):
+        """\r\n line endings are handled correctly."""
+        content = "1:YES\r\n2:NO\r\n3:YES"
+        score, total, details, err = parse_score_response(content, num_elements=3)
+        assert score == 2
+        assert total == 3
+        assert details == {1: "YES", 2: "NO", 3: "YES"}
+        assert err == ""
+
+    def test_parse_mixed_line_endings(self):
+        """Mixed \r\n and \n line endings are handled."""
+        content = "1:YES\r\n2:NO\n3:YES\r\n4:NO"
+        score, total, details, err = parse_score_response(content, num_elements=4)
+        assert score == 2
+        assert total == 4
+
 
 class TestVisionClientResponseHandling:
     """Test how the client handles various response shapes."""
@@ -116,9 +132,7 @@ class TestVisionClientResponseHandling:
         """When response has no content field, it should return failure, not empty string."""
         mock_resp = MagicMock()
         # Response with choices but no content field at all
-        mock_resp.read.return_value = json.dumps(
-            {"choices": [{"message": {}}]}
-        ).encode("utf-8")
+        mock_resp.read.return_value = json.dumps({"choices": [{"message": {}}]}).encode("utf-8")
         mock_resp.__enter__ = lambda s: s
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_resp
@@ -173,7 +187,64 @@ class TestVisionClient:
         img_path.write_bytes(b"\x89PNG\r\n\x1a\n")
         result = VisionClient.encode_image(str(img_path))
         import base64
+
         assert result == base64.b64encode(b"\x89PNG\r\n\x1a\n").decode("utf-8")
+
+    def test_encode_image_rejects_oversized_file(self, tmp_path):
+        """encode_image raises ValueError for files exceeding MAX_IMAGE_SIZE_BYTES."""
+        img_path = tmp_path / "large.png"
+        # Write a file just over the 1-byte limit
+        img_path.write_bytes(b"\x00" * (VisionClient.MAX_IMAGE_SIZE_BYTES + 1))
+        with pytest.raises(ValueError, match="Image file too large"):
+            VisionClient.encode_image(str(img_path))
+
+    def test_init_with_api_key(self):
+        """Client stores api_key when provided."""
+        client = VisionClient(api_key="sk-test123")
+        assert client.api_key == "sk-test123"
+
+    @patch("ai_curate.client.urllib.request.urlopen")
+    def test_score_image_sends_auth_header(self, mock_urlopen):
+        """score_image includes Authorization header when api_key is set."""
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(
+            {"choices": [{"message": {"content": "1:YES"}}]}
+        ).encode("utf-8")
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        client = VisionClient(model="test-model", api_key="sk-test123")
+        client.score_image(
+            image_b64="fakebase64",
+            prompt_text="test",
+            elements=["elem1"],
+        )
+        # Verify the request had the Authorization header
+        call_args = mock_urlopen.call_args
+        req = call_args[0][0]
+        assert req.get_header("Authorization") == "Bearer sk-test123"
+
+    @patch("ai_curate.client.urllib.request.urlopen")
+    def test_score_image_no_auth_header_when_no_key(self, mock_urlopen):
+        """score_image omits Authorization header when api_key is None."""
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(
+            {"choices": [{"message": {"content": "1:YES"}}]}
+        ).encode("utf-8")
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        client = VisionClient(model="test-model")
+        client.score_image(
+            image_b64="fakebase64",
+            prompt_text="test",
+            elements=["elem1"],
+        )
+        call_args = mock_urlopen.call_args
+        req = call_args[0][0]
+        assert req.get_header("Authorization") is None
 
     def test_content_type_for_png(self):
         """content_type_for returns image/png for .png files."""

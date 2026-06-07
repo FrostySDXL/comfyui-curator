@@ -1,6 +1,10 @@
 # Convenience install file — mirrors requirements.in for pip install -r.
 # For reproducible locked installs use requirements-lock.txt.
 # Do not edit directly; edit requirements.in instead.
+#
+#     pip-compile --output-file=requirements.txt requirements.in
+#
+-r requirements.in
 Flask>=3.1,<4.0
 Pillow>=10.0,<12.0
 python-dotenv>=1.0,<2.0

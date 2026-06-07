@@ -27,6 +27,23 @@
         let sidebarOpen = true;
         let isSidebarResizing = false;
 
+        // --- Global fetch error handling ---
+
+        window.addEventListener('unhandledrejection', (event) => {
+            console.error('Unhandled fetch/promise error:', event.reason);
+            showToast('Network error — check connection and try again');
+        });
+
+        async function safeFetch(url, options = {}) {
+            try {
+                return await fetch(url, options);
+            } catch (err) {
+                console.error(`Fetch failed for ${url}:`, err);
+                showToast('Network request failed');
+                throw err;
+            }
+        }
+
         function clampSidebarWidth(value) {
             return Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, value));
         }
@@ -497,7 +514,7 @@
                 fragment.appendChild(thumb);
             });
 
-            grid.replaceChildren(fragment);
+            grid.append(fragment);
         }
 
         function formatSize(bytes) {
@@ -583,6 +600,13 @@
             event.target.addEventListener('dragend', () => {
                 isDraggingImages = false;
                 draggedFiles = [];
+            }, {once: true});
+            // Safety net: reset on document-level dragend in case the
+            // element-level event doesn't fire (e.g. element removed mid-drag).
+            document.addEventListener('dragend', function resetDragState() {
+                isDraggingImages = false;
+                draggedFiles = [];
+                document.removeEventListener('dragend', resetDragState);
             }, {once: true});
         }
 
@@ -726,13 +750,16 @@
         // --- Delete rejects ---
 
         function showDeleteModal() {
+            const modal = document.getElementById('delete-modal');
             document.getElementById('delete-count').textContent =
                 (allCounts[currentBatch]?.rejects) || 0;
-            document.getElementById('delete-modal').classList.add('active');
+            modal.classList.add('active');
+            _trapFocus(modal);
         }
 
         function hideDeleteModal() {
             document.getElementById('delete-modal').classList.remove('active');
+            _releaseFocusTrap();
         }
 
         async function confirmDeleteRejects() {
@@ -844,7 +871,6 @@
                 updateLightboxInfo(img, this.naturalWidth, this.naturalHeight);
             };
             el.src = `/image/${currentBatch}/${currentFolder}/${encodeURIComponent(img.name)}`;
-            updateLightboxInfo(img);
             loadLightboxMetadata(img, metadataToken);
         }
 
@@ -1154,21 +1180,65 @@
             } else { showToast('Import failed'); }
         }
 
+        // --- Modal focus trap ---
+
+        let _modalFocusRestore = null;
+        let _activeModal = null;
+
+        function _trapFocus(modal) {
+            _activeModal = modal;
+            _modalFocusRestore = document.activeElement;
+            const focusable = modal.querySelectorAll(
+                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+            );
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            modal.addEventListener('keydown', function _modalKey(e) {
+                if (e.key !== 'Tab') return;
+                if (e.shiftKey) {
+                    if (document.activeElement === first) {
+                        e.preventDefault();
+                        last.focus();
+                    }
+                } else {
+                    if (document.activeElement === last) {
+                        e.preventDefault();
+                        first.focus();
+                    }
+                }
+            });
+            if (first) first.focus();
+        }
+
+        function _releaseFocusTrap() {
+            _activeModal = null;
+            if (_modalFocusRestore) {
+                _modalFocusRestore.focus();
+                _modalFocusRestore = null;
+            }
+        }
+
         function showNewBatchModal() {
-            document.getElementById('new-batch-modal').classList.add('active');
+            const modal = document.getElementById('new-batch-modal');
+            modal.classList.add('active');
+            _trapFocus(modal);
             document.getElementById('new-batch-name').focus();
         }
         function hideNewBatchModal() {
             document.getElementById('new-batch-modal').classList.remove('active');
             document.getElementById('new-batch-name').value = '';
+            _releaseFocusTrap();
         }
 
         function showHelpModal() {
-            document.getElementById('help-modal').classList.add('active');
+            const modal = document.getElementById('help-modal');
+            modal.classList.add('active');
+            _trapFocus(modal);
         }
 
         function hideHelpModal() {
             document.getElementById('help-modal').classList.remove('active');
+            _releaseFocusTrap();
         }
 
         async function createBatch() {
@@ -1817,29 +1887,67 @@
         function aiShowRunSummary(run) {
             const summary = document.getElementById('ai-run-summary');
             const t = run.totals || {};
-            const modeLabel = run.move_enabled ? `Move top-${run.top_n} to ${_escapeHtml(run.destination_folder)}` : 'Score only';
-            summary.innerHTML = `
-                <div class="ai-run-summary-header">
-                    <div>
-                        <div class="ai-run-summary-title">${_escapeHtml(formatAiRunLabel(run))}</div>
-                        <div class="ai-run-summary-subtitle">Run ID: ${_escapeHtml(run.run_id)}</div>
-                    </div>
-                    <div class="ai-run-summary-badges">
-                        <span class="ai-run-badge">${_escapeHtml(run.status || 'completed')}</span>
-                        <span class="ai-run-badge">Top-N ${_escapeHtml(run.top_n)}</span>
-                    </div>
-                </div>
-                <div class="ai-run-summary-stats">
-                    <div class="ai-stat-card"><div class="ai-stat-label">Images</div><div class="ai-stat-value">${t.images || 0}</div></div>
-                    <div class="ai-stat-card"><div class="ai-stat-label">Scored</div><div class="ai-stat-value">${t.scored || 0}</div></div>
-                    <div class="ai-stat-card"><div class="ai-stat-label">Failed</div><div class="ai-stat-value">${t.failed || 0}</div></div>
-                    <div class="ai-stat-card"><div class="ai-stat-label">Moved</div><div class="ai-stat-value">${t.moved || 0}</div></div>
-                </div>
-                <div class="ai-run-summary-meta">
-                    <div class="ai-meta-row"><div class="ai-meta-label">Model</div><div class="ai-meta-value">${_escapeHtml(run.model) || '—'}</div></div>
-                    <div class="ai-meta-row"><div class="ai-meta-label">Mode</div><div class="ai-meta-value">${_escapeHtml(modeLabel)}</div></div>
-                </div>
-            `;
+            const modeLabel = run.move_enabled ? `Move top-${run.top_n} to ${run.destination_folder}` : 'Score only';
+
+            // Build DOM tree instead of innerHTML to avoid XSS regression risk
+            const header = document.createElement('div');
+            header.className = 'ai-run-summary-header';
+            const headerLeft = document.createElement('div');
+            const titleEl = document.createElement('div');
+            titleEl.className = 'ai-run-summary-title';
+            titleEl.textContent = formatAiRunLabel(run);
+            const subtitleEl = document.createElement('div');
+            subtitleEl.className = 'ai-run-summary-subtitle';
+            subtitleEl.textContent = `Run ID: ${run.run_id}`;
+            headerLeft.append(titleEl, subtitleEl);
+            const badges = document.createElement('div');
+            badges.className = 'ai-run-summary-badges';
+            const statusBadge = document.createElement('span');
+            statusBadge.className = 'ai-run-badge';
+            statusBadge.textContent = run.status || 'completed';
+            const topBadge = document.createElement('span');
+            topBadge.className = 'ai-run-badge';
+            topBadge.textContent = `Top-N ${run.top_n}`;
+            badges.append(statusBadge, topBadge);
+            header.append(headerLeft, badges);
+
+            const stats = document.createElement('div');
+            stats.className = 'ai-run-summary-stats';
+            function addStatCard(label, value) {
+                const card = document.createElement('div');
+                card.className = 'ai-stat-card';
+                const lbl = document.createElement('div');
+                lbl.className = 'ai-stat-label';
+                lbl.textContent = label;
+                const val = document.createElement('div');
+                val.className = 'ai-stat-value';
+                val.textContent = String(value);
+                card.append(lbl, val);
+                stats.appendChild(card);
+            }
+            addStatCard('Images', t.images || 0);
+            addStatCard('Scored', t.scored || 0);
+            addStatCard('Failed', t.failed || 0);
+            addStatCard('Moved', t.moved || 0);
+
+            const meta = document.createElement('div');
+            meta.className = 'ai-run-summary-meta';
+            function addMetaRow(label, value) {
+                const row = document.createElement('div');
+                row.className = 'ai-meta-row';
+                const lbl = document.createElement('div');
+                lbl.className = 'ai-meta-label';
+                lbl.textContent = label;
+                const val = document.createElement('div');
+                val.className = 'ai-meta-value';
+                val.textContent = value || '\u2014';
+                row.append(lbl, val);
+                meta.appendChild(row);
+            }
+            addMetaRow('Model', run.model);
+            addMetaRow('Mode', modeLabel);
+
+            summary.replaceChildren(header, stats, meta);
             summary.style.display = 'block';
         }
 
@@ -2033,6 +2141,270 @@
             aiBatchRunCountsLoaded = true;
         }
 
+        // --- Event delegation (replaces inline handlers for CSP compatibility) ---
+
+        function _bindDelegatedEvents() {
+            // Batch sidebar controls
+            const activeBatchSelect = document.getElementById('active-batch-select');
+            if (activeBatchSelect) activeBatchSelect.addEventListener('change', function() {
+                setActiveBatch(this.value);
+            });
+
+            const importBtn = document.querySelector('.import-btn');
+            if (importBtn) importBtn.addEventListener('click', importAll);
+
+            // Batch sort buttons
+            document.querySelectorAll('.batch-sort-btn').forEach(btn => {
+                btn.addEventListener('click', function() { setBatchSort(this.dataset.bsort); });
+            });
+
+            // Batch search
+            const batchSearch = document.getElementById('batch-search');
+            if (batchSearch) batchSearch.addEventListener('input', function() {
+                setBatchFilter(this.value);
+            });
+
+            const batchSearchClear = document.getElementById('batch-search-clear');
+            if (batchSearchClear) batchSearchClear.addEventListener('click', clearBatchSearch);
+
+            // New batch button
+            const newBatchBtn = document.querySelector('.new-batch-btn');
+            if (newBatchBtn) newBatchBtn.addEventListener('click', showNewBatchModal);
+
+            // Sidebar resizer
+            const resizer = document.getElementById('sidebar-resizer');
+            if (resizer) {
+                resizer.addEventListener('mousedown', startSidebarResize);
+                resizer.addEventListener('pointerdown', startSidebarResize);
+            }
+
+            // Header buttons
+            const batchToggleBtn = document.getElementById('batch-sidebar-toggle-btn');
+            if (batchToggleBtn) batchToggleBtn.addEventListener('click', toggleBatchSidebar);
+
+            const aiToggleBtn = document.getElementById('ai-sidebar-toggle-btn');
+            if (aiToggleBtn) aiToggleBtn.addEventListener('click', toggleAiSidebar);
+
+            const helpBtn = document.getElementById('help-btn');
+            if (helpBtn) helpBtn.addEventListener('click', showHelpModal);
+
+            const autoImportBtn = document.getElementById('set-auto-import-btn');
+            if (autoImportBtn) autoImportBtn.addEventListener('click', setCurrentBatchAsAutoImport);
+
+            // Sort controls
+            document.querySelectorAll('.sort-btn:not(.batch-sort-btn)').forEach(btn => {
+                btn.addEventListener('click', function() { setSort(this.dataset.sort); });
+            });
+
+            const sortDirBtn = document.getElementById('sort-dir-btn');
+            if (sortDirBtn) sortDirBtn.addEventListener('click', toggleOrder);
+
+            // Folder tabs (delegated)
+            const folderTabs = document.getElementById('folder-tabs');
+            if (folderTabs) {
+                folderTabs.addEventListener('click', function(e) {
+                    const tab = e.target.closest('.folder-tab');
+                    if (tab && tab.dataset.folder) {
+                        selectFolder(currentBatch, tab.dataset.folder);
+                    }
+                });
+                folderTabs.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        const tab = e.target.closest('.folder-tab');
+                        if (tab && tab.dataset.folder) {
+                            e.preventDefault();
+                            selectFolder(currentBatch, tab.dataset.folder);
+                        }
+                    }
+                });
+                folderTabs.addEventListener('dragover', onDragOver);
+                folderTabs.addEventListener('dragleave', function(e) {
+                    const tab = e.target.closest('.folder-tab');
+                    if (tab) onDragLeave(e);
+                });
+                folderTabs.addEventListener('drop', function(e) {
+                    const tab = e.target.closest('.folder-tab');
+                    if (tab && tab.dataset.folder) {
+                        e.preventDefault();
+                        onDrop(e, tab.dataset.folder);
+                    }
+                });
+            }
+
+            // Lightbox buttons
+            const lightboxBtns = {
+                'lightbox-prev': function() { navigateLightbox(-1); },
+                'lightbox-next': function() { navigateLightbox(1); },
+                'lightbox-prev-scored': function() { navigateLightboxToScored(-1); },
+                'lightbox-next-scored': function() { navigateLightboxToScored(1); },
+                'lightbox-close': closeLightbox,
+                'metadata-toggle-btn': toggleLightboxMetadata,
+            };
+            Object.entries(lightboxBtns).forEach(([id, handler]) => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('click', handler);
+            });
+
+            // Move buttons in lightbox
+            document.querySelectorAll('#lightbox-actions .btn-shortlist').forEach(btn => {
+                btn.addEventListener('click', function() { moveImage('shortlisted'); });
+            });
+            document.querySelectorAll('#lightbox-actions .btn-finals').forEach(btn => {
+                btn.addEventListener('click', function() { moveImage('finals'); });
+            });
+            document.querySelectorAll('#lightbox-actions .btn-reject').forEach(btn => {
+                btn.addEventListener('click', function() { moveImage('rejects'); });
+            });
+
+            // Modal buttons
+            document.querySelectorAll('#new-batch-modal .cancel').forEach(btn => {
+                btn.addEventListener('click', hideNewBatchModal);
+            });
+            document.querySelectorAll('#new-batch-modal .create').forEach(btn => {
+                btn.addEventListener('click', createBatch);
+            });
+            const newBatchName = document.getElementById('new-batch-name');
+            if (newBatchName) newBatchName.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') createBatch();
+            });
+
+            document.querySelectorAll('#delete-modal .cancel').forEach(btn => {
+                btn.addEventListener('click', hideDeleteModal);
+            });
+            document.querySelectorAll('#delete-modal .delete-confirm').forEach(btn => {
+                btn.addEventListener('click', confirmDeleteRejects);
+            });
+
+            document.querySelectorAll('#help-modal .cancel').forEach(btn => {
+                btn.addEventListener('click', hideHelpModal);
+            });
+
+            // Toast undo
+            const toastUndo = document.getElementById('toast-undo');
+            if (toastUndo) toastUndo.addEventListener('click', undoLastMove);
+
+            // AI sidebar resizer
+            const aiResizer = document.getElementById('ai-sidebar-resizer');
+            if (aiResizer) {
+                aiResizer.addEventListener('mousedown', startAiSidebarResize);
+                aiResizer.addEventListener('pointerdown', startAiSidebarResize);
+            }
+
+            // AI curate header collapse toggle
+            const aiCurateHeader = document.querySelector('.ai-curate-header');
+            if (aiCurateHeader) {
+                aiCurateHeader.addEventListener('click', toggleAiCuratePanel);
+                aiCurateHeader.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' || e.key === ' ') toggleAiCuratePanel();
+                });
+            }
+
+            // AI overlay toggle
+            const aiOverlayToggle = document.getElementById('ai-overlay-toggle');
+            if (aiOverlayToggle) aiOverlayToggle.addEventListener('change', aiToggleOverlays);
+
+            // AI filter mode
+            const aiFilterMode = document.getElementById('ai-filter-mode');
+            if (aiFilterMode) aiFilterMode.addEventListener('change', aiApplyFilter);
+
+            // AI preview elements button
+            const aiPreviewBtn = document.querySelector('.ai-btn-secondary');
+            if (aiPreviewBtn) aiPreviewBtn.addEventListener('click', aiPreviewElements);
+
+            // AI move toggle
+            const aiMoveToggle = document.getElementById('ai-move-toggle');
+            if (aiMoveToggle) aiMoveToggle.addEventListener('change', aiToggleMoveMode);
+
+            // AI submit button
+            const aiSubmitBtn = document.getElementById('ai-submit-btn');
+            if (aiSubmitBtn) aiSubmitBtn.addEventListener('click', aiSubmitJob);
+
+            // AI cancel button
+            const aiCancelBtn = document.getElementById('ai-cancel-btn');
+            if (aiCancelBtn) aiCancelBtn.addEventListener('click', aiCancelJob);
+
+            // AI run history selectors
+            const aiRunSelect = document.getElementById('ai-run-select');
+            if (aiRunSelect) aiRunSelect.addEventListener('change', function() {
+                aiLoadRun(this.value || null);
+            });
+
+            const aiDiffSelect = document.getElementById('ai-diff-select');
+            if (aiDiffSelect) aiDiffSelect.addEventListener('change', function() {
+                aiToggleRunDiff(this.value || null);
+            });
+
+            // AI compare run selector
+            const aiCompareRunSelect = document.getElementById('ai-compare-run-select');
+            if (aiCompareRunSelect) aiCompareRunSelect.addEventListener('change', function() {
+                aiSetCompareRun(this.value);
+            });
+
+            // Delete rejects button
+            const deleteRejectsBtn = document.getElementById('delete-rejects-btn');
+            if (deleteRejectsBtn) deleteRejectsBtn.addEventListener('click', showDeleteModal);
+
+            // Action bar (multi-select) buttons - delegated
+            const actionBar = document.querySelector('.action-bar');
+            if (actionBar) {
+                actionBar.addEventListener('click', function(e) {
+                    const btn = e.target.closest('.action-btn');
+                    if (!btn) return;
+                    if (btn.classList.contains('action-clear')) {
+                        clearSelection();
+                    } else if (btn.dataset.dest) {
+                        moveSelected(btn.dataset.dest);
+                    }
+                });
+            }
+
+            // Lightbox close button
+            const lightboxClose = document.querySelector('.lightbox-close');
+            if (lightboxClose) {
+                lightboxClose.addEventListener('click', closeLightbox);
+                lightboxClose.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' || e.key === ' ') closeLightbox();
+                });
+            }
+
+            // Lightbox nav buttons
+            document.querySelectorAll('.lightbox-nav.prev').forEach(el => {
+                el.addEventListener('click', function() { navigateLightbox(-1); });
+                el.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' || e.key === ' ') navigateLightbox(-1);
+                });
+            });
+            document.querySelectorAll('.lightbox-nav.next').forEach(el => {
+                el.addEventListener('click', function() { navigateLightbox(1); });
+                el.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' || e.key === ' ') navigateLightbox(1);
+                });
+            });
+
+            // Lightbox toolbar buttons - delegate on #lightbox-actions
+            const lightboxActions = document.getElementById('lightbox-actions');
+            if (lightboxActions) {
+                lightboxActions.addEventListener('click', function(e) {
+                    const btn = e.target.closest('button');
+                    if (!btn) return;
+                    if (btn.classList.contains('btn-shortlist')) moveImage('shortlisted');
+                    else if (btn.classList.contains('btn-finals')) moveImage('finals');
+                    else if (btn.classList.contains('btn-reject')) moveImage('rejects');
+                    else if (btn.id === 'metadata-toggle-btn') toggleLightboxMetadata();
+                });
+                // Map button text to handlers for generic buttons
+                lightboxActions.querySelectorAll('button').forEach(btn => {
+                    const text = btn.textContent.trim();
+                    if (text === 'Prev scored') btn.addEventListener('click', function() { navigateLightboxToScored(-1); });
+                    else if (text === 'Next scored') btn.addEventListener('click', function() { navigateLightboxToScored(1); });
+                    else if (text === 'Zoom \u2212') btn.addEventListener('click', function() { zoomLightbox(-0.2); });
+                    else if (text === 'Reset zoom') btn.addEventListener('click', resetLightboxZoom);
+                    else if (text === 'Zoom +') btn.addEventListener('click', function() { zoomLightbox(0.2); });
+                });
+            }
+        }
+
         initializeSidebarState();
         initializeAiSidebarState();
+        _bindDelegatedEvents();
         loadBatches();

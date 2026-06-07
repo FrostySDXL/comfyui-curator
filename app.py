@@ -8,6 +8,7 @@ import logging
 import shutil
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -124,11 +125,15 @@ def get_pending_count():
 
 
 def import_all_pending(batch_name):
-    """Import all pending images from comfyui-outputs to a batch's inbox."""
-    count = batch_store.import_all_pending(COMFYUI_OUTPUT, BATCHES_DIR, batch_name)
+    """Import all pending images from comfyui-outputs to a batch's inbox.
 
-    # Reset watcher's seen files since we moved everything
-    watcher.reset_seen()
+    Acquires the watcher's seen-files lock to prevent races between
+    the background watcher and this manual import call.
+    """
+    with watcher._seen_lock:
+        count = batch_store.import_all_pending(COMFYUI_OUTPUT, BATCHES_DIR, batch_name)
+        # Reset watcher's seen files since we moved everything
+        watcher.seen_files = set()
     return count
 
 
@@ -617,6 +622,18 @@ def _run_scoring_worker(run_id):
     if run is None:
         return
 
+    try:
+        _run_scoring_worker_inner(run_id, run)
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        _ai_queue.fail_job(run_id, error_message=f"Unhandled worker error: {e}")
+
+
+def _run_scoring_worker_inner(run_id, run):
+    """Core scoring logic, extracted so the outer handler can catch exceptions."""
+
     # Determine elements
     if run.elements:
         elements = build_element_list(run.elements)
@@ -699,6 +716,17 @@ def _run_scoring_worker(run_id):
         failed=len(failed),
         moved=moved,
     )
+
+    # Check: was cancellation requested during the move loop?
+    # If files were already moved, persist partial results as cancelled
+    # so the operator has an audit trail of what was moved.
+    if _ai_queue.is_cancel_requested(run_id):
+        if moved > 0:
+            # Persist a cancelled run with partial move information
+            _ai_queue.finalize_cancelled(run_id, results=results, totals=totals)
+            return
+        _ai_queue.finalize_cancelled(run_id)
+        return
 
     # Complete the job; if cancel raced with completion, finalize the cancel instead
     if not _ai_queue.complete_job(run_id, results=results, totals=totals):

@@ -289,14 +289,10 @@ def test_validate_ai_curate_valid_with_elements_and_move(app_module, monkeypatch
 # ---------------------------------------------------------------------------
 
 
-def test_watcher_start_stop_lifecycle(app_module):
-    # Override COMFYUI_OUTPUT in the watcher's constructor scope by patching
-    # the module-level COMFYUI_OUTPUT used inside ImageWatcher.__init__
-    import app as app_mod
-
-    with pytest.MonkeyPatch().context() as mp:
-        mp.setattr(app_mod, "COMFYUI_OUTPUT", app_module.COMFYUI_OUTPUT)
-        w = app_module.ImageWatcher()
+def test_watcher_start_stop_lifecycle(app_module, monkeypatch):
+    """Watcher starts and stops correctly using the already-patched app_module."""
+    monkeypatch.setattr(app_module, "COMFYUI_OUTPUT", app_module.COMFYUI_OUTPUT)
+    w = app_module.ImageWatcher()
 
     w.start()
     assert w.running is True
@@ -309,16 +305,12 @@ def test_watcher_start_stop_lifecycle(app_module):
     assert not w.thread.is_alive()
 
 
-def test_watcher_no_active_batch_does_not_import(app_module, tmp_path, make_file):
+def test_watcher_no_active_batch_does_not_import(app_module, tmp_path, make_file, monkeypatch):
     """When no active batch is set, the watcher should not move files."""
-    import app as app_mod
-
     comfy_out = tmp_path / "comfy-output"
     comfy_out.mkdir()
-
-    with pytest.MonkeyPatch().context() as mp:
-        mp.setattr(app_mod, "COMFYUI_OUTPUT", comfy_out)
-        w = app_module.ImageWatcher()
+    monkeypatch.setattr(app_module, "COMFYUI_OUTPUT", comfy_out)
+    w = app_module.ImageWatcher()
 
     # Place a new file in the output directory (not yet seen)
     make_file(comfy_out / "fresh.png")
