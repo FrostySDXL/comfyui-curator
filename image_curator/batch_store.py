@@ -123,15 +123,24 @@ def get_batch_counts(batches_dir: Path, batch_name: str) -> dict[str, int]:
 
 
 def get_batch_metadata(batches_dir: Path, batch_name: str) -> dict[str, float]:
-    """Return lightweight metadata for batch-list sorting."""
+    """Return lightweight metadata for batch-list sorting.
+
+    Only considers content folders (inbox, shortlisted, finals, rejects, ai-curate).
+    Excludes .thumbs cache and other hidden directories to avoid thumbnail
+    generation from falsely bumping the batch to the top of "recent" sort.
+    """
     batch_dir = Path(batches_dir) / batch_name
     if not batch_dir.exists():
         return {"modified_at": 0}
-    max_mtime = batch_dir.stat().st_mtime
-    for f in batch_dir.rglob("*"):
-        if f.is_file():
-            max_mtime = max(max_mtime, f.stat().st_mtime)
-    return {"modified_at": max_mtime}
+    max_mtime = 0.0
+    for folder in BATCH_FOLDERS:
+        folder_path = batch_dir / folder
+        if folder_path.exists():
+            max_mtime = max(max_mtime, folder_path.stat().st_mtime)
+    ai_dir = batch_dir / "ai-curate"
+    if ai_dir.exists():
+        max_mtime = max(max_mtime, ai_dir.stat().st_mtime)
+    return {"modified_at": max_mtime or batch_dir.stat().st_mtime}
 
 
 def get_all_counts(batches_dir: Path) -> dict[str, dict[str, int]]:
