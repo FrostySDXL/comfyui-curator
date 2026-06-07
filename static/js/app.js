@@ -24,6 +24,7 @@
         let folderCountSnapshot = {};
         let pendingActiveBatchSelection = null;
         let _initialLoadDone = false;
+        let _lastBatchListKey = null;
         const SIDEBAR_WIDTH_DEFAULT = 240;
         const SIDEBAR_WIDTH_MIN = 220;
         const SIDEBAR_WIDTH_MAX = 520;
@@ -226,21 +227,31 @@
 
             const select = document.getElementById('active-batch-select');
             const selectedAutoImportBatch = pendingActiveBatchSelection !== null ? pendingActiveBatchSelection : activeBatch;
-            // Build options in a fragment to batch DOM insertion (prevents rendering
-            // partial option lists that cause the dropdown to appear blank until scrolled)
-            const selectFragment = document.createDocumentFragment();
-            const defaultOpt = document.createElement('option');
-            defaultOpt.value = '';
-            defaultOpt.textContent = '-- Select batch --';
-            selectFragment.appendChild(defaultOpt);
-            batches.forEach(b => {
-                const opt = document.createElement('option');
-                opt.value = b;
-                opt.textContent = b;
-                opt.selected = b === selectedAutoImportBatch;
-                selectFragment.appendChild(opt);
-            });
-            select.replaceChildren(selectFragment);
+
+            // Skip rebuilding the select when the batch list hasn't changed
+            // (e.g. during background polling).  Rebuilding while the dropdown is
+            // open causes the browser to render a partially-populated list.
+            const batchListKey = batches.join(',');
+            if (batchListKey !== _lastBatchListKey) {
+                _lastBatchListKey = batchListKey;
+                // Clear options safely without innerHTML
+                select.options.length = 0;
+
+                // Build options in a fragment to batch DOM insertion
+                const selectFragment = document.createDocumentFragment();
+                const defaultOpt = document.createElement('option');
+                defaultOpt.value = '';
+                defaultOpt.textContent = '-- Select batch --';
+                selectFragment.appendChild(defaultOpt);
+                batches.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b;
+                    opt.textContent = b;
+                    opt.selected = b === selectedAutoImportBatch;
+                    selectFragment.appendChild(opt);
+                });
+                select.appendChild(selectFragment);
+            }
             select.value = selectedAutoImportBatch || '';
             if (pendingActiveBatchSelection === activeBatch) pendingActiveBatchSelection = null;
             updateAutoImportQuickAction(selectedAutoImportBatch);
@@ -927,9 +938,10 @@
                 wrap.scrollLeft = 0;
             }
             const el = document.getElementById('lightbox-img');
-            // Immediately hide (no transition) to prevent flash of previous image
+            // Immediately hide (no transition) to prevent flash of previous image.
+            // Do NOT removeAttribute('src') -- it collapses the <img> layout to 0x0
+            // and causes a visual jump.  Inline opacity:0 already hides the old image.
             el.style.opacity = '0';
-            el.removeAttribute('src');
             el.classList.add('loading');
             el.onload = function() {
                 if (imageToken !== lightboxImageToken) return;
