@@ -68,7 +68,7 @@ def extract_elements(prompt: str) -> List[str]:
     # Detect shot type
     desc_lower = prompt.lower()
     for shot_key, shot_element in _SHOT_TYPES:
-        if shot_key in desc_lower:
+        if re.search(rf"\b{re.escape(shot_key)}\b", desc_lower):
             elements.append(shot_element)
             break
 

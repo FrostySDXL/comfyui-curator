@@ -143,6 +143,7 @@ class CurationRun:
         completed_at: Optional[str] = None,
         totals: Optional[RunTotals] = None,
         results: Optional[List[ImageResult]] = None,
+        error_message: str = "",
     ):
         self.run_id = run_id or uuid.uuid4().hex[:12]
         self.batch = batch
@@ -158,6 +159,7 @@ class CurationRun:
         self.completed_at = completed_at
         self.totals = totals or RunTotals()
         self.results = results or []
+        self.error_message = error_message
 
     def to_dict(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {
@@ -176,6 +178,8 @@ class CurationRun:
             "totals": self.totals.to_dict(),
             "results": [r.to_dict() for r in self.results],
         }
+        if self.error_message:
+            d["error_message"] = self.error_message
         return d
 
     @classmethod
@@ -197,4 +201,5 @@ class CurationRun:
             completed_at=data.get("completed_at"),
             totals=totals,
             results=results,
+            error_message=data.get("error_message", ""),
         )

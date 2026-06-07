@@ -151,20 +151,23 @@ class VisionClient:
             headers={"Content-Type": "application/json"},
         )
 
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                data = json.loads(resp.read().decode())
-            # OpenAI-compatible response format
-            content = data.get("choices", [{}])[0].get("message", {}).get("content") or ""
-            return parse_score_response(content, len(elements))
+        max_retries = 1  # One retry on transient network errors
+        for attempt in range(max_retries + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    data = json.loads(resp.read().decode())
+                # OpenAI-compatible response format
+                choices = data.get("choices") or [{}]
+                content = (choices[0].get("message", {}) if isinstance(choices, list) and choices else {}).get("content") or ""
+                return parse_score_response(content, len(elements))
 
-        except (
-            urllib.error.URLError,
-            urllib.error.HTTPError,
-            json.JSONDecodeError,
-            socket.timeout,
-        ) as e:
-            return -1, len(elements), {}, f"error: {e}"
+            except (urllib.error.URLError, socket.timeout) as e:
+                if attempt < max_retries:
+                    continue
+                return -1, len(elements), {}, f"error: {e}"
+
+            except (urllib.error.HTTPError, json.JSONDecodeError) as e:
+                return -1, len(elements), {}, f"error: {e}"
 
     @staticmethod
     def encode_image(path: str) -> str:

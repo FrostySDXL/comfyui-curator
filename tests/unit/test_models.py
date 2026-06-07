@@ -105,6 +105,14 @@ class TestCurationRun:
         assert run2.results[0].filename == "a.png"
         assert run2.results[1].failed is True
         assert run2.totals.images == 2
+        assert run2.source_folder == run.source_folder
+        assert run2.destination_folder == run.destination_folder
+        assert run2.model == run.model
+        assert run2.top_n == run.top_n
+        assert run2.status == run.status
+        assert run2.created_at == run.created_at
+        assert run2.completed_at == run.completed_at
+        assert run2.error_message == run.error_message
 
     def test_default_status_is_queued(self):
         run = CurationRun(batch="test")

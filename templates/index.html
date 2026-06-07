@@ -13,7 +13,7 @@
             <select id="active-batch-select" onchange="setActiveBatch(this.value)" aria-label="Select active batch for auto-import">
                 <option value="">-- Select batch --</option>
             </select>
-            <div id="pending-info" class="pending-bar" class="hidden">
+            <div id="pending-info" class="pending-bar hidden">
                 <span><span id="pending-count">0</span> pending</span>
                 <button class="import-btn" onclick="importAll()">Import All</button>
             </div>
@@ -45,16 +45,16 @@
             <h1><span id="current-path">Select a batch</span><span id="img-count" class="img-count"></span></h1>
             <div class="header-actions">
                 <button id="batch-sidebar-toggle-btn" class="batch-sidebar-toggle-btn" onclick="toggleBatchSidebar()" type="button">Hide Batches</button>
-                <button id="ai-sidebar-toggle-btn" class="ai-sidebar-toggle-btn" onclick="toggleAiSidebar()" type="button" class="hidden">Hide AI</button>
+                <button id="ai-sidebar-toggle-btn" class="ai-sidebar-toggle-btn hidden" onclick="toggleAiSidebar()" type="button">Hide AI</button>
                 <button id="help-btn" class="help-btn" onclick="showHelpModal()" type="button">Help</button>
-                <button id="set-auto-import-btn" class="set-auto-import-btn" onclick="setCurrentBatchAsAutoImport()" class="hidden" type="button">Set as Auto-import</button>
+                <button id="set-auto-import-btn" class="set-auto-import-btn hidden" onclick="setCurrentBatchAsAutoImport()" type="button">Set as Auto-import</button>
             </div>
-            <div class="sort-controls" id="sort-controls" class="hidden">
+            <div class="sort-controls hidden" id="sort-controls">
                 <span class="sort-label">Sort</span>
                 <div class="sort-group">
                     <button class="sort-btn active" data-sort="date" onclick="setSort('date')">Date</button>
                     <button class="sort-btn" data-sort="shuffle" onclick="setSort('shuffle')">Shuffle</button>
-                    <button class="sort-btn" data-sort="score-desc" onclick="setSort('score-desc')" id="sort-btn-score-desc" class="hidden">Score</button>
+                    <button class="sort-btn hidden" data-sort="score-desc" onclick="setSort('score-desc')" id="sort-btn-score-desc">Score</button>
                 </div>
                 <button class="sort-dir" id="sort-dir-btn" title="Toggle direction" onclick="toggleOrder()">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -92,7 +92,7 @@
                 </div>
             </div>
 
-            <div class="ai-sidebar-shell" id="ai-sidebar-shell" class="hidden">
+            <div class="ai-sidebar-shell hidden" id="ai-sidebar-shell">
                 <div class="ai-sidebar-resizer" id="ai-sidebar-resizer" onmousedown="startAiSidebarResize(event)" onpointerdown="startAiSidebarResize(event)"></div>
                 <aside class="ai-curate-panel" id="ai-curate-panel">
                     <div class="ai-curate-header" onclick="toggleAiCuratePanel()">
@@ -103,7 +103,7 @@
                         <span class="ai-curate-toggle" id="ai-curate-toggle">−</span>
                     </div>
                     <div class="ai-curate-body" id="ai-curate-body">
-                        <div class="ai-display-controls" id="ai-display-controls" class="hidden">
+                        <div class="ai-display-controls hidden" id="ai-display-controls">
                             <label class="ai-checkbox-label ai-header-toggle">
                                 <input type="checkbox" id="ai-overlay-toggle" onchange="aiToggleOverlays()">
                                 AI badges <span class="shortcut-hint">B</span>
@@ -124,7 +124,7 @@
                             <textarea id="ai-elements" class="ai-textarea" rows="2" placeholder="One element per line, or leave blank for auto-extraction"></textarea>
 
                             <button class="ai-btn ai-btn-secondary" onclick="aiPreviewElements()">Preview elements</button>
-                            <div id="ai-elements-preview" class="ai-elements-preview" class="hidden"></div>
+                            <div id="ai-elements-preview" class="ai-elements-preview hidden"></div>
 
                             <div class="ai-form-row">
                                 <div class="ai-form-field">
@@ -162,7 +162,7 @@
                                         Move top-N after scoring
                                     </label>
                                 </div>
-                                <div class="ai-form-field" id="ai-dest-field" class="hidden">
+                                <div class="ai-form-field hidden" id="ai-dest-field">
                                     <label class="ai-label" for="ai-dest-folder">Destination</label>
                                     <select id="ai-dest-folder" class="ai-select">
                                         <option value="shortlisted">shortlisted</option>
@@ -174,13 +174,13 @@
                             <button class="ai-btn ai-btn-primary" id="ai-submit-btn" onclick="aiSubmitJob()">Score only</button>
                         </div>
 
-                        <div class="ai-job-section" id="ai-job-section" class="hidden">
+                        <div class="ai-job-section hidden" id="ai-job-section">
                             <div class="ai-job-status">
                                 <span class="ai-job-label">Job status:</span>
                                 <span class="ai-job-state" id="ai-job-state">--</span>
                                 <span class="ai-job-progress" id="ai-job-progress"></span>
                             </div>
-                            <button class="ai-btn ai-btn-danger" id="ai-cancel-btn" onclick="aiCancelJob()" class="hidden">Cancel</button>
+                            <button class="ai-btn ai-btn-danger hidden" id="ai-cancel-btn" onclick="aiCancelJob()">Cancel</button>
                         </div>
 
                         <div class="ai-history-section" id="ai-history-section" class="hidden">
@@ -198,8 +198,8 @@
                                     </select>
                                 </div>
                             </div>
-                            <div id="ai-run-summary" class="ai-run-summary" class="hidden"></div>
-                            <div id="ai-run-diff" class="ai-run-diff" class="hidden"></div>
+                            <div id="ai-run-summary" class="ai-run-summary hidden"></div>
+                            <div id="ai-run-diff" class="ai-run-diff hidden"></div>
                         </div>
                     </div>
                 </aside>
@@ -310,7 +310,7 @@
     <!-- Toast -->
     <div id="toast" class="toast">
         <span id="toast-text"></span>
-        <button class="toast-undo" id="toast-undo" onclick="undoLastMove()" class="hidden">Undo</button>
+        <button class="toast-undo hidden" id="toast-undo" onclick="undoLastMove()">Undo</button>
     </div>
     <script src="/static/js/app.js"></script>
 </body>

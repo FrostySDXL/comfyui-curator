@@ -290,7 +290,6 @@ def test_validate_ai_curate_valid_with_elements_and_move(app_module, monkeypatch
 
 
 def test_watcher_start_stop_lifecycle(app_module):
-    watcher = app_module.ImageWatcher()
     # Override COMFYUI_OUTPUT in the watcher's constructor scope by patching
     # the module-level COMFYUI_OUTPUT used inside ImageWatcher.__init__
     import app as app_mod
@@ -307,7 +306,7 @@ def test_watcher_start_stop_lifecycle(app_module):
     w.stop()
     assert w.running is False
     # Thread should have joined within the 3s timeout
-    assert not w.thread.is_alive() or not w.running
+    assert not w.thread.is_alive()
 
 
 def test_watcher_no_active_batch_does_not_import(app_module, tmp_path, make_file):

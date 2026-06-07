@@ -184,8 +184,16 @@ class ImageWatcher:
             src = COMFYUI_OUTPUT / filename
             if not src.exists():
                 continue
-            # Wait a moment to ensure file is fully written
-            time.sleep(0.5)
+            # Wait for file-size stability (file still being written)
+            for _ in range(10):
+                if not src.exists():
+                    break
+                size1 = src.stat().st_size
+                time.sleep(0.1)
+                if not src.exists():
+                    break
+                if src.stat().st_size == size1 and size1 > 0:
+                    break
             if src.exists():
                 try:
                     dst = dest_inbox / filename
@@ -263,9 +271,12 @@ def api_create_batch():
         return jsonify({"error": "Name required"}), 400
     if "/" in name or "\\" in name:
         return jsonify({"error": "Invalid batch name"}), 400
-    if create_batch(name):
-        return jsonify({"success": True})
-    return jsonify({"error": "Batch already exists"}), 400
+    try:
+        if create_batch(name):
+            return jsonify({"success": True})
+        return jsonify({"error": "Batch already exists"}), 400
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
 
 @app.route("/api/active-batch", methods=["POST"])
@@ -494,6 +505,7 @@ _worker_lock = threading.Lock()
 
 def _start_scoring_worker(run_id):
     """Start a scoring worker thread and track it for cleanup."""
+    global _worker_threads
     t = threading.Thread(target=_run_scoring_worker, args=(run_id,), daemon=True)
     with _worker_lock:
         _worker_threads.add(t)
@@ -733,10 +745,9 @@ def api_ai_curate_submit_job():
 
     run = _ai_queue.submit(params)
 
-    # If the job is running, start the scoring worker in a background thread
+    # If the job is running, start the scoring worker via the shared helper
     if run.status == JobState.RUNNING:
-        t = threading.Thread(target=_run_scoring_worker, args=(run.run_id,), daemon=True)
-        t.start()
+        _start_scoring_worker(run.run_id)
 
     return jsonify(run.to_dict()), 201
 

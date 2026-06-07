@@ -23,8 +23,8 @@ def _validate_name(name: str, label: str = "name") -> None:
         raise ValueError(f"{label} contains path separators")
     if name in (".", ".."):
         raise ValueError(f"{label} is a reserved path component")
-    if name.startswith(".") and ("/" in name or "\\" in name):
-        raise ValueError(f"{label} starts with dot-segment")
+    if name.startswith("."):
+        raise ValueError(f"{label} starts with a dot")
 
 
 def load_state(state_file: Path) -> dict:
@@ -92,7 +92,7 @@ def get_images(directory: Path, sort_by: str = "date", order: str = "desc") -> l
     directory = Path(directory)
     if not directory.is_dir():
         return []
-    images = [f for f in directory.iterdir() if _is_supported_image(f)]
+    images = [f for f in directory.iterdir() if not f.is_symlink() and _is_supported_image(f)]
     reverse = order == "desc"
     if sort_by == "name":
         images.sort(key=lambda x: x.name.lower(), reverse=reverse)
@@ -120,7 +120,11 @@ def get_batch_metadata(batches_dir: Path, batch_name: str) -> dict[str, float]:
     batch_dir = Path(batches_dir) / batch_name
     if not batch_dir.exists():
         return {"modified_at": 0}
-    return {"modified_at": batch_dir.stat().st_mtime}
+    max_mtime = batch_dir.stat().st_mtime
+    for f in batch_dir.rglob("*"):
+        if f.is_file():
+            max_mtime = max(max_mtime, f.stat().st_mtime)
+    return {"modified_at": max_mtime}
 
 
 def get_all_counts(batches_dir: Path) -> dict[str, dict[str, int]]:

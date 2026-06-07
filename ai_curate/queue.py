@@ -10,7 +10,7 @@ Supports:
 """
 
 import threading
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional
 
@@ -24,8 +24,8 @@ class QueueManager:
 
     Only one job runs at a time. Additional submissions are queued.
     Cancellation during scoring discards partial results and does not
-    persist history. Once the move phase begins, cancellation is
-    disabled in v1.
+    persist history. Cancellation of running jobs is supported in both
+    the scoring and move phases.
     """
 
     def __init__(
@@ -35,7 +35,7 @@ class QueueManager:
     ):
         self._lock = threading.Lock()
         self._jobs: OrderedDict[str, CurationRun] = OrderedDict()
-        self._queue_order: List[str] = []  # FIFO order of queued job IDs
+        self._queue_order: deque[str] = deque()
         self._running_id: Optional[str] = None
         self._storage = storage  # May be None for testing
         self._on_promote = on_promote  # Callback when a queued job starts running
@@ -294,7 +294,7 @@ class QueueManager:
             lock to avoid deadlock.
         """
         while self._queue_order:
-            next_id = self._queue_order.pop(0)
+            next_id = self._queue_order.popleft()
             next_run = self._jobs.get(next_id)
             if next_run and next_run.status == JobState.QUEUED:
                 next_run.status = JobState.RUNNING

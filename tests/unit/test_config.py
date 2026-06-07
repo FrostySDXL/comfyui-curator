@@ -43,11 +43,9 @@ class TestConfigDefaults:
 class TestRequestTimeout:
     def test_valid_timeout_from_env(self):
         """REQUEST_TIMEOUT parses a valid integer from env."""
-        with patch.dict(os.environ, {"IMAGE_CURATOR_TIMEOUT": "60"}, clear=True):
-            # Re-import would be needed, but the module is already loaded.
-            # Instead we test that the module correctly loaded the default
-            # (120) which proves the fallback works.
-            pass
+        # Module-level constant is frozen at import; test that it's a positive int
+        assert isinstance(config.REQUEST_TIMEOUT, int)
+        assert config.REQUEST_TIMEOUT > 0
 
     def test_timeout_is_int(self):
         """REQUEST_TIMEOUT is an integer."""

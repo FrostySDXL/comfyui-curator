@@ -212,3 +212,85 @@ class TestQueueManagerFail:
         # Submitting another job should start running immediately
         run2 = qm.submit(_make_job(batch="next"))
         assert qm.get_job(run2.run_id).status == JobState.RUNNING
+
+
+class TestPrune:
+    """Tests for QueueManager.prune() memory management."""
+
+    def test_prune_removes_old_terminal_jobs(self, qm):
+        """Prune removes oldest completed jobs beyond keep_last."""
+        # Submit and complete 100 jobs (all terminal)
+        for i in range(100):
+            run = qm.submit(_make_job(batch=f"b{i}"))
+            qm.complete_job(run.run_id, results=[], totals=RunTotals(images=1, scored=1))
+        assert len(qm.list_jobs()) == 100
+
+        # Prune keeping only the most recent 50
+        removed = qm.prune(keep_last=50)
+        assert removed == 50
+        assert len(qm.list_jobs()) == 50
+
+    def test_prune_keeps_running_jobs(self, qm):
+        """Running jobs survive prune regardless of count."""
+        # Fill with 60 completed jobs
+        for i in range(60):
+            run = qm.submit(_make_job(batch=f"fill{i}"))
+            qm.complete_job(run.run_id, results=[], totals=RunTotals(images=1, scored=1))
+
+        # Submit one running job
+        active = qm.submit(_make_job(batch="active"))
+        assert active.status == JobState.RUNNING
+
+        # Prune aggressively (keep only 5 completed)
+        qm.prune(keep_last=5)
+        jobs = qm.list_jobs()
+        assert any(j.run_id == active.run_id and j.status == JobState.RUNNING for j in jobs)
+        # 5 kept + 1 running = 6
+        assert len(jobs) == 6
+
+
+class TestIsCancelRequested:
+    """Tests for QueueManager.is_cancel_requested()."""
+
+    def test_is_cancel_requested_true_when_cancelling(self, qm):
+        """is_cancel_requested returns True for a CANCELLING job."""
+        run = qm.submit(_make_job())
+        assert run.status == JobState.RUNNING
+
+        qm.cancel(run.run_id)
+        assert qm.is_cancel_requested(run.run_id) is True
+
+    def test_is_cancel_requested_false_for_running(self, qm):
+        """is_cancel_requested returns False for a RUNNING job."""
+        run = qm.submit(_make_job())
+        assert qm.is_cancel_requested(run.run_id) is False
+
+    def test_is_cancel_requested_false_nonexistent(self, qm):
+        """is_cancel_requested returns False for nonexistent jobs."""
+        assert qm.is_cancel_requested("nonexistent") is False
+
+
+class TestOnPromote:
+    """Tests for QueueManager on_promote callback."""
+
+    def test_on_promote_not_called_for_immediate_start(self):
+        """on_promote is NOT called when a job starts immediately (no queue)."""
+        callback = MagicMock()
+        qm = QueueManager(on_promote=callback)
+        qm.submit(_make_job())
+        callback.assert_not_called()
+
+    def test_on_promote_called_when_queued_job_promoted(self):
+        """on_promote IS called with the correct run_id when a queued job starts."""
+        callback = MagicMock()
+        qm = QueueManager(on_promote=callback)
+
+        # Submit first job (starts immediately)
+        run1 = qm.submit(_make_job(batch="first"))
+        # Submit second job (queued)
+        run2 = qm.submit(_make_job(batch="second"))
+        assert qm.get_job(run2.run_id).status == JobState.QUEUED
+
+        # Complete first; second should promote and trigger callback
+        qm.complete_job(run1.run_id, results=[], totals=RunTotals(images=1, scored=1))
+        callback.assert_called_once_with(run2.run_id)

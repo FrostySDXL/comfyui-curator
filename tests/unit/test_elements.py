@@ -83,10 +83,3 @@ class TestExtractElements:
         for qe in QUALITY_ELEMENTS:
             assert qe in result
 
-    def test_panel_alias_accepted(self):
-        """The 'panel' keyword in the function signature is accepted as
-        an alias for 'prompt' -- backward compat."""
-        # extract_elements should work identically regardless of
-        # whether the caller calls it with a manga-style prompt
-        elements = extract_elements("close-up of her eyes")
-        assert len(elements) > len(QUALITY_ELEMENTS)

@@ -144,3 +144,21 @@ class TestRunStorage:
         assert loaded.results[0].filename == "a.png"
         assert loaded.results[0].score == 5
         assert loaded.results[1].filename == "b.png"
+
+    def test_load_corrupt_run_returns_none(self, storage, tmp_batches):
+        """load_run returns None when the run JSON is corrupt."""
+        runs_dir = tmp_batches / "test-batch" / "ai-curate" / "runs"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        corrupt_file = runs_dir / "corrupt.json"
+        corrupt_file.write_text("not valid json {{{", encoding="utf-8")
+        result = storage.load_run("test-batch", "corrupt")
+        assert result is None
+
+    def test_load_corrupt_latest_returns_none(self, storage, tmp_batches):
+        """load_latest returns None when latest.json is corrupt."""
+        ai_dir = tmp_batches / "test-batch" / "ai-curate"
+        ai_dir.mkdir(parents=True, exist_ok=True)
+        latest_file = ai_dir / "latest.json"
+        latest_file.write_text("garbage not json", encoding="utf-8")
+        result = storage.load_latest("test-batch")
+        assert result is None

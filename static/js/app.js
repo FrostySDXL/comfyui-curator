@@ -177,8 +177,19 @@
 
             const select = document.getElementById('active-batch-select');
             const selectedAutoImportBatch = pendingActiveBatchSelection !== null ? pendingActiveBatchSelection : activeBatch;
-            select.innerHTML = '<option value="">-- Select batch --</option>' +
-                batches.map(b => `<option value="${b}" ${b === selectedAutoImportBatch ? 'selected' : ''}>${b}</option>`).join('');
+            // Build options with DOM, not innerHTML (XSS-safe)
+            select.replaceChildren();
+            const defaultOpt = document.createElement('option');
+            defaultOpt.value = '';
+            defaultOpt.textContent = '-- Select batch --';
+            select.appendChild(defaultOpt);
+            batches.forEach(b => {
+                const opt = document.createElement('option');
+                opt.value = b;
+                opt.textContent = b;
+                opt.selected = b === selectedAutoImportBatch;
+                select.appendChild(opt);
+            });
             select.value = selectedAutoImportBatch || '';
             if (pendingActiveBatchSelection === activeBatch) pendingActiveBatchSelection = null;
             updateAutoImportQuickAction(selectedAutoImportBatch);
@@ -230,16 +241,52 @@
                 list.innerHTML = '<li class="batch-empty" aria-label="no batches found">No batches match</li>';
                 return;
             }
-            list.innerHTML = filteredBatches.map(batch => {
+            const fragment = document.createDocumentFragment();
+            filteredBatches.forEach(batch => {
                 const c = allCounts[batch] || {};
                 const total = (c.inbox||0) + (c.shortlisted||0) + (c.finals||0);
-                const aiDot = (aiBatchRunCounts[batch] > 0) ? '<span class="batch-ai-dot" title="Has AI run history"></span>' : '';
-                return `<li class="batch-item"><div class="batch-name ${batch===currentBatch?'selected':''}"
-                    data-batch="${batch}" onclick="selectBatch('${batch}')">
-                    <span>${batch}${aiDot}</span><span class="batch-count">${total}</span>
-                </div></li>`;
-            }).join('');
+
+                const li = document.createElement('li');
+                li.className = 'batch-item';
+
+                const div = document.createElement('div');
+                div.className = 'batch-name' + (batch === currentBatch ? ' selected' : '');
+                div.dataset.batch = batch;
+
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = batch;
+                div.appendChild(nameSpan);
+
+                if (aiBatchRunCounts[batch] > 0) {
+                    const dot = document.createElement('span');
+                    dot.className = 'batch-ai-dot';
+                    dot.title = 'Has AI run history';
+                    div.appendChild(dot);
+                }
+
+                const countSpan = document.createElement('span');
+                countSpan.className = 'batch-count';
+                countSpan.textContent = String(total);
+                div.appendChild(countSpan);
+
+                li.appendChild(div);
+                fragment.appendChild(li);
+            });
+            list.replaceChildren(fragment);
         }
+
+        // Delegated click handler for batch items (XSS-safe, no inline onclick)
+        document.addEventListener('DOMContentLoaded', () => {
+            const batchList = document.getElementById('batch-list');
+            if (batchList) {
+                batchList.addEventListener('click', (e) => {
+                    const batchNameEl = e.target.closest('.batch-name');
+                    if (batchNameEl && batchNameEl.dataset.batch) {
+                        selectBatch(batchNameEl.dataset.batch);
+                    }
+                });
+            }
+        });
 
         function updateFolderTabs() {
             if (!currentBatch) return;
@@ -288,8 +335,13 @@
             document.querySelectorAll('.folder-tab').forEach(t =>
                 t.classList.toggle('active', t.dataset.folder === folder));
             document.getElementById('sort-controls').style.display = 'flex';
-            document.getElementById('current-path').innerHTML =
-                `<span class="path">${batch}</span> / ${folder}`;
+            const pathEl = document.getElementById('current-path');
+            pathEl.replaceChildren();
+            const pathSpan = document.createElement('span');
+            pathSpan.className = 'path';
+            pathSpan.textContent = batch;
+            pathEl.appendChild(pathSpan);
+            pathEl.appendChild(document.createTextNode(' / ' + folder));
             updateAutoImportQuickAction(document.getElementById('active-batch-select').value || null);
             updateFolderTabs();
 
@@ -1653,6 +1705,11 @@
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(body)
             });
+            if (!resp.ok) {
+                const errData = await resp.json().catch(() => ({}));
+                showToast(errData.error || 'AI job submission failed');
+                return;
+            }
             const data = await resp.json();
             if (data.error) {
                 showToast(data.error);

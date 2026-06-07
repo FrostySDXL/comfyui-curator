@@ -68,12 +68,16 @@ class RunStorage:
                 run_path.unlink()
             tmp_path.replace(run_path)
 
-            # Update latest pointer (also under lock to prevent TOCTOU)
+            # Update latest pointer atomically (under lock to prevent TOCTOU)
             latest_path = self._latest_path(run.batch)
-            latest_path.write_text(
+            latest_tmp = latest_path.with_suffix(latest_path.suffix + ".tmp")
+            latest_tmp.write_text(
                 json.dumps({"run_id": run.run_id}, indent=2),
                 encoding="utf-8",
             )
+            if latest_path.exists():
+                latest_path.unlink()
+            latest_tmp.replace(latest_path)
 
         return True
 

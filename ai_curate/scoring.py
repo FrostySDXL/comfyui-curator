@@ -66,6 +66,9 @@ def score_images(
         Tuple of (list of ImageResult, count of images scored before cancellation).
     """
     images = find_images(image_dir)
+    from ai_curate.config import ELEMENT_CAP
+    if len(elements) > ELEMENT_CAP:
+        elements = elements[:ELEMENT_CAP]
     prompt_text = build_scoring_prompt(elements)
     results: List[ImageResult] = []
 
@@ -102,4 +105,4 @@ def score_images(
         if progress_callback:
             progress_callback(i, len(images), result)
 
-    return results, len(images)
+    return results, len(results)
