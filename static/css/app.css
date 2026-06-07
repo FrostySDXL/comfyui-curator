@@ -106,6 +106,13 @@
             text-align: left;
             font-family: inherit;
             line-height: 1.4;
+            min-width: 0;
+        }
+        .custom-select-value {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
         }
         .custom-select-toggle:focus-visible {
             outline: 2px solid #5ba3f5;
@@ -147,9 +154,16 @@
             font-size: 12px;
             color: #ccc;
             cursor: pointer;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         .custom-select-option:hover {
             background: #333;
+        }
+        .custom-select-option.focus {
+            background: #333;
+            outline: none;
         }
         .custom-select-option.selected {
             background: #0066cc;

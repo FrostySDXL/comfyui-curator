@@ -25,6 +25,9 @@
         let pendingActiveBatchSelection = null;
         let _initialLoadDone = false;
         let _lastBatchListKey = null;
+        let _customSelectFocusIndex = -1;
+        let _customSelectSearchBuffer = '';
+        let _customSelectSearchTimer = null;
         const SIDEBAR_WIDTH_DEFAULT = 240;
         const SIDEBAR_WIDTH_MIN = 220;
         const SIDEBAR_WIDTH_MAX = 520;
@@ -406,10 +409,13 @@
             _populateCustomDropdown();
             wrapper.classList.add('open');
             toggle.setAttribute('aria-expanded', 'true');
-            // Scroll selected option into view
+            // Initialize keyboard focus to the selected option (or first)
             const dropdown = document.getElementById('active-batch-dropdown');
             const selected = dropdown ? dropdown.querySelector('.selected') : null;
-            if (selected) selected.scrollIntoView({block: 'nearest'});
+            _customSelectFocusIndex = selected
+                ? Array.from(dropdown.children).indexOf(selected)
+                : 0;
+            _updateCustomSelectFocus();
         }
 
         function _closeCustomDropdown() {
@@ -418,7 +424,93 @@
             if (!wrapper) return;
             wrapper.classList.remove('open');
             if (toggle) toggle.setAttribute('aria-expanded', 'false');
+            _customSelectFocusIndex = -1;
+            _customSelectSearchBuffer = '';
+            clearTimeout(_customSelectSearchTimer);
+            _customSelectSearchTimer = null;
         }
+
+        function _updateCustomSelectFocus() {
+            const dropdown = document.getElementById('active-batch-dropdown');
+            if (!dropdown) return;
+            const options = dropdown.querySelectorAll('.custom-select-option');
+            options.forEach((opt, i) => opt.classList.toggle('focus', i === _customSelectFocusIndex));
+            if (_customSelectFocusIndex >= 0 && _customSelectFocusIndex < options.length) {
+                options[_customSelectFocusIndex].scrollIntoView({block: 'nearest'});
+            }
+        }
+
+        function _customSelectMoveFocus(delta) {
+            const dropdown = document.getElementById('active-batch-dropdown');
+            if (!dropdown) return;
+            const options = dropdown.querySelectorAll('.custom-select-option');
+            if (options.length === 0) return;
+            _customSelectFocusIndex = ((_customSelectFocusIndex + delta) % options.length + options.length) % options.length;
+            _updateCustomSelectFocus();
+        }
+
+        function _customSelectJumpTo(char) {
+            const dropdown = document.getElementById('active-batch-dropdown');
+            if (!dropdown) return;
+            // Accumulate into search buffer, reset after 500 ms of inactivity
+            if (_customSelectSearchBuffer.length > 20) _customSelectSearchBuffer = '';
+            _customSelectSearchBuffer += char.toLowerCase();
+            clearTimeout(_customSelectSearchTimer);
+            _customSelectSearchTimer = setTimeout(() => { _customSelectSearchBuffer = ''; }, 500);
+
+            const options = dropdown.querySelectorAll('.custom-select-option');
+            const buffer = _customSelectSearchBuffer;
+            // Try startsWith first, then contains as fallback
+            for (const strategy of ['startsWith', 'includes']) {
+                for (let i = 0; i < options.length; i++) {
+                    const text = (options[i].textContent || '').toLowerCase();
+                    if (strategy === 'startsWith' ? text.startsWith(buffer) : text.includes(buffer)) {
+                        _customSelectFocusIndex = i;
+                        _updateCustomSelectFocus();
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Keyboard navigation for the custom dropdown
+        (function _bindCustomSelectKeys() {
+            const el = document.getElementById('active-batch-custom');
+            if (!el) return;
+            el.addEventListener('keydown', (e) => {
+            const wrapper = document.getElementById('active-batch-custom');
+            if (!wrapper || !wrapper.classList.contains('open')) return;
+            switch (e.key) {
+                case 'ArrowDown':
+                    e.preventDefault();
+                    _customSelectMoveFocus(1);
+                    break;
+                case 'ArrowUp':
+                    e.preventDefault();
+                    _customSelectMoveFocus(-1);
+                    break;
+                case 'Enter':
+                    e.preventDefault();
+                    if (_customSelectFocusIndex >= 0) {
+                        const dropdown = document.getElementById('active-batch-dropdown');
+                        const options = dropdown ? dropdown.querySelectorAll('.custom-select-option') : [];
+                        if (_customSelectFocusIndex < options.length) {
+                            _selectCustomDropdownOption(options[_customSelectFocusIndex].dataset.value);
+                        }
+                    }
+                    break;
+                case 'Escape':
+                    // handled by document listener
+                    break;
+                default:
+                    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                        e.preventDefault();
+                        _customSelectJumpTo(e.key);
+                    }
+                    break;
+            }
+        });
+            })();
 
         function _toggleCustomDropdown() {
             const wrapper = document.getElementById('active-batch-custom');
@@ -2615,4 +2707,6 @@
         initializeSidebarState();
         initializeAiSidebarState();
         _bindDelegatedEvents();
+        // Sync batch sort button highlights with stored preference
+        document.querySelectorAll('.batch-sort-btn').forEach(b => b.classList.toggle('active', b.dataset.bsort === batchSort));
         loadBatches();
