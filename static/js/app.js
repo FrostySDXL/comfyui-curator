@@ -482,15 +482,15 @@
             if (!wrapper || !wrapper.classList.contains('open')) return;
             switch (e.key) {
                 case 'ArrowDown':
-                    e.preventDefault();
+                    e.preventDefault(); e.stopPropagation();
                     _customSelectMoveFocus(1);
                     break;
                 case 'ArrowUp':
-                    e.preventDefault();
+                    e.preventDefault(); e.stopPropagation();
                     _customSelectMoveFocus(-1);
                     break;
                 case 'Enter':
-                    e.preventDefault();
+                    e.preventDefault(); e.stopPropagation();
                     if (_customSelectFocusIndex >= 0) {
                         const dropdown = document.getElementById('active-batch-dropdown');
                         const options = dropdown ? dropdown.querySelectorAll('.custom-select-option') : [];
@@ -504,7 +504,7 @@
                     break;
                 default:
                     if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                        e.preventDefault();
+                        e.preventDefault(); e.stopPropagation();
                         _customSelectJumpTo(e.key);
                     }
                     break;
