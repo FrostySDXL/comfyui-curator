@@ -365,11 +365,24 @@
             if (!select || !dropdown) return;
             const q = filter.toLowerCase();
             dropdown.replaceChildren();
+            // Collect matching options first, then sort:
+            // startsWith matches appear before includes-only matches
+            const matches = [];
             for (let i = 0; i < select.options.length; i++) {
                 const opt = select.options[i];
                 if (!opt.value) continue; // skip "-- Select batch --" placeholder
                 const text = opt.textContent;
                 if (q && !text.toLowerCase().includes(q)) continue;
+                matches.push({ opt, text, startsWith: text.toLowerCase().startsWith(q) });
+            }
+            if (q) {
+                matches.sort((a, b) => {
+                    if (a.startsWith && !b.startsWith) return -1;
+                    if (!a.startsWith && b.startsWith) return 1;
+                    return 0; // preserve original order within each group
+                });
+            }
+            for (const { opt, text } of matches) {
                 const li = document.createElement('li');
                 li.className = 'custom-select-option' + (opt.selected ? ' selected' : '');
                 li.dataset.value = opt.value;
@@ -417,6 +430,7 @@
             if (input) {
                 input.value = selectedOpt ? selectedOpt.textContent : '';
                 input.placeholder = selectedOpt ? '' : 'Select batch...';
+                input.blur(); // release focus after selection
             }
             _customSelectPrevValue = ''; // selection committed, no restore needed
             _closeCustomDropdown();
