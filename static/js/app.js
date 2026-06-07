@@ -1,3 +1,8 @@
+        const SIDEBAR_WIDTH_KEY = 'imageCurator.sidebarWidth';
+        const SIDEBAR_OPEN_KEY = 'imageCurator.sidebarOpen';
+        const BATCH_STATE_KEY = 'imageCurator.lastBatch';
+        const FOLDER_STATE_KEY = 'imageCurator.lastFolder';
+        const BATCH_SORT_KEY = 'imageCurator.batchSort';
         let currentBatch = null;
         let currentFolder = null;
         let images = [];
@@ -19,11 +24,6 @@
         let folderCountSnapshot = {};
         let pendingActiveBatchSelection = null;
         let _initialLoadDone = false;
-        const SIDEBAR_WIDTH_KEY = 'imageCurator.sidebarWidth';
-        const SIDEBAR_OPEN_KEY = 'imageCurator.sidebarOpen';
-        const BATCH_STATE_KEY = 'imageCurator.lastBatch';
-        const FOLDER_STATE_KEY = 'imageCurator.lastFolder';
-        const BATCH_SORT_KEY = 'imageCurator.batchSort';
         const SIDEBAR_WIDTH_DEFAULT = 240;
         const SIDEBAR_WIDTH_MIN = 220;
         const SIDEBAR_WIDTH_MAX = 520;
