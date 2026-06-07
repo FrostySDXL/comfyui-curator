@@ -683,7 +683,7 @@
 
         function createThumbElement() {
             const thumb = document.createElement('div');
-            thumb.className = 'thumb loading';
+            thumb.className = 'thumb';
             thumb.draggable = true;
             thumb.addEventListener('dragstart', (event) => onDragStart(event, Number(thumb.dataset.index)));
             thumb.addEventListener('click', (event) => onThumbClick(Number(thumb.dataset.index), event));
@@ -706,8 +706,8 @@
             const img = document.createElement('img');
             img.loading = 'lazy';
             img.draggable = false;
-            img.addEventListener('load', () => thumb.classList.remove('loading'));
-            img.addEventListener('error', () => thumb.classList.remove('loading'));
+            img.addEventListener('load', () => img.classList.add('loaded'));
+            img.addEventListener('error', () => img.classList.add('loaded'));
 
             const meta = document.createElement('div');
             meta.className = 'thumb-meta';
@@ -747,7 +747,7 @@
             }
 
             if (imageEl && imageEl.getAttribute('src') !== imageSrc) {
-                thumb.classList.add('loading');
+                imageEl.classList.remove('loaded');
                 imageEl.src = imageSrc;
             }
             if (metaName) metaName.textContent = img.name;

@@ -482,14 +482,14 @@ def serve_thumbnail(batch, folder, filename):
     cache_path = cache_dir / (Path(filename).stem + ".webp")
 
     if cache_path.exists() and cache_path.stat().st_mtime >= filepath.stat().st_mtime:
-        return send_file(str(cache_path), mimetype="image/webp")
+        return send_file(str(cache_path), mimetype="image/webp", max_age=3600)
 
     try:
         with Image.open(filepath) as img:
             img.thumbnail(THUMB_SIZE, Image.Resampling.LANCZOS)
             cache_dir.mkdir(parents=True, exist_ok=True)
             img.save(str(cache_path), format="WEBP", quality=60)
-        return send_file(str(cache_path), mimetype="image/webp")
+        return send_file(str(cache_path), mimetype="image/webp", max_age=3600)
     except Exception:
         print(f"Thumbnail generation failed for {filepath}", flush=True)
         return jsonify({"error": "Failed to generate thumbnail"}), 500
@@ -507,7 +507,7 @@ def serve_image(batch, folder, filename):
         return jsonify({"error": err}), 400
     if not filepath.exists():
         return jsonify({"error": "File not found"}), 404
-    return send_file(filepath)
+    return send_file(filepath, max_age=3600)
 
 
 # ---------------------------------------------------------------------------
