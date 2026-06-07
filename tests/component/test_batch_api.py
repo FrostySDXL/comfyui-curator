@@ -75,7 +75,7 @@ def test_delete_rejects_removes_files(client, app_module, make_file):
 @pytest.mark.component
 def test_delete_rejects_nonexistent_batch(client):
     response = client.post("/api/delete-rejects/no-such-batch")
-    assert response.status_code == 400
+    assert response.status_code == 404
 
 
 @pytest.mark.component

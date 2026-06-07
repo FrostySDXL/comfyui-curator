@@ -302,6 +302,7 @@
             const batch = currentBatch;
             const folder = currentFolder;
             const resp = await fetch(`/api/images/${batch}/${folder}?sort=${currentSort}&order=${currentOrder}`);
+            if (!resp.ok) return;
             const nextImages = await resp.json();
             if (requestToken !== folderRequestToken) return;
             images = nextImages;
@@ -1052,6 +1053,7 @@
         }
 
         function navigate(delta) {
+            if (images.length === 0) return;
             currentIndex = (currentIndex + delta + images.length) % images.length;
             showCurrentImage();
         }
@@ -1274,6 +1276,7 @@
         }
 
         async function pollForChanges() {
+            if (isInteractionBusy()) return;
             await loadBatches();
             if (!currentBatch || !currentFolder || selectedImages.size > 0 || isInteractionBusy()) return;
             const [imageResp, runResp] = await Promise.all([

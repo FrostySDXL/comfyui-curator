@@ -5,6 +5,8 @@ import pytest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 
+pytestmark = pytest.mark.integration
+
 # Import the Flask app
 import app as app_module
 from ai_curate.models import JobState, CurationRun, ImageResult, RunTotals
@@ -52,6 +54,7 @@ def client(tmp_path, monkeypatch):
 
 
 class TestPreviewElements:
+    @pytest.mark.integration
     def test_preview_from_prompt(self, client):
         """POST /api/ai-curate/preview-elements returns extracted elements."""
         resp = client.post(

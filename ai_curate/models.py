@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from ai_curate.config import DEFAULT_TOP_N
+
 
 class JobState(str, Enum):
     """Lifecycle states for a curation job."""
@@ -135,7 +137,7 @@ class CurationRun:
         prompt: str = "",
         elements: Optional[List[str]] = None,
         model: str = "",
-        top_n: int = 15,
+        top_n: int = DEFAULT_TOP_N,
         status: str = JobState.QUEUED,
         created_at: Optional[str] = None,
         completed_at: Optional[str] = None,
@@ -189,7 +191,7 @@ class CurationRun:
             prompt=data.get("prompt", ""),
             elements=data.get("elements") or [],
             model=data.get("model") or "",
-            top_n=data.get("top_n", 15),
+            top_n=data.get("top_n", DEFAULT_TOP_N),
             status=data.get("status", JobState.QUEUED),
             created_at=data.get("created_at"),
             completed_at=data.get("completed_at"),

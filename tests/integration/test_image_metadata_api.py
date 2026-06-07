@@ -1,6 +1,10 @@
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
+import pytest
+
+pytestmark = pytest.mark.integration
+
 
 def write_png(path, metadata=None):
     png_info = PngInfo()

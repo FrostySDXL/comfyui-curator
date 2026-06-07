@@ -155,7 +155,7 @@ class VisionClient:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 data = json.loads(resp.read().decode())
             # OpenAI-compatible response format
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            content = data.get("choices", [{}])[0].get("message", {}).get("content") or ""
             return parse_score_response(content, len(elements))
 
         except (

@@ -111,7 +111,23 @@ class RunStorage:
             runs_dir = self._runs_dir(batch)
             if not runs_dir.exists():
                 return []
-            run_files = sorted(runs_dir.glob("*.json"), key=lambda p: p.stat().st_mtime)
+            run_files = list(runs_dir.glob("*.json"))
+
+            # Sort by created_at from inside each run file, falling back to
+            # file modification time for backward compatibility.
+            def _run_created_at(path: Path) -> float:
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                    created = data.get("created_at", "")
+                    if created:
+                        from datetime import datetime, timezone
+
+                        return datetime.fromisoformat(created).timestamp()
+                except Exception:
+                    pass
+                return path.stat().st_mtime
+
+            run_files.sort(key=_run_created_at)
             return [f.stem for f in run_files]
 
     def load_latest(self, batch: str) -> Optional[CurationRun]:

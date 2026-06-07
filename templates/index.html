@@ -10,7 +10,7 @@
     <div class="sidebar" id="batch-sidebar">
         <div class="sidebar-section active-batch">
             <h2>Auto-import</h2>
-            <select id="active-batch-select" onchange="setActiveBatch(this.value)">
+            <select id="active-batch-select" onchange="setActiveBatch(this.value)" aria-label="Select active batch for auto-import">
                 <option value="">-- Select batch --</option>
             </select>
             <div id="pending-info" class="pending-bar" style="display: none;">
@@ -219,14 +219,14 @@
 
     <!-- Lightbox -->
     <div id="lightbox" class="lightbox">
-        <span class="lightbox-close" onclick="closeLightbox()">&times;</span>
+        <span class="lightbox-close" onclick="closeLightbox()" role="button" aria-label="Close lightbox" tabindex="0">&times;</span>
         <span class="lightbox-info" id="lightbox-info"></span>
         <aside class="lightbox-metadata-panel" id="lightbox-metadata-panel" aria-live="polite"></aside>
-        <span class="lightbox-nav prev" onclick="navigate(-1)">&#8249;</span>
+        <span class="lightbox-nav prev" onclick="navigate(-1)" role="button" aria-label="Previous image" tabindex="0">&#8249;</span>
         <div class="lightbox-image-wrap" id="lightbox-image-wrap">
         <img id="lightbox-img" src="">
         </div>
-        <span class="lightbox-nav next" onclick="navigate(1)">&#8250;</span>
+        <span class="lightbox-nav next" onclick="navigate(1)" role="button" aria-label="Next image" tabindex="0">&#8250;</span>
         <div class="lightbox-controls">
             <div><button class="btn btn-secondary" onclick="navigateScored(-1)">Prev scored</button><div class="key-hint">[</div></div>
             <div><button class="btn btn-secondary" onclick="zoomLightbox(-0.2)">Zoom −</button><div class="key-hint">-</div></div>
@@ -244,7 +244,7 @@
     <div id="new-batch-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="new-batch-modal-title">
         <div class="modal-content">
             <h3 id="new-batch-modal-title">Create New Batch</h3>
-            <input type="text" id="new-batch-name" placeholder="batch-name" onkeypress="if(event.key==='Enter')createBatch()">
+            <input type="text" id="new-batch-name" placeholder="batch-name" onkeydown="if(event.key==='Enter')createBatch()">
             <div class="modal-buttons">
                 <button class="cancel" onclick="hideNewBatchModal()">Cancel</button>
                 <button class="create" onclick="createBatch()">Create</button>

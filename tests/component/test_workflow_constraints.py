@@ -31,6 +31,7 @@ def storage(tmp_batches):
 
 
 class TestMovePhaseAfterScoring:
+    @pytest.mark.component
     def test_move_only_after_scoring_completes(self, storage):
         """A completed run with move_enabled should have moved count
         only when scoring finished successfully."""
@@ -58,6 +59,7 @@ class TestMovePhaseAfterScoring:
         assert loaded.totals.moved == 2
         assert loaded.totals.failed == 1
 
+    @pytest.mark.component
     def test_failed_images_never_move(self):
         """Even in a move-enabled run, failed images should not have moved_to."""
         results = [
@@ -76,6 +78,7 @@ class TestMovePhaseAfterScoring:
 
 
 class TestCancelledRunsLeaveNoHistory:
+    @pytest.mark.component
     def test_cancelled_run_not_in_storage(self, storage):
         """Cancelling a running job does not persist any run file."""
         qm = QueueManager(storage=storage)
@@ -98,6 +101,7 @@ class TestCancelledRunsLeaveNoHistory:
         runs = storage.list_runs("test-batch")
         assert runs == []
 
+    @pytest.mark.component
     def test_cancelled_run_no_latest_pointer(self, storage):
         """Cancelling a running job does not update latest.json."""
         qm = QueueManager(storage=storage)
@@ -118,6 +122,7 @@ class TestCancelledRunsLeaveNoHistory:
         latest = storage.load_latest("test-batch")
         assert latest is None
 
+    @pytest.mark.component
     def test_completed_run_after_cancelled_does_persist(self, storage):
         """A completed run after a cancelled run does persist correctly."""
         qm = QueueManager(storage=storage)

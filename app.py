@@ -407,21 +407,28 @@ def api_move_batch():
 
 @app.route("/api/delete-rejects/<batch>", methods=["POST"])
 def api_delete_rejects(batch):
-    if batch not in get_batches():
-        return jsonify({"error": "Batch does not exist"}), 400
-    rejects_dir = get_batch_folder(batch, "rejects")
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
+    rejects_dir = get_batch_folder(batch_name, "rejects")
     if not rejects_dir.exists():
         return jsonify({"error": "No rejects folder"}), 404
 
     count = 0
-    cache_dir = BATCHES_DIR / batch / ".thumbs"
+    cache_dir = BATCHES_DIR / batch_name / ".thumbs"
     for f in rejects_dir.iterdir():
         if f.suffix.lower() in IMAGE_EXTENSIONS:
-            f.unlink()
+            try:
+                f.unlink()
+            except OSError:
+                pass
             # Remove cached thumbnail too
             cache_file = cache_dir / (f.stem + ".webp")
             if cache_file.exists():
-                cache_file.unlink()
+                try:
+                    cache_file.unlink()
+                except OSError:
+                    pass
             count += 1
     return jsonify({"success": True, "count": count})
 

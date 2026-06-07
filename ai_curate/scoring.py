@@ -91,7 +91,7 @@ def score_images(
                 failed=(score < 0),
                 error_message=err,
             )
-        except Exception as e:
+        except (OSError, ValueError) as e:
             result = ImageResult(
                 filename=img_path.name,
                 failed=True,

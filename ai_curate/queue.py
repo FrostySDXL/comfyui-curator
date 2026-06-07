@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional
 
 from ai_curate.models import CurationRun, ImageResult, JobState, RunTotals
-from ai_curate.config import DEFAULT_MODEL
+from ai_curate.config import DEFAULT_MODEL, DEFAULT_TOP_N
 from ai_curate.storage import RunStorage
 
 
@@ -61,7 +61,7 @@ class QueueManager:
             prompt=job_params.get("prompt", ""),
             elements=job_params.get("elements") or [],
             model=job_params.get("model") or DEFAULT_MODEL,
-            top_n=job_params.get("top_n", 15),
+            top_n=job_params.get("top_n", DEFAULT_TOP_N),
         )
 
         with self._lock:

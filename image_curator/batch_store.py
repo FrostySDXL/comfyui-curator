@@ -15,6 +15,18 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 BATCH_FOLDERS = ("inbox", "shortlisted", "finals", "rejects")
 
 
+def _validate_name(name: str, label: str = "name") -> None:
+    """Raise ValueError if a name looks like a path traversal attempt."""
+    if not name or not name.strip():
+        raise ValueError(f"empty {label}")
+    if "/" in name or "\\" in name:
+        raise ValueError(f"{label} contains path separators")
+    if name in (".", ".."):
+        raise ValueError(f"{label} is a reserved path component")
+    if name.startswith(".") and ("/" in name or "\\" in name):
+        raise ValueError(f"{label} starts with dot-segment")
+
+
 def load_state(state_file: Path) -> dict:
     """Load persistent state from a JSON file.
 
@@ -26,8 +38,10 @@ def load_state(state_file: Path) -> dict:
             with state_file.open(encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError):
-            # Corrupt state file -- fall back to defaults
-            pass
+            print(
+                f"Warning: state file {state_file} is corrupt, using defaults",
+                flush=True,
+            )
     return {"active_batch": None}
 
 
@@ -53,6 +67,7 @@ def get_batches(batches_dir: Path) -> list[str]:
 
 def create_batch(batches_dir: Path, name: str) -> bool:
     """Create a batch with the standard folder structure."""
+    _validate_name(name, "batch name")
     batch_dir = Path(batches_dir) / name
     if batch_dir.exists():
         return False
@@ -63,6 +78,8 @@ def create_batch(batches_dir: Path, name: str) -> bool:
 
 def get_batch_folder(batches_dir: Path, batch_name: str, folder: str) -> Path:
     """Return a path to a batch subfolder."""
+    _validate_name(batch_name, "batch name")
+    _validate_name(folder, "folder name")
     return Path(batches_dir) / batch_name / folder
 
 
@@ -73,7 +90,7 @@ def _is_supported_image(path: Path, extensions: Iterable[str] = IMAGE_EXTENSIONS
 def get_images(directory: Path, sort_by: str = "date", order: str = "desc") -> list[Path]:
     """Return supported image files in a directory with configurable sorting."""
     directory = Path(directory)
-    if not directory.exists():
+    if not directory.is_dir():
         return []
     images = [f for f in directory.iterdir() if _is_supported_image(f)]
     reverse = order == "desc"
