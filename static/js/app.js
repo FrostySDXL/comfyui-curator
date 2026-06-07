@@ -234,10 +234,15 @@
             const batchListKey = batches.join(',');
             if (batchListKey !== _lastBatchListKey) {
                 _lastBatchListKey = batchListKey;
-                // Clear options safely without innerHTML
-                select.options.length = 0;
 
-                // Build options in a fragment to batch DOM insertion
+                // Detach from DOM so Chrome discards the old dropdown widget
+                // and creates a fresh one when re-attached.  Without this,
+                // long option lists show blank rows until scrolled.
+                const selectParent = select.parentNode;
+                const selectPlaceholder = document.createComment('batch-select');
+                selectParent.replaceChild(selectPlaceholder, select);
+
+                // Build options in a fragment
                 const selectFragment = document.createDocumentFragment();
                 const defaultOpt = document.createElement('option');
                 defaultOpt.value = '';
@@ -250,13 +255,12 @@
                     opt.selected = b === selectedAutoImportBatch;
                     selectFragment.appendChild(opt);
                 });
+                // Clear any stale options before appending new ones
+                select.options.length = 0;
                 select.appendChild(selectFragment);
-                // Force a synchronous layout pass so Chrome's virtual dropdown
-                // renderer measures every <option>.  Without this, long lists
-                // show blank rows until the user scrolls them into view.
-                select.size = Math.min(batches.length + 1, 20);
-                void select.offsetHeight;  // trigger reflow
-                select.size = 1;
+
+                // Re-attach to DOM (creates a fresh dropdown widget)
+                selectPlaceholder.parentNode.replaceChild(select, selectPlaceholder);
             }
             select.value = selectedAutoImportBatch || '';
             if (pendingActiveBatchSelection === activeBatch) pendingActiveBatchSelection = null;
