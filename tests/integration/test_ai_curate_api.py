@@ -280,3 +280,8 @@ class TestBatchRuns:
         """GET /api/ai-curate/batches/<batch>/runs/<id> returns 404."""
         resp = client.get("/api/ai-curate/batches/test-batch/runs/nonexistent")
         assert resp.status_code == 404
+
+    def test_get_latest_run_empty(self, client):
+        """GET /api/ai-curate/batches/<batch>/runs/latest returns 404 when no runs."""
+        resp = client.get("/api/ai-curate/batches/test-batch/runs/latest")
+        assert resp.status_code == 404

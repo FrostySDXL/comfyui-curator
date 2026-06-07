@@ -37,3 +37,10 @@ state.json
 *.swo
 .opencode/
 opencode.json
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Node (future frontend tooling)
+node_modules/

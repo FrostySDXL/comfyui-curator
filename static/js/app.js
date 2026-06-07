@@ -160,7 +160,11 @@
         // --- Data loading ---
 
         async function loadBatches() {
-            const resp = await fetch('/api/batches');
+            const resp = await fetch('/api/batches').catch(err => {
+                console.warn('loadBatches fetch failed', err);
+                return null;
+            });
+            if (!resp || !resp.ok) return;
             const data = await resp.json();
             const batches = data.batches;
             const activeBatch = data.active_batch;
@@ -263,6 +267,7 @@
             currentBatch = batch;
             selectedImages.clear();
             lastSelectIndex = -1;
+            lastAction = null;  // Clear undo state on batch switch
             updateActionBar();
             updateAutoImportQuickAction(document.getElementById('active-batch-select').value || null);
             document.querySelectorAll('.batch-name').forEach(el =>
@@ -598,6 +603,9 @@
                 updateGrid();
                 updateActionBar();
                 loadBatches();
+            } else {
+                const data = await resp.json().catch(() => ({}));
+                showToast(data.error || 'Move failed');
             }
         }
 
@@ -683,6 +691,9 @@
                 loadBatches();
                 if (currentFolder === 'rejects') { images = []; updateGrid(); }
                 document.getElementById('img-count').textContent = '';
+            } else {
+                const data = await resp.json().catch(() => ({}));
+                showToast(data.error || 'Delete failed');
             }
         }
 
@@ -1051,12 +1062,18 @@
             pendingActiveBatchSelection = batch || null;
             const select = document.getElementById('active-batch-select');
             if (select) select.value = batch || '';
-            await fetch('/api/active-batch', {
+            const resp = await fetch('/api/active-batch', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({batch: batch})
             });
-            showToast(batch ? `Auto-importing to: ${batch}` : 'Auto-import disabled');
+            if (resp.ok) {
+                showToast(batch ? `Auto-importing to: ${batch}` : 'Auto-import disabled');
+            } else {
+                const data = await resp.json().catch(() => ({}));
+                showToast(data.error || 'Failed to set active batch');
+                pendingActiveBatchSelection = null;
+            }
             await loadBatches();
         }
 
@@ -1282,7 +1299,7 @@
         }
 
         setInterval(() => {
-            pollForChanges().catch(() => {});
+            pollForChanges().catch(() => { console.warn('pollForChanges failed'); });
         }, 5000);
 
         // --- AI Curation ---
@@ -1528,7 +1545,7 @@
                     aiCompareRunId = 'latest';
                     await aiRenderCurrentRunUi();
                 }
-            } catch { /* ignore */ }
+            } catch { console.warn('aiRefreshRunData failed'); }
         }
 
         function resetAiBatchState() {
@@ -1584,18 +1601,24 @@
                 return;
             }
             const preview = document.getElementById('ai-elements-preview');
+            preview.replaceChildren();
             const qualityStart = data.elements.findIndex(e =>
                 e.includes('Clean anatomy') || e.includes('No visual artifacts')
             );
-            let html = '';
             data.elements.forEach((e, i) => {
                 const isQuality = i >= qualityStart && qualityStart >= 0;
-                html += `<div class="element-item">
-                    <span class="element-num">${i+1}.</span>
-                    <span class="${isQuality ? 'element-quality' : ''}">${e}</span>
-                </div>`;
+                const item = document.createElement('div');
+                item.className = 'element-item';
+                const numSpan = document.createElement('span');
+                numSpan.className = 'element-num';
+                numSpan.textContent = `${i + 1}.`;
+                const textSpan = document.createElement('span');
+                if (isQuality) textSpan.className = 'element-quality';
+                textSpan.textContent = e;
+                item.appendChild(numSpan);
+                item.appendChild(textSpan);
+                preview.appendChild(item);
             });
-            preview.innerHTML = html;
             preview.style.display = 'block';
         }
 
@@ -1668,7 +1691,7 @@
             if (job.status === 'completed') {
                 aiStopPolling();
                 aiShowRunSummary(job);
-                aiRefreshRunData().catch(() => {});
+                aiRefreshRunData().catch(() => { console.warn('aiRefreshRunData failed'); });
                 aiActiveRun = job;
                 aiLatestRun = job;
                 aiShowHeaderControls(true);
@@ -1677,7 +1700,7 @@
             }
             if (job.status === 'cancelled' || job.status === 'failed') {
                 aiStopPolling();
-                aiRefreshRunData().catch(() => {});
+                aiRefreshRunData().catch(() => { console.warn('aiRefreshRunData failed'); });
             }
         }
 
@@ -1931,7 +1954,7 @@
                     const resp = await fetch(`/api/ai-curate/batches/${batch}/runs`);
                     const data = await resp.json();
                     aiBatchRunCounts[batch] = data.runs ? data.runs.length : 0;
-                } catch { aiBatchRunCounts[batch] = 0; }
+                } catch { console.warn(`aiLoadBatchRunCounts failed for ${batch}`); aiBatchRunCounts[batch] = 0; }
             });
             await Promise.all(promises);
             aiBatchRunCountsLoaded = true;

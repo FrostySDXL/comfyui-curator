@@ -62,6 +62,10 @@ class RunStorage:
                 json.dumps(run.to_dict(), indent=2),
                 encoding="utf-8",
             )
+            # On Windows, Path.replace() raises FileExistsError if target
+            # exists; remove the old file first so the rename is cross-platform.
+            if run_path.exists():
+                run_path.unlink()
             tmp_path.replace(run_path)
 
             # Update latest pointer (also under lock to prevent TOCTOU)

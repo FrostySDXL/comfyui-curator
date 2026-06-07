@@ -75,11 +75,13 @@ def score_images(
 
         try:
             image_b64 = VisionClient.encode_image(str(img_path))
+            content_type = VisionClient.content_type_for(str(img_path))
             score, total, details, err = client.score_image(
                 image_b64=image_b64,
                 prompt_text=prompt_text,
                 elements=elements,
                 model=model,
+                content_type=content_type,
             )
             result = ImageResult(
                 filename=img_path.name,

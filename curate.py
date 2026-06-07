@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ai_curate.config import BATCHES_DIR, DEFAULT_MODEL, DEFAULT_TOP_N, TOP_N_CAP
+from ai_curate.config import ALLOWED_SOURCE_FOLDERS, ALLOWED_DEST_FOLDERS
 from ai_curate.elements import extract_elements, build_element_list
 from ai_curate.client import VisionClient
 from ai_curate.scoring import score_images, find_images
@@ -97,6 +98,30 @@ def main():
     if args.panel and not args.prompt:
         print("NOTE: --panel is deprecated, use --prompt instead", file=sys.stderr)
 
+    # Validate source and destination folders
+    if args.source not in ALLOWED_SOURCE_FOLDERS:
+        parser.error(
+            f"Invalid source folder '{args.source}'. "
+            f"Must be one of: {', '.join(sorted(ALLOWED_SOURCE_FOLDERS))}"
+        )
+    if args.dest not in ALLOWED_DEST_FOLDERS:
+        parser.error(
+            f"Invalid destination folder '{args.dest}'. "
+            f"Must be one of: {', '.join(sorted(ALLOWED_DEST_FOLDERS))}"
+        )
+    if args.move and args.source == args.dest:
+        parser.error(
+            f"Source and destination folders are both '{args.source}'. "
+            "Moving to the same folder is a no-op."
+        )
+
+    # Validate model
+    if not args.model:
+        parser.error(
+            "No model configured. Set IMAGE_CURATOR_MODEL environment variable "
+            "or pass --model explicitly. See .env.example for details."
+        )
+
     # Cap top_n
     top_n = min(max(1, args.top), TOP_N_CAP)
 
@@ -124,6 +149,20 @@ def main():
     images = find_images(image_dir_path)
     if not images:
         print(f"No images found in {images_dir}", file=sys.stderr)
+        run = CurationRun(
+            batch=args.batch,
+            source_folder=args.source,
+            destination_folder=args.dest if args.move else None,
+            move_enabled=args.move,
+            prompt=prompt,
+            elements=elements,
+            model=args.model,
+            top_n=top_n,
+            status=JobState.FAILED,
+            error_message=f"No images found in {images_dir}",
+        )
+        storage = RunStorage()
+        storage.save_run(run)
         sys.exit(1)
 
     print(f"Scoring {len(images)} images with {args.model}...", file=sys.stderr)

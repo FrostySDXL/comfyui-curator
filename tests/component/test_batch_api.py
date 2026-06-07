@@ -117,3 +117,146 @@ def test_serve_image_missing_returns_404(client, app_module):
     response = client.get("/image/batch/inbox/nonexistent.png")
 
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Uncovered route tests (C10)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.component
+def test_root_route_returns_ui(client):
+    """GET / returns the web UI HTML page."""
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.mimetype == "text/html"
+
+
+@pytest.mark.component
+def test_api_images_returns_sorted_list(client, app_module, make_file):
+    """GET /api/images/<batch>/<folder> returns sorted image list with name/size."""
+    app_module.create_batch("batch")
+    make_file(app_module.BATCHES_DIR / "batch" / "inbox" / "b.png")
+    make_file(app_module.BATCHES_DIR / "batch" / "inbox" / "a.jpg")
+
+    response = client.get("/api/images/batch/inbox?sort=name&order=asc")
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data) == 2
+    assert data[0]["name"] == "a.jpg"
+    assert data[1]["name"] == "b.png"
+    assert "size" in data[0]
+
+
+@pytest.mark.component
+def test_api_images_nonexistent_batch(client):
+    """GET /api/images returns 404 for nonexistent batch."""
+    response = client.get("/api/images/nope/inbox")
+    assert response.status_code == 404
+
+
+@pytest.mark.component
+def test_api_move_moves_single_file(client, app_module, make_file):
+    """POST /api/move moves a single image between folders."""
+    app_module.create_batch("batch")
+    make_file(app_module.BATCHES_DIR / "batch" / "inbox" / "pic.png")
+
+    response = client.post(
+        "/api/move",
+        json={
+            "batch": "batch",
+            "filename": "pic.png",
+            "source": "inbox",
+            "destination": "shortlisted",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"success": True}
+    assert not (app_module.BATCHES_DIR / "batch" / "inbox" / "pic.png").exists()
+    assert (app_module.BATCHES_DIR / "batch" / "shortlisted" / "pic.png").exists()
+
+
+@pytest.mark.component
+def test_api_move_nonexistent_batch(client):
+    """POST /api/move returns 404 for nonexistent batch."""
+    response = client.post(
+        "/api/move",
+        json={
+            "batch": "nope",
+            "filename": "pic.png",
+            "source": "inbox",
+            "destination": "shortlisted",
+        },
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.component
+def test_api_move_missing_file(client, app_module):
+    """POST /api/move returns 404 when file doesn't exist."""
+    app_module.create_batch("batch")
+
+    response = client.post(
+        "/api/move",
+        json={
+            "batch": "batch",
+            "filename": "ghost.png",
+            "source": "inbox",
+            "destination": "shortlisted",
+        },
+    )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.component
+def test_api_move_batch_bulk_moves_files(client, app_module, make_file):
+    """POST /api/move-batch bulk-moves multiple images."""
+    app_module.create_batch("batch")
+    make_file(app_module.BATCHES_DIR / "batch" / "inbox" / "one.png")
+    make_file(app_module.BATCHES_DIR / "batch" / "inbox" / "two.jpg")
+    make_file(app_module.BATCHES_DIR / "batch" / "inbox" / "ignore.txt")
+
+    response = client.post(
+        "/api/move-batch",
+        json={
+            "batch": "batch",
+            "filenames": ["one.png", "two.jpg", "ignore.txt"],
+            "source": "inbox",
+            "destination": "finals",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    # only image files should be moved; .txt stays (but route moves all filenames)
+    assert not (app_module.BATCHES_DIR / "batch" / "inbox" / "one.png").exists()
+    assert not (app_module.BATCHES_DIR / "batch" / "inbox" / "two.jpg").exists()
+    assert (app_module.BATCHES_DIR / "batch" / "finals" / "one.png").exists()
+    assert (app_module.BATCHES_DIR / "batch" / "finals" / "two.jpg").exists()
+
+
+@pytest.mark.component
+def test_api_move_batch_nonexistent_batch(client):
+    """POST /api/move-batch returns 404 for nonexistent batch."""
+    response = client.post(
+        "/api/move-batch",
+        json={
+            "batch": "nope",
+            "filenames": ["pic.png"],
+            "source": "inbox",
+            "destination": "shortlisted",
+        },
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.component
+def test_api_move_batch_missing_params(client, app_module):
+    """POST /api/move-batch returns 400 when parameters missing."""
+    app_module.create_batch("batch")
+    response = client.post("/api/move-batch", json={"batch": "batch"})
+    assert response.status_code == 400

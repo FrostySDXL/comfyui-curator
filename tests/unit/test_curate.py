@@ -24,7 +24,16 @@ class TestCurateCLI:
         """Dry run with no images prints message and exits cleanly."""
         monkeypatch.setattr(
             "sys.argv",
-            ["curate", "--dry-run", "--batch", "test", "--prompt", "test prompt"],
+            [
+                "curate",
+                "--dry-run",
+                "--batch",
+                "test",
+                "--prompt",
+                "test prompt",
+                "--model",
+                "test-model",
+            ],
         )
         mock_find.return_value = []
         mock_storage.return_value = MagicMock()

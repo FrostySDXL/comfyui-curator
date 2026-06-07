@@ -185,7 +185,9 @@ extraction, client calls, and storage to `ai_curate/`.
 - `image-curator.service.example` — templated systemd unit for deployment
 - `.env.example` — configuration template
 - `LICENSE` — MIT License
-- `requirements*.txt` — dependency files (`.in` sources, `-lock.txt` pinned, `.txt` installable)
+- `requirements.in` / `requirements-dev.in` — source-of-truth dependency declarations
+- `requirements.txt` / `requirements-dev.txt` — convenience installable copies
+- `requirements-lock.txt` / `requirements-dev-lock.txt` — pinned reproducible builds
 
 ## Repo structure rules
 
@@ -224,8 +226,7 @@ extraction, client calls, and storage to `ai_curate/`.
 - Batch navigation remains in the left sidebar.
 - The header exposes stateful batch and AI sidebar controls (`Show` / `Hide`),
   `Help`, and the current `Set as Auto-import` action.
-- AI Curate now lives in a toggleable right sidebar instead of a horizontal
-  dropdown panel.
+- AI Curate lives in a toggleable right sidebar.
 - The AI sidebar width, open state, and panel collapsed state persist in
   local storage.
 - The left batch sidebar open state also persists in local storage.

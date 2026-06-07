@@ -11,10 +11,10 @@ from typing import List
 
 # Always checked on every image (quality baseline).
 # These are configurable defaults; callers may override via build_element_list.
-QUALITY_ELEMENTS: List[str] = [
+QUALITY_ELEMENTS: tuple[str, ...] = (
     "Clean anatomy (no extra fingers, extra limbs, or broken body parts)",
     "No visual artifacts, glitches, or garbled text",
-]
+)
 
 # Shot-type detection patterns (order matters: longest match first)
 _SHOT_TYPES = [

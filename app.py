@@ -231,6 +231,16 @@ def _safe_path(base: Path, *parts: str) -> tuple[Path | None, str | None]:
     return resolved, None
 
 
+def _require_batch(batch_name: str) -> tuple[str | None, tuple | None]:
+    """Validate that a batch name refers to an existing batch.
+
+    Returns (batch_name, None) if valid, (None, (error_response, status_code)) if invalid.
+    """
+    if not batch_name or batch_name not in get_batches():
+        return None, ({"error": "Batch does not exist"}, 404)
+    return batch_name, None
+
+
 @app.route("/api/batches", methods=["GET"])
 def api_get_batches():
     state = load_state()
@@ -282,6 +292,9 @@ def api_import_all():
 
 @app.route("/api/images/<batch>/<folder>")
 def api_images(batch, folder):
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
     if folder not in batch_store.BATCH_FOLDERS:
         return jsonify({"error": "Invalid folder"}), 400
     sort_by = request.args.get("sort", "date")
@@ -290,7 +303,7 @@ def api_images(batch, folder):
         sort_by = "date"
     if order not in ("asc", "desc"):
         order = "desc"
-    folder_path = get_batch_folder(batch, folder)
+    folder_path = get_batch_folder(batch_name, folder)
     images = get_images(folder_path, sort_by=sort_by, order=order)
     return jsonify(
         [{"name": img.name, "size": img.stat().st_size} for img in images if img.exists()]
@@ -299,10 +312,13 @@ def api_images(batch, folder):
 
 @app.route("/api/image-metadata/<batch>/<folder>/<filename>")
 def api_image_metadata(batch, folder, filename):
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
     if folder not in batch_store.BATCH_FOLDERS:
         return jsonify({"error": "Invalid folder"}), 400
 
-    filepath, err = _safe_path(get_batch_folder(batch, folder), filename)
+    filepath, err = _safe_path(get_batch_folder(batch_name, folder), filename)
     if err:
         return jsonify({"error": err}), 400
     if not filepath.exists():
@@ -315,20 +331,23 @@ def api_image_metadata(batch, folder, filename):
 def api_move():
     data = request.json or {}
     batch = data.get("batch")
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
     filename = data.get("filename")
     source = data.get("source")
     destination = data.get("destination")
 
-    if not all([batch, filename, source, destination]):
+    if not all([batch_name, filename, source, destination]):
         return jsonify({"error": "Missing parameters"}), 400
 
     if source not in batch_store.BATCH_FOLDERS or destination not in batch_store.BATCH_FOLDERS:
         return jsonify({"error": "Invalid source or destination folder"}), 400
 
-    src_path, err = _safe_path(get_batch_folder(batch, source), filename)
+    src_path, err = _safe_path(get_batch_folder(batch_name, source), filename)
     if err:
         return jsonify({"error": err}), 400
-    dst_path, err = _safe_path(get_batch_folder(batch, destination), filename)
+    dst_path, err = _safe_path(get_batch_folder(batch_name, destination), filename)
     if err:
         return jsonify({"error": err}), 400
 
@@ -347,11 +366,14 @@ def api_move():
 def api_move_batch():
     data = request.json or {}
     batch = data.get("batch")
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
     filenames = data.get("filenames", [])
     source = data.get("source")
     destination = data.get("destination")
 
-    if not all([batch, filenames, source, destination]):
+    if not all([batch_name, filenames, source, destination]):
         return jsonify({"error": "Missing parameters"}), 400
 
     if source not in batch_store.BATCH_FOLDERS or destination not in batch_store.BATCH_FOLDERS:
@@ -360,10 +382,10 @@ def api_move_batch():
     moved = 0
     skipped = 0
     for filename in filenames:
-        src_path, err = _safe_path(get_batch_folder(batch, source), filename)
+        src_path, err = _safe_path(get_batch_folder(batch_name, source), filename)
         if err:
             continue
-        dst_path, err = _safe_path(get_batch_folder(batch, destination), filename)
+        dst_path, err = _safe_path(get_batch_folder(batch_name, destination), filename)
         if err:
             continue
         if src_path.exists():
@@ -406,9 +428,12 @@ def api_delete_rejects(batch):
 
 @app.route("/thumb/<batch>/<folder>/<filename>")
 def serve_thumbnail(batch, folder, filename):
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
     if folder not in batch_store.BATCH_FOLDERS:
         return jsonify({"error": "Invalid folder"}), 400
-    filepath, err = _safe_path(get_batch_folder(batch, folder), filename)
+    filepath, err = _safe_path(get_batch_folder(batch_name, folder), filename)
     if err:
         return jsonify({"error": err}), 400
     if not filepath.exists():
@@ -416,7 +441,7 @@ def serve_thumbnail(batch, folder, filename):
 
     # Thumbnail caching: WebP at 200px for minimal storage (~5KB each)
     # Per-batch cache so thumbs survive folder moves within a batch
-    cache_dir = BATCHES_DIR / batch / ".thumbs"
+    cache_dir = BATCHES_DIR / batch_name / ".thumbs"
     cache_path = cache_dir / (Path(filename).stem + ".webp")
 
     if cache_path.exists() and cache_path.stat().st_mtime >= filepath.stat().st_mtime:
@@ -435,9 +460,12 @@ def serve_thumbnail(batch, folder, filename):
 
 @app.route("/image/<batch>/<folder>/<filename>")
 def serve_image(batch, folder, filename):
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
     if folder not in batch_store.BATCH_FOLDERS:
         return jsonify({"error": "Invalid folder"}), 400
-    filepath, err = _safe_path(get_batch_folder(batch, folder), filename)
+    filepath, err = _safe_path(get_batch_folder(batch_name, folder), filename)
     if err:
         return jsonify({"error": err}), 400
     if not filepath.exists():
@@ -780,6 +808,42 @@ def api_ai_curate_get_run(batch, run_id):
     if run is None:
         return jsonify({"error": "run not found"}), 404
     return jsonify(run.to_dict())
+
+
+# ---------------------------------------------------------------------------
+# Global error handlers -- return JSON for all API errors
+# ---------------------------------------------------------------------------
+
+
+@app.errorhandler(404)
+def not_found(error):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Not found"}), 404
+    return render_template("index.html"), 404
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Internal server error"}), 500
+    return "Internal server error", 500
+
+
+@app.errorhandler(400)
+def bad_request(error):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Bad request"}), 400
+    return "Bad request", 400
+
+
+@app.errorhandler(Exception)
+def unhandled_exception(error):
+    import traceback
+
+    traceback.print_exc()
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Internal server error"}), 500
+    return "Internal server error", 500
 
 
 if __name__ == "__main__":

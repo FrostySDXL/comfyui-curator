@@ -96,6 +96,33 @@ class QueueManager:
         with self._lock:
             return list(self._jobs.values())
 
+    def prune(self, keep_last: int = 100) -> int:
+        """Remove old completed, failed, and cancelled jobs from memory.
+
+        Running and queued jobs are never pruned. Keeps the most recent
+        ``keep_last`` completed/failed/cancelled jobs plus all active ones.
+
+        Args:
+            keep_last: Number of most-recent terminal jobs to retain.
+
+        Returns:
+            Number of jobs removed.
+        """
+        with self._lock:
+            # Collect terminal job IDs ordered by insertion (oldest first)
+            terminal_ids = [
+                run_id
+                for run_id, run in self._jobs.items()
+                if run.status in (JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED)
+            ]
+            # Keep the most recent keep_last; remove the rest
+            to_remove = terminal_ids[:-keep_last] if len(terminal_ids) > keep_last else []
+            for run_id in to_remove:
+                del self._jobs[run_id]
+                if run_id in self._queue_order:
+                    self._queue_order.remove(run_id)
+            return len(to_remove)
+
     def cancel(self, run_id: str) -> bool:
         """Request cancellation of a job.
 
@@ -158,6 +185,7 @@ class QueueManager:
                 promoted_id = self._promote_next()
 
         self._notify_promote(promoted_id)
+        self.prune()
         return True
 
     def complete_job(
@@ -199,6 +227,7 @@ class QueueManager:
                 promoted_id = self._promote_next()
 
         self._notify_promote(promoted_id)
+        self.prune()
         return True
 
     def fail_job(self, run_id: str, error_message: str = "") -> bool:
@@ -228,6 +257,7 @@ class QueueManager:
                 promoted_id = self._promote_next()
 
         self._notify_promote(promoted_id)
+        self.prune()
         return True
 
     def _notify_promote(self, promoted_id: Optional[str]) -> None:

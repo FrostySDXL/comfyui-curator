@@ -53,4 +53,4 @@ ALLOWED_SOURCE_FOLDERS = {"inbox", "shortlisted", "finals", "rejects"}
 ALLOWED_DEST_FOLDERS = {"inbox", "shortlisted", "finals", "rejects"}
 
 # --- Image extensions ---
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+from image_curator.batch_store import IMAGE_EXTENSIONS  # noqa: F401 -- re-exported for ai_curate consumers

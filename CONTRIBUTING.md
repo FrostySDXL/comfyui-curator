@@ -56,6 +56,19 @@ Only use `--skip-js` when Node is unavailable and the change is not frontend-rel
 
 Add `--quiet` to suppress the per-check command echo (handy when sharing logs, since the echo otherwise shows the absolute path of the active Python interpreter).
 
+### Managing dependencies
+
+Edit `requirements.in` (runtime) or `requirements-dev.in` (dev tools), then regenerate:
+
+```bash
+pip install pip-tools
+pip-compile --output-file=requirements-lock.txt requirements.in
+pip-compile --output-file=requirements-dev-lock.txt requirements-dev.in
+```
+
+The `-lock.txt` files are the reproducible pinned builds; `requirements.txt` and
+`requirements-dev.txt` are convenience installable copies.
+
 ### Fast local checks
 
 ```bash

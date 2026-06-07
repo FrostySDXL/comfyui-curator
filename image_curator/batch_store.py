@@ -16,19 +16,31 @@ BATCH_FOLDERS = ("inbox", "shortlisted", "finals", "rejects")
 
 
 def load_state(state_file: Path) -> dict:
-    """Load persistent state from a JSON file."""
+    """Load persistent state from a JSON file.
+
+    Returns a default state dict if the file is missing or corrupt.
+    """
     state_file = Path(state_file)
     if state_file.exists():
-        with state_file.open(encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with state_file.open(encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            # Corrupt state file -- fall back to defaults
+            pass
     return {"active_batch": None}
 
 
 def save_state(state_file: Path, state: dict) -> None:
-    """Save persistent state to a JSON file."""
+    """Save persistent state to a JSON file atomically.
+
+    Writes to a temporary file then renames to avoid corruption on crash.
+    """
     state_file = Path(state_file)
-    with state_file.open("w", encoding="utf-8") as f:
-        json.dump(state, f)
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = state_file.with_suffix(state_file.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(state), encoding="utf-8")
+    tmp_path.replace(state_file)
 
 
 def get_batches(batches_dir: Path) -> list[str]:

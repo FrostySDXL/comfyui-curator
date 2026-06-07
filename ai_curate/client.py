@@ -8,10 +8,12 @@ llama-swap. Uses the OpenAI-compatible /v1/chat/completions endpoint.
 
 import base64
 import json
+import mimetypes
 import re
 import socket
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 from ai_curate.config import DEFAULT_BASE_URL, DEFAULT_MODEL, REQUEST_TIMEOUT
@@ -33,6 +35,7 @@ def build_score_payload(
     model: str,
     prompt_text: str,
     image_b64: str,
+    content_type: str = "image/png",
 ) -> Dict:
     """Build a chat/completions request payload with an image.
 
@@ -43,6 +46,7 @@ def build_score_payload(
         model: Model alias to route through llama-swap.
         prompt_text: The scoring prompt text.
         image_b64: Base64-encoded image data.
+        content_type: MIME type for the image data URI (default: image/png).
 
     Returns:
         Dict suitable for JSON serialization as the request body.
@@ -56,7 +60,7 @@ def build_score_payload(
                     {"type": "text", "text": prompt_text},
                     {
                         "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{image_b64}"},
+                        "image_url": {"url": f"data:{content_type};base64,{image_b64}"},
                     },
                 ],
             }
@@ -122,6 +126,7 @@ class VisionClient:
         prompt_text: str,
         elements: list,
         model: Optional[str] = None,
+        content_type: str = "image/png",
     ) -> Tuple[int, int, Dict[int, str], str]:
         """Send an image to the vision model and check elements.
 
@@ -130,12 +135,13 @@ class VisionClient:
             prompt_text: The scoring prompt (already formatted with elements).
             elements: List of element strings (used for response validation).
             model: Optional model override; falls back to default_model.
+            content_type: MIME type for the image (default: image/png).
 
         Returns:
             Tuple of (score, total, details, error_message).
         """
         model = model or self.default_model
-        payload = build_score_payload(model, prompt_text, image_b64)
+        payload = build_score_payload(model, prompt_text, image_b64, content_type=content_type)
         payload_bytes = json.dumps(payload).encode("utf-8")
 
         url = f"{self.base_url}/v1/chat/completions"
@@ -172,3 +178,18 @@ class VisionClient:
         """
         with open(path, "rb") as f:
             return base64.b64encode(f.read()).decode("utf-8")
+
+    @staticmethod
+    def content_type_for(path: str) -> str:
+        """Return the MIME type for an image file based on its extension.
+
+        Falls back to image/png for unrecognized extensions.
+        """
+        suffix = Path(path).suffix.lower()
+        mime_map = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+        }
+        return mime_map.get(suffix, "image/png")

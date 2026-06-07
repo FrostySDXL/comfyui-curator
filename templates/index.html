@@ -1,6 +1,7 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="utf-8">
     <title>Image Curator</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="/static/css/app.css">
@@ -240,9 +241,9 @@
     </div>
 
     <!-- New batch modal -->
-    <div id="new-batch-modal" class="modal">
+    <div id="new-batch-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="new-batch-modal-title">
         <div class="modal-content">
-            <h3>Create New Batch</h3>
+            <h3 id="new-batch-modal-title">Create New Batch</h3>
             <input type="text" id="new-batch-name" placeholder="batch-name" onkeypress="if(event.key==='Enter')createBatch()">
             <div class="modal-buttons">
                 <button class="cancel" onclick="hideNewBatchModal()">Cancel</button>
@@ -252,9 +253,9 @@
     </div>
 
     <!-- Delete rejects modal -->
-    <div id="delete-modal" class="modal">
+    <div id="delete-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
         <div class="modal-content">
-            <h3>Empty Rejects</h3>
+            <h3 id="delete-modal-title">Empty Rejects</h3>
             <p>Permanently delete <strong id="delete-count">0</strong> rejected images from this batch. This cannot be undone.</p>
             <div class="modal-buttons">
                 <button class="cancel" onclick="hideDeleteModal()">Cancel</button>
@@ -263,9 +264,9 @@
         </div>
     </div>
 
-    <div id="help-modal" class="modal">
+    <div id="help-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
         <div class="modal-content help-modal-content">
-            <h3>Operator Help</h3>
+            <h3 id="help-modal-title">Operator Help</h3>
             <div class="help-section">
                 <h4>Keyboard shortcuts</h4>
                 <ul class="help-list">
@@ -274,9 +275,10 @@
                     <li><strong>Ctrl/Cmd+A</strong> select all images in current folder (not in lightbox)</li>
                     <li><strong>Ctrl/Cmd+Z</strong> undo last move while undo is available</li>
                     <li><strong>U</strong> toggle the batch sidebar</li>
-                    <li><strong>B</strong> toggle AI badges</li>
-                    <li><strong>V</strong> toggle score sort</li>
+                    <li><strong>B</strong> toggle AI badges when an AI run is available</li>
+                    <li><strong>V</strong> toggle score sort when an AI run is available</li>
                     <li><strong>I</strong> toggle AI sidebar</li>
+                    <li><strong>Esc</strong> close lightbox, Help modal, or clear batch search (context-dependent)</li>
                 </ul>
             </div>
             <div class="help-section">
@@ -288,7 +290,6 @@
                     <li><strong>S / F / R</strong> move to shortlisted, finals, or rejects</li>
                     <li><strong>+ / - / 0</strong> zoom in, zoom out, reset zoom</li>
                     <li><strong>Ctrl+wheel</strong> zoom in/out</li>
-                    <li><strong>Esc</strong> close lightbox, close this modal, or clear focused search (context-dependent)</li>
                 </ul>
             </div>
             <div class="help-section">

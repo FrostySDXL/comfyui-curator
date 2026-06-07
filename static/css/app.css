@@ -1,6 +1,6 @@
         :root {
             --sidebar-width: 240px;
-            --sidebar-effective-width: 240px;
+            --sidebar-effective-width: 0px;
             --ai-sidebar-width: 360px;
             --lightbox-zoom: 1;
         }
@@ -12,6 +12,24 @@
             display: flex;
             height: 100vh;
             overflow: hidden;
+        }
+
+        /* Accessibility: visible focus indicators for keyboard navigation */
+        button:focus-visible,
+        input:focus-visible,
+        select:focus-visible,
+        textarea:focus-visible,
+        [tabindex]:focus-visible {
+            outline: 2px solid #5ba3f5;
+            outline-offset: 2px;
+        }
+
+        /* Respect user motion preferences */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                transition-duration: 0.01ms !important;
+            }
         }
 
         /* Sidebar */
