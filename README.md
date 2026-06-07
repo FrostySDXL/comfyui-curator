@@ -88,6 +88,7 @@ This README is the canonical feature inventory. Keep operator-facing behavior he
 - Defaults are configured in `ai_curate/config.py` and `app.py`, and can be overridden by environment variables:
   - `IMAGE_CURATOR_BATCHES` — root for batch storage (default `~/image-curator/batches`)
   - `IMAGE_CURATOR_COMFYUI` — ComfyUI output directory (default `~/image-curator/comfyui-outputs`)
+  - `IMAGE_CURATOR_ENABLE_WATCHER` — enable background auto-import watcher (default `false`, set to `true` to enable)
   - `IMAGE_CURATOR_STATE` — active-batch state file (default `~/.config/image-curator/state.json`)
   - `IMAGE_CURATOR_HOST` — bind address for the web UI (default `127.0.0.1`)
   - `IMAGE_CURATOR_PORT` — port for the web UI (default `5000`)

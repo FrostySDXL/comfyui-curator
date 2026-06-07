@@ -53,6 +53,7 @@ STATE_FILE = Path(
 THUMB_SIZE = (200, 200)
 IMAGE_EXTENSIONS = batch_store.IMAGE_EXTENSIONS
 POLL_INTERVAL = 2  # seconds
+ENABLE_WATCHER = os.environ.get("IMAGE_CURATOR_ENABLE_WATCHER", "").strip().lower() == "true"
 
 # Warn on startup if critical defaults are unlikely to work
 if os.environ.get("IMAGE_CURATOR_LLM_URL", "").strip() == "":
@@ -897,15 +898,18 @@ if __name__ == "__main__":
         print("Set IMAGE_CURATOR_STATE to a writable location.")
         exit(1)
 
-    # Start the ComfyUI auto-import watcher only when the output directory exists
-    if COMFYUI_OUTPUT.exists():
-        watcher.start()
-        print(f"Image watcher started (watching {COMFYUI_OUTPUT})")
+    # Start the ComfyUI auto-import watcher (disabled by default; opt-in via env var)
+    if ENABLE_WATCHER:
+        if COMFYUI_OUTPUT.exists():
+            watcher.start()
+            print(f"Image watcher started (watching {COMFYUI_OUTPUT})")
+        else:
+            print(
+                f"Image watcher skipped: {COMFYUI_OUTPUT} does not exist. "
+                "Set IMAGE_CURATOR_COMFYUI to enable auto-import."
+            )
     else:
-        print(
-            f"Image watcher skipped: {COMFYUI_OUTPUT} does not exist. "
-            "Set IMAGE_CURATOR_COMFYUI to enable auto-import."
-        )
+        print("Image watcher disabled. Set IMAGE_CURATOR_ENABLE_WATCHER=true to enable.")
 
     # Bind to localhost by default; use IMAGE_CURATOR_HOST for other interfaces
     host = os.environ.get("IMAGE_CURATOR_HOST", "127.0.0.1")
