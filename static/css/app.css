@@ -963,6 +963,7 @@
             font-weight: 600;
             margin-bottom: 2px;
             display: block;
+            white-space: nowrap;
         }
         .ai-optional {
             text-transform: none;

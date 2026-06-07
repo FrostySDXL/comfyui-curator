@@ -226,19 +226,21 @@
 
             const select = document.getElementById('active-batch-select');
             const selectedAutoImportBatch = pendingActiveBatchSelection !== null ? pendingActiveBatchSelection : activeBatch;
-            // Build options with DOM, not innerHTML (XSS-safe)
-            select.replaceChildren();
+            // Build options in a fragment to batch DOM insertion (prevents rendering
+            // partial option lists that cause the dropdown to appear blank until scrolled)
+            const selectFragment = document.createDocumentFragment();
             const defaultOpt = document.createElement('option');
             defaultOpt.value = '';
             defaultOpt.textContent = '-- Select batch --';
-            select.appendChild(defaultOpt);
+            selectFragment.appendChild(defaultOpt);
             batches.forEach(b => {
                 const opt = document.createElement('option');
                 opt.value = b;
                 opt.textContent = b;
                 opt.selected = b === selectedAutoImportBatch;
-                select.appendChild(opt);
+                selectFragment.appendChild(opt);
             });
+            select.replaceChildren(selectFragment);
             select.value = selectedAutoImportBatch || '';
             if (pendingActiveBatchSelection === activeBatch) pendingActiveBatchSelection = null;
             updateAutoImportQuickAction(selectedAutoImportBatch);
@@ -540,10 +542,9 @@
 
         function updateGrid() {
             const grid = document.getElementById('grid');
-            // Always clear before rendering to prevent stale DOM artifacts
-            grid.replaceChildren();
+
             if (images.length === 0) {
-                grid.appendChild(Object.assign(document.createElement('div'), {
+                grid.replaceChildren(Object.assign(document.createElement('div'), {
                     className: 'empty',
                     textContent: 'No images in this folder',
                 }));
@@ -572,7 +573,8 @@
                 fragment.appendChild(thumb);
             });
 
-            grid.append(fragment);
+            // Replace all children atomically to prevent visible empty-grid flash
+            grid.replaceChildren(fragment);
         }
 
         function formatSize(bytes) {
@@ -925,26 +927,33 @@
                 wrap.scrollLeft = 0;
             }
             const el = document.getElementById('lightbox-img');
-            // Immediately clear src to prevent flash of previous image while loading
+            // Immediately hide (no transition) to prevent flash of previous image
+            el.style.opacity = '0';
             el.removeAttribute('src');
             el.classList.add('loading');
             el.onload = function() {
                 if (imageToken !== lightboxImageToken) return;
                 el.classList.remove('loading');
+                el.style.opacity = '';
                 currentLightboxDimensions = {w: this.naturalWidth, h: this.naturalHeight};
                 updateLightboxInfo(img, this.naturalWidth, this.naturalHeight);
             };
             el.onerror = function() {
                 el.classList.remove('loading');
+                el.style.opacity = '';
             };
             // Use decode() when available to avoid flash of partially-decoded image
             const newSrc = `/image/${currentBatch}/${currentFolder}/${encodeURIComponent(img.name)}`;
             if (el.decode) {
                 el.src = newSrc;
                 el.decode().then(() => {
-                    if (imageToken === lightboxImageToken) el.classList.remove('loading');
+                    if (imageToken === lightboxImageToken) {
+                        el.classList.remove('loading');
+                        el.style.opacity = '';
+                    }
                 }).catch(() => {
                     el.classList.remove('loading');
+                    el.style.opacity = '';
                 });
             } else {
                 el.src = newSrc;
