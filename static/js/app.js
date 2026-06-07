@@ -263,6 +263,7 @@
                 selectPlaceholder.parentNode.replaceChild(select, selectPlaceholder);
             }
             select.value = selectedAutoImportBatch || '';
+            _syncCustomSelectDisplay();
             if (pendingActiveBatchSelection === activeBatch) pendingActiveBatchSelection = null;
             updateAutoImportQuickAction(selectedAutoImportBatch);
 
@@ -352,6 +353,93 @@
             });
             list.replaceChildren(fragment);
         }
+
+        // --- Custom batch dropdown (replaces native <select> rendering) ---
+
+        function _populateCustomDropdown() {
+            const select = document.getElementById('active-batch-select');
+            const dropdown = document.getElementById('active-batch-dropdown');
+            if (!select || !dropdown) return;
+            dropdown.replaceChildren();
+            for (let i = 0; i < select.options.length; i++) {
+                const opt = select.options[i];
+                const li = document.createElement('li');
+                li.className = 'custom-select-option' + (opt.selected ? ' selected' : '');
+                li.dataset.value = opt.value;
+                li.textContent = opt.textContent;
+                li.setAttribute('role', 'option');
+                li.addEventListener('mousedown', (e) => {
+                    e.preventDefault();  // prevent toggle blur before click fires
+                    _selectCustomDropdownOption(opt.value);
+                });
+                dropdown.appendChild(li);
+            }
+        }
+
+        function _syncCustomSelectDisplay() {
+            const select = document.getElementById('active-batch-select');
+            const display = document.getElementById('active-batch-display');
+            const dropdown = document.getElementById('active-batch-dropdown');
+            if (!select || !display) return;
+            const selectedOpt = select.options[select.selectedIndex];
+            display.textContent = selectedOpt ? selectedOpt.textContent : '-- Select batch --';
+            if (dropdown) {
+                const value = select.value;
+                dropdown.querySelectorAll('.custom-select-option').forEach(el => {
+                    el.classList.toggle('selected', el.dataset.value === value);
+                });
+            }
+        }
+
+        function _selectCustomDropdownOption(value) {
+            const select = document.getElementById('active-batch-select');
+            select.value = value || '';
+            _syncCustomSelectDisplay();
+            _closeCustomDropdown();
+            setActiveBatch(value || null);
+        }
+
+        function _openCustomDropdown() {
+            const wrapper = document.getElementById('active-batch-custom');
+            const toggle = document.getElementById('active-batch-toggle');
+            if (!wrapper || wrapper.classList.contains('open')) return;
+            _populateCustomDropdown();
+            wrapper.classList.add('open');
+            toggle.setAttribute('aria-expanded', 'true');
+            // Scroll selected option into view
+            const dropdown = document.getElementById('active-batch-dropdown');
+            const selected = dropdown ? dropdown.querySelector('.selected') : null;
+            if (selected) selected.scrollIntoView({block: 'nearest'});
+        }
+
+        function _closeCustomDropdown() {
+            const wrapper = document.getElementById('active-batch-custom');
+            const toggle = document.getElementById('active-batch-toggle');
+            if (!wrapper) return;
+            wrapper.classList.remove('open');
+            if (toggle) toggle.setAttribute('aria-expanded', 'false');
+        }
+
+        function _toggleCustomDropdown() {
+            const wrapper = document.getElementById('active-batch-custom');
+            (wrapper && wrapper.classList.contains('open')) ? _closeCustomDropdown() : _openCustomDropdown();
+        }
+
+        // Close custom dropdown when clicking outside
+        document.addEventListener('mousedown', (e) => {
+            const wrapper = document.getElementById('active-batch-custom');
+            if (wrapper && wrapper.classList.contains('open') && !wrapper.contains(e.target)) {
+                _closeCustomDropdown();
+            }
+        });
+
+        // Keyboard: Escape closes open custom dropdown
+        document.addEventListener('keydown', (e) => {
+            const wrapper = document.getElementById('active-batch-custom');
+            if (e.key === 'Escape' && wrapper && wrapper.classList.contains('open')) {
+                _closeCustomDropdown();
+            }
+        });
 
         // Delegated click handler for batch items (XSS-safe, no inline onclick)
         document.addEventListener('DOMContentLoaded', () => {
@@ -1258,7 +1346,7 @@
         async function setActiveBatch(batch) {
             pendingActiveBatchSelection = batch || null;
             const select = document.getElementById('active-batch-select');
-            if (select) select.value = batch || '';
+            if (select) { select.value = batch || ''; _syncCustomSelectDisplay(); }
             const resp = await fetch('/api/active-batch', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -1367,6 +1455,7 @@
                 showToast(`Created batch: ${safeName}`);
                 await setActiveBatch(safeName);
                 document.getElementById('active-batch-select').value = safeName;
+                _syncCustomSelectDisplay();
                 selectBatch(safeName);
             } else { showToast('Failed to create batch'); }
         }
@@ -2265,11 +2354,9 @@
         // --- Event delegation (replaces inline handlers for CSP compatibility) ---
 
         function _bindDelegatedEvents() {
-            // Batch sidebar controls
-            const activeBatchSelect = document.getElementById('active-batch-select');
-            if (activeBatchSelect) activeBatchSelect.addEventListener('change', function() {
-                setActiveBatch(this.value);
-            });
+            // Batch sidebar controls -- custom dropdown toggle
+            const activeBatchToggle = document.getElementById('active-batch-toggle');
+            if (activeBatchToggle) activeBatchToggle.addEventListener('click', _toggleCustomDropdown);
 
             const importBtn = document.querySelector('.import-btn');
             if (importBtn) importBtn.addEventListener('click', importAll);

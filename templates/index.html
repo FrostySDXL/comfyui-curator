@@ -10,9 +10,16 @@
     <div class="sidebar" id="batch-sidebar">
         <div class="sidebar-section active-batch">
             <h2>Auto-import</h2>
-            <select id="active-batch-select" aria-label="Select active batch for auto-import">
+            <select id="active-batch-select" aria-label="Select active batch for auto-import" hidden>
                 <option value="">-- Select batch --</option>
             </select>
+            <div class="custom-select" id="active-batch-custom">
+                <button class="custom-select-toggle" id="active-batch-toggle" type="button" aria-haspopup="listbox" aria-expanded="false">
+                    <span class="custom-select-value" id="active-batch-display">-- Select batch --</span>
+                    <span class="custom-select-arrow">&#9662;</span>
+                </button>
+                <ul class="custom-select-dropdown" id="active-batch-dropdown" role="listbox" tabindex="-1"></ul>
+            </div>
             <div id="pending-info" class="pending-bar hidden">
                 <span><span id="pending-count">0</span> pending</span>
                 <button class="import-btn">Import All</button>

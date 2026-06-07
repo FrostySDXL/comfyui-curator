@@ -86,6 +86,75 @@
             border-radius: 4px;
             font-size: 12px;
         }
+        /* Custom dropdown replaces the native <select> for rendering reliability */
+        .custom-select {
+            position: relative;
+            width: 100%;
+        }
+        .custom-select-toggle {
+            width: 100%;
+            padding: 7px 8px;
+            background: #2a2a2a;
+            border: 1px solid #333;
+            color: #ccc;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            text-align: left;
+            font-family: inherit;
+            line-height: 1.4;
+        }
+        .custom-select-toggle:focus-visible {
+            outline: 2px solid #5ba3f5;
+            outline-offset: 2px;
+        }
+        .custom-select-arrow {
+            font-size: 10px;
+            color: #666;
+            flex-shrink: 0;
+            margin-left: 8px;
+            transition: transform 0.18s ease;
+        }
+        .custom-select.open .custom-select-arrow {
+            transform: rotate(180deg);
+        }
+        .custom-select-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            max-height: 260px;
+            overflow-y: auto;
+            background: #2a2a2a;
+            border: 1px solid #333;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            list-style: none;
+            display: none;
+            margin: 0;
+            padding: 0;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+        }
+        .custom-select.open .custom-select-dropdown {
+            display: block;
+        }
+        .custom-select-option {
+            padding: 6px 8px;
+            font-size: 12px;
+            color: #ccc;
+            cursor: pointer;
+        }
+        .custom-select-option:hover {
+            background: #333;
+        }
+        .custom-select-option.selected {
+            background: #0066cc;
+            color: #fff;
+        }
         .pending-bar {
             margin-top: 8px;
             display: flex;
@@ -419,8 +488,11 @@
             display: block;
         }
         .thumb:hover img { transform: scale(1.04); }
-        .thumb.loading img {
-            opacity: 0;
+        .thumb.loading { animation: thumb-pulse 2s ease-in-out infinite; }
+        .thumb.loading img { opacity: 0; }
+        @keyframes thumb-pulse {
+            0%, 100% { background-color: #252525; }
+            50% { background-color: #2c2c2c; }
         }
         .thumb.removing {
             opacity: 0;
