@@ -10,7 +10,7 @@
         let lastAction = null;
         let draggedFiles = [];
         let toastTimeout = null;
-        let batchSort = 'alpha';
+        let batchSort = (localStorage.getItem(BATCH_SORT_KEY) || 'alpha');
         let batchFilterQuery = '';
         let batchFilterTimer = null;
         let isDraggingImages = false;
@@ -18,14 +18,20 @@
         let gridThumbMap = new Map();
         let folderCountSnapshot = {};
         let pendingActiveBatchSelection = null;
+        let _initialLoadDone = false;
         const SIDEBAR_WIDTH_KEY = 'imageCurator.sidebarWidth';
         const SIDEBAR_OPEN_KEY = 'imageCurator.sidebarOpen';
+        const BATCH_STATE_KEY = 'imageCurator.lastBatch';
+        const FOLDER_STATE_KEY = 'imageCurator.lastFolder';
+        const BATCH_SORT_KEY = 'imageCurator.batchSort';
         const SIDEBAR_WIDTH_DEFAULT = 240;
         const SIDEBAR_WIDTH_MIN = 220;
         const SIDEBAR_WIDTH_MAX = 520;
         let sidebarWidth = SIDEBAR_WIDTH_DEFAULT;
         let sidebarOpen = true;
         let isSidebarResizing = false;
+        let _sidebarResizePending = false;
+        let _sidebarResizeLastEvent = null;
 
         // --- Global fetch error handling ---
 
@@ -64,6 +70,24 @@
             syncBatchSidebarUi(false);
         }
 
+        function saveBatchState() {
+            if (currentBatch) localStorage.setItem(BATCH_STATE_KEY, currentBatch);
+            else localStorage.removeItem(BATCH_STATE_KEY);
+            if (currentFolder) localStorage.setItem(FOLDER_STATE_KEY, currentFolder);
+            else localStorage.removeItem(FOLDER_STATE_KEY);
+        }
+
+        function restoreBatchState(batches) {
+            const savedBatch = localStorage.getItem(BATCH_STATE_KEY);
+            const savedFolder = localStorage.getItem(FOLDER_STATE_KEY);
+            if (savedBatch && batches.includes(savedBatch)) {
+                selectBatch(savedBatch);
+                if (savedFolder) selectFolder(savedBatch, savedFolder);
+                return true;
+            }
+            return false;
+        }
+
         function syncBatchSidebarUi(persist = true) {
             const sidebar = document.getElementById('batch-sidebar');
             const resizer = document.getElementById('sidebar-resizer');
@@ -94,7 +118,15 @@
 
         function onSidebarResizeMove(event) {
             if (!isSidebarResizing) return;
-            applySidebarWidth(event.clientX);
+            _sidebarResizeLastEvent = event;
+            if (!_sidebarResizePending) {
+                _sidebarResizePending = true;
+                requestAnimationFrame(() => {
+                    _sidebarResizePending = false;
+                    if (!isSidebarResizing || !_sidebarResizeLastEvent) return;
+                    applySidebarWidth(_sidebarResizeLastEvent.clientX);
+                });
+            }
         }
 
         function stopSidebarResize() {
@@ -242,6 +274,12 @@
 
             if (currentBatch) updateFolderTabs();
 
+            // Restore previously opened batch on first successful load
+            if (!_initialLoadDone) {
+                _initialLoadDone = true;
+                if (!currentBatch) restoreBatchState(batches);
+            }
+
             // Load AI run counts only if we have uncached batches
             const uncachedBatches = filteredBatches.filter(b => !(b in aiBatchRunCounts));
             if (uncachedBatches.length > 0) {
@@ -329,6 +367,7 @@
         function selectBatch(batch) {
             const batchChanged = currentBatch !== batch;
             currentBatch = batch;
+            saveBatchState();
             selectedImages.clear();
             lastSelectIndex = -1;
             lastAction = null;  // Clear undo state on batch switch
@@ -337,7 +376,13 @@
             document.querySelectorAll('.batch-name').forEach(el =>
                 el.classList.toggle('selected', el.dataset.batch === batch));
             document.getElementById('folder-tabs').classList.add('visible');
-            if (batchChanged) resetAiBatchState();
+            if (batchChanged) {
+                resetAiBatchState();
+                // Immediately clear grid and images to prevent flickering old thumbnails
+                images = [];
+                closeLightbox();
+                clearGrid();
+            }
             showAiCuratePanel();
             selectFolder(batch, 'inbox');
         }
@@ -345,6 +390,7 @@
         async function selectFolder(batch, folder) {
             currentBatch = batch;
             currentFolder = folder;
+            saveBatchState();
             selectedImages.clear();
             lastSelectIndex = -1;
             updateActionBar();
@@ -384,6 +430,7 @@
 
         function setBatchSort(sort) {
             batchSort = sort;
+            localStorage.setItem(BATCH_SORT_KEY, sort);
             document.querySelectorAll('.batch-sort-btn').forEach(b =>
                 b.classList.toggle('active', b.dataset.bsort === sort));
             loadBatches();
@@ -485,10 +532,21 @@
             if (metaSize) metaSize.textContent = formatSize(img.size);
         }
 
+        function clearGrid() {
+            const grid = document.getElementById('grid');
+            grid.replaceChildren();
+            gridThumbMap.clear();
+        }
+
         function updateGrid() {
             const grid = document.getElementById('grid');
+            // Always clear before rendering to prevent stale DOM artifacts
+            grid.replaceChildren();
             if (images.length === 0) {
-                grid.innerHTML = '<div class="empty">No images in this folder</div>';
+                grid.appendChild(Object.assign(document.createElement('div'), {
+                    className: 'empty',
+                    textContent: 'No images in this folder',
+                }));
                 gridThumbMap.clear();
                 return;
             }
@@ -782,6 +840,7 @@
         let lightboxZoom = 1;
         let lightboxMetadataOpen = false;
         let lightboxMetadataRequestToken = 0;
+        let lightboxImageToken = 0;
         let currentLightboxMetadata = null;
         let currentLightboxMetadataLoading = false;
         let currentLightboxMetadataError = null;
@@ -853,12 +912,12 @@
         function showCurrentImage() {
             const img = images[currentIndex];
             if (!img) return;
+            const imageToken = ++lightboxImageToken;
             const metadataToken = ++lightboxMetadataRequestToken;
             currentLightboxMetadata = null;
             currentLightboxMetadataError = null;
-            currentLightboxMetadataLoading = true;
+            currentLightboxMetadataLoading = false;
             currentLightboxDimensions = {w: null, h: null};
-            syncMetadataToggleButton();
             renderLightboxMetadataPanel();
             const wrap = document.getElementById('lightbox-image-wrap');
             if (wrap && lightboxZoom <= 1.001) {
@@ -866,11 +925,30 @@
                 wrap.scrollLeft = 0;
             }
             const el = document.getElementById('lightbox-img');
+            // Immediately clear src to prevent flash of previous image while loading
+            el.removeAttribute('src');
+            el.classList.add('loading');
             el.onload = function() {
+                if (imageToken !== lightboxImageToken) return;
+                el.classList.remove('loading');
                 currentLightboxDimensions = {w: this.naturalWidth, h: this.naturalHeight};
                 updateLightboxInfo(img, this.naturalWidth, this.naturalHeight);
             };
-            el.src = `/image/${currentBatch}/${currentFolder}/${encodeURIComponent(img.name)}`;
+            el.onerror = function() {
+                el.classList.remove('loading');
+            };
+            // Use decode() when available to avoid flash of partially-decoded image
+            const newSrc = `/image/${currentBatch}/${currentFolder}/${encodeURIComponent(img.name)}`;
+            if (el.decode) {
+                el.src = newSrc;
+                el.decode().then(() => {
+                    if (imageToken === lightboxImageToken) el.classList.remove('loading');
+                }).catch(() => {
+                    el.classList.remove('loading');
+                });
+            } else {
+                el.src = newSrc;
+            }
             loadLightboxMetadata(img, metadataToken);
         }
 
@@ -932,6 +1010,8 @@
                 renderLightboxMetadataPanel();
                 return;
             }
+            currentLightboxMetadataLoading = true;
+            syncMetadataToggleButton();
             try {
                 const resp = await fetch(`/api/image-metadata/${encodeURIComponent(currentBatch)}/${encodeURIComponent(currentFolder)}/${encodeURIComponent(img.name)}`);
                 if (!resp.ok) throw new Error(`metadata request failed (${resp.status})`);
@@ -1367,19 +1447,19 @@
             }
 
             switch(e.key.toLowerCase()) {
-                case 's': moveImage('shortlisted'); break;
-                case 'f': moveImage('finals'); break;
-                case 'r': moveImage('rejects'); break;
-                case 'arrowleft': navigate(-1); break;
-                case 'arrowright': navigate(1); break;
-                case '[': navigateScored(-1); break;
-                case ']': navigateScored(1); break;
-                case 'm': toggleLightboxMetadata(); break;
+                case 's': e.preventDefault(); moveImage('shortlisted'); break;
+                case 'f': e.preventDefault(); moveImage('finals'); break;
+                case 'r': e.preventDefault(); moveImage('rejects'); break;
+                case 'arrowleft': e.preventDefault(); navigate(-1); break;
+                case 'arrowright': e.preventDefault(); navigate(1); break;
+                case '[': e.preventDefault(); navigateScored(-1); break;
+                case ']': e.preventDefault(); navigateScored(1); break;
+                case 'm': e.preventDefault(); toggleLightboxMetadata(); break;
                 case '+':
-                case '=': zoomLightbox(0.2); break;
-                case '-': zoomLightbox(-0.2); break;
-                case '0': resetLightboxZoom(); break;
-                case 'escape': closeLightbox(); break;
+                case '=': e.preventDefault(); zoomLightbox(0.2); break;
+                case '-': e.preventDefault(); zoomLightbox(-0.2); break;
+                case '0': e.preventDefault(); resetLightboxZoom(); break;
+                case 'escape': e.preventDefault(); closeLightbox(); break;
             }
         });
 
@@ -1456,6 +1536,8 @@
         const AI_SIDEBAR_WIDTH_MAX = 560;
         let aiSidebarWidth = AI_SIDEBAR_WIDTH_DEFAULT;
         let isAiSidebarResizing = false;
+        let _aiSidebarResizePending = false;
+        let _aiSidebarResizeLastEvent = null;
 
         function clampAiSidebarWidth(value) {
             return Math.max(AI_SIDEBAR_WIDTH_MIN, Math.min(AI_SIDEBAR_WIDTH_MAX, value));
@@ -1508,7 +1590,15 @@
 
         function onAiSidebarResizeMove(event) {
             if (!isAiSidebarResizing) return;
-            applyAiSidebarWidth(window.innerWidth - event.clientX);
+            _aiSidebarResizeLastEvent = event;
+            if (!_aiSidebarResizePending) {
+                _aiSidebarResizePending = true;
+                requestAnimationFrame(() => {
+                    _aiSidebarResizePending = false;
+                    if (!isAiSidebarResizing || !_aiSidebarResizeLastEvent) return;
+                    applyAiSidebarWidth(window.innerWidth - _aiSidebarResizeLastEvent.clientX);
+                });
+            }
         }
 
         function stopAiSidebarResize() {

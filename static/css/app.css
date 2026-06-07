@@ -180,6 +180,13 @@
             color: #aaa;
             border-left: 3px solid transparent;
             transition: all 0.15s;
+            min-width: 0;
+        }
+        .batch-name span:first-of-type {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
         }
         .batch-name:hover { background: #2a2a2a; color: #ddd; }
         .batch-name.selected {
@@ -195,6 +202,7 @@
             border-radius: 8px;
             min-width: 20px;
             text-align: center;
+            flex-shrink: 0;
         }
         .batch-name.selected .batch-count { color: #888; }
         .batch-ai-dot {
@@ -205,6 +213,7 @@
             background: #0066cc;
             margin-left: 6px;
             vertical-align: middle;
+            flex-shrink: 0;
         }
         .batch-empty {
             padding: 10px;
@@ -523,9 +532,17 @@
             object-fit: contain;
             transform: scale(var(--lightbox-zoom));
             transform-origin: center center;
-            transition: transform 0.14s ease;
+            transition: transform 0.14s ease, opacity 0.12s ease;
             display: block;
             margin: 0 auto;
+        }
+        .lightbox img.loading {
+            opacity: 0;
+        }
+        /* Prevent metadata toggle button from resizing on text changes */
+        #metadata-toggle-btn {
+            min-width: 130px;
+            text-align: center;
         }
         .lightbox-controls {
             position: fixed; bottom: 20px; left: 50%;
