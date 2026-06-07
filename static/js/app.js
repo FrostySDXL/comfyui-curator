@@ -251,6 +251,12 @@
                     selectFragment.appendChild(opt);
                 });
                 select.appendChild(selectFragment);
+                // Force a synchronous layout pass so Chrome's virtual dropdown
+                // renderer measures every <option>.  Without this, long lists
+                // show blank rows until the user scrolls them into view.
+                select.size = Math.min(batches.length + 1, 20);
+                void select.offsetHeight;  // trigger reflow
+                select.size = 1;
             }
             select.value = selectedAutoImportBatch || '';
             if (pendingActiveBatchSelection === activeBatch) pendingActiveBatchSelection = null;
