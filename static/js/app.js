@@ -21,6 +21,9 @@
         let isDraggingImages = false;
         let folderRequestToken = 0;
         let gridThumbMap = new Map();
+        const THUMBNAIL_BLOB_CACHE_MAX = 1000;
+        const thumbnailBlobUrlCache = new Map();
+        const thumbnailBlobInflight = new Map();
         let folderCountSnapshot = {};
         let pendingActiveBatchSelection = null;
         let _initialLoadDone = false;
@@ -50,6 +53,65 @@
                 throw err;
             }
         }
+
+        function getThumbnailCacheKey(imageSrc, img) {
+            return `${imageSrc}|${img.size || 0}`;
+        }
+
+        function rememberThumbnailBlobUrl(cacheKey, blobUrl) {
+            const existing = thumbnailBlobUrlCache.get(cacheKey);
+            if (existing && existing !== blobUrl) URL.revokeObjectURL(existing);
+            thumbnailBlobUrlCache.set(cacheKey, blobUrl);
+            while (thumbnailBlobUrlCache.size > THUMBNAIL_BLOB_CACHE_MAX) {
+                const oldestKey = thumbnailBlobUrlCache.keys().next().value;
+                const oldestBlobUrl = thumbnailBlobUrlCache.get(oldestKey);
+                if (oldestBlobUrl) URL.revokeObjectURL(oldestBlobUrl);
+                thumbnailBlobUrlCache.delete(oldestKey);
+            }
+        }
+
+        async function resolveThumbnailBlobUrl(imageSrc, cacheKey) {
+            const cachedBlobUrl = thumbnailBlobUrlCache.get(cacheKey);
+            if (cachedBlobUrl) return cachedBlobUrl;
+
+            if (thumbnailBlobInflight.has(cacheKey)) return thumbnailBlobInflight.get(cacheKey);
+
+            const request = fetch(imageSrc, {cache: 'force-cache'})
+                .then(resp => {
+                    if (!resp.ok) throw new Error(`thumbnail request failed (${resp.status})`);
+                    return resp.blob();
+                })
+                .then(blob => {
+                    const blobUrl = URL.createObjectURL(blob);
+                    rememberThumbnailBlobUrl(cacheKey, blobUrl);
+                    return blobUrl;
+                })
+                .catch(error => {
+                    console.warn(`Thumbnail blob cache fallback for ${imageSrc}:`, error);
+                    return imageSrc;
+                })
+                .finally(() => {
+                    thumbnailBlobInflight.delete(cacheKey);
+                });
+            thumbnailBlobInflight.set(cacheKey, request);
+            return request;
+        }
+
+        function setThumbnailImageSrc(imageEl, imageSrc, cacheKey) {
+            imageEl.dataset.thumbnailCacheKey = cacheKey;
+            resolveThumbnailBlobUrl(imageSrc, cacheKey).then(resolvedSrc => {
+                if (imageEl.dataset.thumbnailCacheKey !== cacheKey) return;
+                if (imageEl.getAttribute('src') !== resolvedSrc) {
+                    imageEl.setAttribute('src', resolvedSrc);
+                }
+            });
+        }
+
+        window.addEventListener('beforeunload', () => {
+            for (const blobUrl of thumbnailBlobUrlCache.values()) URL.revokeObjectURL(blobUrl);
+            thumbnailBlobUrlCache.clear();
+            thumbnailBlobInflight.clear();
+        });
 
         function clampSidebarWidth(value) {
             return Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, value));
@@ -725,6 +787,7 @@
             const metaName = thumb.querySelector('.meta-name');
             const metaSize = thumb.querySelector('.meta-size');
             const imageSrc = `/thumb/${currentBatch}/${currentFolder}/${encodeURIComponent(img.name)}`;
+            const thumbnailCacheKey = getThumbnailCacheKey(imageSrc, img);
 
             thumb.dataset.name = img.name;
             thumb.dataset.index = String(index);
@@ -745,9 +808,9 @@
                 }
             }
 
-            if (imageEl && imageEl.getAttribute('src') !== imageSrc) {
+            if (imageEl && imageEl.dataset.thumbnailCacheKey !== thumbnailCacheKey) {
                 imageEl.classList.remove('loaded');
-                imageEl.src = imageSrc;
+                setThumbnailImageSrc(imageEl, imageSrc, getThumbnailCacheKey(imageSrc, img));
             }
             if (metaName) metaName.textContent = img.name;
             if (metaSize) metaSize.textContent = formatSize(img.size);
