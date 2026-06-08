@@ -1,4 +1,4 @@
-# image-curator
+# comfyui-curator
 
 **Last Updated:** 2026-06-01
 
@@ -95,6 +95,7 @@ This README is the canonical feature inventory. Keep operator-facing behavior he
   - `IMAGE_CURATOR_LLM_URL` — vision LLM endpoint URL (default `http://localhost:8080`)
   - `IMAGE_CURATOR_MODEL` — model name/alias (default empty; accepts comma-separated list e.g. `vl-scorer,qwen-vl` to populate a dropdown; first entry is the default)
   - `IMAGE_CURATOR_TIMEOUT` — request timeout in seconds (default `120`)
+  - `IMAGE_CURATOR_API_KEY` — optional Bearer token sent to the vision LLM endpoint; leave empty or unset when the server does not require auth
 - Copy `.env.example` to `.env` to configure your environment at a glance.
 - Default `top_n` is `15`, capped at `100`.
 - Element count is capped at `12`.
@@ -117,7 +118,9 @@ This README is the canonical feature inventory. Keep operator-facing behavior he
 ### AI run history and comparison
 
 - Run history is stored under `BATCHES_DIR/<batch>/ai-curate/`.
-- Completed and failed runs are written as `runs/<run-id>.json`; cancelled runs are not persisted.
+- Completed and failed runs are written as `runs/<run-id>.json`.
+- Pure cancellations (cancel before or during scoring) are not persisted.
+- Cancellations during the move phase, after at least one file has been moved, are persisted as a partial audit trail so the operator can see which files were moved before the cancel landed.
 - `latest.json` points to the most recent persisted run.
 - Batch run history is exposed via `GET /api/ai-curate/batches/<batch>/runs`.
 - Individual historical runs are exposed via `GET /api/ai-curate/batches/<batch>/runs/<run_id>`.
@@ -327,7 +330,7 @@ so you can configure paths, host, and model without environment variables.
 ## Verification tiers
 
 - Standard local verification (default):
-  - `python scripts/run_all.py`
+  - `python scripts/run_all.py` — runs ruff format check, compileall, unit/component/integration tests, JS syntax, and a git diff sanity check
 - Full verification suite including mypy type checking:
   - `python scripts/run_all.py --full`
 - Fast edit-loop verification:

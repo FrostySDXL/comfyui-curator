@@ -21,6 +21,7 @@ RestartSec=5
 # Environment=IMAGE_CURATOR_BATCHES=/path/to/batches
 # Environment=IMAGE_CURATOR_HOST=127.0.0.1
 # Environment=IMAGE_CURATOR_PORT=5000
+# Environment=IMAGE_CURATOR_API_KEY=your-bearer-token
 
 [Install]
 WantedBy=multi-user.target

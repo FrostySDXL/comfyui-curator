@@ -37,7 +37,15 @@ def build_scoring_prompt(elements: List[str]) -> str:
 
     Returns:
         Formatted prompt text with numbered elements.
+
+    Raises:
+        ValueError: If ``elements`` is empty. An empty list would expand the
+            template to a prompt with no numbered lines, and the response
+            parser would silently reject every YES/NO answer, so we fail
+            fast at the call site instead.
     """
+    if not elements:
+        raise ValueError("build_scoring_prompt: elements list is empty")
     numbered = "\n".join(
         f"{i + 1}. {e.replace('{', '{{').replace('}', '}}')}" for i, e in enumerate(elements)
     )
@@ -68,6 +76,8 @@ def score_images(
     images = find_images(image_dir)
     from ai_curate.config import ELEMENT_CAP
 
+    if not elements:
+        raise ValueError("score_images: elements list is empty")
     if len(elements) > ELEMENT_CAP:
         elements = elements[:ELEMENT_CAP]
     prompt_text = build_scoring_prompt(elements)

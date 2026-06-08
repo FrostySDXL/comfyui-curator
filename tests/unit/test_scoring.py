@@ -5,7 +5,6 @@ from unittest.mock import MagicMock, patch
 
 from ai_curate.scoring import find_images, build_scoring_prompt, score_images
 from ai_curate.elements import extract_elements
-from ai_curate.models import ImageResult
 
 
 class TestFindImages:
@@ -44,6 +43,16 @@ class TestBuildScoringPrompt:
         assert "3. Clean anatomy" in prompt
         assert "YES" in prompt
         assert "NO" in prompt
+
+    def test_empty_elements_raises(self):
+        """build_scoring_prompt must reject an empty element list.
+
+        Regression: a silent failure where the prompt template expanded
+        with an empty numbered block, then ``parse_score_response`` rejected
+        every YES/NO line because ``num_elements == 0``.
+        """
+        with pytest.raises(ValueError, match="empty"):
+            build_scoring_prompt([])
 
 
 class TestScoreImages:
@@ -99,3 +108,17 @@ class TestScoreImages:
 
         # Should have scored only 1 image before cancellation
         assert len(results) == 1
+
+    @patch("ai_curate.scoring.VisionClient")
+    def test_empty_elements_raises(self, MockClient, tmp_path):
+        """score_images must raise on empty elements instead of silently failing every image."""
+        (tmp_path / "img1.png").write_bytes(b"fake")
+        mock_client = MagicMock()
+        with pytest.raises(ValueError, match="empty"):
+            score_images(
+                image_dir=tmp_path,
+                elements=[],
+                client=mock_client,
+            )
+        # No call should have been made to the vision client.
+        mock_client.score_image.assert_not_called()

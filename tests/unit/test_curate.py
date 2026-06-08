@@ -1,6 +1,6 @@
 """Smoke tests for curate.py CLI entrypoint."""
 
-from datetime import datetime, timezone
+from datetime import datetime
 from unittest.mock import patch, MagicMock
 
 from curate import main
@@ -81,15 +81,38 @@ class TestCurateCLI:
                 "test-model",
             ],
         )
-        main()
+        # parser.error calls sys.exit(2). With sys.exit mocked, control
+        # falls through into the rest of main(), which now also rejects
+        # the bad batch (via the stricter RunStorage validation). We
+        # catch any SystemExit or downstream ValueError so the test
+        # can assert on the recorded exit codes either way.
+        try:
+            main()
+        except (SystemExit, ValueError):
+            pass
         # parser.error calls sys.exit(2). With sys.exit mocked, multiple
         # parser.error calls may stack; check at least one exit with code 2.
         exit_codes = [call.args[0] for call in mock_exit.call_args_list]
         assert 2 in exit_codes
 
+    @patch("curate.score_images")
+    @patch("curate.find_images")
+    @patch("curate.RunStorage")
     @patch("sys.exit")
-    def test_dest_validation_only_with_move(self, mock_exit, monkeypatch):
-        """--dest validation should only run when --move is set."""
+    def test_dest_validation_skipped_without_move(
+        self, mock_exit, mock_storage, mock_find, mock_score, monkeypatch
+    ):
+        """Without --move, an invalid --dest must NOT trigger parser.error.
+
+        Regression: an earlier version of this test had a bare ``pass`` body
+        and provided no real coverage.
+        """
+        # find_images would otherwise try to read a real path; return empty.
+        mock_find.return_value = []
+        # score_images returns (results, total_images) — return empty values.
+        mock_score.return_value = ([], 0)
+        # Without --move, CLI should walk past dest check, then bail out
+        # because find_images returned an empty list (no images to score).
         monkeypatch.setattr(
             "sys.argv",
             [
@@ -104,22 +127,22 @@ class TestCurateCLI:
                 "invalid-dest",
             ],
         )
-        # Should NOT error on --dest since --move is not set
-        # parser.error calls sys.exit(2) so mock it
-        main()
+        try:
+            main()
+        except SystemExit:
+            pass
+
+        # If --dest validation had been triggered, parser.error would have
+        # called sys.exit(2) BEFORE the empty-images branch. Collect all
+        # exit code arguments and assert 2 (parser.error) is not among them.
         exit_codes = [call.args[0] for call in mock_exit.call_args_list]
-        # Should only fail on model validation (since --dest not checked without --move)
-        # Actually without --move and with invalid dest, it should pass dest check now
-        # But will hit model validation... wait, model validation needs --model.
-        # With --model test-model, the dest is invalid but should be skipped.
-        # The mock_exit should NOT be called for dest validation.
-        # Actually, it will proceed past dest check and model check should pass.
-        # Then it'll hit find_images, but that's mocked below the CLI layer.
-        pass
+        assert 2 not in exit_codes, (
+            "Invalid --dest triggered parser.error even though --move was not set. "
+            f"sys.exit calls observed: {exit_codes}"
+        )
 
     def test_move_with_invalid_dest(self, monkeypatch):
         """--move with invalid --dest should error."""
-        import sys as _sys
 
         monkeypatch.setattr(
             "sys.argv",
@@ -144,7 +167,6 @@ class TestCurateCLI:
 
     def test_error_message_no_longer_suggests_panel(self, monkeypatch):
         """Error message should not reference deprecated --panel flag."""
-        import sys as _sys
 
         monkeypatch.setattr(
             "sys.argv",

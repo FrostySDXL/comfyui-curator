@@ -95,7 +95,12 @@ def _is_supported_image(path: Path, extensions: Iterable[str] = IMAGE_EXTENSIONS
 
 
 def get_images(directory: Path, sort_by: str = "date", order: str = "desc") -> list[Path]:
-    """Return supported image files in a directory with configurable sorting."""
+    """Return supported image files in a directory with configurable sorting.
+
+    Files whose ``stat()`` raises ``OSError`` (for example because they were
+    removed between ``iterdir()`` and the sort) are silently skipped so a
+    concurrent deletion does not crash the image-listing endpoint.
+    """
     directory = Path(directory)
     if not directory.is_dir():
         return []
@@ -106,7 +111,17 @@ def get_images(directory: Path, sort_by: str = "date", order: str = "desc") -> l
     elif sort_by == "shuffle":
         random.shuffle(images)
     else:
-        images.sort(key=lambda x: x.stat().st_mtime, reverse=reverse)
+        # Capture mtime once during the sort so a file deleted between
+        # iterdir() and the sort key call is dropped, not raised.
+        dated = []
+        for path in images:
+            try:
+                dated.append((path.stat().st_mtime, path))
+            except OSError:
+                # File vanished after iterdir() — skip it.
+                continue
+        dated.sort(key=lambda pair: pair[0], reverse=reverse)
+        images = [path for _, path in dated]
     return images
 
 
@@ -173,6 +188,50 @@ def _collision_safe_name(dest_dir: Path, name: str) -> str:
     return candidate
 
 
+def move_image(src: Path, dst: Path) -> bool:
+    """Move a single file from ``src`` to ``dst``.
+
+    Centralised helper used by the Flask routes, the AI curate worker,
+    the ComfyUI watcher, and the CLI. Returns True on success, False if
+    the source does not exist or the move raised ``OSError``. Never
+    re-raises so callers don't have to wrap every call in try/except.
+
+    The destination's parent directory is created if missing.
+    """
+    src = Path(src)
+    dst = Path(dst)
+    if not src.exists():
+        return False
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src), str(dst))
+        return True
+    except OSError:
+        logger.warning("move_image failed: %s -> %s", src, dst, exc_info=True)
+        return False
+
+
+def move_images(source_dir: Path, names: list[str], dest_dir: Path) -> tuple[int, int]:
+    """Move a batch of files from ``source_dir`` to ``dest_dir``.
+
+    Returns ``(moved, skipped)``. Missing source files count as skipped
+    and do not raise. The destination directory is created if missing.
+    """
+    source_dir = Path(source_dir)
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    moved = 0
+    skipped = 0
+    for name in names:
+        src = source_dir / name
+        dst = dest_dir / name
+        if move_image(src, dst):
+            moved += 1
+        else:
+            skipped += 1
+    return moved, skipped
+
+
 def import_all_pending(comfyui_output: Path, batches_dir: Path, batch_name: str) -> int:
     """Move all pending supported images into a batch inbox."""
     comfyui_output = Path(comfyui_output)
@@ -187,9 +246,8 @@ def import_all_pending(comfyui_output: Path, batches_dir: Path, batch_name: str)
         if _is_supported_image(path):
             safe_name = _collision_safe_name(dest_inbox, path.name)
             dst = dest_inbox / safe_name
-            try:
-                shutil.move(str(path), str(dst))
+            if move_image(path, dst):
                 count += 1
-            except (OSError, shutil.Error) as exc:
-                print(f"Failed to import {path.name}: {exc}")
+            else:
+                logger.warning("Failed to import %s", path.name)
     return count

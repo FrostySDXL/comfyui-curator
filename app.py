@@ -5,10 +5,8 @@ Web UI for reviewing and organizing AI-generated images.
 
 import os
 import logging
-import shutil
 import threading
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -35,7 +33,7 @@ from ai_curate.config import (
     ALLOWED_DEST_FOLDERS,
 )
 from ai_curate.elements import extract_elements, build_element_list
-from ai_curate.models import CurationRun, ImageResult, JobState, RunTotals
+from ai_curate.models import JobState, RunTotals
 from ai_curate.client import VisionClient
 from ai_curate.scoring import score_images, find_images
 from ai_curate.storage import RunStorage
@@ -212,12 +210,11 @@ class ImageWatcher:
                 if src.stat().st_size == size1 and size1 > 0:
                     break
             if src.exists():
-                try:
-                    dst = dest_inbox / filename
-                    shutil.move(str(src), str(dst))
+                dst = dest_inbox / filename
+                if batch_store.move_image(src, dst):
                     print(f"Auto-imported: {filename} -> {active_batch}/inbox")
-                except Exception as e:
-                    print(f"Failed to move {filename}: {e}")
+                else:
+                    print(f"Failed to move {filename}")
 
         # Update seen files under lock
         with self._seen_lock:
@@ -382,11 +379,8 @@ def api_move():
     if not src_path.exists():
         return jsonify({"error": "File not found"}), 404
 
-    dst_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        shutil.move(str(src_path), str(dst_path))
-    except OSError as e:
-        return jsonify({"error": str(e)}), 500
+    if not batch_store.move_image(src_path, dst_path):
+        return jsonify({"error": f"Could not move {filename}"}), 500
     return jsonify({"success": True})
 
 
@@ -409,22 +403,26 @@ def api_move_batch():
 
     moved = 0
     skipped = 0
+    valid_filenames: list[str] = []
+    source_dir = get_batch_folder(batch_name, source)
+    dest_dir = get_batch_folder(batch_name, destination)
     for filename in filenames:
-        src_path, err = _safe_path(get_batch_folder(batch_name, source), filename)
+        src_path, err = _safe_path(source_dir, filename)
         if err:
-            continue
-        dst_path, err = _safe_path(get_batch_folder(batch_name, destination), filename)
-        if err:
-            continue
-        if src_path.exists():
-            dst_path.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                shutil.move(str(src_path), str(dst_path))
-                moved += 1
-            except OSError:
-                skipped += 1
-        else:
             skipped += 1
+            continue
+        dst_path, err = _safe_path(dest_dir, filename)
+        if err:
+            skipped += 1
+            continue
+        valid_filenames.append(filename)
+    if valid_filenames:
+        moved, skipped_in_loop = batch_store.move_images(
+            source_dir=source_dir,
+            names=valid_filenames,
+            dest_dir=dest_dir,
+        )
+        skipped += skipped_in_loop
     if moved == 0 and filenames:
         return (
             jsonify({"success": False, "moved": 0, "error": "No files could be moved"}),
@@ -483,7 +481,7 @@ def serve_thumbnail(batch, folder, filename):
 
     if cache_path.exists() and cache_path.stat().st_mtime >= filepath.stat().st_mtime:
         resp = send_file(str(cache_path), mimetype="image/webp", max_age=3600)
-        resp.headers['Cache-Control'] = 'public, max-age=3600, immutable'
+        resp.headers["Cache-Control"] = "public, max-age=3600, immutable"
         return resp
 
     try:
@@ -492,7 +490,7 @@ def serve_thumbnail(batch, folder, filename):
             cache_dir.mkdir(parents=True, exist_ok=True)
             img.save(str(cache_path), format="WEBP", quality=60)
         resp = send_file(str(cache_path), mimetype="image/webp", max_age=3600)
-        resp.headers['Cache-Control'] = 'public, max-age=3600, immutable'
+        resp.headers["Cache-Control"] = "public, max-age=3600, immutable"
         return resp
     except Exception:
         print(f"Thumbnail generation failed for {filepath}", flush=True)
@@ -512,7 +510,7 @@ def serve_image(batch, folder, filename):
     if not filepath.exists():
         return jsonify({"error": "File not found"}), 404
     resp = send_file(filepath, max_age=3600)
-    resp.headers['Cache-Control'] = 'public, max-age=3600, immutable'
+    resp.headers["Cache-Control"] = "public, max-age=3600, immutable"
     return resp
 
 
@@ -707,13 +705,11 @@ def _run_scoring_worker_inner(run_id, run):
                 break
             src_path = image_dir / r.filename
             dst_path = dest_dir / r.filename
-            if src_path.exists():
-                try:
-                    shutil.move(str(src_path), str(dst_path))
-                    r.moved_to = str(dst_path)
-                    moved += 1
-                except Exception as e:
-                    print(f"AI curate move error for {r.filename}: {e}")
+            if batch_store.move_image(src_path, dst_path):
+                r.moved_to = str(dst_path)
+                moved += 1
+            else:
+                logger.warning("AI curate move failed for %s", r.filename)
 
     # Compute totals
     totals = RunTotals(

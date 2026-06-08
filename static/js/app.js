@@ -1579,6 +1579,32 @@
         let _modalFocusRestore = null;
         let _activeModal = null;
 
+        // Module-scoped keydown handler so _trapFocus and _releaseFocusTrap
+        // can pass the same function reference to add/removeEventListener.
+        // Inline anonymous handlers (or named function expressions) cannot
+        // be unregistered, so every modal open/close cycle would leak a
+        // listener on the same modal element.
+        function _modalKey(e) {
+            if (e.key !== 'Tab' || !_activeModal) return;
+            const focusable = _activeModal.querySelectorAll(
+                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+            );
+            if (focusable.length === 0) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (e.shiftKey) {
+                if (document.activeElement === first) {
+                    e.preventDefault();
+                    last.focus();
+                }
+            } else {
+                if (document.activeElement === last) {
+                    e.preventDefault();
+                    first.focus();
+                }
+            }
+        }
+
         function _trapFocus(modal) {
             _activeModal = modal;
             _modalFocusRestore = document.activeElement;
@@ -1586,25 +1612,14 @@
                 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
             );
             const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            modal.addEventListener('keydown', function _modalKey(e) {
-                if (e.key !== 'Tab') return;
-                if (e.shiftKey) {
-                    if (document.activeElement === first) {
-                        e.preventDefault();
-                        last.focus();
-                    }
-                } else {
-                    if (document.activeElement === last) {
-                        e.preventDefault();
-                        first.focus();
-                    }
-                }
-            });
+            modal.addEventListener('keydown', _modalKey);
             if (first) first.focus();
         }
 
         function _releaseFocusTrap() {
+            if (_activeModal) {
+                _activeModal.removeEventListener('keydown', _modalKey);
+            }
             _activeModal = null;
             if (_modalFocusRestore) {
                 _modalFocusRestore.focus();
@@ -2633,10 +2648,10 @@
 
             // Lightbox buttons
             const lightboxBtns = {
-                'lightbox-prev': function() { navigateLightbox(-1); },
-                'lightbox-next': function() { navigateLightbox(1); },
-                'lightbox-prev-scored': function() { navigateLightboxToScored(-1); },
-                'lightbox-next-scored': function() { navigateLightboxToScored(1); },
+                'lightbox-prev': function() { navigate(-1); },
+                'lightbox-next': function() { navigate(1); },
+                'lightbox-prev-scored': function() { navigateScored(-1); },
+                'lightbox-next-scored': function() { navigateScored(1); },
                 'lightbox-close': closeLightbox,
                 'metadata-toggle-btn': toggleLightboxMetadata,
             };
@@ -2730,9 +2745,13 @@
             });
 
             const aiDiffSelect = document.getElementById('ai-diff-select');
-            if (aiDiffSelect) aiDiffSelect.addEventListener('change', function() {
-                aiToggleRunDiff(this.value || null);
-            });
+            if (aiDiffSelect) {
+                // Note: ai-diff-select is not currently rendered in the template;
+                // if it is added back, wire it to the real compare handler below.
+                aiDiffSelect.addEventListener('change', function() {
+                    aiSetCompareRun(this.value);
+                });
+            }
 
             // AI compare run selector
             const aiCompareRunSelect = document.getElementById('ai-compare-run-select');
@@ -2769,15 +2788,15 @@
 
             // Lightbox nav buttons
             document.querySelectorAll('.lightbox-nav.prev').forEach(el => {
-                el.addEventListener('click', function() { navigateLightbox(-1); });
+                el.addEventListener('click', function() { navigate(-1); });
                 el.addEventListener('keydown', function(e) {
-                    if (e.key === 'Enter' || e.key === ' ') navigateLightbox(-1);
+                    if (e.key === 'Enter' || e.key === ' ') navigate(-1);
                 });
             });
             document.querySelectorAll('.lightbox-nav.next').forEach(el => {
-                el.addEventListener('click', function() { navigateLightbox(1); });
+                el.addEventListener('click', function() { navigate(1); });
                 el.addEventListener('keydown', function(e) {
-                    if (e.key === 'Enter' || e.key === ' ') navigateLightbox(1);
+                    if (e.key === 'Enter' || e.key === ' ') navigate(1);
                 });
             });
 
@@ -2795,8 +2814,8 @@
                 // Map button text to handlers for generic buttons
                 lightboxActions.querySelectorAll('button').forEach(btn => {
                     const text = btn.textContent.trim();
-                    if (text === 'Prev scored') btn.addEventListener('click', function() { navigateLightboxToScored(-1); });
-                    else if (text === 'Next scored') btn.addEventListener('click', function() { navigateLightboxToScored(1); });
+                    if (text === 'Prev scored') btn.addEventListener('click', function() { navigateScored(-1); });
+                    else if (text === 'Next scored') btn.addEventListener('click', function() { navigateScored(1); });
                     else if (text === 'Zoom \u2212') btn.addEventListener('click', function() { zoomLightbox(-0.2); });
                     else if (text === 'Reset zoom') btn.addEventListener('click', resetLightboxZoom);
                     else if (text === 'Zoom +') btn.addEventListener('click', function() { zoomLightbox(0.2); });

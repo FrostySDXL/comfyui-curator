@@ -166,17 +166,24 @@ class QueueManager:
         run_id: str,
         results: Optional[list] = None,
         totals: Optional[object] = None,
+        persist: Optional[bool] = None,
     ) -> bool:
         """Finalize a cancelling job after the scoring loop has stopped.
 
-        Discards partial results and does NOT persist history by default.
-        If results and totals are provided, they are retained on the cancelled
-        run record (e.g., for partial move audit trails).
+        By default, cancelled runs are NOT persisted (they are treated as
+        ephemeral). The exception is the partial-move audit-trail case:
+        if the caller passes non-empty ``results`` and explicitly opts in
+        with ``persist=True``, the cancelled run is written to history so
+        the operator can see which files were moved before cancellation.
 
         Args:
             run_id: The job to finalize as cancelled.
             results: Optional partial results to retain on the cancelled run.
             totals: Optional partial totals to retain on the cancelled run.
+            persist: When True, save the cancelled run to storage regardless
+                of whether ``results`` were supplied. When None (default),
+                persistence is only attempted when ``results`` is provided
+                AND non-empty.
 
         Returns:
             True if finalized, False if not in CANCELLING state.
@@ -200,6 +207,19 @@ class QueueManager:
             if self._running_id == run_id:
                 self._running_id = None
                 promoted_id = self._promote_next()
+
+        # Persist the cancelled run only when explicitly requested, or
+        # when partial results were supplied and look meaningful. Cancelled
+        # runs with no results are still treated as ephemeral.
+        should_persist = persist is True or (
+            persist is None and results is not None and len(results) > 0
+        )
+
+        if should_persist and self._storage:
+            try:
+                self._storage.save_run(run, allow_cancelled=True)
+            except Exception:
+                logger.exception("save_run failed on finalize_cancelled for %s", run_id)
 
         self._notify_promote(promoted_id)
         self.prune()
@@ -240,9 +260,23 @@ class QueueManager:
                 promoted_id = self._promote_next()
 
         # Persist to storage outside the lock to avoid blocking queue
-        # operations during disk I/O.
+        # operations during disk I/O. Storage failures must not escape —
+        # the run was already marked COMPLETED in memory, so we mark it
+        # FAILED with a clear error message instead of letting the worker
+        # catch an opaque "Unhandled worker error".
         if self._storage:
-            self._storage.save_run(run)
+            try:
+                self._storage.save_run(run)
+            except Exception as e:
+                logger.exception("save_run failed on complete_job for %s", run_id)
+                run.status = JobState.FAILED
+                run.error_message = f"completed but could not persist history: {e!r}"
+                try:
+                    self._storage.save_run(run)
+                except Exception:
+                    logger.exception(
+                        "save_run failed again while recording FAILED state for %s", run_id
+                    )
 
         self._notify_promote(promoted_id)
         self.prune()
@@ -264,6 +298,7 @@ class QueueManager:
                 return False
 
             run.status = JobState.FAILED
+            run.error_message = error_message
             run.completed_at = datetime.now(timezone.utc).isoformat()
 
             promoted_id = None
@@ -272,9 +307,18 @@ class QueueManager:
                 promoted_id = self._promote_next()
 
         # Persist to storage outside the lock to avoid blocking queue
-        # operations during disk I/O.
+        # operations during disk I/O. Storage failures must not escape —
+        # the run was already marked FAILED in memory, so we annotate
+        # the error message instead of letting the exception crash the
+        # worker thread.
         if self._storage:
-            self._storage.save_run(run)
+            try:
+                self._storage.save_run(run)
+            except Exception as e:
+                logger.exception("save_run failed on fail_job for %s", run_id)
+                run.error_message = (
+                    f"{error_message}; additionally, run could not be persisted: {e!r}"
+                )
 
         self._notify_promote(promoted_id)
         self.prune()

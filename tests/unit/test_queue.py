@@ -1,9 +1,9 @@
 """Unit tests for ai_curate.queue -- single-worker queue manager."""
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from ai_curate.queue import QueueManager
-from ai_curate.models import CurationRun, JobState, ImageResult, RunTotals
+from ai_curate.models import JobState, ImageResult, RunTotals
 
 
 @pytest.fixture
@@ -192,6 +192,56 @@ class TestQueueManagerFail:
         mock_storage.save_run.assert_called_once()
         saved_run = mock_storage.save_run.call_args[0][0]
         assert saved_run.status == JobState.FAILED
+
+
+class TestQueueManagerStorageErrors:
+    """Storage failures must not escape as 'Unhandled worker error'."""
+
+    def test_complete_job_storage_failure_marked_failed(self):
+        """When storage.save_run raises on complete_job, the run ends FAILED with a clear message.
+
+        Regression: the original code called save_run outside any try/except,
+        so a disk-full or permission error propagated up to the worker,
+        which then called fail_job — but fail_job ALSO calls save_run and
+        could re-raise. Operators saw an opaque 'Unhandled worker error'
+        instead of a real cause.
+        """
+        mock_storage = MagicMock()
+        mock_storage.save_run.side_effect = OSError("disk full")
+        qm_with_storage = QueueManager(storage=mock_storage)
+
+        run = qm_with_storage.submit(_make_job())
+        results = [ImageResult(filename="a.png", score=3, total=5)]
+        totals = RunTotals(images=1, scored=1)
+
+        # Must not raise, even though save_run keeps failing.
+        qm_with_storage.complete_job(run.run_id, results=results, totals=totals)
+
+        job = qm_with_storage.get_job(run.run_id)
+        assert job.status == JobState.FAILED
+        assert (
+            "save" in (job.error_message or "").lower()
+            or "disk" in (job.error_message or "").lower()
+        )
+        # Second attempt from fail_job should also have been attempted.
+        assert mock_storage.save_run.call_count >= 2
+
+    def test_fail_job_storage_failure_marked_failed_with_message(self):
+        """When save_run raises on fail_job, the run is still marked FAILED with a clear message."""
+        mock_storage = MagicMock()
+        mock_storage.save_run.side_effect = PermissionError("EACCES")
+        qm_with_storage = QueueManager(storage=mock_storage)
+
+        run = qm_with_storage.submit(_make_job())
+        # Must not raise.
+        qm_with_storage.fail_job(run.run_id, "scoring error")
+
+        job = qm_with_storage.get_job(run.run_id)
+        assert job.status == JobState.FAILED
+        assert (
+            "permission" in (job.error_message or "").lower()
+            or "eacces" in (job.error_message or "").lower()
+        )
 
     def test_fail_job_nonexistent(self, qm):
         """Failing a nonexistent job returns False."""

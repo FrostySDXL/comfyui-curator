@@ -21,7 +21,6 @@ load_dotenv()
 
 import argparse
 import logging
-import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,7 +33,8 @@ from ai_curate.elements import extract_elements, build_element_list
 from ai_curate.client import VisionClient
 from ai_curate.scoring import score_images, find_images
 from ai_curate.storage import RunStorage
-from ai_curate.models import CurationRun, ImageResult, RunTotals, JobState
+from ai_curate.models import CurationRun, RunTotals, JobState
+from image_curator.batch_store import move_image
 
 
 def main() -> None:
@@ -224,13 +224,11 @@ def main() -> None:
         for r in shortlist:
             src_path = image_dir_path / r.filename
             dst_path = dest_dir / r.filename
-            if src_path.exists():
-                try:
-                    shutil.move(str(src_path), str(dst_path))
-                    r.moved_to = str(dst_path)
-                    moved += 1
-                except Exception as e:
-                    print(f"WARNING: Could not move {r.filename}: {e}", file=sys.stderr)
+            if move_image(src_path, dst_path):
+                r.moved_to = str(dst_path)
+                moved += 1
+            else:
+                print(f"WARNING: Could not move {r.filename}", file=sys.stderr)
 
     # Save run history via shared storage
     run = CurationRun(

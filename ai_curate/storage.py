@@ -39,32 +39,62 @@ class RunStorage:
         if run_id in (".", ".."):
             raise ValueError("run_id is a reserved path component")
 
+    @staticmethod
+    def _validate_batch(batch: str) -> None:
+        """Raise ValueError if ``batch`` contains unsafe characters.
+
+        Mirrors ``_validate_run_id`` so neither input can escape the
+        configured ``batches_dir``. Defence in depth: callers should
+        already restrict batches to known-good names, but storage methods
+        must not silently trust that.
+        """
+        if not batch or not batch.strip():
+            raise ValueError("batch must not be empty")
+        if "\0" in batch:
+            raise ValueError("batch contains null byte")
+        if "/" in batch or "\\" in batch:
+            raise ValueError("batch contains path separators")
+        if batch in (".", ".."):
+            raise ValueError("batch is a reserved path component")
+        if batch.startswith("."):
+            raise ValueError("batch starts with a dot")
+
     def _ai_curate_dir(self, batch: str) -> Path:
+        self._validate_batch(batch)
         return self.batches_dir / batch / AI_CURATE_DIR
 
     def _runs_dir(self, batch: str) -> Path:
+        self._validate_batch(batch)
         return self._ai_curate_dir(batch) / RUNS_SUBDIR
 
     def _latest_path(self, batch: str) -> Path:
+        self._validate_batch(batch)
         return self._ai_curate_dir(batch) / LATEST_FILE
 
     def _run_path(self, batch: str, run_id: str) -> Path:
+        self._validate_batch(batch)
         self._validate_run_id(run_id)
         return self._runs_dir(batch) / f"{run_id}.json"
 
-    def save_run(self, run: CurationRun) -> bool:
+    def save_run(self, run: CurationRun, allow_cancelled: bool = False) -> bool:
         """Persist a completed run to disk.
 
-        Cancelled runs are never written. Only completed or failed runs
-        are persisted.
+        Cancelled runs are normally not persisted. The exception is the
+        partial-move audit-trail case: the queue's ``finalize_cancelled``
+        calls this with ``allow_cancelled=True`` when partial results
+        were supplied, so the operator can see which files were moved
+        before the cancellation.
 
         Args:
             run: The CurationRun to save.
+            allow_cancelled: When True, persist CANCELLED runs (used for
+                partial-move audit trails). When False (default), cancelled
+                runs are skipped.
 
         Returns:
             True if saved, False if skipped (e.g. cancelled).
         """
-        if run.status == JobState.CANCELLED:
+        if run.status == JobState.CANCELLED and not allow_cancelled:
             return False
 
         with self._lock:
@@ -135,7 +165,7 @@ class RunStorage:
                     data = json.loads(path.read_text(encoding="utf-8"))
                     created = data.get("created_at", "")
                     if created:
-                        from datetime import datetime, timezone
+                        from datetime import datetime
 
                         return datetime.fromisoformat(created).timestamp()
                 except Exception:

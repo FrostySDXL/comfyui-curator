@@ -148,3 +148,102 @@ def test_import_all_pending_handles_duplicate_filenames(tmp_path):
     # The unique file is imported normally
     assert (batches_dir / "alpha" / "inbox" / "unique.jpg").exists()
     assert count == 2
+
+
+# ---------------------------------------------------------------------------
+# get_images tests
+# ---------------------------------------------------------------------------
+
+
+def test_get_images_returns_supported_files(tmp_path):
+    """get_images returns only supported image files in a directory."""
+    (tmp_path / "a.png").write_bytes(b"x")
+    (tmp_path / "b.jpg").write_bytes(b"x")
+    (tmp_path / "notes.txt").write_text("x")
+
+    result = batch_store.get_images(tmp_path, sort_by="name", order="asc")
+    assert [p.name for p in result] == ["a.png", "b.jpg"]
+
+
+def test_get_images_tolerates_file_deleted_between_iterdir_and_sort(tmp_path, monkeypatch):
+    """get_images must not crash if a file vanishes between iterdir and sort.
+
+    Regression: a previous version of the function called
+    ``x.stat().st_mtime`` inside the sort key. If the file was deleted
+    between ``iterdir()`` and the sort, the ``/api/images/...`` endpoint
+    raised ``FileNotFoundError``.
+    """
+    kept = tmp_path / "kept.png"
+    kept.write_bytes(b"x")
+    deleted = tmp_path / "deleted.png"
+    deleted.write_bytes(b"x")
+
+    # Make ``Path.stat()`` for the ``deleted`` file raise, as if the
+    # file had been removed between ``iterdir()`` and the sort key call.
+    real_stat = batch_store.Path.stat
+
+    def fake_stat(self, *args, **kwargs):
+        if self.name == "deleted.png":
+            raise FileNotFoundError(self)
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(batch_store.Path, "stat", fake_stat)
+
+    # Must not raise.
+    result = batch_store.get_images(tmp_path, sort_by="date", order="desc")
+
+    # The surviving file is present in the result. The missing file may
+    # either be skipped (preferred) or listed but unstatable; we only
+    # require that we got a result without raising.
+    names = [p.name for p in result]
+    assert "kept.png" in names
+    # ``deleted.png`` should be filtered out because its stat() raised.
+    assert "deleted.png" not in names
+
+
+# ---------------------------------------------------------------------------
+# move_image / move_images tests
+# ---------------------------------------------------------------------------
+
+
+def test_move_image_succeeds(tmp_path):
+    """move_image moves a file from src to dst and returns True."""
+    src = tmp_path / "src.png"
+    dst = tmp_path / "dst.png"
+    src.write_bytes(b"payload")
+    assert batch_store.move_image(src, dst) is True
+    assert not src.exists()
+    assert dst.read_bytes() == b"payload"
+
+
+def test_move_image_missing_src_returns_false(tmp_path):
+    """move_image returns False (does not raise) if the source is missing."""
+    src = tmp_path / "missing.png"
+    dst = tmp_path / "dst.png"
+    assert batch_store.move_image(src, dst) is False
+    assert not dst.exists()
+
+
+def test_move_image_creates_parent_dirs(tmp_path):
+    """move_image creates missing parent directories for the destination."""
+    src = tmp_path / "src.png"
+    src.write_bytes(b"x")
+    dst = tmp_path / "nested" / "deeper" / "dst.png"
+    assert batch_store.move_image(src, dst) is True
+    assert dst.read_bytes() == b"x"
+
+
+def test_move_images_reports_moved_and_skipped(tmp_path):
+    """move_images returns (moved_count, skipped_count) for a batch."""
+    (tmp_path / "a.png").write_bytes(b"a")
+    (tmp_path / "b.png").write_bytes(b"b")
+    (tmp_path / "c.png").write_bytes(b"c")
+
+    moved, skipped = batch_store.move_images(
+        source_dir=tmp_path,
+        names=["a.png", "b.png", "missing.png", "c.png"],
+        dest_dir=tmp_path / "dest",
+    )
+    assert moved == 3
+    assert skipped == 1
+    assert sorted(p.name for p in (tmp_path / "dest").iterdir()) == ["a.png", "b.png", "c.png"]

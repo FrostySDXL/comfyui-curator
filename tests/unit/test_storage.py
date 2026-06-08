@@ -2,7 +2,6 @@
 
 import json
 import pytest
-from pathlib import Path
 from ai_curate.models import CurationRun, ImageResult, RunTotals, JobState
 from ai_curate.storage import RunStorage
 
@@ -172,3 +171,35 @@ class TestRunStorage:
         """run_id with null byte raises ValueError."""
         with pytest.raises(ValueError, match="run_id"):
             storage.load_run("test-batch", "abc\0def")
+
+    @pytest.mark.parametrize(
+        "bad_batch",
+        [
+            "",
+            "   ",
+            "../escape",
+            "..",
+            ".",
+            ".hidden",
+            "foo/bar",
+            "foo\\bar",
+            "abc\0def",
+        ],
+    )
+    def test_rejects_unsafe_batch_names(self, storage, bad_batch):
+        """Batch names with traversal or null bytes must be rejected on every method.
+
+        Regression: a previous version of RunStorage validated ``run_id`` but
+        not ``batch``, so a hostile or corrupted batch name could write files
+        outside the configured batches directory.
+        """
+        run = _make_completed_run()
+        run.batch = bad_batch
+        with pytest.raises(ValueError):
+            storage.save_run(run)
+        with pytest.raises(ValueError):
+            storage.load_run(bad_batch, "any")
+        with pytest.raises(ValueError):
+            storage.load_latest(bad_batch)
+        with pytest.raises(ValueError):
+            storage.list_runs(bad_batch)
