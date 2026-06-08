@@ -91,7 +91,11 @@ def _all_checks() -> dict[str, Check]:
         ),
         "git-diff-check": Check(
             "git-diff-check",
-            ["git", "diff", "--check"],
+            # Compare against HEAD so the check covers both staged and
+            # unstaged changes; ``git diff --check`` alone would only see
+            # unstaged working-tree edits and miss whitespace errors in
+            # files that have been ``git add``-ed.
+            ["git", "diff", "HEAD", "--check"],
             requires="git",
         ),
     }

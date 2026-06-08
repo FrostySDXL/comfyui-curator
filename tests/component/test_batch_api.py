@@ -260,3 +260,37 @@ def test_api_move_batch_missing_params(client, app_module):
     app_module.create_batch("batch")
     response = client.post("/api/move-batch", json={"batch": "batch"})
     assert response.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Thumbnail cache key (C1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.component
+def test_thumbnail_cache_keys_are_namespaced_by_folder(client, app_module):
+    """Two same-stem files in different folders cache to separate files.
+
+    Regression: the previous cache key was ``{stem}.webp``, so
+    ``inbox/shared.png`` and ``shortlisted/shared.png`` collided on the
+    same cache file and the second folder would serve the first
+    folder's thumbnail.
+    """
+    app_module.create_batch("batch")
+    _write_test_png(app_module.BATCHES_DIR / "batch" / "inbox" / "shared.png")
+    _write_test_png(app_module.BATCHES_DIR / "batch" / "shortlisted" / "shared.png")
+
+    inbox_resp = client.get("/thumb/batch/inbox/shared.png")
+    short_resp = client.get("/thumb/batch/shortlisted/shared.png")
+
+    assert inbox_resp.status_code == 200
+    assert short_resp.status_code == 200
+
+    cache_dir = app_module.BATCHES_DIR / "batch" / ".thumbs"
+    cache_files = sorted(p.name for p in cache_dir.glob("*.webp"))
+    assert len(cache_files) == 2, f"expected 2 distinct cache files, got {cache_files}"
+    # The folder is now part of the cache key, so the two files have
+    # distinct names and are not overwritten by the second request.
+    assert cache_files[0] != cache_files[1]
+    assert any("inbox" in name for name in cache_files)
+    assert any("shortlisted" in name for name in cache_files)

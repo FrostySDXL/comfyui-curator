@@ -54,7 +54,6 @@ Maintain a fast operator-facing curation workflow for generated images with opti
 - `templates/` — Flask templates
 - `static/` — frontend assets
 - `tests/` — unit/component/integration checks
-- `fixtures/` — sample data for repeatable verification
 - `scripts/` — helper scripts
 - `image-curator.service.example` — templated systemd unit
 - `.env.example` — documented environment variable reference
@@ -71,7 +70,7 @@ Maintain a fast operator-facing curation workflow for generated images with opti
 - Put isolated logic tests in `tests/unit/`
 - Put in-process multi-module checks in `tests/component/`
 - Put Flask/API/filesystem workflow checks in `tests/integration/`
-- Keep fixtures in `fixtures/` and local helper scripts in `scripts/`
+- Keep local helper scripts in `scripts/`
 
 ## Public compatibility surfaces
 
@@ -99,7 +98,7 @@ Treat these as stability-sensitive:
 - Prefer human-readable AI run labels over raw internal run IDs in operator-facing selectors when possible
 - Be careful with polling, drag state, and lightbox interactions so background refresh does not interrupt the operator
 - Verify the browser flow manually
-- Update tests or fixtures if behavior meaningfully changed
+- Update tests if behavior meaningfully changed
 
 ### UI behavior that should stay consistent
 

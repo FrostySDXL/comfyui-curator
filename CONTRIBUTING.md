@@ -25,7 +25,6 @@ This repository is operator-maintained. Keep changes minimal, explicit, and easy
 - HTML templates: `templates/`
 - Frontend behavior and styling: `static/js/`, `static/css/`
 - Tests: `tests/unit/`, `tests/component/`, `tests/integration/`
-- Fixtures: `fixtures/`
 - Internal repo guidance: `README.md`, `AGENTS.md`, `CONTRIBUTING.md`
 
 Avoid adding new production modules at repo root unless they are explicit entrypoints. Prefer `image_curator/`, `ai_curate/`, or another responsibility-based package with docs and tests.
@@ -55,6 +54,22 @@ python scripts/run_all.py --format
 Only use `--skip-js` when Node is unavailable and the change is not frontend-related.
 
 Add `--quiet` to suppress the per-check command echo (handy when sharing logs, since the echo otherwise shows the absolute path of the active Python interpreter).
+
+### Full verification with mypy
+
+For changes that touch type annotations, public APIs, or shared modules
+under `ai_curate/` or `image_curator/`, run the full local check suite
+which adds `mypy` to the default plan:
+
+```bash
+python scripts/run_all.py --full
+```
+
+`--full` runs the same checks as the default mode plus `mypy` against
+`app.py`, `curate.py`, `image_curator/`, `ai_curate/`, `tests/`, and
+`scripts/`. It is the only mode that surfaces type errors before a CI
+gate catches them. Keep the default mode green for fast edit loops, and
+run `--full` before opening a PR.
 
 ### Managing dependencies
 

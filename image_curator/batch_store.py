@@ -98,13 +98,30 @@ def get_images(directory: Path, sort_by: str = "date", order: str = "desc") -> l
     """Return supported image files in a directory with configurable sorting.
 
     Files whose ``stat()`` raises ``OSError`` (for example because they were
-    removed between ``iterdir()`` and the sort) are silently skipped so a
-    concurrent deletion does not crash the image-listing endpoint.
+    removed between ``iterdir()`` and the per-file inspection) are silently
+    skipped so a concurrent deletion does not crash the image-listing
+    endpoint. The same protection applies to the date-sort branch below,
+    so a file that vanishes after the initial filter is also dropped
+    rather than raising.
     """
     directory = Path(directory)
     if not directory.is_dir():
         return []
-    images = [f for f in directory.iterdir() if not f.is_symlink() and _is_supported_image(f)]
+    images = []
+    for f in directory.iterdir():
+        # ``is_symlink()`` calls ``lstat`` -> ``stat``; if the file is
+        # removed between ``iterdir()`` and that call, the underlying
+        # stat raises FileNotFoundError. Treat that the same as an
+        # unsupported entry and skip it.
+        try:
+            if f.is_symlink():
+                continue
+            if not _is_supported_image(f):
+                continue
+        except (FileNotFoundError, OSError):
+            # File vanished after iterdir() — skip it.
+            continue
+        images.append(f)
     reverse = order == "desc"
     if sort_by == "name":
         images.sort(key=lambda x: x.name.lower(), reverse=reverse)
@@ -144,6 +161,7 @@ def get_batch_metadata(batches_dir: Path, batch_name: str) -> dict[str, float]:
     Excludes .thumbs cache and other hidden directories to avoid thumbnail
     generation from falsely bumping the batch to the top of "recent" sort.
     """
+    _validate_name(batch_name, "batch name")
     batch_dir = Path(batches_dir) / batch_name
     if not batch_dir.exists():
         return {"modified_at": 0}
@@ -214,8 +232,11 @@ def move_image(src: Path, dst: Path) -> bool:
 def move_images(source_dir: Path, names: list[str], dest_dir: Path) -> tuple[int, int]:
     """Move a batch of files from ``source_dir`` to ``dest_dir``.
 
-    Returns ``(moved, skipped)``. Missing source files count as skipped
-    and do not raise. The destination directory is created if missing.
+    Returns ``(moved, skipped)``. Missing source files and names that fail
+    ``_validate_name`` (path traversal, null bytes, dotfiles) count as
+    skipped and do not raise. The destination directory is created if
+    missing. Defense-in-depth validation is applied at this boundary so
+    the helper is safe to call from any caller, not just the API routes.
     """
     source_dir = Path(source_dir)
     dest_dir = Path(dest_dir)
@@ -223,6 +244,12 @@ def move_images(source_dir: Path, names: list[str], dest_dir: Path) -> tuple[int
     moved = 0
     skipped = 0
     for name in names:
+        try:
+            _validate_name(name, "file name")
+        except ValueError:
+            logger.warning("move_images rejected unsafe name: %r", name)
+            skipped += 1
+            continue
         src = source_dir / name
         dst = dest_dir / name
         if move_image(src, dst):

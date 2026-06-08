@@ -247,3 +247,70 @@ def test_move_images_reports_moved_and_skipped(tmp_path):
     assert moved == 3
     assert skipped == 1
     assert sorted(p.name for p in (tmp_path / "dest").iterdir()) == ["a.png", "b.png", "c.png"]
+
+
+# ---------------------------------------------------------------------------
+# Defense-in-depth validation tests (H4, H5)
+# ---------------------------------------------------------------------------
+
+
+def test_get_batch_metadata_validates_batch_name(tmp_path):
+    """get_batch_metadata raises ValueError for path-traversal batch names.
+
+    Regression: a previous version of get_batch_metadata constructed
+    ``Path(batches_dir) / batch_name`` directly with no validation,
+    while every other public batch_store function called _validate_name.
+    """
+    with pytest.raises(ValueError, match="path separators"):
+        batch_store.get_batch_metadata(tmp_path, "../escape")
+
+
+def test_move_images_skips_names_with_path_separators(tmp_path):
+    """move_images treats names containing path separators as skipped.
+
+    Defense-in-depth: the API route already validates names via _safe_path,
+    but move_images itself should reject unsafe names so any direct caller
+    cannot trigger a path traversal.
+    """
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "valid.png").write_bytes(b"x")
+    (src / "ok_again.png").write_bytes(b"y")
+
+    dest = tmp_path / "dest"
+    dest.mkdir()
+
+    moved, skipped = batch_store.move_images(
+        source_dir=src,
+        names=["valid.png", "../escape.png", "subdir/file.png", "ok_again.png"],
+        dest_dir=dest,
+    )
+
+    assert moved == 2
+    assert skipped == 2
+    # The valid names actually landed in dest.
+    assert (dest / "valid.png").exists()
+    assert (dest / "ok_again.png").exists()
+    # No traversal directory was created inside dest.
+    assert not (dest / "subdir").exists()
+    assert not (dest / "escape.png").exists()
+
+
+def test_move_images_skips_dotfile_names(tmp_path):
+    """move_images rejects dotfile names like '.hidden' or '..'."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "valid.png").write_bytes(b"x")
+
+    dest = tmp_path / "dest"
+    dest.mkdir()
+
+    moved, skipped = batch_store.move_images(
+        source_dir=src,
+        names=["valid.png", ".hidden", ".."],
+        dest_dir=dest,
+    )
+
+    assert moved == 1
+    assert skipped == 2
+    assert (dest / "valid.png").exists()

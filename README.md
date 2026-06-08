@@ -184,7 +184,6 @@ extraction, client calls, and storage to `ai_curate/`.
 - `templates/` — Flask HTML templates
 - `static/` — frontend JS/CSS assets
 - `tests/` — automated verification split by proof strength
-- `fixtures/` — controlled sample inputs for tests and local verification
 - `scripts/` — helper scripts for developer/operator workflows
 - `image-curator.service.example` — templated systemd unit for deployment
 - `.env.example` — configuration template
@@ -205,7 +204,6 @@ extraction, client calls, and storage to `ai_curate/`.
 - `tests/unit/` is for pure logic checks
 - `tests/component/` is for in-process multi-module checks
 - `tests/integration/` is for Flask/API/filesystem workflow checks
-- `fixtures/` is for controlled sample inputs used in tests and smoke verification
 - `scripts/` is for local helper scripts, not production runtime logic
 
 ## Change boundaries

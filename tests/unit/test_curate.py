@@ -3,6 +3,8 @@
 from datetime import datetime
 from unittest.mock import patch, MagicMock
 
+import pytest
+
 from curate import main
 
 
@@ -165,9 +167,16 @@ class TestCurateCLI:
             # parser.error calls sys.exit(2)
             assert e.code == 2
 
-    def test_error_message_no_longer_suggests_panel(self, monkeypatch):
-        """Error message should not reference deprecated --panel flag."""
+    def test_error_message_no_longer_suggests_panel(self, capsys, monkeypatch):
+        """Error message should not reference deprecated --panel flag.
 
+        Regression: a previous version of this test had a bare ``pass`` body
+        and provided no real coverage. We now invoke main() with --batch
+        but no --prompt (and no --panel) and assert that the actual error
+        line emitted by argparse does not mention the deprecated --panel
+        alias. The usage line may still mention --panel as a registered
+        option; that is expected and intentional.
+        """
         monkeypatch.setattr(
             "sys.argv",
             [
@@ -176,11 +185,26 @@ class TestCurateCLI:
                 "test",
             ],
         )
-        # Capture stderr during parser.error
-        try:
+        with pytest.raises(SystemExit):
             main()
-        except SystemExit:
-            pass
+        captured = capsys.readouterr()
+        combined = captured.out + captured.err
+        # argparse's error lines are the ones that follow the usage block
+        # and contain "error:". They are the actionable message, distinct
+        # from the usage line which legitimately enumerates all options.
+        error_lines = [line for line in combined.splitlines() if "error:" in line]
+        assert error_lines, f"expected an argparse error line, got:\n{combined}"
+        error_text = " ".join(error_lines)
+        assert "--panel" not in error_text, (
+            "argparse error message should not mention the deprecated "
+            f"--panel alias. Got: {error_text!r}"
+        )
+        # The error should also point to --prompt (the current flag), so
+        # this test catches both regressions: removal of the hint AND a
+        # future change that drops the error message entirely.
+        assert "--prompt" in error_text, (
+            f"argparse error should mention --prompt, got: {error_text!r}"
+        )
 
     def test_main_return_type_annotation(self):
         """main() should have return type annotation -> None."""

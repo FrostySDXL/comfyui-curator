@@ -160,7 +160,7 @@ class VisionClient:
             headers=headers,
         )
 
-        max_retries = 1  # One retry on transient network errors
+        max_retries = 1  # One retry on transient network errors only
         for attempt in range(max_retries + 1):
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
@@ -175,10 +175,17 @@ class VisionClient:
                     return -1, len(elements), {}, "failed to parse response"
                 return parse_score_response(content, len(elements))
 
-            except (urllib.error.URLError, urllib.error.HTTPError, socket.timeout) as e:
+            # Transient network errors get one retry. HTTPError (4xx/5xx
+            # response codes) is NOT retried: a misconfigured URL or bad
+            # API key returns 4xx and retrying just delays the surface
+            # of the real configuration error.
+            except (urllib.error.URLError, socket.timeout) as e:
                 if attempt < max_retries:
                     continue
                 return -1, len(elements), {}, f"error: {e}"
+
+            except urllib.error.HTTPError as e:
+                return -1, len(elements), {}, f"error: HTTP {e.code} {e.reason}"
 
             except json.JSONDecodeError as e:
                 return -1, len(elements), {}, f"error: {e}"

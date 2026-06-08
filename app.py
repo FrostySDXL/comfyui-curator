@@ -125,13 +125,13 @@ def get_pending_count():
 def import_all_pending(batch_name):
     """Import all pending images from comfyui-outputs to a batch's inbox.
 
-    Acquires the watcher's seen-files lock to prevent races between
-    the background watcher and this manual import call.
+    Resets the watcher's seen-files set so any pre-existing files are
+    re-discovered on the next watcher tick. Uses the public ``reset_seen``
+    method instead of touching the watcher's private lock directly so
+    the coupling is explicit and stays correct if the watcher changes.
     """
-    with watcher._seen_lock:
-        count = batch_store.import_all_pending(COMFYUI_OUTPUT, BATCHES_DIR, batch_name)
-        # Reset watcher's seen files since we moved everything
-        watcher.seen_files = set()
+    count = batch_store.import_all_pending(COMFYUI_OUTPUT, BATCHES_DIR, batch_name)
+    watcher.reset_seen()
     return count
 
 
@@ -424,11 +424,12 @@ def api_move_batch():
         )
         skipped += skipped_in_loop
     if moved == 0 and filenames:
-        return (
-            jsonify({"success": False, "moved": 0, "error": "No files could be moved"}),
-            400,
-        )
-    return jsonify({"success": True, "moved": moved})
+        # Zero files moved is a legitimate no-op (e.g. all requested files
+        # were already in the destination or no longer exist), not a client
+        # error. Surface success=False so the UI can show a hint, but keep
+        # a 200 status so callers don't treat this as a 4xx failure.
+        return jsonify({"success": False, "moved": 0, "skipped": skipped})
+    return jsonify({"success": True, "moved": moved, "skipped": skipped})
 
 
 @app.route("/api/delete-rejects/<batch>", methods=["POST"])
@@ -475,9 +476,11 @@ def serve_thumbnail(batch, folder, filename):
         return jsonify({"error": "File not found"}), 404
 
     # Thumbnail caching: WebP at 200px for minimal storage (~5KB each)
-    # Per-batch cache so thumbs survive folder moves within a batch
+    # Per-batch cache so thumbs survive folder moves within a batch.
+    # Cache key includes the folder so the same stem in different folders
+    # of the same batch does not collide.
     cache_dir = BATCHES_DIR / batch_name / ".thumbs"
-    cache_path = cache_dir / (Path(filename).stem + ".webp")
+    cache_path = cache_dir / f"{folder}__{Path(filename).stem}.webp"
 
     if cache_path.exists() and cache_path.stat().st_mtime >= filepath.stat().st_mtime:
         resp = send_file(str(cache_path), mimetype="image/webp", max_age=3600)

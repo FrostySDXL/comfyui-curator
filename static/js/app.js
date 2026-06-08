@@ -45,16 +45,6 @@
             showToast('Network error — check connection and try again');
         });
 
-        async function safeFetch(url, options = {}) {
-            try {
-                return await fetch(url, options);
-            } catch (err) {
-                console.error(`Fetch failed for ${url}:`, err);
-                showToast('Network request failed');
-                throw err;
-            }
-        }
-
         function getThumbnailCacheKey(imageSrc, img) {
             return `${imageSrc}|${img.size || 0}`;
         }
@@ -818,12 +808,6 @@
             if (metaSize) metaSize.textContent = formatSize(img.size);
         }
 
-        function clearGrid() {
-            const grid = document.getElementById('grid');
-            grid.replaceChildren();
-            gridThumbMap.clear();
-        }
-
         function showGridLoadingPlaceholders(batch, folder) {
             const grid = document.getElementById('grid');
             const expectedCount = allCounts[batch]?.[folder] || 0;
@@ -1036,6 +1020,20 @@
             });
             if (resp.ok) {
                 const data = await resp.json();
+                if (!data.success) {
+                    // Zero files moved (e.g. all requested names were
+                    // already in the destination, or paths were rejected).
+                    // The server returns 200 + success=false for this
+                    // case so it is not a 4xx; we surface a short hint
+                    // and refresh state without triggering the move
+                    // animation or an undo affordance.
+                    const hint = data.skipped
+                        ? `No files moved (${data.skipped} skipped)`
+                        : 'No files moved';
+                    showToast(hint);
+                    loadBatches();
+                    return;
+                }
                 await animateThumbRemoval(filenames);
                 recordLastAction(filenames, currentFolder, destination);
                 showToast(`Moved ${data.moved} image${data.moved!==1?'s':''} to ${destination}`, true);
@@ -1103,8 +1101,17 @@
                 })
             });
             if (resp.ok) {
+                const data = await resp.json();
                 lastAction = null;
                 hideToast();
+                if (!data.success) {
+                    // Nothing to undo at the filesystem level; still
+                    // clear the undo toast and refresh.
+                    showToast('Nothing to restore');
+                    loadBatches();
+                    if (currentBatch === batch) loadCurrentFolderImages();
+                    return;
+                }
                 showToast(`Restored ${filenames.length} image${filenames.length!==1?'s':''}`);
                 loadBatches();
                 if (currentBatch === batch) loadCurrentFolderImages();
