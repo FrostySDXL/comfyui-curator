@@ -704,7 +704,6 @@
             });
 
             const img = document.createElement('img');
-            img.loading = 'lazy';
             img.draggable = false;
             img.addEventListener('load', () => img.classList.add('loaded'));
             img.addEventListener('error', () => img.classList.add('loaded'));
