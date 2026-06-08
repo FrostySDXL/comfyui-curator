@@ -662,10 +662,10 @@
                 el.classList.toggle('selected', el.dataset.batch === batch));
             document.getElementById('folder-tabs').classList.add('visible');
             if (batchChanged) {
-                resetAiBatchState();
                 // Immediately replace old thumbnails with thumb-shaped placeholders
                 // while the new batch's image list loads.
                 images = [];
+                resetAiBatchState(false);
                 closeLightbox();
                 showGridLoadingPlaceholders(batch, 'inbox');
             }
@@ -2091,7 +2091,7 @@
             } catch { console.warn('aiRefreshRunData failed'); }
         }
 
-        function resetAiBatchState() {
+        function resetAiBatchState(refreshGrid = true) {
             aiCurrentJobId = null;
             aiStopPolling();
             aiActiveRun = null;
@@ -2106,7 +2106,7 @@
             if (runSelect) runSelect.value = '';
             const compareSelect = document.getElementById('ai-compare-run-select');
             if (compareSelect) compareSelect.value = 'latest';
-            updateGrid();
+            if (refreshGrid) updateGrid();
         }
 
         function aiToggleMoveMode() {
