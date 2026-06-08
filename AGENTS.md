@@ -20,6 +20,7 @@
 - Treat batch and AI sidebar button labels as stateful operator-facing cues, not static text.
 - Treat AI run history labels and compare controls as operator-facing compatibility surfaces.
 - For feature inventory or repo cleanup tasks, read `README.md`, `CONTRIBUTING.md`, and this file before editing.
+- `scripts/run_all.py` default mode runs both `ruff format --check` and `ruff check`; do not commit code that fails either on the touched paths.
 
 ## Decision tree
 

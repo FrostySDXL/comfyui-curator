@@ -103,6 +103,7 @@ def build_checks(mode: str = "default", skip_js: bool = False) -> list[Check]:
         "quick": ["compileall", "unit-tests", "javascript-syntax"],
         "default": [
             "ruff-format-check",
+            "ruff-check",
             "compileall",
             "unit-tests",
             "component-tests",

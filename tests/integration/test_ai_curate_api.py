@@ -1,13 +1,11 @@
 """Integration tests for AI curation Flask API routes."""
 
-import json
 import pytest
-from unittest.mock import patch, MagicMock
-from pathlib import Path
+from unittest.mock import patch
 
 pytestmark = pytest.mark.integration
 
-from ai_curate.models import JobState, CurationRun, ImageResult, RunTotals
+from ai_curate.models import JobState, CurationRun, RunTotals
 
 
 @pytest.fixture
@@ -287,7 +285,6 @@ class TestBatchRuns:
 
     def test_list_runs_with_persisted_data(self, client, app_module):
         """GET .../runs returns persisted run IDs after a run is saved."""
-        from ai_curate.models import CurationRun, JobState
 
         # Use the app's storage so data is visible to API routes
         storage = app_module._ai_storage
@@ -318,7 +315,6 @@ class TestBatchRuns:
 
     def test_get_run_with_persisted_data(self, client, app_module):
         """GET .../runs/<run_id> returns full run data after persistence."""
-        from ai_curate.models import CurationRun, RunTotals, JobState
 
         storage = app_module._ai_storage
 
@@ -343,7 +339,6 @@ class TestBatchRuns:
 
     def test_get_latest_run_with_persisted_data(self, client, app_module):
         """GET .../runs/latest returns the most recent run."""
-        from ai_curate.models import CurationRun, JobState
 
         storage = app_module._ai_storage
 

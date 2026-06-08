@@ -15,5 +15,10 @@ def test_batch_switch_renders_loading_thumbnail_placeholders():
     assert "function showGridLoadingPlaceholders(batch, folder)" in source
     assert "thumb.className = 'thumb loading-placeholder';" in source
     assert "showGridLoadingPlaceholders(batch, 'inbox');" in source
-    assert "clearGrid();" not in source.split("function selectBatch(batch)", 1)[1].split("function selectFolder", 1)[0]
+    assert (
+        "clearGrid();"
+        not in source.split("function selectBatch(batch)", 1)[1].split("function selectFolder", 1)[
+            0
+        ]
+    )
     assert ".thumb.loading-placeholder" in styles

@@ -1,8 +1,5 @@
 """Unit tests for ai_curate.config module."""
 
-import os
-from unittest.mock import patch
-
 from ai_curate import config
 
 

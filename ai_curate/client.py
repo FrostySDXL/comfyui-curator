@@ -9,7 +9,6 @@ llama-swap. Uses the OpenAI-compatible /v1/chat/completions endpoint.
 import base64
 import json
 import logging
-import mimetypes
 import re
 import socket
 import urllib.error

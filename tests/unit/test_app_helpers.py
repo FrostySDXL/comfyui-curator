@@ -1,8 +1,3 @@
-import os
-import pytest
-from pathlib import Path
-
-
 def test_load_state_defaults_to_no_active_batch(app_module):
     assert app_module.load_state() == {"active_batch": None}
 

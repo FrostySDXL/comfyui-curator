@@ -14,7 +14,7 @@ python scripts/run_all.py
 
 Common modes:
 
-- `python scripts/run_all.py` — default suite (ruff format check, compileall, unit/component/integration tests, JS syntax, git diff check)
+- `python scripts/run_all.py` — default suite (ruff format check, ruff lint, compileall, unit/component/integration tests, JS syntax, git diff check)
 - `python scripts/run_all.py --full` — full check suite including integration tests
 - `python scripts/run_all.py --quick` — fast edit-loop checks
 - `python scripts/run_all.py --format` — apply Ruff formatting

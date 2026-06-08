@@ -7,7 +7,6 @@ Tests the critical invariants:
 """
 
 import pytest
-from pathlib import Path
 
 from ai_curate.models import CurationRun, ImageResult, RunTotals, JobState
 from ai_curate.queue import QueueManager

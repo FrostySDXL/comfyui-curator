@@ -330,7 +330,7 @@ so you can configure paths, host, and model without environment variables.
 ## Verification tiers
 
 - Standard local verification (default):
-  - `python scripts/run_all.py` — runs ruff format check, compileall, unit/component/integration tests, JS syntax, and a git diff sanity check
+  - `python scripts/run_all.py` — runs ruff format check, ruff lint, compileall, unit/component/integration tests, JS syntax, and a git diff sanity check
 - Full verification suite including mypy type checking:
   - `python scripts/run_all.py --full`
 - Fast edit-loop verification:

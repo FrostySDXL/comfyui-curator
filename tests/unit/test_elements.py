@@ -1,6 +1,5 @@
 """Unit tests for ai_curate.elements -- element extraction from prompts."""
 
-import pytest
 from ai_curate.elements import extract_elements, QUALITY_ELEMENTS
 
 

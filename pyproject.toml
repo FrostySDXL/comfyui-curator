@@ -29,6 +29,18 @@ target-version = "py310"
 line-length = 100
 exclude = [".venv", "venv", "__pycache__", ".git"]
 
+[tool.ruff.lint.per-file-ignores]
+# app.py and curate.py call load_dotenv() before importing application
+# modules that read environment variables at import time. The non-top
+# import order is intentional and required for the .env configuration to
+# be visible during import.
+"app.py" = ["E402"]
+"curate.py" = ["E402"]
+# Test files commonly put `pytestmark = pytest.mark.<layer>` between
+# stdlib and third-party imports. Allowing it here keeps the marker
+# visible at the top of the file without an E402 per line.
+"tests/**" = ["E402"]
+
 [tool.mypy]
 python_version = "3.10"
 warn_unused_configs = true

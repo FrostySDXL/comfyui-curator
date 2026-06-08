@@ -21,6 +21,7 @@ def test_default_plan_uses_python_modules_and_all_test_layers():
 
     assert names == [
         "ruff-format-check",
+        "ruff-check",
         "compileall",
         "unit-tests",
         "component-tests",
@@ -29,7 +30,11 @@ def test_default_plan_uses_python_modules_and_all_test_layers():
         "git-diff-check",
     ]
     assert checks[0].command[:3] == [sys.executable, "-m", "ruff"]
-    assert checks[2].command == [sys.executable, "-m", "pytest", "tests/unit"]
+    # ruff-check is the second check (right after ruff-format-check).
+    ruff_check = next(c for c in checks if c.name == "ruff-check")
+    assert ruff_check.command[:3] == [sys.executable, "-m", "ruff"]
+    assert "check" in ruff_check.command
+    assert checks[3].command == [sys.executable, "-m", "pytest", "tests/unit"]
 
 
 def test_quick_plan_is_smaller_and_can_skip_js():

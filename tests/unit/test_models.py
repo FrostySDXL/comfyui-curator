@@ -1,6 +1,5 @@
 """Unit tests for ai_curate.models -- run data model serialization."""
 
-import pytest
 from ai_curate.models import JobState, ImageResult, RunTotals, CurationRun
 
 
