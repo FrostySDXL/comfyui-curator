@@ -1,6 +1,12 @@
 """Unit tests for ai_curate.elements -- element extraction from prompts."""
 
-from ai_curate.elements import extract_elements, QUALITY_ELEMENTS
+from ai_curate.elements import (
+    extract_elements,
+    QUALITY_ELEMENTS,
+    QUALITY_CHECKS,
+    get_quality_elements,
+    build_element_list,
+)
 
 
 class TestExtractElements:
@@ -73,11 +79,54 @@ class TestExtractElements:
     def test_explicit_elements_override(self):
         """When explicit elements are provided, they replace auto-extraction
         but quality elements are still appended."""
-        from ai_curate.elements import build_element_list
-
         explicit = ["Character has blue eyes", "Wearing a cape"]
         result = build_element_list(explicit)
         assert "Character has blue eyes" in result
         assert "Wearing a cape" in result
+        for qe in QUALITY_ELEMENTS:
+            assert qe in result
+
+
+class TestQualityChecks:
+    """Test the named quality checks system."""
+
+    def test_quality_checks_dict_has_entries(self):
+        """QUALITY_CHECKS contains at least the anatomy and artifacts entries."""
+        assert "anatomy" in QUALITY_CHECKS
+        assert "artifacts" in QUALITY_CHECKS
+
+    def test_get_quality_elements_empty(self):
+        """No keys returns empty list."""
+        assert get_quality_elements([]) == []
+        assert get_quality_elements(None) == []
+
+    def test_get_quality_elements_single_key(self):
+        """Single key returns that element."""
+        result = get_quality_elements(["anatomy"])
+        assert len(result) == 1
+        assert "Clean anatomy" in result[0]
+
+    def test_get_quality_elements_unknown_key_ignored(self):
+        """Unknown keys are silently ignored."""
+        result = get_quality_elements(["nonexistent", "artifacts"])
+        assert len(result) == 1
+        assert result[0] == QUALITY_CHECKS["artifacts"]
+
+    def test_build_element_list_with_flags(self):
+        """With explicit quality_flags, only selected checks appended."""
+        result = build_element_list(["Test element"], quality_flags=["anatomy"])
+        assert "Test element" in result
+        assert any("Clean anatomy" in e for e in result)
+        assert not any("No visual artifacts" in e for e in result)
+
+    def test_build_element_list_with_empty_flags(self):
+        """With empty quality_flags, no quality elements appended."""
+        result = build_element_list(["Test element"], quality_flags=[])
+        assert result == ["Test element"]
+
+    def test_build_element_list_backward_compat(self):
+        """Without quality_flags (None), all quality elements appended (CLI compat)."""
+        result = build_element_list(["Test element"])
+        assert "Test element" in result
         for qe in QUALITY_ELEMENTS:
             assert qe in result

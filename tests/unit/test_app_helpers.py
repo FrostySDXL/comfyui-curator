@@ -147,18 +147,18 @@ def test_validate_ai_curate_nonexistent_batch(app_module):
     assert err[1] == 400
 
 
-def test_validate_ai_curate_missing_prompt(app_module):
+def test_validate_ai_curate_missing_elements(app_module):
     app_module.create_batch("alpha")
     params, err = app_module._validate_ai_curate_request({"batch": "alpha"})
     assert params is None
-    assert err[0]["error"] == "prompt is required"
+    assert "elements is required" in err[0]["error"]
     assert err[1] == 400
 
 
 def test_validate_ai_curate_invalid_source_folder(app_module):
     app_module.create_batch("alpha")
     params, err = app_module._validate_ai_curate_request(
-        {"batch": "alpha", "prompt": "test", "source_folder": "badfolder"}
+        {"batch": "alpha", "elements": ["test"], "source_folder": "badfolder"}
     )
     assert params is None
     assert "source_folder" in err[0]["error"]
@@ -168,19 +168,17 @@ def test_validate_ai_curate_invalid_source_folder(app_module):
 def test_validate_ai_curate_elements_not_list(app_module):
     app_module.create_batch("alpha")
     params, err = app_module._validate_ai_curate_request(
-        {"batch": "alpha", "prompt": "test", "elements": "not-a-list"}
+        {"batch": "alpha", "elements": "not-a-list"}
     )
     assert params is None
-    assert "elements must be a list" in err[0]["error"]
+    assert "elements" in err[0]["error"]
     assert err[1] == 400
 
 
 def test_validate_ai_curate_elements_exceed_cap(app_module):
     app_module.create_batch("alpha")
     too_many = [f"element-{i}" for i in range(20)]
-    params, err = app_module._validate_ai_curate_request(
-        {"batch": "alpha", "prompt": "test", "elements": too_many}
-    )
+    params, err = app_module._validate_ai_curate_request({"batch": "alpha", "elements": too_many})
     assert params is None
     assert "too many elements" in err[0]["error"]
     assert err[1] == 400
@@ -189,7 +187,7 @@ def test_validate_ai_curate_elements_exceed_cap(app_module):
 def test_validate_ai_curate_top_n_not_integer(app_module):
     app_module.create_batch("alpha")
     params, err = app_module._validate_ai_curate_request(
-        {"batch": "alpha", "prompt": "test", "top_n": "abc"}
+        {"batch": "alpha", "elements": ["test"], "top_n": "abc"}
     )
     assert params is None
     assert "top_n must be an integer" in err[0]["error"]
@@ -199,7 +197,7 @@ def test_validate_ai_curate_top_n_not_integer(app_module):
 def test_validate_ai_curate_top_n_out_of_range(app_module):
     app_module.create_batch("alpha")
     params, err = app_module._validate_ai_curate_request(
-        {"batch": "alpha", "prompt": "test", "top_n": 0}
+        {"batch": "alpha", "elements": ["test"], "top_n": 0}
     )
     assert params is None
     assert "top_n must be between" in err[0]["error"]
@@ -209,7 +207,7 @@ def test_validate_ai_curate_top_n_out_of_range(app_module):
 def test_validate_ai_curate_move_without_destination(app_module):
     app_module.create_batch("alpha")
     params, err = app_module._validate_ai_curate_request(
-        {"batch": "alpha", "prompt": "test", "move_enabled": True}
+        {"batch": "alpha", "elements": ["test"], "move_enabled": True}
     )
     assert params is None
     assert "destination_folder is required" in err[0]["error"]
@@ -221,7 +219,7 @@ def test_validate_ai_curate_move_invalid_destination(app_module):
     params, err = app_module._validate_ai_curate_request(
         {
             "batch": "alpha",
-            "prompt": "test",
+            "elements": ["test"],
             "move_enabled": True,
             "destination_folder": "badfolder",
         }
@@ -235,7 +233,7 @@ def test_validate_ai_curate_missing_model(app_module, monkeypatch):
     app_module.create_batch("alpha")
     # Ensure DEFAULT_MODEL is empty
     monkeypatch.setattr(app_module, "DEFAULT_MODEL", "")
-    params, err = app_module._validate_ai_curate_request({"batch": "alpha", "prompt": "test"})
+    params, err = app_module._validate_ai_curate_request({"batch": "alpha", "elements": ["test"]})
     assert params is None
     assert "model is required" in err[0]["error"]
     assert err[1] == 400
@@ -245,16 +243,16 @@ def test_validate_ai_curate_valid_minimal_request(app_module, monkeypatch):
     app_module.create_batch("alpha")
     monkeypatch.setattr(app_module, "DEFAULT_MODEL", "vl-scorer")
     params, err = app_module._validate_ai_curate_request(
-        {"batch": "alpha", "prompt": "test", "model": "vl-scorer"}
+        {"batch": "alpha", "elements": ["test"], "model": "vl-scorer"}
     )
     assert err is None
     assert params["batch"] == "alpha"
-    assert params["prompt"] == "test"
+    assert params["prompt"] == ""
     assert params["source_folder"] == "inbox"
     assert params["top_n"] == 15
     assert params["move_enabled"] is False
     assert params["destination_folder"] is None
-    assert params["elements"] is None
+    assert params["elements"] == ["test"]
 
 
 def test_validate_ai_curate_valid_with_elements_and_move(app_module, monkeypatch):

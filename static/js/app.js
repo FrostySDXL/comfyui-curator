@@ -389,17 +389,23 @@
                 nameSpan.textContent = batch;
                 div.appendChild(nameSpan);
 
+                // Right-aligned group: optional AI dot + image count badge
+                const metaDiv = document.createElement('span');
+                metaDiv.className = 'batch-meta';
+
                 if (aiBatchRunCounts[batch] > 0) {
                     const dot = document.createElement('span');
                     dot.className = 'batch-ai-dot';
                     dot.title = 'Has AI run history';
-                    div.appendChild(dot);
+                    metaDiv.appendChild(dot);
                 }
 
                 const countSpan = document.createElement('span');
                 countSpan.className = 'batch-count';
                 countSpan.textContent = String(total);
-                div.appendChild(countSpan);
+                metaDiv.appendChild(countSpan);
+
+                div.appendChild(metaDiv);
 
                 li.appendChild(div);
                 fragment.appendChild(li);
@@ -661,6 +667,9 @@
             }
             showAiCuratePanel();
             selectFolder(batch, 'inbox');
+            // Reset content scroll position when switching batches
+            const content = document.querySelector('.content');
+            if (content) content.scrollTop = 0;
         }
 
         async function selectFolder(batch, folder) {
@@ -1431,7 +1440,7 @@
         }
 
         function addMetadataTextSection(panel, title, value, copyLabel) {
-            if (!value) return;
+            if (!value) return null;
             const section = document.createElement('section');
             section.className = 'metadata-section';
             section.appendChild(createTextElement('div', 'metadata-section-title', title));
@@ -1446,6 +1455,7 @@
             actions.appendChild(copyBtn);
             section.appendChild(actions);
             panel.appendChild(section);
+            return { section, actions };
         }
 
         function copyTextWithTextareaFallback(value) {
@@ -1483,6 +1493,40 @@
             } else {
                 showToast(`Could not copy ${label}`);
             }
+        }
+
+        // Split a prompt into lines suitable for the AI Elements textarea.
+        // Splits on commas, strips emphasis syntax ((word)), [word], :weight, trims whitespace.
+        function copyPromptAsElements(promptText) {
+            if (!promptText) return;
+            // Strip LoRA tags before splitting (already done for display, but ensure clean text)
+            const clean = stripLoraTags(promptText) || '';
+            // Split on commas
+            const fragments = clean.split(',').map(f => f.trim()).filter(f => f.length > 0);
+            const cleaned = fragments.map(f => {
+                let s = f;
+                // Strip outer parens/brackets: ((word)) -> word, [from:below] -> from:below
+                s = s.replace(/^[\(\)\[\]]+/, '').replace(/[\(\)\[\]]+$/, '');
+                // Strip weight suffix: word:1.2 -> word, but preserve non-numeric colon text
+                s = s.replace(/:(-?\d+(\.\d+)?)\s*$/, '').trim();
+                return s;
+            }).filter(s => s.length > 0);
+            if (cleaned.length === 0) {
+                showToast('No elements found in prompt');
+                return;
+            }
+            // Deduplicate while preserving order
+            const unique = [...new Set(cleaned)];
+            // Populate the AI elements textarea
+            const elemArea = document.getElementById('ai-elements');
+            if (!elemArea) return;
+            elemArea.value = unique.join('\n');
+            // Ensure AI sidebar is visible
+            const shell = document.getElementById('ai-sidebar-shell');
+            if (shell) shell.classList.remove('hidden');
+            if (!aiSidebarOpen) toggleAiSidebar();
+            closeLightbox();
+            showToast(`Populated ${unique.length} elements`);
         }
 
         function renderLightboxMetadataPanel() {
@@ -1535,7 +1579,15 @@
             summary.appendChild(grid);
             panel.appendChild(summary);
 
-            addMetadataTextSection(panel, 'Positive prompt', stripLoraTags(params.prompt), 'positive prompt');
+            const posSection = addMetadataTextSection(panel, 'Positive prompt', stripLoraTags(params.prompt), 'positive prompt');
+            if (posSection && params.prompt) {
+                const copyElemsBtn = document.createElement('button');
+                copyElemsBtn.type = 'button';
+                copyElemsBtn.className = 'metadata-copy-btn';
+                copyElemsBtn.textContent = 'Copy as elements';
+                copyElemsBtn.addEventListener('click', () => copyPromptAsElements(params.prompt));
+                posSection.actions.appendChild(copyElemsBtn);
+            }
             addMetadataTextSection(panel, 'Negative prompt', stripLoraTags(params.negative_prompt), 'negative prompt');
 
             if (metadata.loras && metadata.loras.length > 0) {
@@ -1848,7 +1900,9 @@
             ]);
             if (!imageResp.ok || !runResp.ok) return;
             const [nextImages, runData] = await Promise.all([imageResp.json(), runResp.json()]);
-            const imageChanged = buildImageSignature(nextImages) !== buildImageSignature(images);
+            // Skip image-list updates when shuffle sort is active -- the server
+            // shuffles randomly on each request, so polling would re-shuffle.
+            const imageChanged = currentSort !== 'shuffle' && buildImageSignature(nextImages) !== buildImageSignature(images);
             const latestRunId = runData.runs && runData.runs.length > 0 ? runData.runs[runData.runs.length - 1] : null;
             const aiChanged = (aiLatestRun?.run_id || null) !== latestRunId;
 
@@ -1995,6 +2049,127 @@
             if (shell) shell.style.display = currentBatch ? 'flex' : 'none';
             if (headerBtn) headerBtn.style.display = currentBatch ? 'inline-block' : 'none';
             aiRefreshRunData().catch(() => {});
+            aiLoadElementHistory();
+            aiPopulateOptionalElements();
+        }
+
+        // --- Quality flags ---
+
+        function toggleAiOptionalSection() {
+            const body = document.getElementById('ai-optional-body');
+            const header = document.getElementById('ai-optional-header');
+            if (!body || !header) return;
+            const isOpen = !body.classList.contains('hidden');
+            body.classList.toggle('hidden', isOpen);
+            header.setAttribute('aria-expanded', String(!isOpen));
+            const arrow = header.querySelector('.ai-optional-arrow');
+            // After toggle: section is closed when it WAS open.
+            // Arrow points right (collapsed) when now-closed.
+            if (arrow) arrow.style.transform = isOpen ? 'rotate(-90deg)' : '';
+        }
+
+        function aiCollectQualityFlags() {
+            const flags = [];
+            const body = document.getElementById('ai-optional-body');
+            if (!body) return flags;
+            body.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+                if (cb.dataset.key) flags.push(cb.dataset.key);
+            });
+            return flags;
+        }
+
+        function aiPopulateOptionalElements() {
+            const body = document.getElementById('ai-optional-body');
+            if (!body) return;
+            // Fetch QUALITY_CHECKS from the server via the preview-elements route.
+            // We cache the result in a module-scoped variable so this only
+            // happens once per session.
+            if (aiQualityChecksCache) {
+                _renderOptionalCheckboxes(body, aiQualityChecksCache);
+                return;
+            }
+            // Issue a minimal preview call to discover the full element set
+            // that includes quality defaults.  We piggyback on preview-elements
+            // with a single dummy element so the response has the quality
+            // elements appended.  Then extract only the quality ones.
+            fetch('/api/ai-curate/preview-elements', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({elements: ['x']}),
+            }).then(r => r.json()).then(data => {
+                if (data.elements) {
+                    // Filter to just the quality elements (those that appear after 'x')
+                    const xIdx = data.elements.indexOf('x');
+                    if (xIdx >= 0) {
+                        aiQualityChecksCache = data.elements.slice(xIdx + 1);
+                    } else {
+                        aiQualityChecksCache = data.elements.slice(1);
+                    }
+                } else {
+                    aiQualityChecksCache = [];
+                }
+                _renderOptionalCheckboxes(body, aiQualityChecksCache);
+            }).catch(() => {});
+        }
+
+        let aiQualityChecksCache = null;
+
+        function _renderOptionalCheckboxes(body, qualityElements) {
+            body.replaceChildren();
+            if (qualityElements.length === 0) {
+                body.textContent = 'No optional elements available.';
+                return;
+            }
+            // Map each quality element text to a stable key.
+            // The keys match QUALITY_CHECKS in ai_curate/elements.py.
+            const keyMap = {
+                'Clean anatomy (no extra fingers, extra limbs, or broken body parts)': 'anatomy',
+                'No visual artifacts, glitches, or garbled text': 'artifacts',
+            };
+            qualityElements.forEach(text => {
+                const key = keyMap[text] || text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+                const label = document.createElement('label');
+                label.className = 'ai-checkbox-label ai-optional-check';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.dataset.key = key;
+                label.appendChild(cb);
+                label.appendChild(document.createTextNode(' ' + text));
+                body.appendChild(label);
+            });
+        }
+
+        // --- Element history ---
+
+        async function aiLoadElementHistory() {
+            const container = document.getElementById('ai-element-history');
+            const select = document.getElementById('ai-history-select');
+            if (!container || !select || !currentBatch) return;
+            try {
+                const resp = await fetch(`/api/ai-curate/batches/${currentBatch}/element-history?limit=10`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const items = data.history || [];
+                select.innerHTML = '<option value="">-- Select a previous set --</option>';
+                if (items.length === 0) {
+                    container.classList.add('hidden');
+                    return;
+                }
+                container.classList.remove('hidden');
+                items.forEach(item => {
+                    const option = document.createElement('option');
+                    option.value = item.elements.join('\n');
+                    const ts = item.timestamp ? new Date(item.timestamp) : null;
+                    const label = ts && !Number.isNaN(ts.getTime())
+                        ? new Intl.DateTimeFormat(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'}).format(ts)
+                        : item.run_id;
+                    const preview = item.elements.length > 3
+                        ? item.elements.slice(0, 3).join(', ') + '...'
+                        : item.elements.join(', ');
+                    option.textContent = `${label} — ${preview}`;
+                    select.appendChild(option);
+                });
+            } catch { console.warn('aiLoadElementHistory failed'); }
         }
 
         function formatAiRunTimestamp(run) {
@@ -2169,16 +2344,21 @@
         }
 
         async function aiPreviewElements() {
-            const prompt = document.getElementById('ai-prompt').value.trim();
             const elementsText = document.getElementById('ai-elements').value.trim();
-            if (!prompt && !elementsText) {
-                showToast('Enter a prompt or elements first');
+            if (!elementsText) {
+                showToast('Enter elements first (one per line)');
                 return;
             }
-            const body = { prompt: prompt || 'placeholder' };
-            if (elementsText) {
-                body.elements = elementsText.split('\n').map(e => e.trim()).filter(e => e.length > 0);
+            const elements = elementsText.split('\n').map(e => e.trim()).filter(e => e.length > 0);
+            if (elements.length === 0) {
+                showToast('Enter at least one element');
+                return;
             }
+            const qualityFlags = aiCollectQualityFlags();
+            const body = {
+                elements: elements,
+                quality_flags: qualityFlags.length > 0 ? qualityFlags : null,
+            };
             const resp = await fetch('/api/ai-curate/preview-elements', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -2212,27 +2392,30 @@
         }
 
         async function aiSubmitJob() {
-            const prompt = document.getElementById('ai-prompt').value.trim();
-            if (!prompt) {
-                showToast('Enter a prompt first');
+            const elementsText = document.getElementById('ai-elements').value.trim();
+            if (!elementsText) {
+                showToast('Enter elements first (one per line)');
                 return;
             }
-            const elementsText = document.getElementById('ai-elements').value.trim();
+            const elements = elementsText.split('\n').map(e => e.trim()).filter(e => e.length > 0);
+            if (elements.length === 0) {
+                showToast('Enter at least one element');
+                return;
+            }
             const moveEnabled = document.getElementById('ai-move-toggle').checked;
             const destFolder = document.getElementById('ai-dest-folder').value;
+            const qualityFlags = aiCollectQualityFlags();
 
             const body = {
                 batch: currentBatch,
-                prompt: prompt,
+                elements: elements,
+                quality_flags: qualityFlags.length > 0 ? qualityFlags : null,
                 source_folder: document.getElementById('ai-source-folder').value,
                 top_n: parseInt(document.getElementById('ai-top-n').value) || 15,
                 model: document.getElementById('ai-model').value.trim(),
                 move_enabled: moveEnabled,
                 destination_folder: moveEnabled ? destFolder : null,
             };
-            if (elementsText) {
-                body.elements = elementsText.split('\n').map(e => e.trim()).filter(e => e.length > 0);
-            }
 
             const resp = await fetch('/api/ai-curate/jobs', {
                 method: 'POST',
@@ -2750,6 +2933,23 @@
             // AI preview elements button
             const aiPreviewBtn = document.querySelector('.ai-btn-secondary');
             if (aiPreviewBtn) aiPreviewBtn.addEventListener('click', aiPreviewElements);
+
+            // Optional elements section toggle
+            const aiOptionalHeader = document.getElementById('ai-optional-header');
+            if (aiOptionalHeader) {
+                aiOptionalHeader.addEventListener('click', toggleAiOptionalSection);
+            }
+
+            // Element history select
+            const aiHistorySelect = document.getElementById('ai-history-select');
+            if (aiHistorySelect) {
+                aiHistorySelect.addEventListener('change', function() {
+                    if (this.value) {
+                        document.getElementById('ai-elements').value = this.value;
+                        this.selectedIndex = 0; // reset display to placeholder
+                    }
+                });
+            }
 
             // AI move toggle
             const aiMoveToggle = document.getElementById('ai-move-toggle');

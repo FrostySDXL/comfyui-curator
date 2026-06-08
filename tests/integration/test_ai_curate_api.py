@@ -49,32 +49,43 @@ def client(app_module, monkeypatch, tmp_path):
 
 class TestPreviewElements:
     @pytest.mark.integration
-    def test_preview_from_prompt(self, client):
-        """POST /api/ai-curate/preview-elements returns extracted elements."""
+    def test_preview_with_explicit_elements(self, client):
+        """POST /api/ai-curate/preview-elements with elements returns them plus quality defaults."""
         resp = client.post(
             "/api/ai-curate/preview-elements",
-            json={"prompt": "wide shot of girl on rooftop"},
+            json={"elements": ["Blue sky", "Red dress"]},
         )
         assert resp.status_code == 200
         data = resp.get_json()
         assert "elements" in data
-        assert data["count"] > 0
-        assert any("wide shot" in e.lower() for e in data["elements"])
+        assert "Blue sky" in data["elements"]
+        assert "Red dress" in data["elements"]
+        # Quality elements appended by default (backward compat: no quality_flags = all)
+        assert data["count"] >= 4
 
-    def test_preview_with_explicit_elements(self, client):
-        """POST with explicit elements returns them plus quality elements."""
+    def test_preview_with_quality_flags_set(self, client):
+        """POST with quality_flags appends only selected quality elements."""
         resp = client.post(
             "/api/ai-curate/preview-elements",
-            json={"prompt": "test", "elements": ["Blue sky", "Red dress"]},
+            json={"elements": ["Blue sky"], "quality_flags": ["anatomy"]},
         )
         data = resp.get_json()
         assert "Blue sky" in data["elements"]
-        assert "Red dress" in data["elements"]
-        # Quality elements should be appended
-        assert data["count"] >= 4
+        assert any("Clean anatomy" in e for e in data["elements"])
+        assert not any("No visual artifacts" in e for e in data["elements"])
 
-    def test_preview_missing_prompt(self, client):
-        """POST without prompt returns 400."""
+    def test_preview_with_empty_quality_flags(self, client):
+        """POST with quality_flags=[] appends no quality elements."""
+        resp = client.post(
+            "/api/ai-curate/preview-elements",
+            json={"elements": ["Blue sky"], "quality_flags": []},
+        )
+        data = resp.get_json()
+        assert data["count"] == 1
+        assert data["elements"] == ["Blue sky"]
+
+    def test_preview_missing_elements(self, client):
+        """POST without elements returns 400."""
         resp = client.post("/api/ai-curate/preview-elements", json={})
         assert resp.status_code == 400
 
@@ -87,7 +98,7 @@ class TestSubmitJob:
                 "/api/ai-curate/jobs",
                 json={
                     "batch": "test-batch",
-                    "prompt": "wide shot of landscape",
+                    "elements": ["wide shot of landscape"],
                     "source_folder": "inbox",
                     "top_n": 10,
                     "model": "vl-scorer",
@@ -104,7 +115,7 @@ class TestSubmitJob:
         resp = client.post(
             "/api/ai-curate/jobs",
             json={
-                "prompt": "test",
+                "elements": ["test"],
             },
         )
         assert resp.status_code == 400
@@ -115,13 +126,13 @@ class TestSubmitJob:
             "/api/ai-curate/jobs",
             json={
                 "batch": "no-such-batch",
-                "prompt": "test",
+                "elements": ["test"],
             },
         )
         assert resp.status_code == 400
 
-    def test_submit_missing_prompt(self, client):
-        """POST without prompt returns 400."""
+    def test_submit_missing_elements(self, client):
+        """POST without elements returns 400."""
         resp = client.post(
             "/api/ai-curate/jobs",
             json={
@@ -136,7 +147,7 @@ class TestSubmitJob:
             "/api/ai-curate/jobs",
             json={
                 "batch": "test-batch",
-                "prompt": "test",
+                "elements": ["test"],
                 "source_folder": "invalid",
             },
         )
@@ -148,7 +159,7 @@ class TestSubmitJob:
             "/api/ai-curate/jobs",
             json={
                 "batch": "test-batch",
-                "prompt": "test",
+                "elements": ["test"],
                 "move_enabled": True,
             },
         )
@@ -160,7 +171,7 @@ class TestSubmitJob:
             "/api/ai-curate/jobs",
             json={
                 "batch": "test-batch",
-                "prompt": "test",
+                "elements": ["test"],
                 "top_n": 999,
             },
         )
@@ -172,7 +183,6 @@ class TestSubmitJob:
             "/api/ai-curate/jobs",
             json={
                 "batch": "test-batch",
-                "prompt": "test",
                 "elements": [f"element {i}" for i in range(20)],
             },
         )
@@ -185,7 +195,7 @@ class TestSubmitJob:
                 "/api/ai-curate/jobs",
                 json={
                     "batch": "test-batch",
-                    "prompt": "test prompt",
+                    "elements": ["test"],
                     "model": "vl-scorer",
                 },
             )
@@ -206,7 +216,7 @@ class TestGetJob:
                 "/api/ai-curate/jobs",
                 json={
                     "batch": "test-batch",
-                    "prompt": "test",
+                    "elements": ["test"],
                     "model": "vl-scorer",
                 },
             )
@@ -241,7 +251,7 @@ class TestCancelJob:
                 "/api/ai-curate/jobs",
                 json={
                     "batch": "test-batch",
-                    "prompt": "first",
+                    "elements": ["first"],
                     "model": "vl-scorer",
                 },
             )
@@ -249,7 +259,7 @@ class TestCancelJob:
                 "/api/ai-curate/jobs",
                 json={
                     "batch": "test-batch",
-                    "prompt": "second",
+                    "elements": ["second"],
                     "model": "vl-scorer",
                 },
             )

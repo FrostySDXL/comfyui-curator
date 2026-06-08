@@ -41,6 +41,7 @@
             flex-direction: column;
             border-right: 1px solid #2a2a2a;
             flex-shrink: 0;
+            transition: width 0.2s ease;
         }
         .sidebar.collapsed {
             width: 0;
@@ -281,14 +282,19 @@
             flex-shrink: 0;
         }
         .batch-name.selected .batch-count { color: #888; }
+        .batch-meta {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            flex-shrink: 0;
+            margin-left: 4px;
+        }
         .batch-ai-dot {
             display: inline-block;
             width: 6px;
             height: 6px;
             border-radius: 50%;
             background: #0066cc;
-            margin-left: 6px;
-            vertical-align: middle;
             flex-shrink: 0;
         }
         .batch-empty {
@@ -947,6 +953,7 @@
             background: #181818;
             border-left: 1px solid #262626;
             flex-shrink: 0;
+            transition: width 0.2s ease;
         }
         .ai-sidebar-shell.collapsed {
             width: 0;
@@ -1137,6 +1144,49 @@
             border: 1px solid #883333;
         }
         .ai-btn-danger:hover { background: #883333; }
+        .ai-element-history {
+            margin-bottom: 8px;
+        }
+        .ai-element-history select {
+            width: 100%;
+            color: #aaa;
+            font-size: 11px;
+        }
+        .ai-optional-section {
+            margin-bottom: 8px;
+            border: 1px solid #2a2a2a;
+            border-radius: 4px;
+            background: #1a1a1a;
+        }
+        .ai-optional-header {
+            padding: 6px 8px;
+            font-size: 11px;
+            color: #888;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .ai-optional-header:hover { color: #aaa; }
+        .ai-optional-arrow {
+            font-size: 10px;
+            transition: transform 0.15s ease;
+        }
+        .ai-optional-body {
+            padding: 0 8px 8px 8px;
+        }
+        .ai-optional-body.hidden {
+            display: none;
+        }
+        .ai-optional-check {
+            display: block;
+            font-size: 11px;
+            color: #888;
+            padding: 2px 0;
+            cursor: pointer;
+        }
+        .ai-optional-check:hover { color: #aaa; }
         .ai-elements-preview {
             background: #252525;
             border: 1px solid #333;

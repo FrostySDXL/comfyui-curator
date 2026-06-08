@@ -63,6 +63,7 @@ class QueueManager:
             move_enabled=job_params.get("move_enabled", False),
             prompt=job_params.get("prompt", ""),
             elements=job_params.get("elements") or [],
+            quality_flags=job_params.get("quality_flags") or [],
             model=job_params.get("model") or DEFAULT_MODEL or "",
             top_n=job_params.get("top_n", DEFAULT_TOP_N),
         )

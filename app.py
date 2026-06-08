@@ -7,6 +7,7 @@ import atexit
 import os
 import logging
 import signal
+import sys
 import threading
 import time
 from pathlib import Path
@@ -601,7 +602,7 @@ atexit.register(_shutdown_workers)
 
 for _sig in (signal.SIGTERM, signal.SIGINT):
     try:
-        signal.signal(_sig, lambda signum, _frame: _shutdown_workers())
+        signal.signal(_sig, lambda signum, _frame: (_shutdown_workers(), sys.exit(0)))
     except (ValueError, OSError):
         # SIGTERM is not installable on Windows in some contexts, and signal
         # handlers cannot be registered from non-main threads. Skip silently.
@@ -625,8 +626,6 @@ def _validate_ai_curate_request(data):
         return None, ({"error": f"batch '{batch}' does not exist"}, 400)
 
     prompt = data.get("prompt", "").strip()
-    if not prompt:
-        return None, ({"error": "prompt is required"}, 400)
 
     source_folder = data.get("source_folder", "inbox")
     if source_folder not in ALLOWED_SOURCE_FOLDERS:
@@ -635,14 +634,20 @@ def _validate_ai_curate_request(data):
             400,
         )
 
-    # Elements: optional explicit list, otherwise auto-extracted
+    # Elements: required explicit list (auto-extraction removed from web UI)
     elements = data.get("elements")
-    if elements is not None:
-        if not isinstance(elements, list):
-            return None, ({"error": "elements must be a list of strings"}, 400)
-        if len(elements) > ELEMENT_CAP:
-            return None, ({"error": f"too many elements (max {ELEMENT_CAP})"}, 400)
-        elements = [str(e).strip() for e in elements if str(e).strip()]
+    if not elements or not isinstance(elements, list) or not any(elements):
+        return None, ({"error": "elements is required (at least one element)"}, 400)
+    if len(elements) > ELEMENT_CAP:
+        return None, ({"error": f"too many elements (max {ELEMENT_CAP})"}, 400)
+    elements = [str(e).strip() for e in elements if str(e).strip()]
+    if not elements:
+        return None, ({"error": "elements must contain at least one non-empty entry"}, 400)
+
+    # Quality flags: optional list of QUALITY_CHECKS keys to append
+    quality_flags = data.get("quality_flags")
+    if quality_flags is not None and not isinstance(quality_flags, list):
+        return None, ({"error": "quality_flags must be a list of strings"}, 400)
 
     # top_n validation
     top_n = data.get("top_n", DEFAULT_TOP_N)
@@ -677,6 +682,7 @@ def _validate_ai_curate_request(data):
         "prompt": prompt,
         "source_folder": source_folder,
         "elements": elements,
+        "quality_flags": quality_flags,
         "top_n": top_n,
         "move_enabled": move_enabled,
         "destination_folder": destination_folder if move_enabled else None,
@@ -707,11 +713,8 @@ def _run_scoring_worker(run_id):
 def _run_scoring_worker_inner(run_id, run):
     """Core scoring logic, extracted so the outer handler can catch exceptions."""
 
-    # Determine elements
-    if run.elements:
-        elements = build_element_list(run.elements)
-    else:
-        elements = extract_elements(run.prompt)
+    # Determine elements (quality_flags come from web UI as named toggles)
+    elements = build_element_list(run.elements, run.quality_flags)
 
     # Update run with resolved elements
     run.elements = elements
@@ -806,26 +809,26 @@ def _run_scoring_worker_inner(run_id, run):
 
 @app.route("/api/ai-curate/preview-elements", methods=["POST"])
 def api_ai_curate_preview_elements():
-    """Preview extracted elements from a prompt without scoring.
+    """Preview the combined element list before scoring.
 
     Request body:
-        {"prompt": "wide shot of girl on rooftop at night", "elements": null}
-        or
-        {"prompt": "...", "elements": ["elem1", "elem2"]}
+        {"elements": ["elem1", "elem2"], "quality_flags": ["anatomy"]}
 
     Returns:
-        {"elements": ["Wide shot framing ...", ...], "count": N}
+        {"elements": ["elem1", "elem2", "Clean anatomy ..."], "count": N}
     """
     data = request.json or {}
-    prompt = data.get("prompt", "").strip()
-    if not prompt:
-        return jsonify({"error": "prompt is required"}), 400
-
     explicit = data.get("elements")
-    if explicit and isinstance(explicit, list):
-        elements = build_element_list([str(e).strip() for e in explicit if str(e).strip()])
-    else:
-        elements = extract_elements(prompt)
+    if not explicit or not isinstance(explicit, list):
+        return jsonify({"error": "elements is required (list of strings)"}), 400
+    explicit = [str(e).strip() for e in explicit if str(e).strip()]
+    if not explicit:
+        return jsonify({"error": "elements must contain at least one non-empty entry"}), 400
+
+    quality_flags = data.get("quality_flags")
+    if quality_flags is not None and not isinstance(quality_flags, list):
+        return jsonify({"error": "quality_flags must be a list of strings"}), 400
+    elements = build_element_list(explicit, quality_flags)
 
     return jsonify({"elements": elements, "count": len(elements)})
 
@@ -955,6 +958,56 @@ def api_ai_curate_get_run(batch, run_id):
     if run is None:
         return jsonify({"error": "run not found"}), 404
     return jsonify(run.to_dict())
+
+
+@app.route("/api/ai-curate/batches/<batch>/element-history", methods=["GET"])
+def api_ai_curate_element_history(batch):
+    """Return recent unique element sets for a batch (deduped by content).
+
+    Query params:
+        limit: max entries to return (default 10)
+
+    Returns:
+        {"history": [{"run_id": "...", "timestamp": "...", "elements": [...]}, ...]}
+    """
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
+    try:
+        limit = int(request.args.get("limit", "10"))
+    except (ValueError, TypeError):
+        limit = 10
+    limit = max(1, min(limit, 50))
+
+    run_ids = _ai_storage.list_runs(batch_name)
+    history = []
+    seen = set()
+    for run_id in reversed(run_ids):
+        if len(history) >= limit:
+            break
+        run = _ai_storage.load_run(batch_name, run_id)
+        if run is None or not run.elements:
+            continue
+        # Only include user-provided elements (exclude quality defaults)
+        user_elements = [
+            e
+            for e in run.elements
+            if e not in extract_elements("")  # quality-only extraction yields the defaults
+        ]
+        if not user_elements:
+            continue
+        key = "\n".join(sorted(user_elements))
+        if key in seen:
+            continue
+        seen.add(key)
+        history.append(
+            {
+                "run_id": run.run_id,
+                "timestamp": run.created_at or "",
+                "elements": user_elements,
+            }
+        )
+    return jsonify({"history": history})
 
 
 # ---------------------------------------------------------------------------

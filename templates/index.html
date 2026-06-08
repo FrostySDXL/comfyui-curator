@@ -120,11 +120,24 @@
                         </div>
 
                         <div class="ai-curate-form">
-                            <label class="ai-label" for="ai-prompt">Prompt</label>
-                            <textarea id="ai-prompt" class="ai-textarea" rows="2" placeholder="Describe what to look for in images..."></textarea>
+                            <label class="ai-label" for="ai-elements">Elements</label>
+                            <textarea id="ai-elements" class="ai-textarea" rows="3" placeholder="One element per line, e.g.:&#10;blushing&#10;blonde hair&#10;black dress"></textarea>
 
-                            <label class="ai-label" for="ai-elements">Exact elements <span class="ai-optional">(optional, overrides auto-extraction)</span></label>
-                            <textarea id="ai-elements" class="ai-textarea" rows="2" placeholder="One element per line, or leave blank for auto-extraction"></textarea>
+                            <div class="ai-element-history hidden" id="ai-element-history">
+                                <label class="ai-label" for="ai-history-select">Previous elements</label>
+                                <select id="ai-history-select" class="ai-select">
+                                    <option value="">-- Select a previous set --</option>
+                                </select>
+                            </div>
+
+                            <div class="ai-optional-section" id="ai-optional-section">
+                                <div class="ai-optional-header" id="ai-optional-header" role="button" tabindex="0" aria-expanded="false">
+                                    Optional elements <span class="ai-optional-arrow">&#9662;</span>
+                                </div>
+                                <div class="ai-optional-body hidden" id="ai-optional-body">
+                                    <!-- Checkboxes populated dynamically -->
+                                </div>
+                            </div>
 
                             <button class="ai-btn ai-btn-secondary">Preview elements</button>
                             <div id="ai-elements-preview" class="ai-elements-preview hidden"></div>

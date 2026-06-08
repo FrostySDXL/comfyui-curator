@@ -144,6 +144,7 @@ class CurationRun:
         move_enabled: bool = False,
         prompt: str = "",
         elements: Optional[List[str]] = None,
+        quality_flags: Optional[List[str]] = None,
         model: str = "",
         top_n: int = DEFAULT_TOP_N,
         status: str = JobState.QUEUED,
@@ -160,6 +161,7 @@ class CurationRun:
         self.move_enabled = move_enabled
         self.prompt = prompt
         self.elements = elements or []
+        self.quality_flags = quality_flags or []
         self.model = model
         self.top_n = top_n
         self.status = status
@@ -178,6 +180,7 @@ class CurationRun:
             "move_enabled": self.move_enabled,
             "prompt": self.prompt,
             "elements": self.elements,
+            "quality_flags": self.quality_flags,
             "model": self.model,
             "top_n": self.top_n,
             "status": self.status,
@@ -202,6 +205,7 @@ class CurationRun:
             move_enabled=data.get("move_enabled", False),
             prompt=data.get("prompt", ""),
             elements=data.get("elements") or [],
+            quality_flags=data.get("quality_flags") or [],
             model=data.get("model") or "",
             top_n=data.get("top_n", DEFAULT_TOP_N),
             status=data.get("status", JobState.QUEUED),

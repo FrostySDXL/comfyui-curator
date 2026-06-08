@@ -7,14 +7,21 @@ Moved from curate.py. Renames manga-specific terminology:
 """
 
 import re
-from typing import List
+from typing import Dict, List, Optional
 
-# Always checked on every image (quality baseline).
-# These are configurable defaults; callers may override via build_element_list.
-QUALITY_ELEMENTS: tuple[str, ...] = (
-    "Clean anatomy (no extra fingers, extra limbs, or broken body parts)",
-    "No visual artifacts, glitches, or garbled text",
-)
+# Named optional elements that operators can toggle per-run.
+# Keys are stable identifiers; values are the full element text
+# sent to the scoring model.  The UI surfaces these as checkboxes
+# so operators choose which (if any) apply to this run.
+QUALITY_CHECKS: Dict[str, str] = {
+    "anatomy": "Clean anatomy (no extra fingers, extra limbs, or broken body parts)",
+    "artifacts": "No visual artifacts, glitches, or garbled text",
+}
+
+# Legacy: all quality elements as a flat tuple.
+# Used by the CLI (curate.py) and for backward-compatible
+# build_element_list() calls that omit quality_flags.
+QUALITY_ELEMENTS: tuple[str, ...] = tuple(QUALITY_CHECKS.values())
 
 # Shot-type detection patterns (order matters: longest match first)
 _SHOT_TYPES = [
@@ -48,6 +55,21 @@ _SHOT_PREFIX_PATTERN = re.compile(
     r"^(wide|medium|close[- ]?up|extreme|low|high|bird|over)[^\-\u2013]*[\-\u2013]\s*",
     re.IGNORECASE,
 )
+
+
+def get_quality_elements(selected_keys: Optional[List[str]] = None) -> List[str]:
+    """Return quality element strings for the named checkboxes selected.
+
+    Args:
+        selected_keys: List of QUALITY_CHECKS keys to include,
+            or None/empty list for none.
+
+    Returns:
+        List of element strings (may be empty).
+    """
+    if not selected_keys:
+        return []
+    return [QUALITY_CHECKS[k] for k in selected_keys if k in QUALITY_CHECKS]
 
 
 def extract_elements(prompt: str) -> List[str]:
@@ -98,17 +120,26 @@ def extract_elements(prompt: str) -> List[str]:
     return elements
 
 
-def build_element_list(explicit_elements: List[str]) -> List[str]:
+def build_element_list(
+    explicit_elements: List[str],
+    quality_flags: Optional[List[str]] = None,
+) -> List[str]:
     """Build a scoring element list from explicit user-provided elements.
 
-    Appends QUALITY_ELEMENTS to the user's list.
+    When *quality_flags* is None (the default for CLI backward compat),
+    ALL quality elements are appended.  When *quality_flags* is an
+    explicit list (from the web UI), only the named checks are appended.
 
     Args:
         explicit_elements: User-supplied element strings.
+        quality_flags: QUALITY_CHECKS keys to include, or None for all.
 
     Returns:
-        Combined list of user elements plus quality elements.
+        Combined list of user elements plus selected quality elements.
     """
     result = list(explicit_elements)
-    result.extend(QUALITY_ELEMENTS)
+    if quality_flags is None:
+        result.extend(QUALITY_ELEMENTS)
+    else:
+        result.extend(get_quality_elements(quality_flags))
     return result
