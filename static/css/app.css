@@ -277,7 +277,8 @@
             background: #2a2a2a;
             padding: 1px 6px;
             border-radius: 8px;
-            min-width: 28px;
+            width: 52px;
+            min-width: 52px;
             text-align: center;
             flex-shrink: 0;
         }
