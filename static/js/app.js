@@ -705,8 +705,8 @@
 
             const img = document.createElement('img');
             img.draggable = false;
-            img.addEventListener('load', () => img.classList.add('loaded'));
-            img.addEventListener('error', () => img.classList.add('loaded'));
+            img.addEventListener('load', () => requestAnimationFrame(() => img.classList.add('loaded')));
+            img.addEventListener('error', () => requestAnimationFrame(() => img.classList.add('loaded')));
 
             const meta = document.createElement('div');
             meta.className = 'thumb-meta';
