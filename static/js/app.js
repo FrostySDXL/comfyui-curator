@@ -21,6 +21,7 @@
         let isDraggingImages = false;
         let folderRequestToken = 0;
         let gridThumbMap = new Map();
+        const MAX_GRID_LOADING_PLACEHOLDERS = 200;
         const THUMBNAIL_BLOB_CACHE_MAX = 1000;
         const thumbnailBlobUrlCache = new Map();
         const thumbnailBlobInflight = new Map();
@@ -662,10 +663,11 @@
             document.getElementById('folder-tabs').classList.add('visible');
             if (batchChanged) {
                 resetAiBatchState();
-                // Immediately clear grid and images to prevent flickering old thumbnails
+                // Immediately replace old thumbnails with thumb-shaped placeholders
+                // while the new batch's image list loads.
                 images = [];
                 closeLightbox();
-                clearGrid();
+                showGridLoadingPlaceholders(batch, 'inbox');
             }
             showAiCuratePanel();
             selectFolder(batch, 'inbox');
@@ -820,6 +822,26 @@
             const grid = document.getElementById('grid');
             grid.replaceChildren();
             gridThumbMap.clear();
+        }
+
+        function showGridLoadingPlaceholders(batch, folder) {
+            const grid = document.getElementById('grid');
+            const expectedCount = allCounts[batch]?.[folder] || 0;
+            gridThumbMap.clear();
+            if (expectedCount <= 0) {
+                grid.replaceChildren();
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            const placeholderCount = Math.min(expectedCount, MAX_GRID_LOADING_PLACEHOLDERS);
+            for (let index = 0; index < placeholderCount; index++) {
+                const thumb = document.createElement('div');
+                thumb.className = 'thumb loading-placeholder';
+                thumb.setAttribute('aria-hidden', 'true');
+                fragment.appendChild(thumb);
+            }
+            grid.replaceChildren(fragment);
         }
 
         function updateGrid() {

@@ -488,6 +488,12 @@
             box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
         }
         .thumb.selected { border-color: #0066cc; }
+        .thumb.loading-placeholder {
+            cursor: default;
+            pointer-events: none;
+            border-color: rgba(255,255,255,0.04);
+            background: linear-gradient(135deg, #252525 0%, #2b2b2b 50%, #252525 100%);
+        }
         .thumb img {
             width: 100%; height: 100%;
             object-fit: cover;
