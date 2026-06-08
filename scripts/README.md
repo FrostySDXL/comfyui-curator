@@ -15,7 +15,7 @@ python scripts/run_all.py
 Common modes:
 
 - `python scripts/run_all.py` — default suite (ruff format check, ruff lint, compileall, unit/component/integration tests, JS syntax, git diff check)
-- `python scripts/run_all.py --full` — full check suite including integration tests
+- `python scripts/run_all.py --full` — full check suite including mypy type checking
 - `python scripts/run_all.py --quick` — fast edit-loop checks
 - `python scripts/run_all.py --format` — apply Ruff formatting
 - `python scripts/run_all.py --skip-js` — skip JavaScript syntax checks only when Node is unavailable and the change is not frontend-related

@@ -9,6 +9,12 @@ import os
 from pathlib import Path
 from typing import Optional
 
+# IMAGE_EXTENSIONS is owned by image_curator.batch_store. Re-exported here so
+# consumers can still do ``from ai_curate.config import IMAGE_EXTENSIONS``
+# without importing the non-AI module directly. Keeping a single source of
+# truth prevents the two definitions from drifting.
+from image_curator.batch_store import IMAGE_EXTENSIONS  # noqa: F401
+
 # --- Paths ---
 BATCHES_DIR = Path(
     os.environ.get(
@@ -59,4 +65,5 @@ ALLOWED_SOURCE_FOLDERS = {"inbox", "shortlisted", "finals", "rejects"}
 ALLOWED_DEST_FOLDERS = {"inbox", "shortlisted", "finals", "rejects"}
 
 # --- Image extensions ---
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+# IMAGE_EXTENSIONS is imported at the top of this module from
+# image_curator.batch_store (single source of truth).

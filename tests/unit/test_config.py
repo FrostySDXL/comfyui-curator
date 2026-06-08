@@ -1,6 +1,7 @@
 """Unit tests for ai_curate.config module."""
 
 from ai_curate import config
+from image_curator import batch_store
 
 
 class TestConfigDefaults:
@@ -35,6 +36,11 @@ class TestConfigDefaults:
     def test_latest_file(self):
         """LATEST_FILE is 'latest.json'."""
         assert config.LATEST_FILE == "latest.json"
+
+    def test_image_extensions_matches_batch_store(self):
+        """IMAGE_EXTENSIONS is the same set as image_curator.batch_store."""
+        assert config.IMAGE_EXTENSIONS == batch_store.IMAGE_EXTENSIONS
+        assert config.IMAGE_EXTENSIONS is batch_store.IMAGE_EXTENSIONS
 
 
 class TestRequestTimeout:

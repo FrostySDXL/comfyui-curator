@@ -861,8 +861,26 @@
                 fragment.appendChild(thumb);
             });
 
+            // Skip the replaceChildren() cycle when the live grid already
+            // holds the desired children in the desired order. This avoids
+            // a layout-thrashing detach/reattach on every poll tick, even
+            // when the visible set is unchanged. The fragment appendChild
+            // path above still guarantees correct ordering whenever the
+            // display set actually changed.
+            if (_gridChildrenMatchDesiredOrder(grid, displayImages)) {
+                return;
+            }
             // Replace all children atomically to prevent visible empty-grid flash
             grid.replaceChildren(fragment);
+        }
+
+        function _gridChildrenMatchDesiredOrder(grid, displayImages) {
+            const live = grid.children;
+            if (live.length !== displayImages.length) return false;
+            for (let i = 0; i < displayImages.length; i++) {
+                if (live[i] !== gridThumbMap.get(displayImages[i].name)) return false;
+            }
+            return true;
         }
 
         function formatSize(bytes) {
@@ -1841,7 +1859,13 @@
             }
             if (aiChanged) {
                 await aiRefreshRunData(runData.runs || []);
-                updateGrid();
+                // Only redraw the grid when the AI run change actually affects
+                // the visible thumbs: overlays enabled, compare-mode active,
+                // or AI filter on. Otherwise the new run data is captured in
+                // aiLatestRun for later use but we avoid a no-op grid refresh.
+                if (aiShowOverlays || aiFilterMode !== 'all' || (aiCompareRunId && aiCompareRunId !== 'latest')) {
+                    updateGrid();
+                }
                 if (document.getElementById('lightbox').classList.contains('active')) showCurrentImage();
             }
         }
@@ -2667,16 +2691,10 @@
                 if (el) el.addEventListener('click', handler);
             });
 
-            // Move buttons in lightbox
-            document.querySelectorAll('#lightbox-actions .btn-shortlist').forEach(btn => {
-                btn.addEventListener('click', function() { moveImage('shortlisted'); });
-            });
-            document.querySelectorAll('#lightbox-actions .btn-finals').forEach(btn => {
-                btn.addEventListener('click', function() { moveImage('finals'); });
-            });
-            document.querySelectorAll('#lightbox-actions .btn-reject').forEach(btn => {
-                btn.addEventListener('click', function() { moveImage('rejects'); });
-            });
+            // Note: the lightbox S/F/R move buttons are wired by the
+            // delegated handler on #lightbox-actions below (single source of
+            // truth). Do NOT add direct per-button listeners here -- doing
+            // so causes moveImage() to fire twice on every click.
 
             // Modal buttons
             document.querySelectorAll('#new-batch-modal .cancel').forEach(btn => {

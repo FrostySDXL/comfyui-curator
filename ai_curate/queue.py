@@ -165,7 +165,7 @@ class QueueManager:
         self,
         run_id: str,
         results: Optional[list] = None,
-        totals: Optional[object] = None,
+        totals: Optional[RunTotals] = None,
         persist: Optional[bool] = None,
     ) -> bool:
         """Finalize a cancelling job after the scoring loop has stopped.

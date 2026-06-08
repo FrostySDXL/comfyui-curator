@@ -161,6 +161,7 @@ class VisionClient:
         )
 
         max_retries = 1  # One retry on transient network errors only
+        last_transient_error: Optional[str] = None
         for attempt in range(max_retries + 1):
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
@@ -180,15 +181,23 @@ class VisionClient:
             # API key returns 4xx and retrying just delays the surface
             # of the real configuration error.
             except (urllib.error.URLError, socket.timeout) as e:
+                last_transient_error = f"error: {e}"
                 if attempt < max_retries:
                     continue
-                return -1, len(elements), {}, f"error: {e}"
+                return -1, len(elements), {}, last_transient_error
 
             except urllib.error.HTTPError as e:
                 return -1, len(elements), {}, f"error: HTTP {e.code} {e.reason}"
 
             except json.JSONDecodeError as e:
                 return -1, len(elements), {}, f"error: {e}"
+
+        # Unreachable: the for-loop above always either returns from the
+        # try block, returns from an except, or continues to a later
+        # iteration that returns. Listed explicitly to keep mypy happy
+        # and to give a defensive last line if the retry count is ever
+        # changed.
+        return -1, len(elements), {}, last_transient_error or "error: exhausted retries"
 
     # Maximum image file size for base64 encoding (default 50 MB)
     MAX_IMAGE_SIZE_BYTES: int = 50 * 1024 * 1024

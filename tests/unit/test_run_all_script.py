@@ -55,6 +55,27 @@ def test_format_plan_mutates_only_when_requested():
     assert checks[0].command[:4] == [sys.executable, "-m", "ruff", "format"]
 
 
+def test_full_plan_includes_mypy():
+    run_all = load_run_all_module()
+
+    checks = run_all.build_checks(mode="full", skip_js=False)
+    names = [check.name for check in checks]
+
+    # The full plan must include everything the default plan does...
+    default_names = [c.name for c in run_all.build_checks(mode="default", skip_js=False)]
+    assert all(name in names for name in default_names), (
+        f"full plan missing default checks: {set(default_names) - set(names)}"
+    )
+    # ...and add mypy on top.
+    assert "mypy" in names, f"full plan should include mypy, got: {names}"
+    # mypy must declare its executable requirement so it is skipped cleanly
+    # on hosts where mypy is not installed.
+    mypy_check = next(c for c in checks if c.name == "mypy")
+    assert mypy_check.requires == "mypy"
+    # mypy must be the last (added) check, after the default-plan ordering.
+    assert names[-1] == "mypy"
+
+
 def test_format_command_display_basenames_absolute_paths():
     run_all = load_run_all_module()
 

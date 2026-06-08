@@ -3,8 +3,10 @@ Image Curator v2 - Batch-based organization with auto-import
 Web UI for reviewing and organizing AI-generated images.
 """
 
+import atexit
 import os
 import logging
+import signal
 import threading
 import time
 from pathlib import Path
@@ -525,6 +527,12 @@ def serve_image(batch, folder, filename):
 _ai_storage = RunStorage(batches_dir=BATCHES_DIR)
 _worker_threads: set[threading.Thread] = set()
 _worker_lock = threading.Lock()
+_shutdown_started = False
+_shutdown_lock = threading.Lock()
+
+# How long to wait for in-flight scoring workers to observe a cancellation
+# request and exit cleanly before giving up and letting the process die.
+_SHUTDOWN_JOIN_TIMEOUT_S = 5.0
 
 
 def _start_scoring_worker(run_id):
@@ -537,9 +545,67 @@ def _start_scoring_worker(run_id):
     t.start()
 
 
+def _shutdown_workers() -> None:
+    """Request cancellation of in-flight AI jobs and join their workers.
+
+    Idempotent: a second call is a no-op. Runs from both ``atexit`` (normal
+    interpreter shutdown) and SIGTERM/SIGINT (systemd ``ExecStop`` or Ctrl-C)
+    so in-flight scoring work has a chance to finalize as cancelled instead
+    of being killed mid-image.
+    """
+    global _shutdown_started
+    with _shutdown_lock:
+        if _shutdown_started:
+            return
+        _shutdown_started = True
+
+    # Stop accepting new watcher callbacks first so an in-progress watcher
+    # tick cannot race with the directory move we may issue below.
+    try:
+        watcher.stop()
+    except Exception as e:
+        logger.warning("Watcher stop raised during shutdown: %s", e)
+
+    # Mark every active AI job as cancelling. The scoring loop polls
+    # is_cancel_requested() between images, so it will exit at the next
+    # checkpoint and call finalize_cancelled() with no results.
+    try:
+        for run in _ai_queue.list_jobs():
+            status = getattr(run, "status", None)
+            if status in (JobState.RUNNING, JobState.QUEUED, JobState.CANCELLING):
+                _ai_queue.cancel(run.run_id)
+    except Exception as e:
+        logger.warning("AI job cancel during shutdown raised: %s", e)
+
+    # Give each tracked worker a short window to observe the cancel flag
+    # and exit. Anything still alive after the timeout is abandoned --
+    # because the threads are daemonised the process can still exit.
+    deadline = time.monotonic() + _SHUTDOWN_JOIN_TIMEOUT_S
+    with _worker_lock:
+        workers = list(_worker_threads)
+    for t in workers:
+        remaining = max(0.0, deadline - time.monotonic())
+        if remaining <= 0:
+            break
+        t.join(timeout=remaining)
+
+
 def _on_job_promoted(run_id):
     """Callback: start scoring worker when a queued job is promoted to running."""
     _start_scoring_worker(run_id)
+
+
+# Register shutdown hooks. atexit covers normal interpreter exit; the signal
+# handlers cover Ctrl-C in dev and SIGTERM from systemd in production.
+atexit.register(_shutdown_workers)
+
+for _sig in (signal.SIGTERM, signal.SIGINT):
+    try:
+        signal.signal(_sig, lambda signum, _frame: _shutdown_workers())
+    except (ValueError, OSError):
+        # SIGTERM is not installable on Windows in some contexts, and signal
+        # handlers cannot be registered from non-main threads. Skip silently.
+        pass
 
 
 _ai_queue = QueueManager(storage=_ai_storage, on_promote=_on_job_promoted)
