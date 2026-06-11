@@ -1,0 +1,148 @@
+# static -- Guidance
+
+**One-sentence purpose:** Browser-side UI assets -- single-page application behavior, layout styling, and the HTML template they attach to.
+
+**Role in the Project:** Served by Flask (`app.py`) to the operator's browser. All interactive curation behavior (grid browsing, drag/drop, lightbox, AI sidebar, keyboard shortcuts, polling) lives here. No server-side rendering except the initial model-list injection in the HTML template.
+
+## What This Module Does
+
+- **Single-page review UI:** Left batch sidebar, center thumbnail grid (CSS Grid), right AI Curate sidebar.
+- **Keyboard-first navigation:** 15+ shortcuts for search, selection, AI toggles, lightbox, undo.
+- **Drag/drop curation:** HTML5 drag from grid to folder tabs for single or multi-select moves.
+- **Lightbox viewer:** Full-image review with zoom, scored-image navigation, PNG metadata inspection.
+- **AI score integration:** Overlay badges, score gradient coloring, filter/sort by score, job submission/status/history UI.
+- **Background polling:** 5-second interval for batches, images, and AI runs, with interaction-aware skip logic.
+- **Local storage persistence:** Sidebar widths, open states, last batch/folder, AI panel collapse.
+
+## Key Concepts
+
+### Architecture
+
+- **Single-file vanilla JS** (`app.js`, ~3059 lines). No framework, no modules, no build step.
+- **Imperative, event-driven.** Global `let` variables for state. DOM manipulation is direct.
+- **Script loaded at bottom of `<body>`** in `index.html`. Initialization runs immediately (calls `loadBatches()`).
+- **Single CSS file** (`app.css`, ~1517 lines). Dark theme only. Flexbox layout with CSS Grid for thumbnails.
+
+### Global State Variables (app.js)
+
+| Variable | Type | Purpose |
+|----------|------|---------|
+| `currentBatch` | `string\|null` | Currently viewed batch |
+| `currentFolder` | `string` | Active folder tab (inbox/shortlisted/finals/rejects) |
+| `images` | `array` | Image objects for current folder (from `/api/images`) |
+| `currentIndex` | `number` | Lightbox navigation index (also used for scored-image jumps) |
+| `currentOrder` | `string` | Sort direction ('asc' / 'desc') |
+| `allCounts` | `object` | Cached batch folder counts for polling |
+| `lastSelectIndex` | `number\|null` | Anchor index for shift-click multi-select range |
+| `sidebarWidth` | `number` | Left sidebar width (px), persisted in localStorage |
+| `sidebarOpen` | `boolean` | Left sidebar visibility, persisted in localStorage |
+| `gridThumbMap` | `Map<filename, Element>` | Persistent thumb DOM elements keyed by filename |
+| `thumbnailBlobUrlCache` | `Map<cacheKey, blobUrl>` | FIFO cache (max 1000) of thumbnail blob URLs (evicts oldest-inserted) |
+| `thumbnailBlobInflight` | `Map<cacheKey, Promise>` | Dedup map for in-flight thumbnail fetch requests |
+| `folderCountSnapshot` | `object` | Snapshot of folder counts from last poll, used for pulse animation |
+| `_initialLoadDone` | `boolean` | Whether the initial batch+folder load has completed |
+| `_lastBatchListKey` | `string` | Hash of last batch list for skip-shortcut in polling |
+| `selectedImages` | `Set<filename>` | Multi-selected image filenames |
+| `draggedFiles` | `array\<filename\>` | Files being dragged |
+| `lastAction` | `object\|null` | Last move for undo (batch, filenames, source, dest, expiry) |
+| `lightboxZoom` | `number` | Current lightbox zoom level (0.6--3) |
+| `aiActiveRun` | `object\|null` | Currently selected AI run data |
+| `aiShowOverlays` | `boolean` | Score badge visibility on thumbs |
+| `aiFilterMode` | `string` | 'all' \| 'scored' \| 'failed' \| 'top-n' |
+| `aiSidebarOpen` | `boolean` | AI sidebar visibility |
+| `aiPanelOpen` | `boolean` | AI panel collapse state within sidebar |
+| `currentSort` | `string` | 'date' \| 'name' \| 'shuffle' \| 'score-desc' |
+| `folderRequestToken` | `number` | Incrementing token to discard stale fetch responses |
+| `batchSort` | `string` | 'alpha' \| 'count' \| 'recent' for batch list |
+| `batchFilterQuery` | `string` | Debounced filter for batch search |
+
+### Key Function Groups
+
+| Feature Area | Primary Functions | DOM Target |
+|-------------|-------------------|------------|
+| **Batch Management** | `loadBatches`, `selectBatch`, `setActiveBatch`, `createBatch`, `saveBatchState`, `restoreBatchState` | `#batch-list`, `#active-batch-custom` |
+| **Grid Rendering** | `loadCurrentFolderImages`, `updateGrid`, `createThumbElement`, `updateThumbElement`, `getDisplayImages`, `showGridLoadingPlaceholders` | `#grid` |
+| **Thumbnail Caching** | `resolveThumbnailBlobUrl`, `setThumbnailImageSrc` | Thumb `<img>` elements (blob URLs) |
+| **Keyboard Shortcuts** | Single `keydown` handler (line ~1770) | `document` |
+| **Drag/Drop** | `onDragStart`, `onDragOver`, `onDrop`, `moveBatch` | `.thumb`, `.folder-tab` |
+| **Multi-Select** | `toggleSelect`, `clearSelection`, `updateActionBar` | `#action-bar`, `.thumb-select` |
+| **Undo** | `recordLastAction`, `showToast`, `undoLastMove` | `#toast` |
+| **Lightbox** | `openLightbox`, `closeLightbox`, `navigate`, `navigateScored`, `zoomLightbox`, `toggleLightboxMetadata`, `loadLightboxMetadata` | `#lightbox` |
+| **AI Sidebar** | `toggleAiSidebar`, `toggleAiCuratePanel`, `syncAiSidebarUi`, `aiSubmitJob`, `aiPollJobStatus`, `aiRefreshRunData`, `aiLoadElementHistory` | `#ai-sidebar-shell`, `#ai-curate-panel` |
+| **AI Grid Overlay** | `aiToggleOverlays`, `aiScoreGradient`, `aiShouldShowImage`, `aiSortImages`, `aiShowHeaderControls` | `.ai-score-badge`, `#ai-display-controls` |
+| **Polling** | `pollForChanges` (5s interval), `isInteractionBusy`, `aiPollJobStatus` (2s interval) | `setInterval` |
+| **Batch Search** | `setBatchFilter`, `filterBatches`, `clearBatchSearch` | `#batch-search` |
+| **Modals** | `showHelpModal`, `hideHelpModal`, `_trapFocus`, `_releaseFocusTrap` | `#help-modal`, `#new-batch-modal`, `#delete-modal` |
+| **Custom Combobox** | `_openCustomDropdown`, `_populateCustomDropdown`, `_commitCustomSelectSelection` | `#active-batch-custom` |
+
+### Frontend API Calls
+
+Routes consumed by the frontend JS. Not a complete backend route inventory -- see root `AGENTS.md` or `app.py` for all 21 routes.
+
+| Fetch Call | JS Source Function | Trigger |
+|-----------|-------------|---------|
+| `GET /api/batches` | `loadBatches()`, `pollForChanges()` | Init, 5s poll, batch create |
+| `POST /api/batches` | `createBatch()` | New batch form submit |
+| `POST /api/active-batch` | `setActiveBatch()`, `setCurrentBatchAsAutoImport()` | Auto-import target change |
+| `POST /api/import-all` | `importAll()` | Import button click |
+| `GET /api/images/<batch>/<folder>?sort=&order=` | `loadCurrentFolderImages()`, `pollForChanges()` | Batch switch, folder switch, 5s poll |
+| `POST /api/move-batch` | `moveBatch()`, `undoLastMove()` | Drag drop, action bar, undo |
+| `POST /api/move` | `moveImage()` | Lightbox keyboard move (S/F/R) |
+| `POST /api/delete-rejects/<batch>` | `confirmDeleteRejects()` | Empty Rejects button |
+| `GET /api/image-metadata/<batch>/<folder>/<name>` | `loadLightboxMetadata()` | Lightbox open, lightbox navigate |
+| `GET /thumb/<batch>/<folder>/<name>` | `resolveThumbnailBlobUrl()` | Thumb render (lazy, via blob cache) |
+| `GET /image/<batch>/<folder>/<name>` | `showCurrentImage()` | Lightbox image src |
+| `GET /api/ai-curate/batches/<batch>/runs` | `aiRefreshRunData()`, `aiLoadBatchRunCounts()`, `pollForChanges()` | Batch switch, 5s poll |
+| `GET /api/ai-curate/batches/<batch>/runs/<runId>` | `aiFetchRun()` | Run select, compare run select |
+| `GET /api/ai-curate/batches/<batch>/element-history` | `aiLoadElementHistory()` | AI panel open |
+| `POST /api/ai-curate/preview-elements` | `aiPreviewElements()`, `aiPopulateOptionalElements()` | Elements textarea change |
+| `POST /api/ai-curate/jobs` | `aiSubmitJob()` | AI job form submit |
+| `GET /api/ai-curate/jobs/<jobId>` | `aiPollJobStatus()` | 2s poll during running job |
+| `POST /api/ai-curate/jobs/<jobId>/cancel` | `aiCancelJob()` | Cancel button click |
+
+### Local Storage Keys
+
+| Key | Purpose |
+|-----|---------|
+| `imageCurator.sidebarWidth` | Left sidebar width (px) |
+| `imageCurator.sidebarOpen` | Left sidebar visibility ('true'/'false') |
+| `imageCurator.lastBatch` | Last viewed batch name |
+| `imageCurator.lastFolder` | Last viewed folder |
+| `imageCurator.batchSort` | Batch list sort mode |
+| `imageCurator.aiSidebarWidth` | AI sidebar width (px) |
+| `imageCurator.aiSidebarOpen` | AI sidebar visibility ('true'/'false') |
+| `imageCurator.aiPanelOpen` | AI panel collapse state ('true'/'false') |
+
+## Constraints & Hard Rules
+
+- **Never:** Change keyboard shortcut keybindings without updating the Help modal in `templates/index.html`.
+- **Never:** Add a frontend framework or build step -- the project is intentionally vanilla JS.
+- **Always:** Use `folderRequestToken` pattern (increment + check) when making async fetch calls that may be superseded by a newer request.
+- **Always:** Check `isInteractionBusy()` before executing polling-triggered DOM updates to avoid interrupting drag, lightbox, or resize interactions.
+- **Verification:** No automated browser tests exist. All frontend changes require manual browser smoke testing. For JS syntax:
+  ```bash
+  python scripts/run_all.py --quick
+  ```
+
+## Agent Instructions
+
+- Start with `templates/index.html` to understand the DOM structure (IDs, CSS classes), then trace behavior in `app.js` by searching for those IDs.
+- Changes to styling go in `static/css/app.css`. The dark theme is fixed -- no light mode.
+- When adding a new API call, add it to the API Call Inventory table above.
+- The 5 `test_frontend_*.py` files in `tests/unit/` regex-scan `app.js` for function names and invariants. They are NOT browser tests. After JS changes, run them to avoid regressions on the invariants they check, but always also test manually in a browser.
+- `gridThumbMap` is the key optimization -- it preserves DOM elements across re-renders. `_gridChildrenMatchDesiredOrder()` avoids `replaceChildren()` when order is already correct.
+- Thumbnail blob URLs must be revoked on `beforeunload` to prevent memory leaks -- the `thumbnailBlobUrlCache` FIFO eviction and the `beforeunload` handler manage this.
+
+## Gotchas & Common Pitfalls
+
+- **Chrome dropdown rendering bug:** The `#active-batch-custom` component detaches and reattaches the hidden `<select>` to force Chrome to re-render long option lists. Do not remove this workaround without verifying on Chrome with 50+ batches.
+- **`folderRequestToken` prevents stale renders:** When switching batches/folders rapidly, old fetch responses are discarded by checking a monotonically incrementing token. Any new async operation targeting the same data must follow this pattern.
+- **Polling skips during interaction:** `isInteractionBusy()` returns true during lightbox, drag, or resize. This prevents API responses from overwriting DOM elements the operator is actively interacting with.
+- **`_gridChildrenMatchDesiredOrder()` optimization:** The grid is only rebuilt if the order of thumb elements actually changed. Removing this check causes visible flicker on every poll cycle.
+- **Score gradient is hardcoded:** `aiScoreGradient()` uses a fixed dark-red-to-dark-yellow-to-green gradient. There is no configuration for color thresholds.
+- **CSS variables for layout only, not theming:** `--sidebar-width`, `--sidebar-effective-width`, `--ai-sidebar-width`, `--lightbox-zoom`. All colors are hardcoded.
+- **Single responsive breakpoint at 900px:** Below this, sidebars shrink, AI sidebar moves below grid, resizers hide.
+
+**Completion Standard:** For any task in this directory, include files changed, manual browser verification performed (state the browser and interactions tested), and any updates to the Help modal, README keyboard shortcuts, or `test_frontend_*.py` invariants.
+
+See root `AGENTS.md` for project-wide rules, verification standards, and overall philosophy.

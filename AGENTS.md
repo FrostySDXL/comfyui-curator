@@ -1,34 +1,95 @@
 # AGENTS.md
 
-**Last Updated:** 2026-06-01
+**Purpose:** Operator-focused web application for reviewing generated images with optional AI-assisted scoring. **Status:** Actively maintained. **Audience:** AI agents and single-operator maintainers. **Last Updated:** 2026-06-11
 
 ## Quickstart
 
-- This is a public repo for the Image Curator service and related curation tooling.
 - Read `README.md` first.
-- Use a virtual environment (`.venv/`) for all development work.
-- The current live entrypoints are still `app.py` and `curate.py` at repo root.
-- New shared non-AI backend logic should prefer `image_curator/` over further expanding root scripts.
-- New shared AI backend logic should prefer `ai_curate/`.
-- Treat batch filesystem layout and API responses as internal contracts.
-- Do not read or expose secrets, tokens, or `.env`-style files if later added.
-- Before claiming completion, re-read changed files and report exact verification performed.
-- The current operator layout is left batch sidebar, center image grid, right AI sidebar.
-- Treat keyboard shortcuts and lightbox review flow as operator-facing compatibility surfaces.
-- Treat the lightbox PNG metadata toggle and displayed metadata fields as operator-facing compatibility surfaces.
-- Treat the header Help modal content as an operator-facing compatibility surface too.
-- Treat batch and AI sidebar button labels as stateful operator-facing cues, not static text.
-- Treat AI run history labels and compare controls as operator-facing compatibility surfaces.
-- For feature inventory or repo cleanup tasks, read `README.md`, `CONTRIBUTING.md`, and this file before editing.
-- `scripts/run_all.py` default mode runs both `ruff format --check` and `ruff check`; do not commit code that fails either on the touched paths.
+- Use the virtual environment at `.venv/`.
+- Entrypoints: `app.py` (Flask web UI + API), `curate.py` (CLI scoring).
+- New non-AI backend logic -> `image_curator/`. New AI logic -> `ai_curate/`.
+- Frontend is `templates/index.html` + `static/js/app.js` + `static/css/app.css`.
+- Verification: `python scripts/run_all.py` (default) or `--quick` for fast loops.
+- Do not commit code that fails `ruff check` or `ruff format --check` on touched paths.
 
-## Decision tree
+## What This Repo Provides
 
-- UI layout, shortcuts, lightbox, sidebars: read `templates/index.html`, `static/js/app.js`, `static/css/app.css`, then verify manually.
-- Flask API or batch filesystem behavior: read `app.py`, matching frontend calls in `static/js/app.js`, and integration tests.
-- AI scoring, queueing, or run history: read `ai_curate/`, `curate.py`, `tests/unit/test_*`, and `tests/integration/test_ai_curate_api.py`.
-- Docs or repo organization: read `README.md`, `CONTRIBUTING.md`, and this file.
-- Deployment assumptions: read `image-curator.service.example`, `app.py` constants, and `ai_curate/config.py` path/env defaults.
+- **Batch filesystem workflow:** inbox/shortlisted/finals/rejects folders under `IMAGE_CURATOR_BATCHES/<batch>/`. Counts, metadata, auto-import from ComfyUI outputs.
+- **Web review UI:** Left batch sidebar, center thumbnail grid, right AI sidebar. Drag/drop moves, multi-select, undo toast, keyboard shortcuts, background polling.
+- **Lightbox viewer:** Full-image review with zoom, PNG generation metadata inspection (`M` toggle), scored-image navigation (`[`/`]`), keyboard folder moves (`S`/`F`/`R`).
+- **AI-assisted scoring:** Vision-LLM evaluation against element checklists via OpenAI-compatible `/v1/chat/completions`. Optional auto-move of top-N images. Run history with comparison.
+- **CLI headless scoring:** Same pipeline available via `curate.py` (dry-run, score-only, or score-and-move).
+- **Core philosophy:** Manual curation is authoritative. AI is advisory. Filesystem is the operational truth.
+
+## Key Concepts & Data Flows
+
+```
+app.py (Flask, 21 routes)
+  ├── image_curator/batch_store.py  ← filesystem ops (create, list, move, counts, import)
+  ├── image_curator/png_metadata.py ← PNG text-chunk extraction (Pillow)
+  ├── ai_curate/config.py           ← env-backed constants, paths, caps
+  ├── ai_curate/elements.py         ← prompt parsing + element extraction + quality checklists
+  ├── ai_curate/client.py           ← VisionClient (raw urllib -> /v1/chat/completions)
+  ├── ai_curate/scoring.py          ← image enumeration + scoring loop
+  ├── ai_curate/queue.py            ← FIFO single-worker job queue (threading)
+  ├── ai_curate/storage.py          ← run history JSON persistence (atomic .tmp writes)
+  └── ai_curate/models.py           ← JobState, ImageResult, CurationRun, RunTotals
+
+curate.py (CLI)
+  └── ai_curate/  (same pipeline, no queue — synchronous scoring in-process)
+
+Frontend (templates/index.html + static/js/app.js + static/css/app.css)
+  └── app.py API routes (fetch-based, vanilla JS, no framework)
+```
+
+- **Single source of truth:** Filesystem under `IMAGE_CURATOR_BATCHES/<batch>/`.
+- **AI run history:** `<batch>/ai-curate/runs/<run_id>.json` + `<batch>/ai-curate/latest.json` pointer.
+- **State file:** `IMAGE_CURATOR_STATE` (default `~/.config/image-curator/state.json`). Stores active batch.
+
+## Key Files & Responsibilities
+
+| Category | Key Files / Folders | Role |
+|----------|---------------------|------|
+| **Entrypoints** | `app.py` | Flask API (21 routes) + web UI serving + AI worker threads + auto-import watcher |
+| | `curate.py` | CLI entrypoint for headless scoring (argparse, no queue) |
+| **Non-AI Backend** | `image_curator/batch_store.py` | Batch creation, folder layout, file moves, counts, import, state persistence |
+| | `image_curator/png_metadata.py` | ComfyUI/A1111 PNG text-chunk extraction (prompt, seed, sampler, CFG, LoRAs, etc.) |
+| | `image_curator/README.md` | Module-scoped agent startup guide (layout, contracts, gotchas) |
+| **AI Backend** | `ai_curate/config.py` | Env-backed constants: `BATCHES_DIR`, `COMFYUI_OUTPUT`, `DEFAULT_BASE_URL`, `DEFAULT_TOP_N` (15), `TOP_N_CAP` (100), `ELEMENT_CAP` (12) |
+| | `ai_curate/README.md` | Module-scoped agent startup guide (pipeline, internal contracts, gotchas) |
+| | `ai_curate/elements.py` | Prompt auto-extraction, explicit element building, quality baseline checks |
+| | `ai_curate/models.py` | `JobState` enum, `ImageResult` (per-image score), `CurationRun`, `RunTotals` |
+| | `ai_curate/client.py` | `VisionClient`: base64 encode + POST to `/v1/chat/completions` (raw urllib) |
+| | `ai_curate/scoring.py` | `find_images`, `build_scoring_prompt`, `score_images` loop |
+| | `ai_curate/queue.py` | `QueueManager`: FIFO single-worker job queue with cancel support |
+| | `ai_curate/storage.py` | `RunStorage`: atomic JSON persistence for run history |
+| **Frontend** | `templates/index.html` | Single-page Flask template (Jinja2, server-injected model list) |
+| | `static/js/app.js` | All browser behavior (~3059 lines, vanilla JS, imperative, no framework) |
+| | `static/css/app.css` | All styling (~1517 lines, dark theme, flexbox + CSS grid) |
+| | `static/README.md` | Module-scoped agent startup guide (global state, function groups, API calls, gotchas) |
+| **Tests** | `tests/unit/` | Isolated logic (12 Python + 5 JS-scraping frontend-invariant tests) |
+| | `tests/component/` | In-process multi-module (Flask route contracts, AI worker lifecycle) |
+| | `tests/integration/` | Full HTTP + filesystem workflow (Flask test client, real files) |
+| | `tests/README.md` | Module-scoped agent startup guide (layers, fixtures, markers, coverage gaps) |
+| **Scripts** | `scripts/run_all.py` | Multi-tool verification runner (ruff, compileall, pytest, mypy, JS syntax, git diff) |
+| | `scripts/README.md` | Module-scoped agent startup guide (verification modes) |
+| **Config** | `pyproject.toml` | Build system, ruff, mypy configuration |
+| | `pytest.ini` | Test markers (`unit`, `component`, `integration`) and paths |
+| | `.env.example` | Documented environment variable reference (never read `.env` directly) |
+| **Deployment** | `image-curator.service.example` | Templated systemd unit (use this, not the production service file) |
+| **Guidance** | `README.md`, `CONTRIBUTING.md`, `AGENTS.md` | Operator docs, contributor workflow, agent startup |
+| **Generated** | `.thumbs/`, `<batch>/ai-curate/runs/`, `<batch>/ai-curate/latest.json`, `__pycache__/`, `*.egg-info/` | **Do not edit.** Created at runtime. |
+
+## Decision Tree
+
+| Task | Read | Verify |
+|------|------|--------|
+| UI layout, shortcuts, lightbox, sidebars | `static/README.md` then `templates/index.html`, `static/js/app.js`, `static/css/app.css` | Manual browser smoke test; `python scripts/run_all.py --quick` |
+| Flask API or batch filesystem behavior | `image_curator/README.md` then `app.py`, matching frontend calls in `static/js/app.js`, integration/component tests | `python -m pytest tests/integration/ tests/component/ -v` |
+| AI scoring, queueing, run history | `ai_curate/README.md` then `ai_curate/`, `curate.py`, unit tests | `python -m pytest tests/unit/test_client.py tests/unit/test_scoring.py tests/unit/test_queue.py tests/unit/test_storage.py tests/unit/test_elements.py tests/unit/test_models.py tests/unit/test_config.py -v` |
+| PNG metadata extraction | `image_curator/README.md` then `image_curator/png_metadata.py`, unit test | `python -m pytest tests/unit/test_png_metadata.py -v` |
+| Docs or repo organization | `README.md`, `CONTRIBUTING.md`, this file | `python scripts/run_all.py --skip-js` |
+| Deployment assumptions | `image-curator.service.example`, `app.py` constants, `ai_curate/config.py` | Review env vars in `.env.example` |
 
 ## Mission
 
@@ -45,34 +106,7 @@ Maintain a fast operator-facing curation workflow for generated images with opti
 
 - The production `image-curator.service` may contain sensitive information. Never read it. Use `image-curator.service.example` as the reference template instead.
 
-## Repo map
-
-- `app.py` — current Flask app entrypoint and API layer
-- `curate.py` — current CLI entrypoint
-- `image_curator/` — shared non-AI support code, currently batch filesystem/state helpers
-- `ai_curate/` — shared AI scoring, queueing, storage, and related support code
-- `templates/` — Flask templates
-- `static/` — frontend assets
-- `tests/` — unit/component/integration checks
-- `scripts/` — helper scripts
-- `image-curator.service.example` — templated systemd unit
-- `.env.example` — documented environment variable reference
-- `pyproject.toml` — project metadata and tool configuration
-- `pytest.ini` — pytest marker and test-path configuration
-- `LICENSE` — MIT license
-
-## Structure rules
-
-- Root-level entrypoints remain active for now: `app.py` and `curate.py`
-- New shared non-AI backend logic should go in `image_curator/`
-- New shared AI backend logic should go in `ai_curate/`
-- Keep HTML in `templates/`, browser logic in `static/js/`, and styling in `static/css/`
-- Put isolated logic tests in `tests/unit/`
-- Put in-process multi-module checks in `tests/component/`
-- Put Flask/API/filesystem workflow checks in `tests/integration/`
-- Keep local helper scripts in `scripts/`
-
-## Public compatibility surfaces
+## Public Compatibility Surfaces
 
 Treat these as stability-sensitive:
 
@@ -83,9 +117,22 @@ Treat these as stability-sensitive:
 - Runtime state file location (configured by `IMAGE_CURATOR_STATE`)
 - `image-curator.service.example` template expectations
 - Header Help modal content, keyboard shortcuts, and sidebar toggle labels
-- Lightbox PNG metadata route shape, toggle shortcut, and displayed field set
+- Lightbox PNG metadata route shape, toggle shortcut (`M`), and displayed field set
+- Batch and AI sidebar button labels as stateful operator-facing cues, not static text
+- AI run history labels and compare controls as operator-facing compatibility surfaces
 
-## Task playbooks
+## Structure Rules
+
+- Root-level entrypoints remain active for now: `app.py` and `curate.py`
+- New shared non-AI backend logic goes in `image_curator/`
+- New shared AI backend logic goes in `ai_curate/`
+- Keep HTML in `templates/`, browser logic in `static/js/`, styling in `static/css/`
+- Put isolated logic tests in `tests/unit/`
+- Put in-process multi-module checks in `tests/component/`
+- Put Flask/API/filesystem workflow checks in `tests/integration/`
+- Keep local helper scripts in `scripts/`
+
+## Task Playbooks
 
 ### UI change
 
@@ -125,22 +172,50 @@ Treat these as stability-sensitive:
 - Confirm runtime artifacts remain ignored by git
 - Update `README.md` and `AGENTS.md`
 
-## Verification standard
+## Agent Instructions
+
+- **Start:** Read this file, then use the Decision Tree to locate the right files for your task. Check for per-directory `README.md` files (`ai_curate/`, `image_curator/`, `static/`, `tests/`, `scripts/`) -- each has module-scoped startup guidance: architecture, contracts, gotchas, and verification commands specific to that directory.
+- **Never:** Read `image-curator.service` (use `.example`). Read `.env` files. Commit secrets or tokens.
+- **Always:** Use `.venv/`. Run `python scripts/run_all.py --quick` after changes. Re-read changed files before claiming completion.
+- **Know your layer:** Unit tests for isolated logic. Component tests for multi-module interactions. Integration tests for full HTTP/filesystem workflows. Manual browser validation for interactive UI changes.
+- **Before committing:** `ruff check` and `ruff format --check` must pass on all touched paths.
+- **Completion:** State files changed, commands run, manual verification performed, and remaining risk or follow-up work.
+
+## Gotchas
+
+- **`load_dotenv()` before imports:** `app.py` and `curate.py` call `load_dotenv()` before importing `ai_curate` modules so env vars are visible at module import time. The `E402` ruff rule is suppressed for these two files. Do not reorder imports.
+- **`--panel` flag is deprecated (curate.py):** Use `--prompt`. `--panel` still works but prints a warning. `--prompt` takes precedence if both are provided.
+- **AI worker threads are daemons:** They die with the process. Shutdown tries to join for 5 seconds, then exits.
+- **Auto-import watcher defaults to OFF:** Set `IMAGE_CURATOR_ENABLE_WATCHER=true` to enable polling from ComfyUI output.
+- **Frontend tests are Python source-scraping:** The 5 `test_frontend_*.py` files regex-scan `app.js` for function names and invariants. No headless browser or JS test framework. Browser-only changes need manual verification.
+- **Generated files (never edit):** `.thumbs/` (thumbnail cache), `<batch>/ai-curate/runs/` (run history), `<batch>/ai-curate/latest.json`, `__pycache__/`, `*.egg-info/`.
+- **Score < 0 means failed:** `ImageResult.score` defaults to -1 for unscored/failed images. `normalized_score` also returns -1. Frontend checks `score >= 0` to distinguish scored from failed.
+- **No CORS headers:** The app binds to `127.0.0.1` by default. For remote access, use a reverse proxy with auth (nginx, Caddy).
+- **Thumbnail cache key includes folder name:** `<folder>__<stem>.webp` format prevents same-filename collisions across inbox/shortlisted/finals/rejects.
+- **`ELEMENT_CAP` (12) truncation is silent:** `scoring.py` caps elements without logging a warning.
+
+## Verification Standard
 
 Use the smallest proof that supports the claim, then broaden if needed:
 
-- Prefer `python scripts/run_all.py` before completion claims unless a narrower verification scope is explicitly justified.
-- Use `python scripts/run_all.py --quick` for fast edit-loop checks.
-- Use `python scripts/run_all.py --format` only when intentionally applying formatting.
-- Syntax/compile checks for touched Python files
-- Syntax checks for touched frontend files when applicable
-- Unit tests for isolated logic
-- Component/integration tests for route or workflow changes
-- Manual UI validation for interactive features
-- `scripts/run_all.py` does not replace manual browser validation for interactive UI changes.
-- When adding new verification surfaces, update `scripts/run_all.py`, `tests/unit/test_run_all_script.py`, `README.md`, and `CONTRIBUTING.md` together.
+| Scope | Command |
+|-------|---------|
+| Fast edit-loop | `python scripts/run_all.py --quick` |
+| Standard local | `python scripts/run_all.py` |
+| Full with mypy | `python scripts/run_all.py --full` |
+| Format only | `python scripts/run_all.py --format` |
+| Skip JS checks | `python scripts/run_all.py --skip-js` |
+| Suppress command echo | `python scripts/run_all.py --quick --quiet` |
+| Unit tests only | `python -m pytest tests/unit -v` |
+| Component tests only | `python -m pytest tests/component -m component -v` |
+| Integration tests only | `python -m pytest tests/integration -m integration -v` |
+| Syntax/compile | `python -m compileall app.py curate.py image_curator ai_curate` |
 
-## Completion standard
+`scripts/run_all.py` does not replace manual browser validation for interactive UI changes.
+
+When adding new verification surfaces, update `scripts/run_all.py`, `tests/unit/test_run_all_script.py`, `README.md`, and `CONTRIBUTING.md` together.
+
+## Completion Standard
 
 Do not say complete without stating:
 
