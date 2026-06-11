@@ -1522,8 +1522,6 @@
             if (!elemArea) return;
             elemArea.value = unique.join('\n');
             // Ensure AI sidebar is visible
-            const shell = document.getElementById('ai-sidebar-shell');
-            if (shell) shell.classList.remove('hidden');
             if (!aiSidebarOpen) toggleAiSidebar();
             closeLightbox();
             showToast(`Populated ${unique.length} elements`);
@@ -1982,11 +1980,18 @@
             const toggle = document.getElementById('ai-curate-toggle');
             const body = document.getElementById('ai-curate-body');
             const headerBtn = document.getElementById('ai-sidebar-toggle-btn');
-            if (shell) shell.classList.toggle('collapsed', !aiSidebarOpen);
+            if (shell) {
+                shell.classList.remove('hidden');
+                shell.style.display = currentBatch ? 'flex' : 'none';
+                shell.classList.toggle('collapsed', !aiSidebarOpen);
+            }
             if (panel) panel.classList.toggle('collapsed', !aiPanelOpen);
             if (body) body.style.display = aiPanelOpen ? 'block' : 'none';
             if (toggle) toggle.textContent = aiPanelOpen ? '−' : '+';
-            if (headerBtn) headerBtn.textContent = aiSidebarOpen ? 'Hide AI' : 'Show AI';
+            if (headerBtn) {
+                headerBtn.classList.remove('hidden');
+                headerBtn.textContent = aiSidebarOpen ? 'Hide AI' : 'Show AI';
+            }
             if (persist) {
                 localStorage.setItem(AI_SIDEBAR_OPEN_KEY, String(aiSidebarOpen));
                 localStorage.setItem(AI_PANEL_OPEN_KEY, String(aiPanelOpen));
@@ -2044,10 +2049,8 @@
         }
 
         function showAiCuratePanel() {
-            const shell = document.getElementById('ai-sidebar-shell');
-            const headerBtn = document.getElementById('ai-sidebar-toggle-btn');
-            if (shell) shell.style.display = currentBatch ? 'flex' : 'none';
-            if (headerBtn) headerBtn.style.display = currentBatch ? 'inline-block' : 'none';
+            syncAiSidebarUi(false);
+            if (!currentBatch) return;
             aiRefreshRunData().catch(() => {});
             aiLoadElementHistory();
             aiPopulateOptionalElements();
