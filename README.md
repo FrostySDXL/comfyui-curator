@@ -26,7 +26,7 @@ before manual selection. Single-user, local-first, filesystem-backed.
 ## Quickstart
 
 ```bash
-git clone https://github.com/FrostySDXL/image-curator.git
+git clone https://github.com/FrostySDXL/comfyui-curator.git
 cd image-curator
 python -m venv .venv
 

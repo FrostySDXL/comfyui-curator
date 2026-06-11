@@ -1989,8 +1989,12 @@
             if (body) body.style.display = aiPanelOpen ? 'block' : 'none';
             if (toggle) toggle.textContent = aiPanelOpen ? '−' : '+';
             if (headerBtn) {
-                headerBtn.classList.remove('hidden');
-                headerBtn.textContent = aiSidebarOpen ? 'Hide AI' : 'Show AI';
+                if (currentBatch) {
+                    headerBtn.classList.remove('hidden');
+                    headerBtn.textContent = aiSidebarOpen ? 'Hide AI' : 'Show AI';
+                } else {
+                    headerBtn.classList.add('hidden');
+                }
             }
             if (persist) {
                 localStorage.setItem(AI_SIDEBAR_OPEN_KEY, String(aiSidebarOpen));
