@@ -15,18 +15,22 @@ from typing import Optional
 # truth prevents the two definitions from drifting.
 from image_curator.batch_store import IMAGE_EXTENSIONS  # noqa: F401
 
+
+def _path_from_env(name: str, default: Path) -> Path:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    return Path(raw)
+
+
 # --- Paths ---
-BATCHES_DIR = Path(
-    os.environ.get(
-        "IMAGE_CURATOR_BATCHES",
-        str(Path.home() / "image-curator" / "batches"),
-    )
+BATCHES_DIR = _path_from_env(
+    "IMAGE_CURATOR_BATCHES",
+    Path.home() / "image-curator" / "batches",
 )
-COMFYUI_OUTPUT = Path(
-    os.environ.get(
-        "IMAGE_CURATOR_COMFYUI",
-        str(Path.home() / "image-curator" / "comfyui-outputs"),
-    )
+COMFYUI_OUTPUT = _path_from_env(
+    "IMAGE_CURATOR_COMFYUI",
+    Path.home() / "image-curator" / "comfyui-outputs",
 )
 
 # --- Llama-swap / vision model ---

@@ -1,5 +1,8 @@
 """Unit tests for ai_curate.config module."""
 
+import importlib
+from pathlib import Path
+
 from ai_curate import config
 from image_curator import batch_store
 
@@ -56,6 +59,36 @@ class TestRequestTimeout:
         assert config.REQUEST_TIMEOUT > 0
 
 
+class TestPathConfig:
+    def test_empty_path_env_values_use_defaults(self, monkeypatch):
+        """Empty path env vars use defaults instead of the current directory."""
+        monkeypatch.setenv("IMAGE_CURATOR_BATCHES", "")
+        monkeypatch.setenv("IMAGE_CURATOR_COMFYUI", "")
+
+        import ai_curate.config as cfg
+
+        importlib.reload(cfg)
+        try:
+            assert cfg.BATCHES_DIR == Path.home() / "image-curator" / "batches"
+            assert cfg.COMFYUI_OUTPUT == Path.home() / "image-curator" / "comfyui-outputs"
+        finally:
+            importlib.reload(config)
+
+    def test_whitespace_path_env_values_use_defaults(self, monkeypatch):
+        """Whitespace-only path env vars use defaults instead of a literal path."""
+        monkeypatch.setenv("IMAGE_CURATOR_BATCHES", "   ")
+        monkeypatch.setenv("IMAGE_CURATOR_COMFYUI", "\t")
+
+        import ai_curate.config as cfg
+
+        importlib.reload(cfg)
+        try:
+            assert cfg.BATCHES_DIR == Path.home() / "image-curator" / "batches"
+            assert cfg.COMFYUI_OUTPUT == Path.home() / "image-curator" / "comfyui-outputs"
+        finally:
+            importlib.reload(config)
+
+
 class TestModelConfig:
     def test_available_models_is_list(self):
         """AVAILABLE_MODELS is always a list regardless of env."""
@@ -65,7 +98,6 @@ class TestModelConfig:
         """DEFAULT_MODEL is None when IMAGE_CURATOR_MODEL is not set."""
         monkeypatch.delenv("IMAGE_CURATOR_MODEL", raising=False)
         # Re-import to pick up the patched env
-        import importlib
         import ai_curate.config as cfg
 
         importlib.reload(cfg)
