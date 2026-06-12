@@ -2144,7 +2144,7 @@
                 const textWrap = document.createElement('div');
                 const promptText = String(entry.normalized || entry.prompt || '');
                 const truncated = promptsCollapseAll;
-                textWrap.appendChild(createTextElement('div', 'prompts-prompt-text', truncated ? promptText.slice(0, 410) + (promptText.length > 410 ? '...' : '') : promptText));
+                textWrap.appendChild(createTextElement('div', 'prompts-prompt-text', truncated ? promptText.slice(0, 400) + (promptText.length > 400 ? '...' : '') : promptText));
                 if (!promptsCurrentBatch) textWrap.appendChild(createTextElement('span', 'prompts-batch-label', entry.batch || ''));
                 main.appendChild(textWrap);
                 const actions = document.createElement('div');
@@ -2156,7 +2156,7 @@
                 copyBtn.addEventListener('click', () => copyMetadataText(promptText, 'prompt'));
                 actions.appendChild(copyBtn);
 
-                if (promptText.length > 410) {
+                if (promptText.length > 400) {
                     const showBtn = document.createElement('button');
                     showBtn.type = 'button';
                     showBtn.className = 'prompts-show-more';
@@ -2164,7 +2164,7 @@
                     showBtn.addEventListener('click', () => {
                         const el = card.querySelector('.prompts-prompt-text');
                         const expanded = showBtn.textContent === 'hide positive';
-                        el.textContent = expanded ? `${promptText.slice(0, 410)}...` : promptText;
+                        el.textContent = expanded ? `${promptText.slice(0, 400)}...` : promptText;
                         showBtn.textContent = expanded ? 'show positive' : 'hide positive';
                     });
                     actions.appendChild(showBtn);
