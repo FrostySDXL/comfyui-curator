@@ -605,7 +605,19 @@
             max-width: 70%;
         }
         .meta-size { color: #999; }
-        .meta-batch { display: block; font-size: 10px; color: #999; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+        .meta-batch {
+            position: absolute;
+            bottom: 34px;
+            left: 7px;
+            font-size: 10px;
+            color: #aaa;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.12s;
+        }
+        .thumb:hover .meta-batch { opacity: 1; }
         .empty { text-align: center; padding: 60px; color: #555; font-size: 14px; }
 
         /* Lightbox */

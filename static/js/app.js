@@ -22,6 +22,7 @@
         let promptsData = null;
         let promptsCurrentBatch = '';
         let promptsCollapseAll = false;
+        let universalFavoritesCount = 0;
         let isDraggingImages = false;
         let folderRequestToken = 0;
         let gridThumbMap = new Map();
@@ -386,7 +387,7 @@
             const favCount = document.createElement('span');
             favCount.className = 'batch-count';
             favCount.id = 'all-favorites-count';
-            favCount.textContent = '0';
+            favCount.textContent = String(universalFavoritesCount);
             favMeta.appendChild(favCount);
             favDiv.appendChild(favMeta);
             favLi.appendChild(favDiv);
@@ -745,8 +746,9 @@
                 const resp = await fetch('/api/favorites');
                 if (!resp.ok) return;
                 const data = await resp.json();
+                universalFavoritesCount = (data.favorites || []).length;
                 const countEl = document.getElementById('all-favorites-count');
-                if (countEl) countEl.textContent = String((data.favorites || []).length);
+                if (countEl) countEl.textContent = String(universalFavoritesCount);
             } catch { console.warn('updateAllFavoritesCount failed'); }
         }
 
@@ -871,11 +873,14 @@
             img.addEventListener('load', () => requestAnimationFrame(() => img.classList.add('loaded')));
             img.addEventListener('error', () => requestAnimationFrame(() => img.classList.add('loaded')));
 
+            const metaBatch = document.createElement('span');
+            metaBatch.className = 'meta-batch hidden';
+
             const meta = document.createElement('div');
             meta.className = 'thumb-meta';
             meta.innerHTML = '<span class="meta-name"></span><span class="meta-size"></span>';
 
-            thumb.append(badge, select, favStar, img, meta);
+            thumb.append(badge, select, favStar, img, metaBatch, meta);
             return thumb;
         }
 
@@ -978,17 +983,14 @@
             }
             if (metaName) metaName.textContent = img.name;
             if (metaSize) metaSize.textContent = formatSize(img.size);
-            const meta = thumb.querySelector('.thumb-meta');
-            let metaBatch = thumb.querySelector('.meta-batch');
+            const metaBatch = thumb.querySelector('.meta-batch');
             if (currentBatch === '__favorites__') {
-                if (!metaBatch && meta) {
-                    metaBatch = document.createElement('span');
-                    metaBatch.className = 'meta-batch';
-                    meta.prepend(metaBatch);
+                if (metaBatch) {
+                    metaBatch.textContent = img.batch || '';
+                    metaBatch.classList.remove('hidden');
                 }
-                if (metaBatch) metaBatch.textContent = img.batch || '';
             } else if (metaBatch) {
-                metaBatch.remove();
+                metaBatch.classList.add('hidden');
             }
         }
 
