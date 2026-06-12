@@ -23,7 +23,7 @@
         let promptsCurrentBatch = '';
         let promptsBatchList = [];
         let promptsCollapseAll = false;
-        let promptBatchFilterTimer = null;
+        let promptBatchBlurTimer = null;
         let universalFavoritesCount = 0;
         let isDraggingImages = false;
         let folderRequestToken = 0;
@@ -1962,14 +1962,8 @@
             if (currentBatch && currentBatch !== '__favorites__' && promptsBatchList.includes(currentBatch)) {
                 promptsCurrentBatch = currentBatch;
             }
-            // Clear the filter and show the full list with the current batch highlighted
-            const filter = document.getElementById('prompts-batch-filter');
-            if (filter) {
-                filter.value = '';
-            }
-            renderPromptBatchList();
-            updatePromptBatchFilterClear();
-            if (filter) filter.focus();
+            updatePromptBatchDisplay();
+            updateAllBatchesBtn();
             loadPromptsData();
         }
 
@@ -1978,47 +1972,119 @@
             _releaseFocusTrap();
         }
 
-        function renderPromptBatchList() {
+        function updatePromptBatchDisplay() {
+            const filter = document.getElementById('prompts-batch-filter');
+            const arrow = document.getElementById('prompts-batch-arrow');
+            if (filter && document.activeElement !== filter) {
+                filter.value = promptsCurrentBatch || '';
+            }
+            if (arrow) arrow.style.display = '';
+            updatePromptBatchFilterClear();
+            updateAllBatchesBtn();
+        }
+
+        function updatePromptBatchFilterClear() {
+            const clearBtn = document.getElementById('prompts-batch-filter-clear');
+            const filter = document.getElementById('prompts-batch-filter');
+            const list = document.getElementById('prompts-batch-list');
+            if (!clearBtn) return;
+            const dropdownOpen = list && list.classList.contains('open');
+            const hasText = filter && filter.value.trim().length > 0;
+            const hasSelection = promptsCurrentBatch !== '';
+            clearBtn.classList.toggle('hidden', dropdownOpen ? !hasText : !hasSelection);
+        }
+
+        function updateAllBatchesBtn() {
+            const btn = document.getElementById('prompts-all-batches-btn');
+            if (!btn) return;
+            btn.classList.toggle('active', promptsCurrentBatch === '');
+        }
+
+        function openPromptBatchDropdown() {
+            const list = document.getElementById('prompts-batch-list');
+            const filter = document.getElementById('prompts-batch-filter');
+            const arrow = document.getElementById('prompts-batch-arrow');
+            if (!list || !filter) return;
+            filter.value = '';
+            if (arrow) arrow.style.display = 'none';
+            updatePromptBatchFilterClear();
+            renderPromptBatchDropdown();
+            list.classList.add('open');
+        }
+
+        function closePromptBatchDropdown() {
+            const list = document.getElementById('prompts-batch-list');
+            const arrow = document.getElementById('prompts-batch-arrow');
+            if (!list) return;
+            list.classList.remove('open');
+            if (arrow) arrow.style.display = '';
+        }
+
+        function renderPromptBatchDropdown() {
             const list = document.getElementById('prompts-batch-list');
             if (!list) return;
             const query = (document.getElementById('prompts-batch-filter')?.value || '').trim().toLowerCase();
-            const filtered = ['', ...promptsBatchList].filter(b => !query || b.toLowerCase().includes(query));
+            const matches = [];
+            promptsBatchList.forEach(batch => {
+                if (query && !batch.toLowerCase().includes(query)) return;
+                matches.push({ batch, startsWith: batch.toLowerCase().startsWith(query) });
+            });
+            if (query) {
+                matches.sort((a, b) => {
+                    if (a.startsWith && !b.startsWith) return -1;
+                    if (!a.startsWith && b.startsWith) return 1;
+                    return 0;
+                });
+            }
             list.replaceChildren();
-            if (filtered.length === 0) {
+            if (matches.length === 0) {
                 const empty = document.createElement('li');
                 empty.className = 'prompts-batch-empty';
                 empty.textContent = 'No batches match';
                 list.appendChild(empty);
                 return;
             }
-            filtered.forEach(batch => {
+            matches.forEach(({ batch }) => {
                 const li = document.createElement('li');
-                li.className = 'prompts-batch-option' + (promptsCurrentBatch === batch ? ' active' : '');
-                li.textContent = batch || 'All Batches';
+                li.className = 'prompts-batch-option';
+                li.textContent = batch;
+                li.setAttribute('role', 'option');
+                li.dataset.value = batch;
                 li.addEventListener('mousedown', (e) => {
                     e.preventDefault();
                     promptsCurrentBatch = batch;
-                    renderPromptBatchList();
+                    closePromptBatchDropdown();
+                    updatePromptBatchDisplay();
                     loadPromptsData();
                 });
                 list.appendChild(li);
             });
         }
 
-        function updatePromptBatchFilterClear() {
-            const clearBtn = document.getElementById('prompts-batch-filter-clear');
-            const filter = document.getElementById('prompts-batch-filter');
-            if (!clearBtn || !filter) return;
-            clearBtn.classList.toggle('hidden', filter.value.trim().length === 0);
+        function _promptBatchMoveFocus(visible, currentIdx, delta) {
+            if (visible.length === 0) return;
+            const next = currentIdx < 0 ? (delta > 0 ? 0 : visible.length - 1) : (currentIdx + delta + visible.length) % visible.length;
+            visible.forEach(el => el.classList.remove('focus'));
+            visible[next].classList.add('focus');
+            visible[next].scrollIntoView({block: 'nearest'});
         }
 
         function clearPromptBatchFilter() {
-            const input = document.getElementById('prompts-batch-filter');
-            if (!input) return;
-            input.value = '';
-            updatePromptBatchFilterClear();
-            renderPromptBatchList();
-            input.focus();
+            const filter = document.getElementById('prompts-batch-filter');
+            const list = document.getElementById('prompts-batch-list');
+            if (!filter) return;
+            if (list && list.classList.contains('open')) {
+                // Dropdown open: clear search text, restore full list
+                filter.value = '';
+                updatePromptBatchFilterClear();
+                renderPromptBatchDropdown();
+                filter.focus();
+            } else {
+                // Dropdown closed: clear batch selection (revert to All Batches)
+                promptsCurrentBatch = '';
+                updatePromptBatchDisplay();
+                loadPromptsData();
+            }
         }
 
         async function loadPromptsData() {
@@ -3396,15 +3462,62 @@
             if (promptsRebuildBtn) promptsRebuildBtn.addEventListener('click', buildPromptIndex);
             const promptsBatchFilter = document.getElementById('prompts-batch-filter');
             if (promptsBatchFilter) {
+                promptsBatchFilter.addEventListener('focus', openPromptBatchDropdown);
+                promptsBatchFilter.addEventListener('blur', function() {
+                    if (promptBatchBlurTimer) clearTimeout(promptBatchBlurTimer);
+                    promptBatchBlurTimer = setTimeout(() => {
+                        closePromptBatchDropdown();
+                        updatePromptBatchDisplay();
+                    }, 150);
+                });
                 promptsBatchFilter.addEventListener('input', function() {
                     updatePromptBatchFilterClear();
-                    if (promptBatchFilterTimer) clearTimeout(promptBatchFilterTimer);
-                    promptBatchFilterTimer = setTimeout(renderPromptBatchList, 160);
+                    renderPromptBatchDropdown();
                 });
-                promptsBatchFilter.addEventListener('focus', renderPromptBatchList);
+                promptsBatchFilter.addEventListener('keydown', function(e) {
+                    const list = document.getElementById('prompts-batch-list');
+                    if (!list || !list.classList.contains('open')) return;
+                    const visible = Array.from(list.querySelectorAll('.prompts-batch-option'));
+                    const currentIdx = visible.findIndex(el => el.classList.contains('focus'));
+                    switch (e.key) {
+                        case 'ArrowDown':
+                            e.preventDefault();
+                            _promptBatchMoveFocus(visible, currentIdx, 1);
+                            break;
+                        case 'ArrowUp':
+                            e.preventDefault();
+                            _promptBatchMoveFocus(visible, currentIdx, -1);
+                            break;
+                        case 'Enter':
+                            e.preventDefault();
+                            const focused = visible.find(el => el.classList.contains('focus'));
+                            if (focused && focused.dataset.value) {
+                                if (promptBatchBlurTimer) clearTimeout(promptBatchBlurTimer);
+                                promptsCurrentBatch = focused.dataset.value;
+                                closePromptBatchDropdown();
+                                updatePromptBatchDisplay();
+                                loadPromptsData();
+                            }
+                            break;
+                        case 'Escape':
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (promptBatchBlurTimer) clearTimeout(promptBatchBlurTimer);
+                            closePromptBatchDropdown();
+                            updatePromptBatchDisplay();
+                            break;
+                    }
+                });
             }
             const promptsBatchFilterClear = document.getElementById('prompts-batch-filter-clear');
             if (promptsBatchFilterClear) promptsBatchFilterClear.addEventListener('click', clearPromptBatchFilter);
+            const promptsAllBatchesBtn = document.getElementById('prompts-all-batches-btn');
+            if (promptsAllBatchesBtn) promptsAllBatchesBtn.addEventListener('click', function() {
+                promptsCurrentBatch = '';
+                closePromptBatchDropdown();
+                updatePromptBatchDisplay();
+                loadPromptsData();
+            });
             const promptsSearch = document.getElementById('prompts-search');
             if (promptsSearch) promptsSearch.addEventListener('input', renderPromptsList);
             const promptsCollapseBtn = document.getElementById('prompts-collapse-all');
@@ -3412,6 +3525,18 @@
                 promptsCollapseAll = !promptsCollapseAll;
                 this.textContent = promptsCollapseAll ? 'Expand all' : 'Collapse all';
                 renderPromptsList();
+            });
+
+            // Close prompt batch dropdown when clicking outside
+            document.addEventListener('mousedown', (e) => {
+                const wrap = document.getElementById('prompts-batch-wrap');
+                if (!wrap) return;
+                const list = document.getElementById('prompts-batch-list');
+                if (list && list.classList.contains('open') && !wrap.contains(e.target)) {
+                    if (promptBatchBlurTimer) clearTimeout(promptBatchBlurTimer);
+                    closePromptBatchDropdown();
+                    updatePromptBatchDisplay();
+                }
             });
 
             // Toast undo

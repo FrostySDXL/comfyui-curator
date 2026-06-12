@@ -333,10 +333,12 @@
             <h3 id="prompts-modal-title">Prompt History</h3>
             <div class="prompts-batch-wrap">
                 <div class="prompts-batch-search-wrap">
-                    <input id="prompts-batch-filter" type="text" placeholder="Search batches..." autocomplete="off">
-                    <button id="prompts-batch-filter-clear" class="prompts-batch-filter-clear hidden" aria-label="Clear batch filter" title="Clear">x</button>
+                    <input id="prompts-batch-filter" type="text" placeholder="All Batches" autocomplete="off" spellcheck="false">
+                    <span class="prompts-batch-arrow" id="prompts-batch-arrow">&#9662;</span>
+                    <button id="prompts-batch-filter-clear" class="prompts-batch-filter-clear hidden" aria-label="Clear batch selection" title="Clear">x</button>
                 </div>
                 <ul id="prompts-batch-list" class="prompts-batch-list"></ul>
+                <button id="prompts-all-batches-btn" class="prompts-all-batches-btn">All Batches</button>
             </div>
             <div class="prompts-controls">
                 <input id="prompts-search" type="text" placeholder="Search prompts..." autocomplete="off">
