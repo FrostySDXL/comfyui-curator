@@ -331,11 +331,11 @@
     <div id="prompts-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="prompts-modal-title">
         <div class="modal-content prompts-modal-content">
             <h3 id="prompts-modal-title">Prompt History</h3>
+            <div class="prompts-batch-wrap">
+                <input id="prompts-batch-filter" type="text" placeholder="Search batches..." autocomplete="off">
+                <ul id="prompts-batch-list" class="prompts-batch-list"></ul>
+            </div>
             <div class="prompts-controls">
-                <div class="prompts-batch-wrap">
-                    <input id="prompts-batch-filter" type="text" placeholder="Filter batches..." autocomplete="off">
-                    <ul id="prompts-batch-list" class="prompts-batch-list"></ul>
-                </div>
                 <input id="prompts-search" type="text" placeholder="Search prompts..." autocomplete="off">
                 <button id="prompts-collapse-all" type="button">Collapse all</button>
             </div>

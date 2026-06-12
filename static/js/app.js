@@ -1981,6 +1981,13 @@
             const query = (document.getElementById('prompts-batch-filter')?.value || '').trim().toLowerCase();
             const filtered = ['', ...promptsBatchList].filter(b => !query || b.toLowerCase().includes(query));
             list.replaceChildren();
+            if (filtered.length === 0) {
+                const empty = document.createElement('li');
+                empty.className = 'prompts-batch-empty';
+                empty.textContent = 'No batches match';
+                list.appendChild(empty);
+                return;
+            }
             filtered.forEach(batch => {
                 const li = document.createElement('li');
                 li.className = 'prompts-batch-option' + (promptsCurrentBatch === batch ? ' active' : '');
@@ -1989,7 +1996,7 @@
                     e.preventDefault();
                     promptsCurrentBatch = batch;
                     const filter = document.getElementById('prompts-batch-filter');
-                    if (filter) { filter.value = batch || ''; filter.blur(); }
+                    if (filter) { filter.value = batch || ''; }
                     renderPromptBatchList();
                     loadPromptsData();
                 });
