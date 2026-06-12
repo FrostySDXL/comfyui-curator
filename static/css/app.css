@@ -1010,9 +1010,15 @@
             top: 50%;
             right: 8px;
             transform: translateY(-50%);
+            width: 16px;
+            height: 16px;
             font-size: 10px;
+            line-height: 1;
             color: #666;
             pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         .prompts-batch-wrap.open .prompts-batch-arrow {
             transform: translateY(-50%) rotate(180deg);
