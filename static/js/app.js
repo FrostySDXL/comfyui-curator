@@ -1971,7 +1971,6 @@
                 promptsCurrentBatch = currentBatch;
             }
             _syncPromptDisplay();
-            _updatePromptFilterClear();
             updateAllBatchesBtn();
             loadPromptsData();
         }
@@ -1991,17 +1990,7 @@
                 input.value = promptsCurrentBatch || '';
                 input.placeholder = promptsCurrentBatch ? '' : 'All Batches';
             }
-            _updatePromptFilterClear();
             updateAllBatchesBtn();
-        }
-
-        function _updatePromptFilterClear() {
-            const clearBtn = document.getElementById('prompts-batch-filter-clear');
-            const input = document.getElementById('prompts-batch-filter');
-            if (!clearBtn || !input) return;
-            const hasSelection = promptsCurrentBatch !== '';
-            const isOpen = document.getElementById('prompts-batch-wrap')?.classList.contains('open');
-            clearBtn.classList.toggle('hidden', isOpen ? input.value.trim().length === 0 : !hasSelection);
         }
 
         function updateAllBatchesBtn() {
@@ -2069,7 +2058,6 @@
             _promptPrevValue = input.value;
             input.value = '';
             input.setAttribute('aria-expanded', 'true');
-            _updatePromptFilterClear();
             _populatePromptDropdown('');
             wrapper.classList.add('open');
         }
@@ -2100,25 +2088,6 @@
             visible.forEach(el => el.classList.remove('focus'));
             visible[next].classList.add('focus');
             visible[next].scrollIntoView({block: 'nearest'});
-        }
-
-        function _clearPromptSelection() {
-            const wrapper = document.getElementById('prompts-batch-wrap');
-            const input = document.getElementById('prompts-batch-filter');
-            if (!input) return;
-            const isOpen = wrapper && wrapper.classList.contains('open');
-            if (isOpen) {
-                // Clear search text, restore full dropdown
-                input.value = '';
-                _updatePromptFilterClear();
-                _populatePromptDropdown('');
-                input.focus();
-            } else {
-                // Clear batch selection (revert to All Batches)
-                promptsCurrentBatch = '';
-                _syncPromptDisplay();
-                loadPromptsData();
-            }
         }
 
         async function loadPromptsData() {
@@ -3510,7 +3479,6 @@
                     if (wrapper && !wrapper.classList.contains('open')) {
                         _promptOpenDropdown();
                     }
-                    _updatePromptFilterClear();
                     _populatePromptDropdown(promptsBatchFilter.value);
                 });
                 promptsBatchFilter.addEventListener('keydown', (e) => {
@@ -3542,8 +3510,6 @@
                     }
                 });
             }
-            const promptsBatchFilterClear = document.getElementById('prompts-batch-filter-clear');
-            if (promptsBatchFilterClear) promptsBatchFilterClear.addEventListener('click', _clearPromptSelection);
             const promptsAllBatchesBtn = document.getElementById('prompts-all-batches-btn');
             if (promptsAllBatchesBtn) promptsAllBatchesBtn.addEventListener('click', () => _commitPromptSelection(''));
             const promptsSearch = document.getElementById('prompts-search');
