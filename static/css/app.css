@@ -605,7 +605,7 @@
             max-width: 70%;
         }
         .meta-size { color: #999; }
-        .meta-batch { display: block; font-size: 10px; color: #999; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .meta-batch { display: block; font-size: 10px; color: #999; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
         .empty { text-align: center; padding: 60px; color: #555; font-size: 14px; }
 
         /* Lightbox */
@@ -960,6 +960,7 @@
         }
         .modal-buttons .cancel { background: #444; color: #eee; }
         .modal-buttons .create { background: #0066cc; color: white; }
+        .modal-buttons .create:disabled { background: #003d80; color: #999; cursor: not-allowed; }
         .modal-buttons .delete-confirm { background: #dc3545; color: white; }
 
         .prompts-modal-content { max-width: 680px; width: min(680px, calc(100vw - 40px)); max-height: 85vh; display: flex; flex-direction: column; }
@@ -977,8 +978,10 @@
         .prompts-copy-btn { padding: 3px 6px; border: 1px solid #444; background: #2a2a2a; color: #ccc; border-radius: 4px; cursor: pointer; font-size: 10px; white-space: nowrap; }
         .prompts-negative { background: #2a2a2a; border-radius: 6px; padding: 6px; margin-top: 6px; color: #bbb; font-size: 12px; white-space: pre-wrap; }
         .prompts-images-list { margin-top: 6px; color: #777; font-size: 11px; line-height: 1.4; }
-        .prompts-footer { display: flex; justify-content: space-between; gap: 12px; margin: 10px 0; color: #777; font-size: 11px; }
+        .prompts-footer { display: flex; align-items: center; gap: 12px; margin: 10px 0; color: #777; font-size: 11px; }
+        #prompts-built-at { margin-left: auto; }
         .prompts-stale { color: #e8a33d; }
+        .prompts-stale button:disabled { opacity: 0.5; cursor: not-allowed; }
 
         /* Toast */
         .toast {

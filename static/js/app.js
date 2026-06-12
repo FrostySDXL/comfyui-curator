@@ -984,7 +984,7 @@
                 if (!metaBatch && meta) {
                     metaBatch = document.createElement('span');
                     metaBatch.className = 'meta-batch';
-                    meta.appendChild(metaBatch);
+                    meta.prepend(metaBatch);
                 }
                 if (metaBatch) metaBatch.textContent = img.batch || '';
             } else if (metaBatch) {
@@ -1320,16 +1320,22 @@
                 lastAction = null;
                 hideToast();
                 if (!data.success) {
-                    // Nothing to undo at the filesystem level; still
-                    // clear the undo toast and refresh.
                     showToast('Nothing to restore');
                     loadBatches();
-                    if (currentBatch === batch) loadCurrentFolderImages();
+                    if (currentBatch === '__favorites__') {
+                        loadUniversalFavorites();
+                    } else if (currentBatch === batch) {
+                        loadCurrentFolderImages();
+                    }
                     return;
                 }
                 showToast(`Restored ${filenames.length} image${filenames.length!==1?'s':''}`);
                 loadBatches();
-                if (currentBatch === batch) loadCurrentFolderImages();
+                if (currentBatch === '__favorites__') {
+                    loadUniversalFavorites();
+                } else if (currentBatch === batch) {
+                    loadCurrentFolderImages();
+                }
             }
         }
 
@@ -2110,8 +2116,10 @@
             }
             const buildBtn = document.getElementById('prompts-build-btn');
             const rebuildBtn = document.getElementById('prompts-rebuild-btn');
-            if (buildBtn) buildBtn.disabled = true;
-            if (rebuildBtn) rebuildBtn.disabled = true;
+            const buildLabel = buildBtn ? buildBtn.textContent : '';
+            const rebuildLabel = rebuildBtn ? rebuildBtn.textContent : '';
+            if (buildBtn) { buildBtn.disabled = true; buildBtn.textContent = 'Building...'; }
+            if (rebuildBtn) { rebuildBtn.disabled = true; rebuildBtn.textContent = 'Building...'; }
             try {
                 const resp = await fetch(`/api/prompt-history/${encodeURIComponent(promptsCurrentBatch)}/build`, {method: 'POST'});
                 if (!resp.ok) throw new Error('build failed');
@@ -2120,8 +2128,8 @@
             } catch {
                 showToast('Prompt index build failed');
             } finally {
-                if (buildBtn) buildBtn.disabled = false;
-                if (rebuildBtn) rebuildBtn.disabled = false;
+                if (buildBtn) { buildBtn.disabled = false; buildBtn.textContent = buildLabel; }
+                if (rebuildBtn) { rebuildBtn.disabled = false; rebuildBtn.textContent = rebuildLabel; }
             }
         }
 
