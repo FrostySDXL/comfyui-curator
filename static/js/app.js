@@ -23,6 +23,7 @@
         let promptsCurrentBatch = '';
         let promptsBatchList = [];
         let promptsCollapseAll = false;
+        let promptBatchFilterTimer = null;
         let universalFavoritesCount = 0;
         let isDraggingImages = false;
         let folderRequestToken = 0;
@@ -1957,16 +1958,18 @@
                     }
                 } catch { console.warn('prompt batch load failed'); }
             }
-            renderPromptBatchList();
             // Default to current batch if one is active (not null, not virtual)
             if (currentBatch && currentBatch !== '__favorites__' && promptsBatchList.includes(currentBatch)) {
                 promptsCurrentBatch = currentBatch;
             }
+            // Clear the filter and show the full list with the current batch highlighted
             const filter = document.getElementById('prompts-batch-filter');
             if (filter) {
-                filter.value = promptsCurrentBatch;
-                filter.focus();
+                filter.value = '';
             }
+            renderPromptBatchList();
+            updatePromptBatchFilterClear();
+            if (filter) filter.focus();
             loadPromptsData();
         }
 
@@ -1995,13 +1998,27 @@
                 li.addEventListener('mousedown', (e) => {
                     e.preventDefault();
                     promptsCurrentBatch = batch;
-                    const filter = document.getElementById('prompts-batch-filter');
-                    if (filter) { filter.value = batch || ''; }
                     renderPromptBatchList();
                     loadPromptsData();
                 });
                 list.appendChild(li);
             });
+        }
+
+        function updatePromptBatchFilterClear() {
+            const clearBtn = document.getElementById('prompts-batch-filter-clear');
+            const filter = document.getElementById('prompts-batch-filter');
+            if (!clearBtn || !filter) return;
+            clearBtn.classList.toggle('hidden', filter.value.trim().length === 0);
+        }
+
+        function clearPromptBatchFilter() {
+            const input = document.getElementById('prompts-batch-filter');
+            if (!input) return;
+            input.value = '';
+            updatePromptBatchFilterClear();
+            renderPromptBatchList();
+            input.focus();
         }
 
         async function loadPromptsData() {
@@ -3379,9 +3396,15 @@
             if (promptsRebuildBtn) promptsRebuildBtn.addEventListener('click', buildPromptIndex);
             const promptsBatchFilter = document.getElementById('prompts-batch-filter');
             if (promptsBatchFilter) {
-                promptsBatchFilter.addEventListener('input', renderPromptBatchList);
+                promptsBatchFilter.addEventListener('input', function() {
+                    updatePromptBatchFilterClear();
+                    if (promptBatchFilterTimer) clearTimeout(promptBatchFilterTimer);
+                    promptBatchFilterTimer = setTimeout(renderPromptBatchList, 160);
+                });
                 promptsBatchFilter.addEventListener('focus', renderPromptBatchList);
             }
+            const promptsBatchFilterClear = document.getElementById('prompts-batch-filter-clear');
+            if (promptsBatchFilterClear) promptsBatchFilterClear.addEventListener('click', clearPromptBatchFilter);
             const promptsSearch = document.getElementById('prompts-search');
             if (promptsSearch) promptsSearch.addEventListener('input', renderPromptsList);
             const promptsCollapseBtn = document.getElementById('prompts-collapse-all');

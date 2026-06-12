@@ -985,6 +985,11 @@
         .prompts-batch-wrap {
             margin-bottom: 8px;
         }
+        .prompts-batch-search-wrap {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
         .prompts-batch-wrap input {
             width: 100%;
             padding: 7px 8px;
@@ -999,6 +1004,20 @@
             border-color: #0066cc;
             box-shadow: 0 0 0 1px rgba(0, 102, 204, 0.3);
         }
+        .prompts-batch-filter-clear {
+            width: 24px;
+            height: 24px;
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            background: #2a2a2a;
+            color: #888;
+            cursor: pointer;
+            line-height: 1;
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+        .prompts-batch-filter-clear:hover { color: #ddd; border-color: #4a4a4a; }
+        .prompts-batch-filter-clear.hidden { visibility: hidden; }
         .prompts-batch-list {
             max-height: 160px;
             overflow-y: auto;
