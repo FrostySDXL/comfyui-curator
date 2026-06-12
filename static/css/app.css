@@ -982,6 +982,7 @@
         .prompts-controls { display: flex; gap: 8px; margin-bottom: 12px; }
         .prompts-controls select, .prompts-controls input { background: #333; border: 1px solid #444; color: #eee; border-radius: 4px; padding: 8px; font-size: 12px; }
         .prompts-controls input { flex: 1; margin-bottom: 0; }
+        .prompts-batch-search { flex: 0 0 150px !important; }
         .prompts-controls button, .prompts-stale button { padding: 6px 8px; border: 1px solid #444; background: #333; color: #ccc; border-radius: 4px; cursor: pointer; font-size: 11px; }
         .prompts-list { flex: 1; overflow-y: auto; min-height: 100px; max-height: 55vh; color: #888; font-size: 13px; }
         .prompts-entry { border: 1px solid #333; background: #202020; border-radius: 7px; padding: 10px 12px; margin-bottom: 8px; }
