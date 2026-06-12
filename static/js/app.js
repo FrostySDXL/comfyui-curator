@@ -2147,27 +2147,26 @@
                 if (!promptsCurrentBatch) textWrap.appendChild(createTextElement('span', 'prompts-batch-label', entry.batch || ''));
                 main.appendChild(textWrap);
                 const actions = document.createElement('div');
+                actions.className = 'prompts-entry-actions';
                 const copyBtn = document.createElement('button');
                 copyBtn.type = 'button';
                 copyBtn.className = 'prompts-copy-btn';
                 copyBtn.textContent = 'copy prompt';
                 copyBtn.addEventListener('click', () => copyMetadataText(promptText, 'prompt'));
                 actions.appendChild(copyBtn);
-                main.appendChild(actions);
-                card.appendChild(main);
 
                 if (promptsCollapseAll && promptText.length > 120) {
                     const showBtn = document.createElement('button');
                     showBtn.type = 'button';
                     showBtn.className = 'prompts-show-more';
-                    showBtn.textContent = 'show more';
+                    showBtn.textContent = 'show positive';
                     showBtn.addEventListener('click', () => {
                         const el = card.querySelector('.prompts-prompt-text');
                         const expanded = showBtn.textContent === 'show less';
                         el.textContent = expanded ? `${promptText.slice(0, 120)}...` : promptText;
-                        showBtn.textContent = expanded ? 'show more' : 'show less';
+                        showBtn.textContent = expanded ? 'show positive' : 'show less';
                     });
-                    card.appendChild(showBtn);
+                    actions.appendChild(showBtn);
                 }
 
                 let negBtn = null, neg = null;
@@ -2182,6 +2181,7 @@
                         const hidden = neg.classList.toggle('hidden');
                         negBtn.textContent = hidden ? 'show negative' : 'hide negative';
                     });
+                    actions.appendChild(negBtn);
                 }
 
                 let imgBtn = null, imgDiv = null;
@@ -2196,10 +2196,12 @@
                         const hidden = imgDiv.classList.toggle('hidden');
                         imgBtn.textContent = hidden ? 'show images' : 'hide images';
                     });
+                    actions.appendChild(imgBtn);
                 }
 
-                if (negBtn) card.appendChild(negBtn);
-                if (imgBtn) card.appendChild(imgBtn);
+                main.appendChild(actions);
+                card.appendChild(main);
+
                 if (neg) card.appendChild(neg);
                 if (imgDiv) card.appendChild(imgDiv);
                 list.appendChild(card);

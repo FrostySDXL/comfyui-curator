@@ -1068,8 +1068,39 @@
         .prompts-count { background: #333; color: #ccc; min-width: 24px; text-align: center; border-radius: 999px; padding: 2px 6px; font-size: 11px; flex-shrink: 0; }
         .prompts-prompt-text { color: #ddd; font-size: 13px; word-break: break-word; line-height: 1.4; }
         .prompts-batch-label { display: inline-block; font-size: 10px; color: #777; margin-top: 4px; }
-        .prompts-show-more, .prompts-toggle-neg, .prompts-toggle-images { background: none; border: none; color: #5ba3f5; font-size: 11px; cursor: pointer; margin: 6px 8px 0 0; padding: 0; }
-        .prompts-copy-btn { padding: 3px 6px; border: 1px solid #444; background: #2a2a2a; color: #ccc; border-radius: 4px; cursor: pointer; font-size: 10px; white-space: nowrap; }
+        .prompts-entry-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            flex-shrink: 0;
+            min-width: 90px;
+        }
+        .prompts-show-more, .prompts-toggle-neg, .prompts-toggle-images {
+            display: block;
+            width: 100%;
+            padding: 3px 6px;
+            border: 1px solid #444;
+            background: #2a2a2a;
+            color: #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+            white-space: nowrap;
+            margin: 0;
+        }
+        .prompts-copy-btn {
+            display: block;
+            width: 100%;
+            padding: 3px 6px;
+            border: 1px solid #0066cc;
+            background: rgba(0,102,204,0.15);
+            color: #5ba3f5;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+            white-space: nowrap;
+            margin-bottom: 4px;
+        }
         .prompts-negative { background: #2a2a2a; border-radius: 6px; padding: 6px; margin-top: 6px; color: #bbb; font-size: 12px; white-space: pre-wrap; }
         .prompts-images-list { margin-top: 6px; color: #777; font-size: 11px; line-height: 1.4; }
         .prompts-footer { display: flex; align-items: center; gap: 12px; margin: 10px 0; color: #777; font-size: 11px; }
