@@ -17,6 +17,8 @@
 - **Batch filesystem workflow:** inbox/shortlisted/finals/rejects folders under `IMAGE_CURATOR_BATCHES/<batch>/`. Counts, metadata, auto-import from ComfyUI outputs.
 - **Web review UI:** Left batch sidebar, center thumbnail grid, right AI sidebar. Drag/drop moves, multi-select, undo toast, keyboard shortcuts, background polling.
 - **Lightbox viewer:** Full-image review with zoom, PNG generation metadata inspection (`M` toggle), scored-image navigation (`[`/`]`), keyboard folder moves (`S`/`F`/`R`).
+- **Favorites workflow:** One-click favorites update batch and universal scope, with a favorites-only filter and virtual All Favorites sidebar view.
+- **Prompt history:** Manual PNG metadata prompt indexes with searchable/copyable Prompt History modal and staleness warning.
 - **AI-assisted scoring:** Vision-LLM evaluation against element checklists via OpenAI-compatible `/v1/chat/completions`. Optional auto-move of top-N images. Run history with comparison.
 - **CLI headless scoring:** Same pipeline available via `curate.py` (dry-run, score-only, or score-and-move).
 - **Core philosophy:** Manual curation is authoritative. AI is advisory. Filesystem is the operational truth.
@@ -24,9 +26,11 @@
 ## Key Concepts & Data Flows
 
 ```
-app.py (Flask, 21 routes)
+app.py (Flask, 28 routes)
   ├── image_curator/batch_store.py  ← filesystem ops (create, list, move, counts, import)
   ├── image_curator/png_metadata.py ← PNG text-chunk extraction (Pillow)
+  ├── image_curator/favorites.py    ← batch + universal favorites JSON storage
+  ├── image_curator/prompt_history.py ← manual PNG prompt index cache
   ├── ai_curate/config.py           ← env-backed constants, paths, caps
   ├── ai_curate/elements.py         ← prompt parsing + element extraction + quality checklists
   ├── ai_curate/client.py           ← VisionClient (raw urllib -> /v1/chat/completions)
@@ -50,10 +54,12 @@ Frontend (templates/index.html + static/js/app.js + static/css/app.css)
 
 | Category | Key Files / Folders | Role |
 |----------|---------------------|------|
-| **Entrypoints** | `app.py` | Flask API (21 routes) + web UI serving + AI worker threads + auto-import watcher |
+| **Entrypoints** | `app.py` | Flask API (28 routes) + web UI serving + AI worker threads + auto-import watcher |
 | | `curate.py` | CLI entrypoint for headless scoring (argparse, no queue) |
 | **Non-AI Backend** | `image_curator/batch_store.py` | Batch creation, folder layout, file moves, counts, import, state persistence |
 | | `image_curator/png_metadata.py` | ComfyUI/A1111 PNG text-chunk extraction (prompt, seed, sampler, CFG, LoRAs, etc.) |
+| | `image_curator/favorites.py` | Batch/universal favorites storage, toggle helper, universal favorite resolution |
+| | `image_curator/prompt_history.py` | Manual prompt-history cache builder from PNG metadata |
 | | `image_curator/README.md` | Module-scoped agent startup guide (layout, contracts, gotchas) |
 | **AI Backend** | `ai_curate/config.py` | Env-backed constants: `BATCHES_DIR`, `COMFYUI_OUTPUT`, `DEFAULT_BASE_URL`, `DEFAULT_TOP_N` (15), `TOP_N_CAP` (100), `ELEMENT_CAP` (12) |
 | | `ai_curate/README.md` | Module-scoped agent startup guide (pipeline, internal contracts, gotchas) |
@@ -64,10 +70,10 @@ Frontend (templates/index.html + static/js/app.js + static/css/app.css)
 | | `ai_curate/queue.py` | `QueueManager`: FIFO single-worker job queue with cancel support |
 | | `ai_curate/storage.py` | `RunStorage`: atomic JSON persistence for run history |
 | **Frontend** | `templates/index.html` | Single-page Flask template (Jinja2, server-injected model list) |
-| | `static/js/app.js` | All browser behavior (~3059 lines, vanilla JS, imperative, no framework) |
-| | `static/css/app.css` | All styling (~1517 lines, dark theme, flexbox + CSS grid) |
+| | `static/js/app.js` | All browser behavior (~3477 lines, vanilla JS, imperative, no framework) |
+| | `static/css/app.css` | All styling (~1581 lines, dark theme, flexbox + CSS grid) |
 | | `static/README.md` | Module-scoped agent startup guide (global state, function groups, API calls, gotchas) |
-| **Tests** | `tests/unit/` | Isolated logic (12 Python + 5 JS-scraping frontend-invariant tests) |
+| **Tests** | `tests/unit/` | Isolated logic (14 Python + 6 JS-scraping frontend-invariant tests) |
 | | `tests/component/` | In-process multi-module (Flask route contracts, AI worker lifecycle) |
 | | `tests/integration/` | Full HTTP + filesystem workflow (Flask test client, real files) |
 | | `tests/README.md` | Module-scoped agent startup guide (layers, fixtures, markers, coverage gaps) |
@@ -88,6 +94,7 @@ Frontend (templates/index.html + static/js/app.js + static/css/app.css)
 | Flask API or batch filesystem behavior | `image_curator/README.md` then `app.py`, matching frontend calls in `static/js/app.js`, integration/component tests | `python -m pytest tests/integration/ tests/component/ -v` |
 | AI scoring, queueing, run history | `ai_curate/README.md` then `ai_curate/`, `curate.py`, unit tests | `python -m pytest tests/unit/test_client.py tests/unit/test_scoring.py tests/unit/test_queue.py tests/unit/test_storage.py tests/unit/test_elements.py tests/unit/test_models.py tests/unit/test_config.py -v` |
 | PNG metadata extraction | `image_curator/README.md` then `image_curator/png_metadata.py`, unit test | `python -m pytest tests/unit/test_png_metadata.py -v` |
+| Favorites or prompt history | `image_curator/README.md` then `image_curator/favorites.py`, `image_curator/prompt_history.py`, app routes, frontend calls | `python -m pytest tests/unit/test_favorites.py tests/unit/test_prompt_history.py tests/integration/test_favorites_api.py tests/integration/test_prompt_history_api.py -v` |
 | Docs or repo organization | `README.md`, `CONTRIBUTING.md`, this file | `python scripts/run_all.py --skip-js` |
 | Deployment assumptions | `image-curator.service.example`, `app.py` constants, `ai_curate/config.py` | Review env vars in `.env.example` |
 
@@ -120,6 +127,8 @@ Treat these as stability-sensitive:
 - Lightbox PNG metadata route shape, toggle shortcut (`M`), and displayed field set
 - Batch and AI sidebar button labels as stateful operator-facing cues, not static text
 - AI run history labels and compare controls as operator-facing compatibility surfaces
+- Favorites API shapes, favorites filter button, All Favorites sidebar entry, and lightbox/thumb star behavior
+- Prompt History modal controls, prompt-history API shapes, and manual cache file semantics
 
 ## Structure Rules
 
@@ -187,8 +196,10 @@ Treat these as stability-sensitive:
 - **`--panel` flag is deprecated (curate.py):** Use `--prompt`. `--panel` still works but prints a warning. `--prompt` takes precedence if both are provided.
 - **AI worker threads are daemons:** They die with the process. Shutdown tries to join for 5 seconds, then exits.
 - **Auto-import watcher defaults to OFF:** Set `IMAGE_CURATOR_ENABLE_WATCHER=true` to enable polling from ComfyUI output.
-- **Frontend tests are Python source-scraping:** The 5 `test_frontend_*.py` files regex-scan `app.js` for function names and invariants. No headless browser or JS test framework. Browser-only changes need manual verification.
-- **Generated files (never edit):** `.thumbs/` (thumbnail cache), `<batch>/ai-curate/runs/` (run history), `<batch>/ai-curate/latest.json`, `__pycache__/`, `*.egg-info/`.
+- **Frontend tests are Python source-scraping:** The 6 `test_frontend_*.py` files regex-scan `app.js` for function names and invariants. No headless browser or JS test framework. Browser-only changes need manual verification.
+- **Generated files (never edit):** `.thumbs/` (thumbnail cache), `.favorites.json`, `<batch>/prompt-history.json`, `<batch>/ai-curate/runs/` (run history), `<batch>/ai-curate/latest.json`, `__pycache__/`, `*.egg-info/`.
+- **Favorites one click updates both scopes:** `toggle_favorite()` writes batch and universal stores; universal view uses `__favorites__` as a frontend sentinel, never as a real batch.
+- **Prompt history is manual:** Build/rebuild is synchronous and operator-triggered. Staleness checks compare total image count only.
 - **Score < 0 means failed:** `ImageResult.score` defaults to -1 for unscored/failed images. `normalized_score` also returns -1. Frontend checks `score >= 0` to distinguish scored from failed.
 - **No CORS headers:** The app binds to `127.0.0.1` by default. For remote access, use a reverse proxy with auth (nginx, Caddy).
 - **Thumbnail cache key includes folder name:** `<folder>__<stem>.webp` format prevents same-filename collisions across inbox/shortlisted/finals/rejects.

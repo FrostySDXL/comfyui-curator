@@ -19,7 +19,17 @@ load_dotenv()
 from flask import Flask, render_template, send_file, jsonify, request
 from PIL import Image
 from image_curator import batch_store
+from image_curator.favorites import (
+    get_batch_favorite_filenames,
+    resolve_universal_favorites,
+    toggle_favorite,
+)
 from image_curator.png_metadata import extract_png_metadata
+from image_curator.prompt_history import (
+    build_prompt_index,
+    load_all_prompt_indices,
+    load_prompt_index,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -333,8 +343,13 @@ def api_images(batch, folder):
         order = "desc"
     folder_path = get_batch_folder(batch_name, folder)
     images = get_images(folder_path, sort_by=sort_by, order=order)
+    fav_set = get_batch_favorite_filenames(BATCHES_DIR, batch_name)
     return jsonify(
-        [{"name": img.name, "size": img.stat().st_size} for img in images if img.exists()]
+        [
+            {"name": img.name, "size": img.stat().st_size, "favorite": img.name in fav_set}
+            for img in images
+            if img.exists()
+        ]
     )
 
 
@@ -463,6 +478,84 @@ def api_delete_rejects(batch):
                     pass
             count += 1
     return jsonify({"success": True, "count": count, "failed": failed})
+
+
+@app.route("/api/favorites", methods=["GET"])
+def api_get_favorites():
+    return jsonify({"favorites": resolve_universal_favorites(BATCHES_DIR)})
+
+
+@app.route("/api/favorites", methods=["POST"])
+def api_toggle_universal_favorite():
+    data = request.json or {}
+    batch = data.get("batch", "")
+    filename = data.get("filename", "")
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
+    if not filename:
+        return jsonify({"error": "filename required"}), 400
+    try:
+        return jsonify(toggle_favorite(BATCHES_DIR, batch_name, filename))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/favorites/<batch>", methods=["GET"])
+def api_get_batch_favorites(batch):
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
+    return jsonify({"filenames": sorted(get_batch_favorite_filenames(BATCHES_DIR, batch_name))})
+
+
+@app.route("/api/favorites/<batch>", methods=["POST"])
+def api_toggle_batch_favorite(batch):
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
+    data = request.json or {}
+    filename = data.get("filename", "")
+    if not filename:
+        return jsonify({"error": "filename required"}), 400
+    try:
+        return jsonify(toggle_favorite(BATCHES_DIR, batch_name, filename))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/prompt-history/<batch>/build", methods=["POST"])
+def api_build_prompt_history(batch):
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
+    try:
+        return jsonify(build_prompt_index(BATCHES_DIR, batch_name))
+    except Exception as e:
+        logger.exception("Prompt history build failed for %s", batch_name)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/prompt-history/<batch>", methods=["GET"])
+def api_get_prompt_history(batch):
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
+    index = load_prompt_index(BATCHES_DIR, batch_name)
+    if index is None:
+        return jsonify({"error": "prompt history not built"}), 404
+    if request.args.get("check_stale", "").lower() == "true":
+        counts = batch_store.get_batch_counts(BATCHES_DIR, batch_name)
+        current_count = sum(counts.get(folder, 0) for folder in batch_store.BATCH_FOLDERS)
+        index = dict(index)
+        index["stale"] = current_count != index.get("image_count")
+        index["current_image_count"] = current_count
+    return jsonify(index)
+
+
+@app.route("/api/prompt-history", methods=["GET"])
+def api_get_all_prompt_history():
+    return jsonify(load_all_prompt_indices(BATCHES_DIR))
 
 
 @app.route("/thumb/<batch>/<folder>/<filename>")

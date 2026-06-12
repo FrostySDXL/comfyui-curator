@@ -8,6 +8,8 @@
 
 - **Batch filesystem management** (`batch_store.py`): Creates batch folders, lists/enumerates images, moves files between workflow folders, imports from ComfyUI output, manages active-batch state file.
 - **PNG metadata extraction** (`png_metadata.py`): Reads ComfyUI/A1111 PNG text chunks with Pillow, parses generation parameters (prompt, seed, sampler, CFG, LoRAs, etc.).
+- **Favorites persistence** (`favorites.py`): Stores batch-scoped and universal favorite image records with atomic JSON writes.
+- **Prompt history indexing** (`prompt_history.py`): Builds manual prompt indexes from PNG metadata, deduplicated by normalized prompt/negative prompt.
 
 The two modules are independent -- neither imports the other.
 
@@ -18,6 +20,8 @@ The two modules are independent -- neither imports the other.
 ```
 app.py ──> batch_store (nearly all functions: create, list, move, counts, import, state)
        ──> png_metadata.extract_png_metadata (Flask route for metadata inspection)
+       ──> favorites (favorite toggles, batch filter data, universal favorites)
+       ──> prompt_history (manual prompt index build/load routes)
 
 curate.py ──> batch_store.move_image (single-file moves in --move mode)
 
@@ -35,6 +39,8 @@ Each batch is a directory under `BATCHES_DIR/<batch_name>/` containing four work
 Additional runtime directories (NOT managed by batch_store):
 - `.thumbs/` -- thumbnail cache (managed by `app.py`)
 - `ai-curate/` -- AI run history (managed by `ai_curate/storage.py`)
+- `.favorites.json` -- batch favorites; root-level `.favorites.json` stores universal favorites
+- `prompt-history.json` -- manual PNG prompt-history cache per batch
 
 ### Supported Image Extensions
 
@@ -51,6 +57,8 @@ Written atomically via `.tmp` + `os.replace()`.
 - **Never:** Change `BATCH_FOLDERS` tuple or `IMAGE_EXTENSIONS` set without updating all consumers (app.py, curate.py, ai_curate/config.py, tests).
 - **Always:** Use `_validate_name()` before accepting user-supplied batch or file names -- it blocks path traversal (null bytes, `/`, `\`, `.`, `..`, leading dot).
 - **Always:** Use `move_image()` for file moves -- it creates destination directories and never raises OSError to callers.
+- **Favorites:** Tracking is filename-based within each batch; duplicate filenames across folders are resolved by scanning the standard folders.
+- **Prompt history:** Cache builds are manual and synchronous; moving files between folders does not by itself make count-based staleness detection fire.
 - **Verification:** After changes in this directory, run:
   ```bash
   python -m pytest tests/unit/test_batch_store.py tests/unit/test_png_metadata.py -v
@@ -63,6 +71,8 @@ Written atomically via `.tmp` + `os.replace()`.
 |------|-------|------|
 | `batch_store.py` | 280 | Batch filesystem ops: `create_batch`, `get_batches`, `get_batch_folder`, `get_images` (sortable by date/name/shuffle), `get_batch_counts`, `get_all_counts`, `get_batch_metadata`, `get_all_batch_metadata`, `get_pending_count`, `import_all_pending`, `move_image`, `move_images`, `load_state`/`save_state` (atomic JSON), `_validate_name` (path traversal guard), `_collision_safe_name` (dedup on import). |
 | `png_metadata.py` | 153 | `extract_png_metadata(path)` -- opens PNG with Pillow, reads `image.text` dictionary, parses generation parameters. Top-level keys: `has_metadata`, `source`, `parameters` (nested dict with `prompt`, `negative_prompt`, `seed`, `steps`, `sampler`, `cfg_scale`, `width`/`height`, `model`, `model_hash`, `version`, `clip_skip`), `loras` (list of `{name, weight, hash}`), `raw_keys` (list of chunk key names), `raw_parameters`, `workflow_available`, `workflow_size`. Also exports `parse_parameters()` (public but currently unused externally). |
+| `favorites.py` | varies | `load_favorites`, `save_favorites`, `toggle_favorite`, `get_batch_favorite_filenames`, `resolve_universal_favorites`; uses `_validate_name`, `RLock`, and atomic `.tmp` replacement. |
+| `prompt_history.py` | varies | `build_prompt_index`, `load_prompt_index`, `load_all_prompt_indices`; scans PNG metadata, strips LoRA tags with `png_metadata.LORA_RE`, hashes normalized prompt pairs, and writes `prompt-history.json` atomically. |
 
 ## Agent Instructions
 

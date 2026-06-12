@@ -18,6 +18,10 @@
         let batchSort = (localStorage.getItem(BATCH_SORT_KEY) || 'alpha');
         let batchFilterQuery = '';
         let batchFilterTimer = null;
+        let favoritesFilterOn = false;
+        let promptsData = null;
+        let promptsCurrentBatch = '';
+        let promptsCollapseAll = false;
         let isDraggingImages = false;
         let folderRequestToken = 0;
         let gridThumbMap = new Map();
@@ -346,6 +350,7 @@
             }
 
             renderBatchList(filteredBatches);
+            updateAllFavoritesCount();
 
             updateBatchSearchClearButton();
 
@@ -369,11 +374,32 @@
         function renderBatchList(filteredBatches) {
             const list = document.getElementById('batch-list');
             if (!list) return;
+            const fragment = document.createDocumentFragment();
+            const favLi = document.createElement('li');
+            favLi.className = 'batch-item batch-item-favorites';
+            const favDiv = document.createElement('div');
+            favDiv.className = 'batch-name' + (currentBatch === '__favorites__' ? ' selected' : '');
+            favDiv.dataset.batch = '__favorites__';
+            favDiv.appendChild(createTextElement('span', '', '★ All Favorites'));
+            const favMeta = document.createElement('span');
+            favMeta.className = 'batch-meta';
+            const favCount = document.createElement('span');
+            favCount.className = 'batch-count';
+            favCount.id = 'all-favorites-count';
+            favCount.textContent = '0';
+            favMeta.appendChild(favCount);
+            favDiv.appendChild(favMeta);
+            favLi.appendChild(favDiv);
+            fragment.appendChild(favLi);
             if (filteredBatches.length === 0) {
-                list.innerHTML = '<li class="batch-empty" aria-label="no batches found">No batches match</li>';
+                const empty = document.createElement('li');
+                empty.className = 'batch-empty';
+                empty.setAttribute('aria-label', 'no batches found');
+                empty.textContent = 'No batches match';
+                fragment.appendChild(empty);
+                list.replaceChildren(fragment);
                 return;
             }
-            const fragment = document.createDocumentFragment();
             filteredBatches.forEach(batch => {
                 const c = allCounts[batch] || {};
                 const total = (c.inbox||0) + (c.shortlisted||0) + (c.finals||0);
@@ -646,6 +672,10 @@
         // --- Batch & folder selection ---
 
         function selectBatch(batch) {
+            if (batch === '__favorites__') {
+                loadUniversalFavorites();
+                return;
+            }
             const batchChanged = currentBatch !== batch;
             currentBatch = batch;
             saveBatchState();
@@ -706,9 +736,54 @@
             const nextImages = await resp.json();
             if (requestToken !== folderRequestToken) return;
             images = nextImages;
-            document.getElementById('img-count').textContent =
-                images.length > 0 ? ` (${images.length})` : '';
+            updateImageCountLabel();
             updateGrid();
+        }
+
+        async function updateAllFavoritesCount() {
+            try {
+                const resp = await fetch('/api/favorites');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const countEl = document.getElementById('all-favorites-count');
+                if (countEl) countEl.textContent = String((data.favorites || []).length);
+            } catch { console.warn('updateAllFavoritesCount failed'); }
+        }
+
+        async function loadUniversalFavorites() {
+            currentBatch = '__favorites__';
+            currentFolder = null;
+            saveBatchState();
+            selectedImages.clear();
+            lastSelectIndex = -1;
+            lastAction = null;
+            resetAiBatchState(false);
+            closeLightbox();
+            updateActionBar();
+            document.querySelectorAll('.batch-name').forEach(el =>
+                el.classList.toggle('selected', el.dataset.batch === '__favorites__'));
+            const tabs = document.getElementById('folder-tabs');
+            if (tabs) tabs.classList.remove('visible');
+            document.getElementById('sort-controls').style.display = 'flex';
+            const pathEl = document.getElementById('current-path');
+            pathEl.replaceChildren(createTextElement('span', 'path', '★ All Favorites'));
+            updateAutoImportQuickAction(document.getElementById('active-batch-select').value || null);
+            const resp = await fetch('/api/favorites');
+            if (!resp.ok) {
+                showToast('Failed to load favorites');
+                return;
+            }
+            const data = await resp.json();
+            images = (data.favorites || []).map(f => ({
+                name: f.filename,
+                size: 0,
+                batch: f.batch,
+                folder: f.folder,
+                favorite: true,
+            }));
+            updateImageCountLabel();
+            updateGrid();
+            updateAllFavoritesCount();
         }
 
         // --- Sort ---
@@ -737,7 +812,23 @@
         // --- Grid rendering ---
 
         function getDisplayImages() {
-            return (aiActiveRun && currentSort === 'score-desc') ? aiSortImages(images) : images;
+            const filtered = favoritesFilterOn ? images.filter(img => img.favorite === true) : images;
+            return (aiActiveRun && currentSort === 'score-desc') ? aiSortImages(filtered) : filtered;
+        }
+
+        function updateImageCountLabel() {
+            const countEl = document.getElementById('img-count');
+            if (!countEl) return;
+            const displayCount = getDisplayImages().length;
+            if (images.length === 0) countEl.textContent = '';
+            else if (favoritesFilterOn && displayCount !== images.length) countEl.textContent = ` (${displayCount} of ${images.length})`;
+            else countEl.textContent = ` (${images.length})`;
+        }
+
+        function getImageBatchAndFolder(img) {
+            return currentBatch === '__favorites__'
+                ? {batch: img.batch, folder: img.folder}
+                : {batch: currentBatch, folder: currentFolder};
         }
 
         function getImageIndexByName(name) {
@@ -766,6 +857,15 @@
                 toggleSelect(Number(thumb.dataset.index), event);
             });
 
+            const favStar = document.createElement('span');
+            favStar.className = 'favorite-star';
+            favStar.setAttribute('role', 'button');
+            favStar.tabIndex = 0;
+            favStar.addEventListener('click', (event) => {
+                event.stopPropagation();
+                toggleFavorite(Number(thumb.dataset.index));
+            });
+
             const img = document.createElement('img');
             img.draggable = false;
             img.addEventListener('load', () => requestAnimationFrame(() => img.classList.add('loaded')));
@@ -775,8 +875,63 @@
             meta.className = 'thumb-meta';
             meta.innerHTML = '<span class="meta-name"></span><span class="meta-size"></span>';
 
-            thumb.append(badge, select, img, meta);
+            thumb.append(badge, select, favStar, img, meta);
             return thumb;
+        }
+
+        function syncFavoriteButton(btn, isOn) {
+            if (!btn) return;
+            btn.innerHTML = isOn ? '&#9733;' : '&#9734;';
+            btn.style.color = isOn ? '#e8c84a' : '';
+        }
+
+        function toggleFavoritesFilter() {
+            favoritesFilterOn = !favoritesFilterOn;
+            syncFavoriteButton(document.getElementById('favorites-filter-btn'), favoritesFilterOn);
+            updateImageCountLabel();
+            updateGrid();
+        }
+
+        async function postFavoriteToggle(img) {
+            if (!img) return null;
+            const isUniversal = currentBatch === '__favorites__';
+            const url = isUniversal ? '/api/favorites' : `/api/favorites/${encodeURIComponent(currentBatch)}`;
+            const body = isUniversal ? {batch: img.batch, filename: img.name} : {filename: img.name};
+            const resp = await fetch(url, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+            });
+            if (!resp.ok) throw new Error('favorite request failed');
+            return resp.json();
+        }
+
+        async function toggleFavorite(index) {
+            const img = images[index];
+            if (!img) return;
+            try {
+                const result = await postFavoriteToggle(img);
+                img.favorite = result.batch;
+                const thumb = gridThumbMap.get(img.name);
+                const favStar = thumb ? thumb.querySelector('.favorite-star') : null;
+                if (favStar) {
+                    favStar.classList.toggle('active', img.favorite === true);
+                    favStar.title = img.favorite ? 'Remove favorite' : 'Add favorite';
+                }
+                if (document.getElementById('lightbox').classList.contains('active') && currentIndex === index) {
+                    updateLightboxFavorite(img);
+                }
+                if (currentBatch === '__favorites__' && !img.favorite) {
+                    await loadUniversalFavorites();
+                } else {
+                    updateImageCountLabel();
+                    updateGrid();
+                    updateAllFavoritesCount();
+                }
+                showToast(img.favorite ? 'Added favorite' : 'Removed favorite');
+            } catch {
+                showToast('Favorite update failed');
+            }
         }
 
         function updateThumbElement(thumb, img, index) {
@@ -787,7 +942,9 @@
             const imageEl = thumb.querySelector('img');
             const metaName = thumb.querySelector('.meta-name');
             const metaSize = thumb.querySelector('.meta-size');
-            const imageSrc = `/thumb/${currentBatch}/${currentFolder}/${encodeURIComponent(img.name)}`;
+            const favStar = thumb.querySelector('.favorite-star');
+            const source = getImageBatchAndFolder(img);
+            const imageSrc = `/thumb/${encodeURIComponent(source.batch)}/${encodeURIComponent(source.folder)}/${encodeURIComponent(img.name)}`;
             const thumbnailCacheKey = getThumbnailCacheKey(imageSrc, img);
 
             thumb.dataset.name = img.name;
@@ -796,6 +953,12 @@
             thumb.classList.toggle('ai-filtered-out', !shouldShow);
             thumb.classList.remove('removing');
             if (selectBtn) selectBtn.classList.toggle('selected', selectedImages.has(img.name));
+            if (favStar) {
+                const isFav = img.favorite === true;
+                favStar.classList.toggle('active', isFav);
+                favStar.title = isFav ? 'Remove favorite' : 'Add favorite';
+                favStar.setAttribute('aria-label', favStar.title);
+            }
 
             if (badge) {
                 if (aiShowOverlays && scoreResult) {
@@ -815,6 +978,18 @@
             }
             if (metaName) metaName.textContent = img.name;
             if (metaSize) metaSize.textContent = formatSize(img.size);
+            const meta = thumb.querySelector('.thumb-meta');
+            let metaBatch = thumb.querySelector('.meta-batch');
+            if (currentBatch === '__favorites__') {
+                if (!metaBatch && meta) {
+                    metaBatch = document.createElement('span');
+                    metaBatch.className = 'meta-batch';
+                    meta.appendChild(metaBatch);
+                }
+                if (metaBatch) metaBatch.textContent = img.batch || '';
+            } else if (metaBatch) {
+                metaBatch.remove();
+            }
         }
 
         function showGridLoadingPlaceholders(batch, folder) {
@@ -952,7 +1127,7 @@
                 grid.classList.add('selecting');
                 document.getElementById('action-count').textContent = selectedImages.size + ' selected';
                 bar.querySelectorAll('.action-btn[data-dest]').forEach(b =>
-                    b.style.display = b.dataset.dest === currentFolder ? 'none' : '');
+                    b.style.display = currentBatch === '__favorites__' || b.dataset.dest === currentFolder ? 'none' : '');
             } else {
                 bar.classList.remove('visible');
                 grid.classList.remove('selecting');
@@ -998,6 +1173,11 @@
         function onDrop(event, folder) {
             event.preventDefault();
             event.currentTarget.classList.remove('drag-over');
+            if (currentBatch === '__favorites__') {
+                showToast('Drag/drop moves are not supported in All Favorites view. Use lightbox or individual moves.');
+                draggedFiles = [];
+                return;
+            }
             if (draggedFiles.length > 0 && folder !== currentFolder) {
                 moveBatch(draggedFiles, folder);
             }
@@ -1006,9 +1186,9 @@
 
         // --- Move operations ---
 
-        function recordLastAction(filenames, source, destination) {
+        function recordLastAction(filenames, source, destination, batch = currentBatch) {
             lastAction = {
-                batch: currentBatch,
+                batch,
                 filenames: [...filenames],
                 source,
                 destination,
@@ -1033,7 +1213,7 @@
             const removeSet = new Set(names);
             images = images.filter(img => !removeSet.has(img.name));
             names.forEach(name => gridThumbMap.delete(name));
-            document.getElementById('img-count').textContent = images.length > 0 ? ` (${images.length})` : '';
+            updateImageCountLabel();
         }
 
         async function moveBatch(filenames, destination) {
@@ -1083,18 +1263,24 @@
         async function moveImage(destination) {
             const img = images[currentIndex];
             if (!img) return;
+            const source = getImageBatchAndFolder(img);
             const resp = await fetch('/api/move', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
-                    batch: currentBatch, filename: img.name,
-                    source: currentFolder, destination: destination
+                    batch: source.batch, filename: img.name,
+                    source: source.folder, destination: destination
                 })
             });
             if (resp.ok) {
                 await animateThumbRemoval([img.name]);
-                recordLastAction([img.name], currentFolder, destination);
+                recordLastAction([img.name], source.folder, destination, source.batch);
                 showToast(`Moved to ${destination}`, true);
+                if (currentBatch === '__favorites__') {
+                    await loadUniversalFavorites();
+                    loadBatches();
+                    return;
+                }
                 removeImagesFromCurrentView([img.name]);
                 loadBatches();
                 if (images.length === 0) {
@@ -1168,7 +1354,7 @@
                 showToast(`Deleted ${data.count} rejected images`);
                 loadBatches();
                 if (currentFolder === 'rejects') { images = []; updateGrid(); }
-                document.getElementById('img-count').textContent = '';
+                updateImageCountLabel();
             } else {
                 const data = await resp.json().catch(() => ({}));
                 showToast(data.error || 'Delete failed');
@@ -1282,7 +1468,8 @@
                 el.style.opacity = '';
             };
             // Use decode() when available to avoid flash of partially-decoded image
-            const newSrc = `/image/${currentBatch}/${currentFolder}/${encodeURIComponent(img.name)}`;
+            const source = getImageBatchAndFolder(img);
+            const newSrc = `/image/${encodeURIComponent(source.batch)}/${encodeURIComponent(source.folder)}/${encodeURIComponent(img.name)}`;
             if (el.decode) {
                 el.src = newSrc;
                 el.decode().then(() => {
@@ -1307,7 +1494,13 @@
             if (w && h) line1 += `  (${w}x${h})`;
             const lineEl = document.createElement('div');
             lineEl.className = 'lightbox-info-line';
-            lineEl.textContent = line1;
+            lineEl.appendChild(document.createTextNode(line1));
+            const fav = document.createElement('span');
+            fav.className = 'lightbox-favorite-star';
+            fav.textContent = img.favorite ? '\u2605' : '\u2606';
+            fav.title = img.favorite ? 'Remove favorite' : 'Add favorite';
+            fav.addEventListener('click', toggleLightboxFavorite);
+            lineEl.appendChild(fav);
             infoEl.appendChild(lineEl);
 
             // Add AI score breakdown if available
@@ -1345,8 +1538,23 @@
             }
         }
 
+        async function toggleLightboxFavorite() {
+            const img = images[currentIndex];
+            if (!img) return;
+            await toggleFavorite(currentIndex);
+        }
+
+        function updateLightboxFavorite(img) {
+            const star = document.querySelector('.lightbox-favorite-star');
+            if (!star || !img) return;
+            star.textContent = img.favorite ? '\u2605' : '\u2606';
+            star.style.color = img.favorite ? '#e8c84a' : '';
+            star.title = img.favorite ? 'Remove favorite' : 'Add favorite';
+        }
+
         function getLightboxMetadataCacheKey(img) {
-            return `${currentBatch}/${currentFolder}/${img.name}`;
+            const source = getImageBatchAndFolder(img);
+            return `${source.batch}/${source.folder}/${img.name}`;
         }
 
         async function loadLightboxMetadata(img, token) {
@@ -1361,7 +1569,8 @@
             currentLightboxMetadataLoading = true;
             syncMetadataToggleButton();
             try {
-                const resp = await fetch(`/api/image-metadata/${encodeURIComponent(currentBatch)}/${encodeURIComponent(currentFolder)}/${encodeURIComponent(img.name)}`);
+                const source = getImageBatchAndFolder(img);
+                const resp = await fetch(`/api/image-metadata/${encodeURIComponent(source.batch)}/${encodeURIComponent(source.folder)}/${encodeURIComponent(img.name)}`);
                 if (!resp.ok) throw new Error(`metadata request failed (${resp.status})`);
                 const data = await resp.json();
                 if (token !== lightboxMetadataRequestToken) return;
@@ -1725,6 +1934,178 @@
             _releaseFocusTrap();
         }
 
+        async function showPromptsModal() {
+            const modal = document.getElementById('prompts-modal');
+            modal.classList.add('active');
+            _trapFocus(modal);
+            const select = document.getElementById('prompts-batch-select');
+            if (select && select.options.length <= 1) {
+                try {
+                    const resp = await fetch('/api/batches');
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        (data.batches || []).forEach(batch => {
+                            const opt = document.createElement('option');
+                            opt.value = batch;
+                            opt.textContent = batch;
+                            select.appendChild(opt);
+                        });
+                    }
+                } catch { console.warn('prompt batch load failed'); }
+            }
+            loadPromptsData();
+        }
+
+        function hidePromptsModal() {
+            document.getElementById('prompts-modal').classList.remove('active');
+            _releaseFocusTrap();
+        }
+
+        async function loadPromptsData() {
+            const list = document.getElementById('prompts-list');
+            if (list) list.textContent = 'Loading prompt history...';
+            const url = promptsCurrentBatch
+                ? `/api/prompt-history/${encodeURIComponent(promptsCurrentBatch)}?check_stale=true`
+                : '/api/prompt-history';
+            try {
+                const resp = await fetch(url);
+                if (resp.status === 404) {
+                    promptsData = null;
+                    if (list) list.textContent = 'Prompt index not built for this batch.';
+                    updatePromptsFooter();
+                    return;
+                }
+                if (!resp.ok) throw new Error('prompt history request failed');
+                promptsData = await resp.json();
+                renderPromptsList();
+                updatePromptsFooter();
+            } catch {
+                promptsData = null;
+                if (list) list.textContent = 'Failed to load prompt history.';
+            }
+        }
+
+        function getPromptEntries() {
+            if (!promptsData) return [];
+            if (promptsCurrentBatch) {
+                return (promptsData.prompts || []).map(prompt => ({...prompt, batch: promptsData.batch}));
+            }
+            const entries = [];
+            Object.entries(promptsData.batches || {}).forEach(([batch, index]) => {
+                (index.prompts || []).forEach(prompt => entries.push({...prompt, batch}));
+            });
+            return entries;
+        }
+
+        function renderPromptsList() {
+            const list = document.getElementById('prompts-list');
+            if (!list) return;
+            const query = (document.getElementById('prompts-search')?.value || '').trim().toLowerCase();
+            const entries = getPromptEntries().filter(entry => {
+                const haystack = `${entry.prompt || ''} ${entry.negative_prompt || ''} ${entry.batch || ''}`.toLowerCase();
+                return !query || haystack.includes(query);
+            });
+            list.replaceChildren();
+            if (entries.length === 0) {
+                list.textContent = promptsData ? 'No prompts match.' : 'No prompt indexes found.';
+                return;
+            }
+            entries.forEach(entry => {
+                const card = document.createElement('div');
+                card.className = 'prompts-entry';
+                const main = document.createElement('div');
+                main.className = 'prompts-entry-main';
+                main.appendChild(createTextElement('span', 'prompts-count', String(entry.count || 0)));
+                const textWrap = document.createElement('div');
+                const promptText = String(entry.prompt || '');
+                const truncated = promptsCollapseAll || promptText.length > 120;
+                textWrap.appendChild(createTextElement('div', 'prompts-prompt-text', truncated ? promptText.slice(0, 120) + (promptText.length > 120 ? '...' : '') : promptText));
+                if (!promptsCurrentBatch) textWrap.appendChild(createTextElement('span', 'prompts-batch-label', entry.batch || ''));
+                main.appendChild(textWrap);
+                const actions = document.createElement('div');
+                const copyBtn = document.createElement('button');
+                copyBtn.type = 'button';
+                copyBtn.className = 'prompts-copy-btn';
+                copyBtn.textContent = 'copy prompt';
+                copyBtn.addEventListener('click', () => copyMetadataText(promptText, 'prompt'));
+                actions.appendChild(copyBtn);
+                main.appendChild(actions);
+                card.appendChild(main);
+
+                if (promptText.length > 120) {
+                    const showBtn = document.createElement('button');
+                    showBtn.type = 'button';
+                    showBtn.className = 'prompts-show-more';
+                    showBtn.textContent = 'show more';
+                    showBtn.addEventListener('click', () => {
+                        const el = card.querySelector('.prompts-prompt-text');
+                        const expanded = showBtn.textContent === 'show less';
+                        el.textContent = expanded ? `${promptText.slice(0, 120)}...` : promptText;
+                        showBtn.textContent = expanded ? 'show more' : 'show less';
+                    });
+                    card.appendChild(showBtn);
+                }
+
+                const negText = entry.negative_prompt || '';
+                if (negText) {
+                    const negBtn = document.createElement('button');
+                    negBtn.type = 'button';
+                    negBtn.className = 'prompts-toggle-neg';
+                    negBtn.textContent = 'show negative';
+                    const neg = createTextElement('div', 'prompts-negative hidden', negText);
+                    negBtn.addEventListener('click', () => {
+                        const hidden = neg.classList.toggle('hidden');
+                        negBtn.textContent = hidden ? 'show negative' : 'hide negative';
+                    });
+                    card.append(negBtn, neg);
+                }
+
+                const imagesList = (entry.images || []).map(img => img.filename).slice(0, 20).join(', ');
+                if (imagesList) {
+                    const imgBtn = document.createElement('button');
+                    imgBtn.type = 'button';
+                    imgBtn.className = 'prompts-toggle-images';
+                    imgBtn.textContent = 'show images';
+                    const imgDiv = createTextElement('div', 'prompts-images-list hidden', imagesList);
+                    imgBtn.addEventListener('click', () => {
+                        const hidden = imgDiv.classList.toggle('hidden');
+                        imgBtn.textContent = hidden ? 'show images' : 'hide images';
+                    });
+                    card.append(imgBtn, imgDiv);
+                }
+                list.appendChild(card);
+            });
+        }
+
+        function updatePromptsFooter() {
+            const built = document.getElementById('prompts-built-at');
+            const stale = document.getElementById('prompts-stale-warning');
+            if (built) {
+                const builtAt = promptsData?.built_at || (promptsCurrentBatch ? null : '');
+                built.textContent = builtAt ? `Built ${new Date(builtAt).toLocaleString()}` : '';
+            }
+            if (stale) stale.classList.toggle('hidden', promptsData?.stale !== true);
+        }
+
+        async function buildPromptIndex() {
+            if (!promptsCurrentBatch) {
+                showToast('Select a batch before building a prompt index');
+                return;
+            }
+            const btn = document.getElementById('prompts-build-btn');
+            if (btn) btn.disabled = true;
+            try {
+                const resp = await fetch(`/api/prompt-history/${encodeURIComponent(promptsCurrentBatch)}/build`, {method: 'POST'});
+                if (!resp.ok) throw new Error('build failed');
+                showToast('Prompt index built');
+                await loadPromptsData();
+            } catch {
+                showToast('Prompt index build failed');
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
         async function createBatch() {
             const name = document.getElementById('new-batch-name').value.trim();
             if (!name) return;
@@ -1802,6 +2183,12 @@
                 return;
             }
 
+            if (e.key === 'Escape' && document.getElementById('prompts-modal').classList.contains('active')) {
+                e.preventDefault();
+                hidePromptsModal();
+                return;
+            }
+
             if (isTypingTarget) return;
 
             if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
@@ -1843,6 +2230,12 @@
                             toggleAiSidebar();
                         }
                         return;
+                    case 'f':
+                        if (!e.shiftKey && currentBatch) {
+                            e.preventDefault();
+                            toggleFavoritesFilter();
+                        }
+                        return;
                     case 'u':
                         e.preventDefault();
                         toggleBatchSidebar();
@@ -1853,7 +2246,7 @@
 
             switch(e.key.toLowerCase()) {
                 case 's': e.preventDefault(); moveImage('shortlisted'); break;
-                case 'f': e.preventDefault(); moveImage('finals'); break;
+                case 'f': e.preventDefault(); if (e.shiftKey) toggleLightboxFavorite(); else moveImage('finals'); break;
                 case 'r': e.preventDefault(); moveImage('rejects'); break;
                 case 'arrowleft': e.preventDefault(); navigate(-1); break;
                 case 'arrowright': e.preventDefault(); navigate(1); break;
@@ -1891,7 +2284,7 @@
         async function pollForChanges() {
             if (isInteractionBusy()) return;
             await loadBatches();
-            if (!currentBatch || !currentFolder || selectedImages.size > 0 || isInteractionBusy()) return;
+            if (!currentBatch || currentBatch === '__favorites__' || !currentFolder || selectedImages.size > 0 || isInteractionBusy()) return;
             const [imageResp, runResp] = await Promise.all([
                 fetch(`/api/images/${currentBatch}/${currentFolder}?sort=${currentSort}&order=${currentOrder}`),
                 fetch(`/api/ai-curate/batches/${currentBatch}/runs`),
@@ -2824,6 +3217,9 @@
             const helpBtn = document.getElementById('help-btn');
             if (helpBtn) helpBtn.addEventListener('click', showHelpModal);
 
+            const promptsBtn = document.getElementById('prompts-btn');
+            if (promptsBtn) promptsBtn.addEventListener('click', showPromptsModal);
+
             const autoImportBtn = document.getElementById('set-auto-import-btn');
             if (autoImportBtn) autoImportBtn.addEventListener('click', setCurrentBatchAsAutoImport);
 
@@ -2834,6 +3230,9 @@
 
             const sortDirBtn = document.getElementById('sort-dir-btn');
             if (sortDirBtn) sortDirBtn.addEventListener('click', toggleOrder);
+
+            const favFilterBtn = document.getElementById('favorites-filter-btn');
+            if (favFilterBtn) favFilterBtn.addEventListener('click', toggleFavoritesFilter);
 
             // Folder tabs (delegated)
             const folderTabs = document.getElementById('folder-tabs');
@@ -2907,6 +3306,27 @@
 
             document.querySelectorAll('#help-modal .cancel').forEach(btn => {
                 btn.addEventListener('click', hideHelpModal);
+            });
+
+            document.querySelectorAll('#prompts-modal .cancel').forEach(btn => {
+                btn.addEventListener('click', hidePromptsModal);
+            });
+            const promptsBuildBtn = document.getElementById('prompts-build-btn');
+            if (promptsBuildBtn) promptsBuildBtn.addEventListener('click', buildPromptIndex);
+            const promptsRebuildBtn = document.getElementById('prompts-rebuild-btn');
+            if (promptsRebuildBtn) promptsRebuildBtn.addEventListener('click', buildPromptIndex);
+            const promptsBatchSelect = document.getElementById('prompts-batch-select');
+            if (promptsBatchSelect) promptsBatchSelect.addEventListener('change', function() {
+                promptsCurrentBatch = this.value;
+                loadPromptsData();
+            });
+            const promptsSearch = document.getElementById('prompts-search');
+            if (promptsSearch) promptsSearch.addEventListener('input', renderPromptsList);
+            const promptsCollapseBtn = document.getElementById('prompts-collapse-all');
+            if (promptsCollapseBtn) promptsCollapseBtn.addEventListener('click', function() {
+                promptsCollapseAll = !promptsCollapseAll;
+                this.textContent = promptsCollapseAll ? 'Expand all' : 'Collapse all';
+                renderPromptsList();
             });
 
             // Toast undo

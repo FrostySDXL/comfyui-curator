@@ -49,7 +49,7 @@ Applied via `@pytest.mark.component`, `@pytest.mark.integration`, or `pytestmark
 
 ### Frontend Test Pattern (Special)
 
-The 5 `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tests** -- they read `static/js/app.js` as a string and assert on regex matches for function names, code patterns, or the absence of undefined references. There is no headless browser, DOM testing, or JS test framework. These tests catch regressions in function naming and structural invariants but do NOT test interactive behavior.
+The 6 `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tests** -- they read `static/js/app.js` as a string and assert on regex matches for function names, code patterns, or the absence of undefined references. There is no headless browser, DOM testing, or JS test framework. These tests catch regressions in function naming and structural invariants but do NOT test interactive behavior.
 
 ## Key Files & Responsibilities
 
@@ -64,17 +64,21 @@ The 5 `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping t
 | `tests/unit/test_elements.py` | `ai_curate.elements` -- `extract_elements`, `build_element_list`, `get_quality_elements` | Pure functions, no mocking |
 | `tests/unit/test_models.py` | `ai_curate.models` -- `JobState`, `ImageResult`, `RunTotals`, `CurationRun` round-trips | Pure unittests, no fixtures |
 | `tests/unit/test_png_metadata.py` | `image_curator.png_metadata` -- parsing, missing metadata, malformed input | `PIL.Image.new` + `PngInfo` for test PNGs |
+| `tests/unit/test_favorites.py` | `image_curator.favorites` -- batch/universal favorite load/save/toggle/resolve | `tmp_path`, real files, JSON shape checks |
+| `tests/unit/test_prompt_history.py` | `image_curator.prompt_history` -- normalization, hash, PNG prompt index build/cache | `tmp_path`, `PIL.Image.new` + `PngInfo` |
 | `tests/unit/test_queue.py` | `ai_curate.queue.QueueManager` -- 11 test classes, 30+ tests | `MagicMock` storage, custom `qm` fixture |
 | `tests/unit/test_scoring.py` | `ai_curate.scoring` -- `find_images`, `build_scoring_prompt`, `score_images` | `mock.patch` on VisionClient, cancel-check testing |
 | `tests/unit/test_storage.py` | `ai_curate.storage.RunStorage` -- save, load, list, latest, corrupt data, path traversal | `tmp_path`-based `tmp_batches` + `storage` fixtures |
 | `tests/unit/test_run_all_script.py` | `scripts/run_all.py` -- build checks, format display, parse args | `importlib.util` dynamic import |
-| `tests/unit/test_frontend_*.py` (5 files) | `static/js/app.js` -- source scanning for function names, invariants, undefined references | `Path.read_text()` + regex assertions |
+| `tests/unit/test_frontend_*.py` (6 files) | `static/js/app.js` -- source scanning for function names, invariants, undefined references | `Path.read_text()` + regex assertions |
 | `tests/component/test_batch_api.py` | Flask route contracts: batches, images, move, delete-rejects, thumbnails | `client` fixture, PIL image generation |
 | `tests/component/test_ai_curate_worker.py` | `app._run_scoring_worker_inner` -- cancel timing (scoring vs move vs race) | Real `QueueManager` + `RunStorage`, patched `score_images` |
 | `tests/component/test_workflow_constraints.py` | AI workflow invariants: move-after-scoring, cancel-no-history, failed-never-move | `RunStorage` + `QueueManager` integration |
 | `tests/integration/test_ai_curate_api.py` | Full AI API: preview, submit, get, list, cancel, runs, path traversal | `client` fixture, worker thread patched |
 | `tests/integration/test_image_metadata_api.py` | `/api/image-metadata` route -- PNG metadata, non-PNG, missing files | `client` fixture, `PngInfo`-rich PNGs |
 | `tests/integration/test_import_all_pending.py` | `/api/import-all` -- moves files, resets watcher | `client` fixture, ComfyUI output dir |
+| `tests/integration/test_favorites_api.py` | Favorites API -- batch/universal toggles and image response favorite flag | `client` fixture, real temp files |
+| `tests/integration/test_prompt_history_api.py` | Prompt-history API -- build/load/rebuild/staleness/missing cache | `client` fixture, `PngInfo`-rich PNGs |
 
 ## Known Coverage Gaps
 

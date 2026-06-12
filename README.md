@@ -13,6 +13,10 @@ before manual selection. Single-user, local-first, filesystem-backed.
 - **Lightbox viewer** -- full-size image review with zoom, keyboard
   navigation, scored-image jumps, and PNG generation metadata (prompt,
   seed, sampler, CFG, LoRAs).
+- **Favorites** -- one-click stars persist favorites at both batch and
+  universal scope, with a favorites-only filter and All Favorites sidebar view.
+- **Prompt history** -- manually build per-batch prompt indexes from PNG
+  metadata, then search, copy, and inspect prompt groups from a header modal.
 - **Auto-import from ComfyUI** -- background watcher moves new outputs into
   the active batch inbox. One-click manual import also available.
 - **AI-assisted scoring (optional)** -- sends images to a local vision LLM
@@ -90,6 +94,7 @@ baseline checks for anatomy and artifacts are appended automatically.
 | `Ctrl+Z` | Undo last move (while toast is active) |
 | `Ctrl+A` | Select all images in current folder |
 | `U` | Toggle batch sidebar |
+| `F` | Toggle favorites-only filter |
 | `B` | Toggle AI score badges |
 | `V` | Toggle score-based sort |
 | `I` | Toggle AI sidebar |
@@ -103,6 +108,7 @@ baseline checks for anatomy and artifacts are appended automatically.
 | `M` | Toggle PNG metadata panel |
 | `S` | Move to shortlisted |
 | `F` | Move to finals |
+| `Shift+F` | Toggle favorite for current image |
 | `R` | Move to rejects |
 | `+` `-` | Zoom in / out |
 | `0` | Reset zoom |
@@ -115,6 +121,12 @@ baseline checks for anatomy and artifacts are appended automatically.
 - Batch sidebar open state persists across sessions.
 - AI badges and score filtering reset when switching to a batch with no
   active run.
+- Favorite toggles update both the current batch and the universal favorites
+  list; the All Favorites sidebar count refreshes during batch polling.
+- The All Favorites view is virtual: thumbnails show batch labels and
+  lightbox moves use each image's source batch and folder.
+- Prompt history indexes are manual caches. Rebuild after significant curation
+  sessions or when the modal reports a stale image count.
 - Background polling pauses during lightbox, drag, or resize so your
   review isn't interrupted.
 - The header Help button shows keybindings and workflow notes.

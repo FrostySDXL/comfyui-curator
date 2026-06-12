@@ -18,10 +18,10 @@
 
 ### Architecture
 
-- **Single-file vanilla JS** (`app.js`, ~3059 lines). No framework, no modules, no build step.
+- **Single-file vanilla JS** (`app.js`, ~3477 lines). No framework, no modules, no build step.
 - **Imperative, event-driven.** Global `let` variables for state. DOM manipulation is direct.
 - **Script loaded at bottom of `<body>`** in `index.html`. Initialization runs immediately (calls `loadBatches()`).
-- **Single CSS file** (`app.css`, ~1517 lines). Dark theme only. Flexbox layout with CSS Grid for thumbnails.
+- **Single CSS file** (`app.css`, ~1581 lines). Dark theme only. Flexbox layout with CSS Grid for thumbnails.
 
 ### Global State Variables (app.js)
 
@@ -55,6 +55,10 @@
 | `folderRequestToken` | `number` | Incrementing token to discard stale fetch responses |
 | `batchSort` | `string` | 'alpha' \| 'count' \| 'recent' for batch list |
 | `batchFilterQuery` | `string` | Debounced filter for batch search |
+| `favoritesFilterOn` | `boolean` | Whether the grid shows only favorite images |
+| `promptsData` | `object\|null` | Current Prompt History modal payload |
+| `promptsCurrentBatch` | `string` | Batch selected in the Prompt History modal; empty means all batches |
+| `promptsCollapseAll` | `boolean` | Forces long prompt cards to collapsed text |
 
 ### Key Function Groups
 
@@ -62,6 +66,7 @@
 |-------------|-------------------|------------|
 | **Batch Management** | `loadBatches`, `selectBatch`, `setActiveBatch`, `createBatch`, `saveBatchState`, `restoreBatchState` | `#batch-list`, `#active-batch-custom` |
 | **Grid Rendering** | `loadCurrentFolderImages`, `updateGrid`, `createThumbElement`, `updateThumbElement`, `getDisplayImages`, `showGridLoadingPlaceholders` | `#grid` |
+| **Favorites** | `toggleFavorite`, `toggleFavoritesFilter`, `toggleLightboxFavorite`, `updateLightboxFavorite`, `loadUniversalFavorites` | `.favorite-star`, `#favorites-filter-btn`, `#batch-list` |
 | **Thumbnail Caching** | `resolveThumbnailBlobUrl`, `setThumbnailImageSrc` | Thumb `<img>` elements (blob URLs) |
 | **Keyboard Shortcuts** | Single `keydown` handler (line ~1770) | `document` |
 | **Drag/Drop** | `onDragStart`, `onDragOver`, `onDrop`, `moveBatch` | `.thumb`, `.folder-tab` |
@@ -72,12 +77,12 @@
 | **AI Grid Overlay** | `aiToggleOverlays`, `aiScoreGradient`, `aiShouldShowImage`, `aiSortImages`, `aiShowHeaderControls` | `.ai-score-badge`, `#ai-display-controls` |
 | **Polling** | `pollForChanges` (5s interval), `isInteractionBusy`, `aiPollJobStatus` (2s interval) | `setInterval` |
 | **Batch Search** | `setBatchFilter`, `filterBatches`, `clearBatchSearch` | `#batch-search` |
-| **Modals** | `showHelpModal`, `hideHelpModal`, `_trapFocus`, `_releaseFocusTrap` | `#help-modal`, `#new-batch-modal`, `#delete-modal` |
+| **Modals** | `showHelpModal`, `hideHelpModal`, `showPromptsModal`, `hidePromptsModal`, `loadPromptsData`, `renderPromptsList`, `updatePromptsFooter`, `buildPromptIndex`, `_trapFocus`, `_releaseFocusTrap` | `#help-modal`, `#prompts-modal`, `#new-batch-modal`, `#delete-modal` |
 | **Custom Combobox** | `_openCustomDropdown`, `_populateCustomDropdown`, `_commitCustomSelectSelection` | `#active-batch-custom` |
 
 ### Frontend API Calls
 
-Routes consumed by the frontend JS. Not a complete backend route inventory -- see root `AGENTS.md` or `app.py` for all 21 routes.
+Routes consumed by the frontend JS. Not a complete backend route inventory -- see root `AGENTS.md` or `app.py` for all 28 routes.
 
 | Fetch Call | JS Source Function | Trigger |
 |-----------|-------------|---------|
@@ -90,6 +95,13 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 | `POST /api/move` | `moveImage()` | Lightbox keyboard move (S/F/R) |
 | `POST /api/delete-rejects/<batch>` | `confirmDeleteRejects()` | Empty Rejects button |
 | `GET /api/image-metadata/<batch>/<folder>/<name>` | `loadLightboxMetadata()` | Lightbox open, lightbox navigate |
+| `GET /api/favorites` | `loadUniversalFavorites()`, `updateAllFavoritesCount()` | All Favorites view, sidebar count |
+| `POST /api/favorites` | `toggleFavorite()` | Favorite toggle from All Favorites view |
+| `GET /api/favorites/<batch>` | backend-fed `/api/images` favorite flags | Batch favorite state |
+| `POST /api/favorites/<batch>` | `toggleFavorite()` | Favorite toggle from real batch view |
+| `GET /api/prompt-history` | `loadPromptsData()` | Prompt modal all-batches view |
+| `GET /api/prompt-history/<batch>?check_stale=true` | `loadPromptsData()` | Prompt modal batch view |
+| `POST /api/prompt-history/<batch>/build` | `buildPromptIndex()` | Prompt index build/rebuild |
 | `GET /thumb/<batch>/<folder>/<name>` | `resolveThumbnailBlobUrl()` | Thumb render (lazy, via blob cache) |
 | `GET /image/<batch>/<folder>/<name>` | `showCurrentImage()` | Lightbox image src |
 | `GET /api/ai-curate/batches/<batch>/runs` | `aiRefreshRunData()`, `aiLoadBatchRunCounts()`, `pollForChanges()` | Batch switch, 5s poll |
@@ -129,7 +141,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - Start with `templates/index.html` to understand the DOM structure (IDs, CSS classes), then trace behavior in `app.js` by searching for those IDs.
 - Changes to styling go in `static/css/app.css`. The dark theme is fixed -- no light mode.
 - When adding a new API call, add it to the API Call Inventory table above.
-- The 5 `test_frontend_*.py` files in `tests/unit/` regex-scan `app.js` for function names and invariants. They are NOT browser tests. After JS changes, run them to avoid regressions on the invariants they check, but always also test manually in a browser.
+- The 6 `test_frontend_*.py` files in `tests/unit/` regex-scan `app.js` for function names and invariants. They are NOT browser tests. After JS changes, run them to avoid regressions on the invariants they check, but always also test manually in a browser.
 - `gridThumbMap` is the key optimization -- it preserves DOM elements across re-renders. `_gridChildrenMatchDesiredOrder()` avoids `replaceChildren()` when order is already correct.
 - Thumbnail blob URLs must be revoked on `beforeunload` to prevent memory leaks -- the `thumbnailBlobUrlCache` FIFO eviction and the `beforeunload` handler manage this.
 
@@ -142,6 +154,9 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **Score gradient is hardcoded:** `aiScoreGradient()` uses a fixed dark-red-to-dark-yellow-to-green gradient. There is no configuration for color thresholds.
 - **CSS variables for layout only, not theming:** `--sidebar-width`, `--sidebar-effective-width`, `--ai-sidebar-width`, `--lightbox-zoom`. All colors are hardcoded.
 - **Single responsive breakpoint at 900px:** Below this, sidebars shrink, AI sidebar moves below grid, resizers hide.
+- **`__favorites__` is a virtual batch sentinel:** Do not call real batch APIs with it. Use per-image `img.batch` and `img.folder` for image src, lightbox metadata, and lightbox moves.
+- **`getDisplayImages()` centralizes filtering:** Favorites filtering and AI score sorting compose there; update image counts through `updateImageCountLabel()`.
+- **Prompt history cache is manual:** The modal loads cached JSON until the operator clicks Build/Rebuild; staleness is count-based only.
 
 **Completion Standard:** For any task in this directory, include files changed, manual browser verification performed (state the browser and interactions tested), and any updates to the Help modal, README keyboard shortcuts, or `test_frontend_*.py` invariants.
 
