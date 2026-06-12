@@ -1953,11 +1953,6 @@
             const modal = document.getElementById('prompts-modal');
             modal.classList.add('active');
             _trapFocus(modal);
-            // _trapFocus auto-focuses the first focusable element (the batch input).
-            // Immediately blur so the modal opens with no input focused.
-            if (document.activeElement && modal.contains(document.activeElement)) {
-                document.activeElement.blur();
-            }
             if (promptsBatchList.length === 0) {
                 try {
                     const resp = await fetch('/api/batches');
