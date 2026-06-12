@@ -605,7 +605,7 @@
             max-width: 70%;
         }
         .meta-size { color: #999; }
-        .meta-batch { display: block; font-size: 9px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 1px; }
+        .meta-batch { display: block; font-size: 10px; color: #999; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
         .empty { text-align: center; padding: 60px; color: #555; font-size: 14px; }
 
         /* Lightbox */

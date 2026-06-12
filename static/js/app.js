@@ -1274,13 +1274,15 @@
             });
             if (resp.ok) {
                 await animateThumbRemoval([img.name]);
-                recordLastAction([img.name], source.folder, destination, source.batch);
-                showToast(`Moved to ${destination}`, true);
                 if (currentBatch === '__favorites__') {
                     await loadUniversalFavorites();
+                    recordLastAction([img.name], source.folder, destination, source.batch);
+                    showToast(`Moved to ${destination}`, true);
                     loadBatches();
                     return;
                 }
+                recordLastAction([img.name], source.folder, destination, source.batch);
+                showToast(`Moved to ${destination}`, true);
                 removeImagesFromCurrentView([img.name]);
                 loadBatches();
                 if (images.length === 0) {
@@ -2017,8 +2019,8 @@
                 main.className = 'prompts-entry-main';
                 main.appendChild(createTextElement('span', 'prompts-count', String(entry.count || 0)));
                 const textWrap = document.createElement('div');
-                const promptText = String(entry.prompt || '');
-                const truncated = promptsCollapseAll || promptText.length > 120;
+                const promptText = String(entry.normalized || entry.prompt || '');
+                const truncated = promptsCollapseAll;
                 textWrap.appendChild(createTextElement('div', 'prompts-prompt-text', truncated ? promptText.slice(0, 120) + (promptText.length > 120 ? '...' : '') : promptText));
                 if (!promptsCurrentBatch) textWrap.appendChild(createTextElement('span', 'prompts-batch-label', entry.batch || ''));
                 main.appendChild(textWrap);
@@ -2032,7 +2034,7 @@
                 main.appendChild(actions);
                 card.appendChild(main);
 
-                if (promptText.length > 120) {
+                if (promptsCollapseAll && promptText.length > 120) {
                     const showBtn = document.createElement('button');
                     showBtn.type = 'button';
                     showBtn.className = 'prompts-show-more';
@@ -2046,40 +2048,54 @@
                     card.appendChild(showBtn);
                 }
 
+                let negBtn = null, neg = null;
                 const negText = entry.negative_prompt || '';
                 if (negText) {
-                    const negBtn = document.createElement('button');
+                    negBtn = document.createElement('button');
                     negBtn.type = 'button';
                     negBtn.className = 'prompts-toggle-neg';
                     negBtn.textContent = 'show negative';
-                    const neg = createTextElement('div', 'prompts-negative hidden', negText);
+                    neg = createTextElement('div', 'prompts-negative hidden', negText);
                     negBtn.addEventListener('click', () => {
                         const hidden = neg.classList.toggle('hidden');
                         negBtn.textContent = hidden ? 'show negative' : 'hide negative';
                     });
-                    card.append(negBtn, neg);
                 }
 
+                let imgBtn = null, imgDiv = null;
                 const imagesList = (entry.images || []).map(img => img.filename).slice(0, 20).join(', ');
                 if (imagesList) {
-                    const imgBtn = document.createElement('button');
+                    imgBtn = document.createElement('button');
                     imgBtn.type = 'button';
                     imgBtn.className = 'prompts-toggle-images';
                     imgBtn.textContent = 'show images';
-                    const imgDiv = createTextElement('div', 'prompts-images-list hidden', imagesList);
+                    imgDiv = createTextElement('div', 'prompts-images-list hidden', imagesList);
                     imgBtn.addEventListener('click', () => {
                         const hidden = imgDiv.classList.toggle('hidden');
                         imgBtn.textContent = hidden ? 'show images' : 'hide images';
                     });
-                    card.append(imgBtn, imgDiv);
                 }
+
+                if (negBtn) card.appendChild(negBtn);
+                if (imgBtn) card.appendChild(imgBtn);
+                if (neg) card.appendChild(neg);
+                if (imgDiv) card.appendChild(imgDiv);
                 list.appendChild(card);
             });
         }
 
         function updatePromptsFooter() {
+            const total = document.getElementById('prompts-total');
             const built = document.getElementById('prompts-built-at');
             const stale = document.getElementById('prompts-stale-warning');
+            if (total) {
+                if (!promptsCurrentBatch && promptsData) {
+                    const batchCount = Object.keys(promptsData.batches || {}).length;
+                    total.textContent = `${promptsData.total_prompts || 0} prompts across ${batchCount} batch${batchCount !== 1 ? 'es' : ''}`;
+                } else {
+                    total.textContent = '';
+                }
+            }
             if (built) {
                 const builtAt = promptsData?.built_at || (promptsCurrentBatch ? null : '');
                 built.textContent = builtAt ? `Built ${new Date(builtAt).toLocaleString()}` : '';
@@ -2092,8 +2108,10 @@
                 showToast('Select a batch before building a prompt index');
                 return;
             }
-            const btn = document.getElementById('prompts-build-btn');
-            if (btn) btn.disabled = true;
+            const buildBtn = document.getElementById('prompts-build-btn');
+            const rebuildBtn = document.getElementById('prompts-rebuild-btn');
+            if (buildBtn) buildBtn.disabled = true;
+            if (rebuildBtn) rebuildBtn.disabled = true;
             try {
                 const resp = await fetch(`/api/prompt-history/${encodeURIComponent(promptsCurrentBatch)}/build`, {method: 'POST'});
                 if (!resp.ok) throw new Error('build failed');
@@ -2102,7 +2120,8 @@
             } catch {
                 showToast('Prompt index build failed');
             } finally {
-                if (btn) btn.disabled = false;
+                if (buildBtn) buildBtn.disabled = false;
+                if (rebuildBtn) rebuildBtn.disabled = false;
             }
         }
 
