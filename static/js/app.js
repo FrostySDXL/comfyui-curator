@@ -1949,33 +1949,55 @@
             const modal = document.getElementById('prompts-modal');
             modal.classList.add('active');
             _trapFocus(modal);
-            const select = document.getElementById('prompts-batch-select');
-            if (select && select.options.length <= 1) {
+            if (promptsBatchList.length === 0) {
                 try {
                     const resp = await fetch('/api/batches');
                     if (resp.ok) {
                         const data = await resp.json();
                         promptsBatchList = data.batches || [];
-                        promptsBatchList.forEach(batch => {
-                            const opt = document.createElement('option');
-                            opt.value = batch;
-                            opt.textContent = batch;
-                            select.appendChild(opt);
-                        });
                     }
                 } catch { console.warn('prompt batch load failed'); }
             }
             // Default to current batch if one is active (not null, not virtual)
             if (currentBatch && currentBatch !== '__favorites__' && promptsBatchList.includes(currentBatch)) {
                 promptsCurrentBatch = currentBatch;
-                if (select) select.value = currentBatch;
             }
+            renderPromptBatchList();
             loadPromptsData();
         }
 
         function hidePromptsModal() {
             document.getElementById('prompts-modal').classList.remove('active');
             _releaseFocusTrap();
+        }
+
+        function renderPromptBatchList() {
+            const list = document.getElementById('prompts-batch-list');
+            if (!list) return;
+            const query = (document.getElementById('prompts-batch-filter')?.value || '').trim().toLowerCase();
+            const filtered = promptsBatchList.filter(b => !query || b.toLowerCase().includes(query));
+            list.replaceChildren();
+            // All Batches option
+            const allItem = document.createElement('span');
+            allItem.className = 'prompts-batch-item' + (!promptsCurrentBatch ? ' active' : '');
+            allItem.textContent = 'All Batches';
+            allItem.addEventListener('click', () => {
+                promptsCurrentBatch = '';
+                renderPromptBatchList();
+                loadPromptsData();
+            });
+            list.appendChild(allItem);
+            filtered.forEach(batch => {
+                const item = document.createElement('span');
+                item.className = 'prompts-batch-item' + (promptsCurrentBatch === batch ? ' active' : '');
+                item.textContent = batch;
+                item.addEventListener('click', () => {
+                    promptsCurrentBatch = batch;
+                    renderPromptBatchList();
+                    loadPromptsData();
+                });
+                list.appendChild(item);
+            });
         }
 
         async function loadPromptsData() {
@@ -3351,29 +3373,8 @@
             if (promptsBuildBtn) promptsBuildBtn.addEventListener('click', buildPromptIndex);
             const promptsRebuildBtn = document.getElementById('prompts-rebuild-btn');
             if (promptsRebuildBtn) promptsRebuildBtn.addEventListener('click', buildPromptIndex);
-            const promptsBatchSelect = document.getElementById('prompts-batch-select');
-            if (promptsBatchSelect) promptsBatchSelect.addEventListener('change', function() {
-                promptsCurrentBatch = this.value;
-                loadPromptsData();
-            });
-            const promptsBatchSearch = document.getElementById('prompts-batch-search');
-            if (promptsBatchSearch) promptsBatchSearch.addEventListener('input', function() {
-                const query = this.value.trim().toLowerCase();
-                const select = document.getElementById('prompts-batch-select');
-                if (!select) return;
-                select.replaceChildren();
-                const allOpt = document.createElement('option');
-                allOpt.value = '';
-                allOpt.textContent = 'All Batches';
-                select.appendChild(allOpt);
-                promptsBatchList.filter(b => !query || b.toLowerCase().includes(query)).forEach(batch => {
-                    const opt = document.createElement('option');
-                    opt.value = batch;
-                    opt.textContent = batch;
-                    select.appendChild(opt);
-                });
-                select.value = promptsCurrentBatch;
-            });
+            const promptsBatchFilter = document.getElementById('prompts-batch-filter');
+            if (promptsBatchFilter) promptsBatchFilter.addEventListener('input', renderPromptBatchList);
             const promptsSearch = document.getElementById('prompts-search');
             if (promptsSearch) promptsSearch.addEventListener('input', renderPromptsList);
             const promptsCollapseBtn = document.getElementById('prompts-collapse-all');
