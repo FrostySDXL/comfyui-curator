@@ -1010,15 +1010,9 @@
             top: 50%;
             right: 8px;
             transform: translateY(-50%);
-            width: 16px;
-            height: 16px;
             font-size: 10px;
-            line-height: 1;
             color: #666;
             pointer-events: none;
-            display: flex;
-            align-items: center;
-            justify-content: center;
         }
         .prompts-batch-wrap.open .prompts-batch-arrow {
             transform: translateY(-50%) rotate(180deg);
@@ -1028,21 +1022,11 @@
             top: 50%;
             right: 26px;
             transform: translateY(-50%);
-            width: 20px;
-            height: 20px;
-            border: none;
-            background: none;
+            font-size: 14px;
             color: #888;
             cursor: pointer;
-            font-size: 14px;
-            line-height: 1;
-            padding: 0;
-            border-radius: 3px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
         }
-        .prompts-batch-filter-clear:hover { color: #ddd; background: #3a3a3a; }
+        .prompts-batch-filter-clear:hover { color: #ddd; }
         .prompts-batch-filter-clear.hidden { visibility: hidden; }
         .prompts-batch-list {
             position: absolute;
