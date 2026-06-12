@@ -1905,9 +1905,10 @@
         function _trapFocus(modal) {
             _activeModal = modal;
             _modalFocusRestore = document.activeElement;
-            const focusable = modal.querySelectorAll(
+            const all = modal.querySelectorAll(
                 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
             );
+            const focusable = [...all].filter(el => el.tabIndex !== -1 && !el.disabled && el.offsetParent !== null);
             const first = focusable[0];
             modal.addEventListener('keydown', _modalKey);
             if (first) first.focus();
@@ -2155,16 +2156,16 @@
                 copyBtn.addEventListener('click', () => copyMetadataText(promptText, 'prompt'));
                 actions.appendChild(copyBtn);
 
-                if (promptsCollapseAll && promptText.length > 120) {
+                if (promptText.length > 120) {
                     const showBtn = document.createElement('button');
                     showBtn.type = 'button';
                     showBtn.className = 'prompts-show-more';
-                    showBtn.textContent = 'show positive';
+                    showBtn.textContent = promptsCollapseAll ? 'show positive' : 'hide positive';
                     showBtn.addEventListener('click', () => {
                         const el = card.querySelector('.prompts-prompt-text');
-                        const expanded = showBtn.textContent === 'show less';
+                        const expanded = showBtn.textContent === 'hide positive';
                         el.textContent = expanded ? `${promptText.slice(0, 120)}...` : promptText;
-                        showBtn.textContent = expanded ? 'show positive' : 'show less';
+                        showBtn.textContent = expanded ? 'show positive' : 'hide positive';
                     });
                     actions.appendChild(showBtn);
                 }

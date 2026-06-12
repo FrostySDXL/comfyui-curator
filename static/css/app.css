@@ -1051,15 +1051,15 @@
             width: 100%;
             padding: 5px 8px;
             margin-top: 2px;
-            background: none;
-            border: 1px solid transparent;
+            background: #2a2a2a;
+            border: 1px solid #444;
             color: #888;
             font-size: 11px;
             cursor: pointer;
             text-align: left;
             border-radius: 4px;
         }
-        .prompts-all-batches-btn:hover { color: #ccc; background: #2a2a2a; }
+        .prompts-all-batches-btn:hover { color: #ccc; background: #333; border-color: #555; }
         .prompts-all-batches-btn.active { color: #5ba3f5; border-color: #0066cc; background: rgba(0,102,204,0.1); }
         .prompts-controls button, .prompts-stale button { padding: 6px 8px; border: 1px solid #444; background: #333; color: #ccc; border-radius: 4px; cursor: pointer; font-size: 11px; }
         .prompts-list { flex: 1; overflow-y: auto; min-height: 100px; max-height: 55vh; color: #888; font-size: 13px; }
