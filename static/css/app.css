@@ -983,11 +983,12 @@
         .prompts-controls select, .prompts-controls input { background: #333; border: 1px solid #444; color: #eee; border-radius: 4px; padding: 8px; font-size: 12px; }
         .prompts-controls input { flex: 1; margin-bottom: 0; }
         .prompts-batch-wrap {
-            position: relative;
-            width: 100%;
             margin-bottom: 4px;
         }
-        .prompts-batch-wrap input {
+        .prompts-batch-select {
+            position: relative;
+        }
+        .prompts-batch-select input {
             width: 100%;
             padding: 7px 56px 7px 8px;
             background: #2a2a2a;
@@ -999,7 +1000,7 @@
             font-family: inherit;
             caret-color: #5ba3f5;
         }
-        .prompts-batch-wrap input:focus {
+        .prompts-batch-select input:focus {
             outline: none;
             border-color: #0066cc;
             box-shadow: 0 0 0 1px rgba(0, 102, 204, 0.3);
