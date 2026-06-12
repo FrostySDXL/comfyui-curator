@@ -610,12 +610,15 @@
             bottom: 34px;
             left: 7px;
             font-size: 10px;
-            color: #aaa;
+            color: #ddd;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             pointer-events: none;
             opacity: 0;
             transition: opacity 0.12s;
+            background: rgba(0,0,0,0.55);
+            padding: 1px 5px;
+            border-radius: 3px;
         }
         .thumb:hover .meta-batch { opacity: 1; }
         .empty { text-align: center; padding: 60px; color: #555; font-size: 14px; }

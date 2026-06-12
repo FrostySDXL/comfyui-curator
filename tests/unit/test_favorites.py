@@ -67,7 +67,7 @@ def test_resolve_universal_favorites_includes_present_file_folder(tmp_path):
     save_favorites(tmp_path, [{"batch": "alpha", "filename": "one.png", "added_at": "now"}])
 
     assert resolve_universal_favorites(tmp_path) == [
-        {"batch": "alpha", "filename": "one.png", "folder": "shortlisted", "added_at": "now"}
+        {"batch": "alpha", "filename": "one.png", "folder": "shortlisted", "size": 1, "added_at": "now"}
     ]
 
 

@@ -778,7 +778,7 @@
             const data = await resp.json();
             images = (data.favorites || []).map(f => ({
                 name: f.filename,
-                size: 0,
+                size: f.size || 0,
                 batch: f.batch,
                 folder: f.folder,
                 favorite: true,

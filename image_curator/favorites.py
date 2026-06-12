@@ -106,11 +106,17 @@ def resolve_universal_favorites(batches_dir: Path) -> list[dict[str, str]]:
             continue
         if not folder:
             continue
+        file_path = Path(batches_dir) / batch / folder / filename
+        try:
+            size = file_path.stat().st_size
+        except OSError:
+            size = 0
         resolved.append(
             {
                 "batch": batch,
                 "filename": filename,
                 "folder": folder,
+                "size": size,
                 "added_at": str(item.get("added_at") or ""),
             }
         )
