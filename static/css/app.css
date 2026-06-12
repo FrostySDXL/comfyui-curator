@@ -982,10 +982,30 @@
         .prompts-controls { display: flex; gap: 8px; margin-bottom: 12px; }
         .prompts-controls select, .prompts-controls input { background: #333; border: 1px solid #444; color: #eee; border-radius: 4px; padding: 8px; font-size: 12px; }
         .prompts-controls input { flex: 1; margin-bottom: 0; }
-        .prompts-batch-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; max-height: 80px; overflow-y: auto; }
-        .prompts-batch-item { display: inline-block; padding: 3px 7px; font-size: 11px; background: #2a2a2a; border: 1px solid #444; border-radius: 4px; color: #ccc; cursor: pointer; white-space: nowrap; }
-        .prompts-batch-item:hover { border-color: #666; background: #333; }
-        .prompts-batch-item.active { background: #0066cc; border-color: #0066cc; color: #fff; }
+        .prompts-batch-wrap { position: relative; flex: 0 0 180px; }
+        .prompts-batch-wrap input { width: 100%; }
+        .prompts-batch-list {
+            position: absolute;
+            top: 100%;
+            left: 0; right: 0;
+            max-height: 200px;
+            overflow-y: auto;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            margin-top: 2px;
+            z-index: 10;
+            list-style: none;
+            padding: 4px 0;
+        }
+        .prompts-batch-option {
+            padding: 6px 10px;
+            font-size: 12px;
+            color: #ccc;
+            cursor: pointer;
+        }
+        .prompts-batch-option:hover { background: #3a3a3a; }
+        .prompts-batch-option.active { background: #0066cc; color: #fff; }
         .prompts-controls button, .prompts-stale button { padding: 6px 8px; border: 1px solid #444; background: #333; color: #ccc; border-radius: 4px; cursor: pointer; font-size: 11px; }
         .prompts-list { flex: 1; overflow-y: auto; min-height: 100px; max-height: 55vh; color: #888; font-size: 13px; }
         .prompts-entry { border: 1px solid #333; background: #202020; border-radius: 7px; padding: 10px 12px; margin-bottom: 8px; }

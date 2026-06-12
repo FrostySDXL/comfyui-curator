@@ -1953,16 +1953,20 @@
                 try {
                     const resp = await fetch('/api/batches');
                     if (resp.ok) {
-                        const data = await resp.json();
-                        promptsBatchList = data.batches || [];
+                        promptsBatchList = (await resp.json()).batches || [];
                     }
                 } catch { console.warn('prompt batch load failed'); }
             }
+            renderPromptBatchList();
             // Default to current batch if one is active (not null, not virtual)
             if (currentBatch && currentBatch !== '__favorites__' && promptsBatchList.includes(currentBatch)) {
                 promptsCurrentBatch = currentBatch;
             }
-            renderPromptBatchList();
+            const filter = document.getElementById('prompts-batch-filter');
+            if (filter) {
+                filter.value = promptsCurrentBatch;
+                filter.focus();
+            }
             loadPromptsData();
         }
 
@@ -1975,28 +1979,21 @@
             const list = document.getElementById('prompts-batch-list');
             if (!list) return;
             const query = (document.getElementById('prompts-batch-filter')?.value || '').trim().toLowerCase();
-            const filtered = promptsBatchList.filter(b => !query || b.toLowerCase().includes(query));
+            const filtered = ['', ...promptsBatchList].filter(b => !query || b.toLowerCase().includes(query));
             list.replaceChildren();
-            // All Batches option
-            const allItem = document.createElement('span');
-            allItem.className = 'prompts-batch-item' + (!promptsCurrentBatch ? ' active' : '');
-            allItem.textContent = 'All Batches';
-            allItem.addEventListener('click', () => {
-                promptsCurrentBatch = '';
-                renderPromptBatchList();
-                loadPromptsData();
-            });
-            list.appendChild(allItem);
             filtered.forEach(batch => {
-                const item = document.createElement('span');
-                item.className = 'prompts-batch-item' + (promptsCurrentBatch === batch ? ' active' : '');
-                item.textContent = batch;
-                item.addEventListener('click', () => {
+                const li = document.createElement('li');
+                li.className = 'prompts-batch-option' + (promptsCurrentBatch === batch ? ' active' : '');
+                li.textContent = batch || 'All Batches';
+                li.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
                     promptsCurrentBatch = batch;
+                    const filter = document.getElementById('prompts-batch-filter');
+                    if (filter) { filter.value = batch || ''; filter.blur(); }
                     renderPromptBatchList();
                     loadPromptsData();
                 });
-                list.appendChild(item);
+                list.appendChild(li);
             });
         }
 
@@ -3374,7 +3371,10 @@
             const promptsRebuildBtn = document.getElementById('prompts-rebuild-btn');
             if (promptsRebuildBtn) promptsRebuildBtn.addEventListener('click', buildPromptIndex);
             const promptsBatchFilter = document.getElementById('prompts-batch-filter');
-            if (promptsBatchFilter) promptsBatchFilter.addEventListener('input', renderPromptBatchList);
+            if (promptsBatchFilter) {
+                promptsBatchFilter.addEventListener('input', renderPromptBatchList);
+                promptsBatchFilter.addEventListener('focus', renderPromptBatchList);
+            }
             const promptsSearch = document.getElementById('prompts-search');
             if (promptsSearch) promptsSearch.addEventListener('input', renderPromptsList);
             const promptsCollapseBtn = document.getElementById('prompts-collapse-all');
