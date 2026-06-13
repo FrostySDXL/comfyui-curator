@@ -50,6 +50,28 @@ Opens at `http://127.0.0.1:5000`. Most users only need
 `IMAGE_CURATOR_BATCHES/<batch>/inbox/`. If ComfyUI writes somewhere else,
 configure `IMAGE_CURATOR_COMFYUI` as an optional import source.
 
+## Local browser testing
+
+Use the disposable fixture script when you want to test the UI locally without
+pointing at your real image library or another machine:
+
+```powershell
+.venv\Scripts\python.exe scripts\setup_local_browser_fixture.py
+
+$env:IMAGE_CURATOR_BATCHES="tmp\local-browser-fixture\batches"
+$env:IMAGE_CURATOR_COMFYUI="tmp\local-browser-fixture\comfyui-outputs"
+$env:IMAGE_CURATOR_STATE="tmp\local-browser-fixture\state.json"
+$env:IMAGE_CURATOR_ENABLE_WATCHER="false"
+$env:IMAGE_CURATOR_HOST="127.0.0.1"
+$env:IMAGE_CURATOR_PORT="5000"
+.venv\Scripts\python.exe app.py
+```
+
+Then open `http://127.0.0.1:5000`. The fixture creates two batches, sample
+PNG files with prompt metadata, one pending fake ComfyUI import, and an active
+`manual-test` batch. It lives under ignored `tmp/`, so delete the fixture folder
+whenever you want a clean manual-testing reset.
+
 ## Configuration
 
 Copy `.env.example` to `.env`. Key variables:

@@ -23,4 +23,16 @@ Common modes:
 
 When adding new test layers or verification tools, update `run_all.py`, its unit tests, and the verification docs in the same change.
 
+## Local browser fixture
+
+Use `setup_local_browser_fixture.py` to create disposable batches and sample
+PNG files for manual UI testing without touching real curation data:
+
+```bash
+python scripts/setup_local_browser_fixture.py
+```
+
+The script prints shell-specific environment variables and an `app.py` launch
+command. By default it writes under ignored `tmp/local-browser-fixture/`.
+
 See root `AGENTS.md` for project-wide rules, verification standards, and overall philosophy.
