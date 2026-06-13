@@ -20,6 +20,18 @@ PYTHON_TARGETS = [
     "scripts",
 ]
 COMPILE_TARGETS = ["app.py", "curate.py", "image_curator", "ai_curate"]
+CSS_FILES = [
+    "base.css",
+    "sidebar.css",
+    "layout.css",
+    "grid.css",
+    "lightbox.css",
+    "modals.css",
+    "prompts.css",
+    "toast.css",
+    "ai.css",
+    "responsive.css",
+]
 
 
 @dataclass(frozen=True)
@@ -67,6 +79,10 @@ def _all_checks() -> dict[str, Check]:
             "compileall",
             _python_module("compileall", *COMPILE_TARGETS),
         ),
+        "css-assets": Check(
+            "css-assets",
+            [sys.executable, "scripts/run_all.py", "--check-css-assets"],
+        ),
         "mypy": Check(
             "mypy",
             _python_module("mypy", *PYTHON_TARGETS),
@@ -104,11 +120,12 @@ def _all_checks() -> dict[str, Check]:
 def build_checks(mode: str = "default", skip_js: bool = False) -> list[Check]:
     checks = _all_checks()
     mode_names = {
-        "quick": ["compileall", "unit-tests", "javascript-syntax"],
+        "quick": ["compileall", "css-assets", "unit-tests", "javascript-syntax"],
         "default": [
             "ruff-format-check",
             "ruff-check",
             "compileall",
+            "css-assets",
             "unit-tests",
             "component-tests",
             "integration-tests",
@@ -119,6 +136,7 @@ def build_checks(mode: str = "default", skip_js: bool = False) -> list[Check]:
             "ruff-format-check",
             "ruff-check",
             "compileall",
+            "css-assets",
             "unit-tests",
             "component-tests",
             "integration-tests",
@@ -149,6 +167,33 @@ def run_check(check: Check, quiet: bool = False) -> int:
     return completed.returncode
 
 
+def validate_css_assets() -> int:
+    css_dir = REPO_ROOT / "static" / "css"
+    expected_hrefs = [f"/static/css/{name}" for name in CSS_FILES]
+
+    missing = [name for name in CSS_FILES if not (css_dir / name).is_file()]
+    if missing:
+        print("Missing CSS files: " + ", ".join(missing), flush=True)
+        return 1
+
+    template = (REPO_ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    hrefs = [
+        line.split('href="', 1)[1].split('"', 1)[0]
+        for line in template.splitlines()
+        if 'rel="stylesheet"' in line and 'href="' in line
+    ]
+    if hrefs != expected_hrefs:
+        print("CSS link order mismatch", flush=True)
+        print("Expected: " + ", ".join(expected_hrefs), flush=True)
+        print("Actual: " + ", ".join(hrefs), flush=True)
+        return 1
+
+    print("CSS assets verified", flush=True)
+    print("- Files: " + ", ".join(CSS_FILES), flush=True)
+    print("- Template order: OK", flush=True)
+    return 0
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
@@ -162,6 +207,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--quiet",
         action="store_true",
         help="Suppress the '$ ...' command echo for each check (still prints the check name banner)",
+    )
+    parser.add_argument(
+        "--check-css-assets",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     return parser.parse_args(argv)
 
@@ -178,6 +228,9 @@ def mode_from_args(args: argparse.Namespace) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv if argv is not None else sys.argv[1:])
+    if args.check_css_assets:
+        return validate_css_assets()
+
     mode = mode_from_args(args)
     checks = build_checks(mode=mode, skip_js=args.skip_js)
 

@@ -1,0 +1,27 @@
+        /* Toast */
+        .toast {
+            position: fixed; top: 78px; right: 20px;
+            background: rgba(33,33,33,0.96); padding: 10px 16px;
+            border-radius: 8px; z-index: 3000;
+            font-size: 13px;
+            align-items: center; gap: 12px;
+            display: flex;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(-10px);
+            transition: opacity 0.18s ease, transform 0.18s ease;
+            border: 1px solid #3a3a3a;
+            box-shadow: 0 14px 30px rgba(0,0,0,0.28);
+        }
+        .toast.show {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0);
+        }
+        .toast-undo {
+            background: none; border: none;
+            color: #5ba3f5; cursor: pointer;
+            font-size: 13px; font-weight: 600;
+            padding: 0;
+        }
+        .toast-undo:hover { text-decoration: underline; }

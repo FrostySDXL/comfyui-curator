@@ -1,0 +1,169 @@
+        /* Grid */
+        .workspace {
+            flex: 1;
+            display: flex;
+            min-height: 0;
+            overflow: hidden;
+        }
+        .content { flex: 1; padding: 16px 20px; overflow-y: auto; min-width: 0; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+            gap: 10px;
+            align-content: start;
+        }
+        .thumb {
+            aspect-ratio: 1;
+            overflow: hidden;
+            border-radius: 5px;
+            cursor: pointer;
+            position: relative;
+            background: #252525;
+            border: 2px solid transparent;
+            transition: border-color 0.15s, opacity 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+        }
+        .thumb.selected { border-color: #0066cc; }
+        .thumb.loading-placeholder {
+            cursor: default;
+            pointer-events: none;
+            border-color: rgba(255,255,255,0.04);
+            background: linear-gradient(135deg, #252525 0%, #2b2b2b 50%, #252525 100%);
+        }
+        .thumb img {
+            width: 100%; height: 100%;
+            object-fit: cover;
+            opacity: 0;
+            transform: scale(0.97);
+            transition: opacity 0.4s ease-out, transform 0.4s ease-out;
+            display: block;
+        }
+        .thumb img.loaded {
+            opacity: 1;
+            transform: scale(1);
+        }
+        .thumb:hover img { transform: scale(1.04); }
+        .thumb.removing {
+            opacity: 0;
+            transform: scale(0.96);
+            pointer-events: none;
+        }
+        .thumb-select {
+            position: absolute;
+            top: 6px; left: 6px;
+            width: 30px; height: 30px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.3);
+            background: rgba(0,0,0,0.35);
+            cursor: pointer;
+            opacity: 0.35;
+            transition: opacity 0.12s, background 0.12s, border-color 0.12s;
+            display: flex; align-items: center; justify-content: center;
+            z-index: 2;
+        }
+        .thumb:hover .thumb-select { opacity: 1; }
+        .selecting .thumb-select { opacity: 0.7; }
+        .selecting .thumb:hover .thumb-select { opacity: 1; }
+        .thumb-select.selected {
+            opacity: 1;
+            background: #0066cc;
+            border-color: #0066cc;
+        }
+        .thumb-select svg {
+            width: 14px; height: 14px;
+            stroke: white; stroke-width: 3;
+            fill: none; opacity: 0;
+        }
+        .thumb-select.selected svg { opacity: 1; }
+        .favorite-star {
+            position: absolute;
+            top: 6px; right: 6px;
+            width: 30px; height: 30px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.3);
+            background: rgba(0,0,0,0.35);
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.12s, background 0.12s, border-color 0.12s;
+            display: flex; align-items: center; justify-content: center;
+            z-index: 2;
+            color: #ddd;
+            font-size: 17px;
+        }
+        .favorite-star::after { content: '\2606'; }
+        .favorite-star.active { opacity: 1; color: #e8c84a; }
+        .favorite-star.active::after { content: '\2605'; }
+        .thumb:hover .favorite-star { opacity: 0.7; }
+        .thumb:hover .favorite-star.active { opacity: 1; }
+        .thumb-meta {
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            padding: 20px 7px 5px;
+            background: linear-gradient(transparent, rgba(0,0,0,0.75));
+            font-size: 10px;
+            color: #ccc;
+            opacity: 0;
+            transition: opacity 0.12s;
+            pointer-events: none;
+            display: flex;
+            justify-content: space-between;
+        }
+        .thumb:hover .thumb-meta { opacity: 1; }
+        .meta-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 70%;
+        }
+        .meta-size { color: #999; }
+        .meta-batch {
+            position: absolute;
+            bottom: 34px;
+            left: 7px;
+            font-size: 10px;
+            color: #ddd;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.12s;
+            background: rgba(0,0,0,0.55);
+            padding: 1px 5px;
+            border-radius: 3px;
+        }
+        .thumb:hover .meta-batch { opacity: 1; }
+        .empty { text-align: center; padding: 60px; color: #555; font-size: 14px; }
+
+        /* Action bar (multi-select) */
+        .action-bar {
+            position: fixed;
+            bottom: 0; left: calc(var(--sidebar-effective-width) + 8px); right: 0;
+            padding: 10px 20px;
+            background: #252525;
+            border-top: 1px solid #333;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            z-index: 500;
+            transform: translateY(100%);
+            transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .action-bar.visible { transform: translateY(0); }
+        .sidebar-resizer.collapsed ~ .main .action-bar,
+        .sidebar-resizer.collapsed ~ main .action-bar {
+            left: var(--sidebar-effective-width);
+        }
+        .action-count { font-size: 13px; color: #aaa; margin-right: 4px; }
+        .action-btn {
+            padding: 7px 14px; border: none; border-radius: 4px;
+            cursor: pointer; font-size: 12px; font-weight: 600; color: white;
+        }
+        .action-btn[data-dest="inbox"] { background: #b8860b; }
+        .action-btn[data-dest="shortlisted"] { background: #28a745; }
+        .action-btn[data-dest="finals"] { background: #0066cc; }
+        .action-btn[data-dest="rejects"] { background: #dc3545; }
+        .action-btn.action-clear {
+            background: transparent; border: 1px solid #444;
+            color: #888; margin-left: auto;
+        }
+        .action-btn:hover { opacity: 0.85; }

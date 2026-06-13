@@ -23,6 +23,7 @@ def test_default_plan_uses_python_modules_and_all_test_layers():
         "ruff-format-check",
         "ruff-check",
         "compileall",
+        "css-assets",
         "unit-tests",
         "component-tests",
         "integration-tests",
@@ -34,7 +35,8 @@ def test_default_plan_uses_python_modules_and_all_test_layers():
     ruff_check = next(c for c in checks if c.name == "ruff-check")
     assert ruff_check.command[:3] == [sys.executable, "-m", "ruff"]
     assert "check" in ruff_check.command
-    assert checks[3].command == [sys.executable, "-m", "pytest", "tests/unit"]
+    assert checks[3].command == [sys.executable, "scripts/run_all.py", "--check-css-assets"]
+    assert checks[4].command == [sys.executable, "-m", "pytest", "tests/unit"]
 
 
 def test_quick_plan_is_smaller_and_can_skip_js():
@@ -43,7 +45,25 @@ def test_quick_plan_is_smaller_and_can_skip_js():
     checks = run_all.build_checks(mode="quick", skip_js=True)
     names = [check.name for check in checks]
 
-    assert names == ["compileall", "unit-tests"]
+    assert names == ["compileall", "css-assets", "unit-tests"]
+
+
+def test_css_asset_check_validates_expected_files_and_template_order():
+    run_all = load_run_all_module()
+
+    assert run_all.CSS_FILES == [
+        "base.css",
+        "sidebar.css",
+        "layout.css",
+        "grid.css",
+        "lightbox.css",
+        "modals.css",
+        "prompts.css",
+        "toast.css",
+        "ai.css",
+        "responsive.css",
+    ]
+    assert run_all.validate_css_assets() == 0
 
 
 def test_format_plan_mutates_only_when_requested():

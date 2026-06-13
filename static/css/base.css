@@ -1,0 +1,34 @@
+        :root {
+            --sidebar-width: 240px;
+            --sidebar-effective-width: 240px;
+            --ai-sidebar-width: 360px;
+            --lightbox-zoom: 1;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        .hidden { display: none; }
+        body {
+            background: #1a1a1a;
+            color: #eee;
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Accessibility: visible focus indicators for keyboard navigation */
+        button:focus-visible,
+        input:focus-visible,
+        select:focus-visible,
+        textarea:focus-visible,
+        [tabindex]:focus-visible {
+            outline: 2px solid #5ba3f5;
+            outline-offset: 2px;
+        }
+
+        /* Respect user motion preferences */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
