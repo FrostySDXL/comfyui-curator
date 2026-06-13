@@ -1,0 +1,13 @@
+/* Ordered classic script.
+ * Defines: startup initialization and intervals.
+ */
+initializeSidebarState();
+initializeAiSidebarState();
+_bindCustomSelectKeys();
+_bindDelegatedEvents();
+// Sync batch sort button highlights with stored preference
+document.querySelectorAll('.batch-sort-btn').forEach(b => b.classList.toggle('active', b.dataset.bsort === batchSort));
+setInterval(() => {
+    pollForChanges().catch(() => { console.warn('pollForChanges failed'); });
+}, 5000);
+loadBatches();

@@ -12,14 +12,12 @@ The lightbox prev/next buttons and the scored-image nav buttons would
 throw ``ReferenceError`` on click in production.
 """
 
-from pathlib import Path
-
-APP_JS = Path("static/js/app.js")
+from tests.unit.frontend_source import read_frontend_js
 
 
 def test_no_undefined_navigate_lightbox_calls():
     """No call site in app.js may reference the undefined navigateLightbox function."""
-    source = APP_JS.read_text(encoding="utf-8")
+    source = read_frontend_js()
     # navigateLightbox must not appear as an identifier. We allow the substring
     # "navigateLightbox" only inside a function-name definition `function navigateLightbox`,
     # which would itself be unused. Either way the surface must be clean.
@@ -31,7 +29,7 @@ def test_no_undefined_navigate_lightbox_calls():
 
 def test_no_undefined_navigate_lightbox_to_scored_calls():
     """No call site in app.js may reference the undefined navigateLightboxToScored function."""
-    source = APP_JS.read_text(encoding="utf-8")
+    source = read_frontend_js()
     assert "navigateLightboxToScored" not in source, (
         "navigateLightboxToScored is referenced but not defined. "
         "Rename call sites to `navigateScored` (the actual function name)."
@@ -40,7 +38,7 @@ def test_no_undefined_navigate_lightbox_to_scored_calls():
 
 def test_no_undefined_ai_toggle_run_diff_calls():
     """No call site in app.js may reference the undefined aiToggleRunDiff function."""
-    source = APP_JS.read_text(encoding="utf-8")
+    source = read_frontend_js()
     assert "aiToggleRunDiff" not in source, (
         "aiToggleRunDiff is referenced but not defined. "
         "The element id `ai-diff-select` is not in the HTML either — "
@@ -50,6 +48,6 @@ def test_no_undefined_ai_toggle_run_diff_calls():
 
 def test_navigate_and_navigate_scored_are_defined():
     """The two real functions must still be defined after renaming."""
-    source = APP_JS.read_text(encoding="utf-8")
+    source = read_frontend_js()
     assert "function navigate(" in source, "function navigate must still be defined"
     assert "function navigateScored(" in source, "function navigateScored must still be defined"

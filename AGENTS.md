@@ -8,7 +8,7 @@
 - Use the virtual environment at `.venv/`.
 - Entrypoints: `app.py` (Flask web UI + API), `curate.py` (CLI scoring).
 - New non-AI backend logic -> `image_curator/`. New AI logic -> `ai_curate/`.
-- Frontend is `templates/index.html` + `static/js/app.js` + split CSS files under `static/css/`.
+- Frontend is `templates/index.html` + ordered vanilla scripts under `static/js/` + split CSS files under `static/css/`.
 - Verification: `python scripts/run_all.py` (default) or `--quick` for fast loops.
 - Do not commit code that fails `ruff check` or `ruff format --check` on touched paths.
 
@@ -47,7 +47,7 @@ app.py (Flask, 28 routes)
 curate.py (CLI)
   └── ai_curate/  (same pipeline, no queue — synchronous scoring in-process)
 
-Frontend (templates/index.html + static/js/app.js + static/css/*.css)
+Frontend (templates/index.html + ordered static/js/*.js + static/css/*.css)
   └── app.py API routes (fetch-based, vanilla JS, no framework)
 ```
 
@@ -80,11 +80,12 @@ Frontend (templates/index.html + static/js/app.js + static/css/*.css)
 | | `ai_curate/queue.py` | `QueueManager`: FIFO single-worker job queue with cancel support |
 | | `ai_curate/storage.py` | `RunStorage`: atomic JSON persistence for run history |
 | **Frontend** | `templates/index.html` | Single-page Flask template (Jinja2, server-injected model list) |
-| | `static/js/app.js` | All browser behavior (~3477 lines, vanilla JS, imperative, no framework) |
+| | `static/js/state.js`, `dom-utils.js`, `api.js`, `sidebar.js`, `batches.js`, `grid.js`, `favorites.js`, `moves.js`, `lightbox.js`, `metadata.js`, `prompts.js`, `ai.js`, `polling.js`, `events.js`, `bootstrap.js` | Ordered classic browser scripts; vanilla JS, imperative, no framework/build step |
+| | `static/js/app.js` | Compatibility stub pointing to the split files |
 | | `static/css/base.css`, `sidebar.css`, `layout.css`, `grid.css`, `lightbox.css`, `modals.css`, `prompts.css`, `toast.css`, `ai.css`, `responsive.css` | Browser-loaded split styling in template order (dark theme, flexbox + CSS grid) |
 | | `static/css/app.css` | Temporary full compatibility stylesheet for raw-text tests; not browser-loaded by `templates/index.html` |
 | | `static/README.md` | Module-scoped agent startup guide (global state, function groups, API calls, gotchas) |
-| **Tests** | `tests/unit/` | Isolated logic (14 Python + 6 JS-scraping frontend-invariant tests) |
+| **Tests** | `tests/unit/` | Isolated logic (17 Python + 6 JS-scraping frontend-invariant tests) |
 | | `tests/component/` | In-process multi-module (Flask route contracts, AI worker lifecycle) |
 | | `tests/integration/` | Full HTTP + filesystem workflow (Flask test client, real files) |
 | | `tests/README.md` | Module-scoped agent startup guide (layers, fixtures, markers, coverage gaps) |
@@ -101,8 +102,8 @@ Frontend (templates/index.html + static/js/app.js + static/css/*.css)
 
 | Task | Read | Verify |
 |------|------|--------|
-| UI layout, shortcuts, lightbox, sidebars | `static/README.md` then `templates/index.html`, `static/js/app.js`, relevant `static/css/*.css` files | Manual browser smoke test; `python scripts/run_all.py --quick` |
-| Flask API or batch filesystem behavior | `image_curator/README.md` then `app.py`, matching frontend calls in `static/js/app.js`, integration/component tests | `python -m pytest tests/integration/ tests/component/ -v` |
+| UI layout, shortcuts, lightbox, sidebars | `static/README.md` then `templates/index.html`, relevant `static/js/*.js`, relevant `static/css/*.css` files | Manual browser smoke test; `python scripts/run_all.py --quick` |
+| Flask API or batch filesystem behavior | `image_curator/README.md` then `app.py`, matching frontend calls in relevant `static/js/*.js`, integration/component tests | `python -m pytest tests/integration/ tests/component/ -v` |
 | AI scoring, queueing, run history | `ai_curate/README.md` then `ai_curate/`, `curate.py`, unit tests | `python -m pytest tests/unit/test_client.py tests/unit/test_scoring.py tests/unit/test_queue.py tests/unit/test_storage.py tests/unit/test_elements.py tests/unit/test_models.py tests/unit/test_config.py -v` |
 | PNG metadata extraction | `image_curator/README.md` then `image_curator/png_metadata.py`, unit test | `python -m pytest tests/unit/test_png_metadata.py -v` |
 | Favorites or prompt history | `image_curator/README.md` then `image_curator/favorites.py`, `image_curator/prompt_history.py`, app routes, frontend calls | `python -m pytest tests/unit/test_favorites.py tests/unit/test_prompt_history.py tests/integration/test_favorites_api.py tests/integration/test_prompt_history_api.py -v` |
@@ -156,7 +157,7 @@ Treat these as stability-sensitive:
 
 ### UI change
 
-- Read `templates/index.html`, `static/js/app.js`, and the relevant `static/css/*.css` files
+- Read `templates/index.html`, the relevant ordered `static/js/*.js` files, and the relevant `static/css/*.css` files
 - Preserve the center grid as the primary review surface
 - Preserve the right-sidebar AI Curate layout unless the task explicitly changes it
 - Preserve the header control cluster order and semantics unless the task explicitly changes them
@@ -207,7 +208,7 @@ Treat these as stability-sensitive:
 - **`--panel` flag is deprecated (curate.py):** Use `--prompt`. `--panel` still works but prints a warning. `--prompt` takes precedence if both are provided.
 - **AI worker threads are daemons:** They die with the process. Shutdown tries to join for 5 seconds, then exits.
 - **Auto-import watcher defaults to OFF:** Set `IMAGE_CURATOR_ENABLE_WATCHER=true` to enable polling from ComfyUI output.
-- **Frontend tests are Python source-scraping:** The 6 `test_frontend_*.py` files regex-scan `app.js` for function names and invariants. No headless browser or JS test framework. Browser-only changes need manual verification.
+- **Frontend tests are Python source-scraping:** The 6 `test_frontend_*.py` files regex-scan ordered split JS sources through `tests/unit/frontend_source.py` for function names and invariants. No headless browser or JS test framework. Browser-only changes need manual verification.
 - **Generated files (never edit):** `.thumbs/` (thumbnail cache), `.favorites.json`, `<batch>/prompt-history.json`, `<batch>/ai-curate/runs/` (run history), `<batch>/ai-curate/latest.json`, `__pycache__/`, `*.egg-info/`.
 - **Favorites one click updates both scopes:** `toggle_favorite()` writes batch and universal stores; universal view uses `__favorites__` as a frontend sentinel, never as a real batch.
 - **Prompt history is manual:** Build/rebuild is synchronous and operator-triggered. Staleness checks compare total image count only.

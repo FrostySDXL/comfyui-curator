@@ -2,6 +2,9 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from tests.unit.frontend_source import CSS_FILES as FRONTEND_CSS_FILES
+from tests.unit.frontend_source import JS_FILES as FRONTEND_JS_FILES
+
 
 def load_run_all_module():
     script_path = Path(__file__).parents[2] / "scripts" / "run_all.py"
@@ -28,6 +31,7 @@ def test_default_plan_uses_python_modules_and_all_test_layers():
         "component-tests",
         "integration-tests",
         "javascript-syntax",
+        "javascript-duplicate-declarations",
         "git-diff-check",
     ]
     assert checks[0].command[:3] == [sys.executable, "-m", "ruff"]
@@ -48,6 +52,15 @@ def test_quick_plan_is_smaller_and_can_skip_js():
     assert names == ["compileall", "css-assets", "unit-tests"]
 
 
+def test_quick_plan_includes_all_javascript_checks():
+    run_all = load_run_all_module()
+
+    checks = run_all.build_checks(mode="quick", skip_js=False)
+    names = [check.name for check in checks]
+
+    assert names[-2:] == ["javascript-syntax", "javascript-duplicate-declarations"]
+
+
 def test_css_asset_check_validates_expected_files_and_template_order():
     run_all = load_run_all_module()
 
@@ -64,6 +77,36 @@ def test_css_asset_check_validates_expected_files_and_template_order():
         "responsive.css",
     ]
     assert run_all.validate_css_assets() == 0
+
+
+def test_javascript_checks_use_ordered_split_file_list():
+    run_all = load_run_all_module()
+
+    assert run_all.JS_FILES == [
+        "state.js",
+        "dom-utils.js",
+        "api.js",
+        "sidebar.js",
+        "batches.js",
+        "grid.js",
+        "favorites.js",
+        "moves.js",
+        "lightbox.js",
+        "metadata.js",
+        "prompts.js",
+        "ai.js",
+        "polling.js",
+        "events.js",
+        "bootstrap.js",
+        "app.js",
+    ]
+
+
+def test_frontend_source_file_lists_match_runner_order():
+    run_all = load_run_all_module()
+
+    assert [path.name for path in FRONTEND_JS_FILES] == run_all.JS_FILES
+    assert [path.name for path in FRONTEND_CSS_FILES if path.name != "app.css"] == run_all.CSS_FILES
 
 
 def test_format_plan_mutates_only_when_requested():

@@ -71,7 +71,7 @@ If formatting is required, apply it explicitly before final verification:
 python scripts/run_all.py --format
 ```
 
-Only use `--skip-js` when Node is unavailable and the change is not frontend-related.
+Only use `--skip-js` when Node is unavailable and the change is not frontend-related. JavaScript verification checks every ordered split file and duplicate top-level declarations across classic scripts.
 
 Add `--quiet` to suppress the per-check command echo (handy when sharing logs, since the echo otherwise shows the absolute path of the active Python interpreter).
 
@@ -144,7 +144,7 @@ Also update the runner tests in `tests/unit/test_run_all_script.py` so the expec
 ### If changing API routes
 
 - Read `app.py`
-- Check matching frontend calls in `static/js/app.js`
+- Check matching frontend calls in the relevant ordered `static/js/*.js` file
 - Add or update integration tests
 - Update `README.md` or `AGENTS.md` if the contract shape changes
 

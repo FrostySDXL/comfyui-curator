@@ -167,8 +167,9 @@ queue FIFO. Designed for single-user operation, not concurrent scoring.
 ## Development verification
 
 Use `python scripts/run_all.py` before sharing changes. The runner checks
-Python formatting/linting/tests, JavaScript syntax, git diff whitespace, and
-the split CSS file list/order loaded by `templates/index.html`.
+Python formatting/linting/tests, ordered split JavaScript syntax plus duplicate
+top-level declarations, git diff whitespace, and the split CSS file list/order
+loaded by `templates/index.html`.
 
 ## More
 
