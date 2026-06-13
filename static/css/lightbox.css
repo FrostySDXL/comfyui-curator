@@ -19,17 +19,18 @@
             max-width: min(92vw, 1800px);
             max-height: 82vh;
             overflow: hidden;
+            touch-action: none;
             padding: 16px;
             border-radius: 14px;
             background: radial-gradient(circle at top, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
             transform: scale(0.975);
             transition: transform 0.18s ease;
         }
-        .lightbox-image-wrap.zoomed {
-            overflow: auto;
-        }
         .lightbox.active .lightbox-image-wrap {
             transform: scale(1);
+        }
+        .lightbox-image-wrap.zoomed {
+            overflow: auto;
         }
         .lightbox img {
             max-width: min(calc(100vw - 140px), 1800px);

@@ -7,9 +7,9 @@ let lightboxImageToken = 0;
 
 function openLightbox(index) {
             currentIndex = index;
+            document.getElementById('lightbox').classList.add('active');
             resetLightboxZoom();
             showCurrentImage();
-            document.getElementById('lightbox').classList.add('active');
         }
 
 function closeLightbox() {
@@ -26,7 +26,10 @@ function applyLightboxZoom() {
         }
 
 function zoomLightbox(delta) {
-            lightboxZoom = Math.min(3, Math.max(0.6, +(lightboxZoom + delta).toFixed(2)));
+            const currentScale = lightboxZoom;
+            const nextScale = Math.min(3, Math.max(0.6, +(currentScale + delta).toFixed(2)));
+            if (nextScale === currentScale) return;
+            lightboxZoom = nextScale;
             applyLightboxZoom();
         }
 
@@ -76,11 +79,7 @@ function showCurrentImage() {
             currentLightboxMetadataLoading = false;
             currentLightboxDimensions = {w: null, h: null};
             renderLightboxMetadataPanel();
-            const wrap = document.getElementById('lightbox-image-wrap');
-            if (wrap && lightboxZoom <= 1.001) {
-                wrap.scrollTop = 0;
-                wrap.scrollLeft = 0;
-            }
+            resetLightboxZoom();
             const el = document.getElementById('lightbox-img');
             // Immediately hide (no transition) to prevent flash of previous image.
             // Do NOT removeAttribute('src') -- it collapses the <img> layout to 0x0
