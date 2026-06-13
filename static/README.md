@@ -21,7 +21,23 @@
 - **Single-file vanilla JS** (`app.js`, ~3477 lines). No framework, no modules, no build step.
 - **Imperative, event-driven.** Global `let` variables for state. DOM manipulation is direct.
 - **Script loaded at bottom of `<body>`** in `index.html`. Initialization runs immediately (calls `loadBatches()`).
-- **Single CSS file** (`app.css`, ~1581 lines). Dark theme only. Flexbox layout with CSS Grid for thumbnails.
+- **Split plain CSS files** under `static/css/`, loaded directly by `index.html` in deterministic order. No CSS framework, preprocessor, bundler, or build step.
+
+### CSS File Map
+
+| File | Responsibility |
+|------|----------------|
+| `base.css` | Root CSS variables, reset, body, focus-visible, reduced-motion rules |
+| `sidebar.css` | Left batch sidebar, auto-import dropdown, batch list/search controls |
+| `layout.css` | Main content shell, header buttons, folder tabs, sort controls, count pulse animation |
+| `grid.css` | Workspace/grid/thumb styling, favorite stars, thumb metadata, multi-select action bar |
+| `lightbox.css` | Lightbox viewer, metadata panel, lightbox controls and key hints |
+| `modals.css` | Base modal styles, Help modal, new-batch/delete modal buttons |
+| `prompts.css` | Prompt History modal controls, batch picker, entries, footer, stale warning |
+| `toast.css` | Undo toast styling |
+| `ai.css` | AI sidebar, AI form/history/run comparison, AI thumb badges and filtering |
+| `responsive.css` | `900px` responsive breakpoint rules; loads last |
+| `app.css` | Temporary full compatibility stylesheet for raw-text tests; not browser-loaded by `index.html` |
 
 ### Global State Variables (app.js)
 
@@ -139,7 +155,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 ## Agent Instructions
 
 - Start with `templates/index.html` to understand the DOM structure (IDs, CSS classes), then trace behavior in `app.js` by searching for those IDs.
-- Changes to styling go in `static/css/app.css`. The dark theme is fixed -- no light mode.
+- Changes to styling go in the focused `static/css/*.css` file for the affected surface. Keep selector names stable unless all HTML/JS/test references are updated. The dark theme is fixed -- no light mode.
 - When adding a new API call, add it to the API Call Inventory table above.
 - The 6 `test_frontend_*.py` files in `tests/unit/` regex-scan `app.js` for function names and invariants. They are NOT browser tests. After JS changes, run them to avoid regressions on the invariants they check, but always also test manually in a browser.
 - `gridThumbMap` is the key optimization -- it preserves DOM elements across re-renders. `_gridChildrenMatchDesiredOrder()` avoids `replaceChildren()` when order is already correct.
@@ -153,7 +169,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **`_gridChildrenMatchDesiredOrder()` optimization:** The grid is only rebuilt if the order of thumb elements actually changed. Removing this check causes visible flicker on every poll cycle.
 - **Score gradient is hardcoded:** `aiScoreGradient()` uses a fixed dark-red-to-dark-yellow-to-green gradient. There is no configuration for color thresholds.
 - **CSS variables for layout only, not theming:** `--sidebar-width`, `--sidebar-effective-width`, `--ai-sidebar-width`, `--lightbox-zoom`. All colors are hardcoded.
-- **Single responsive breakpoint at 900px:** Below this, sidebars shrink, AI sidebar moves below grid, resizers hide.
+- **Single responsive breakpoint at 900px:** Rules live in `responsive.css`, which must load last. Below this, sidebars shrink, AI sidebar moves below grid, resizers hide.
 - **`__favorites__` is a virtual batch sentinel:** Do not call real batch APIs with it. Use per-image `img.batch` and `img.folder` for image src, lightbox metadata, and lightbox moves.
 - **`getDisplayImages()` centralizes filtering:** Favorites filtering and AI score sorting compose there; update image counts through `updateImageCountLabel()`.
 - **Prompt history cache is manual:** The modal loads cached JSON until the operator clicks Build/Rebuild; staleness is count-based only.

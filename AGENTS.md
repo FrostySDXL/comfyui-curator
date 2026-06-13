@@ -1,6 +1,6 @@
 # AGENTS.md
 
-**Purpose:** Operator-focused web application for reviewing generated images with optional AI-assisted scoring. **Status:** Actively maintained. **Audience:** AI agents and single-operator maintainers. **Last Updated:** 2026-06-11
+**Purpose:** Operator-focused web application for reviewing generated images with optional AI-assisted scoring. **Status:** Actively maintained. **Audience:** AI agents and single-operator maintainers. **Last Updated:** 2026-06-13
 
 ## Quickstart
 
@@ -8,7 +8,7 @@
 - Use the virtual environment at `.venv/`.
 - Entrypoints: `app.py` (Flask web UI + API), `curate.py` (CLI scoring).
 - New non-AI backend logic -> `image_curator/`. New AI logic -> `ai_curate/`.
-- Frontend is `templates/index.html` + `static/js/app.js` + `static/css/app.css`.
+- Frontend is `templates/index.html` + `static/js/app.js` + split CSS files under `static/css/`.
 - Verification: `python scripts/run_all.py` (default) or `--quick` for fast loops.
 - Do not commit code that fails `ruff check` or `ruff format --check` on touched paths.
 
@@ -47,7 +47,7 @@ app.py (Flask, 28 routes)
 curate.py (CLI)
   └── ai_curate/  (same pipeline, no queue — synchronous scoring in-process)
 
-Frontend (templates/index.html + static/js/app.js + static/css/app.css)
+Frontend (templates/index.html + static/js/app.js + static/css/*.css)
   └── app.py API routes (fetch-based, vanilla JS, no framework)
 ```
 
@@ -81,7 +81,8 @@ Frontend (templates/index.html + static/js/app.js + static/css/app.css)
 | | `ai_curate/storage.py` | `RunStorage`: atomic JSON persistence for run history |
 | **Frontend** | `templates/index.html` | Single-page Flask template (Jinja2, server-injected model list) |
 | | `static/js/app.js` | All browser behavior (~3477 lines, vanilla JS, imperative, no framework) |
-| | `static/css/app.css` | All styling (~1581 lines, dark theme, flexbox + CSS grid) |
+| | `static/css/base.css`, `sidebar.css`, `layout.css`, `grid.css`, `lightbox.css`, `modals.css`, `prompts.css`, `toast.css`, `ai.css`, `responsive.css` | Browser-loaded split styling in template order (dark theme, flexbox + CSS grid) |
+| | `static/css/app.css` | Temporary full compatibility stylesheet for raw-text tests; not browser-loaded by `templates/index.html` |
 | | `static/README.md` | Module-scoped agent startup guide (global state, function groups, API calls, gotchas) |
 | **Tests** | `tests/unit/` | Isolated logic (14 Python + 6 JS-scraping frontend-invariant tests) |
 | | `tests/component/` | In-process multi-module (Flask route contracts, AI worker lifecycle) |
@@ -100,7 +101,7 @@ Frontend (templates/index.html + static/js/app.js + static/css/app.css)
 
 | Task | Read | Verify |
 |------|------|--------|
-| UI layout, shortcuts, lightbox, sidebars | `static/README.md` then `templates/index.html`, `static/js/app.js`, `static/css/app.css` | Manual browser smoke test; `python scripts/run_all.py --quick` |
+| UI layout, shortcuts, lightbox, sidebars | `static/README.md` then `templates/index.html`, `static/js/app.js`, relevant `static/css/*.css` files | Manual browser smoke test; `python scripts/run_all.py --quick` |
 | Flask API or batch filesystem behavior | `image_curator/README.md` then `app.py`, matching frontend calls in `static/js/app.js`, integration/component tests | `python -m pytest tests/integration/ tests/component/ -v` |
 | AI scoring, queueing, run history | `ai_curate/README.md` then `ai_curate/`, `curate.py`, unit tests | `python -m pytest tests/unit/test_client.py tests/unit/test_scoring.py tests/unit/test_queue.py tests/unit/test_storage.py tests/unit/test_elements.py tests/unit/test_models.py tests/unit/test_config.py -v` |
 | PNG metadata extraction | `image_curator/README.md` then `image_curator/png_metadata.py`, unit test | `python -m pytest tests/unit/test_png_metadata.py -v` |
@@ -155,7 +156,7 @@ Treat these as stability-sensitive:
 
 ### UI change
 
-- Read `templates/index.html`, `static/js/app.js`, and `static/css/app.css`
+- Read `templates/index.html`, `static/js/app.js`, and the relevant `static/css/*.css` files
 - Preserve the center grid as the primary review surface
 - Preserve the right-sidebar AI Curate layout unless the task explicitly changes it
 - Preserve the header control cluster order and semantics unless the task explicitly changes them

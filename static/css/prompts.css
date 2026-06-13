@@ -1,0 +1,129 @@
+        .prompts-modal-content { width: 680px; max-width: calc(100vw - 40px); height: 85vh; max-height: 85vh; display: flex; flex-direction: column; }
+        .prompts-controls { display: flex; gap: 8px; margin-bottom: 12px; }
+        .prompts-controls select, .prompts-controls input { background: #333; border: 1px solid #444; color: #eee; border-radius: 4px; padding: 8px; font-size: 12px; }
+        .prompts-controls input { flex: 1; margin-bottom: 0; }
+        .prompts-batch-wrap {
+            margin-bottom: 4px;
+        }
+        .prompts-batch-select {
+            position: relative;
+        }
+        .prompts-batch-select input {
+            width: 100%;
+            padding: 7px 8px;
+            background: #2a2a2a;
+            border: 1px solid #333;
+            color: #ccc;
+            border-radius: 4px;
+            font-size: 12px;
+            line-height: 1.4;
+            font-family: inherit;
+            caret-color: #5ba3f5;
+        }
+        .prompts-batch-select input:focus {
+            outline: none;
+            border-color: #0066cc;
+            box-shadow: 0 0 0 1px rgba(0, 102, 204, 0.3);
+        }
+        .prompts-batch-list {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            max-height: 260px;
+            overflow-y: auto;
+            background: #2a2a2a;
+            border: 1px solid #333;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            list-style: none;
+            display: none;
+            margin: 0;
+            padding: 0;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+        }
+        .prompts-batch-wrap.open .prompts-batch-list {
+            display: block;
+        }
+        .prompts-batch-empty {
+            padding: 8px;
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+        }
+        .prompts-batch-option {
+            padding: 6px 8px;
+            font-size: 12px;
+            color: #ccc;
+            cursor: pointer;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .prompts-batch-option:hover { background: #333; }
+        .prompts-batch-option.focus {
+            background: #333;
+            outline: none;
+        }
+        .prompts-all-batches-btn {
+            display: block;
+            width: 100%;
+            padding: 5px 8px;
+            margin-top: 2px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #888;
+            font-size: 11px;
+            cursor: pointer;
+            text-align: left;
+            border-radius: 4px;
+        }
+        .prompts-all-batches-btn:hover { color: #ccc; background: #333; border-color: #555; }
+        .prompts-all-batches-btn.active { color: #5ba3f5; border-color: #0066cc; background: rgba(0,102,204,0.1); }
+        .prompts-controls button, .prompts-stale button { padding: 6px 8px; border: 1px solid #444; background: #333; color: #ccc; border-radius: 4px; cursor: pointer; font-size: 11px; }
+        .prompts-list { flex: 1; overflow-y: auto; min-height: 100px; max-height: 55vh; color: #888; font-size: 13px; }
+        .prompts-entry { border: 1px solid #333; background: #202020; border-radius: 7px; padding: 10px 12px; margin-bottom: 8px; }
+        .prompts-entry-main { display: flex; align-items: flex-start; gap: 8px; }
+        .prompts-count { background: #333; color: #ccc; min-width: 24px; text-align: center; border-radius: 999px; padding: 2px 6px; font-size: 11px; flex-shrink: 0; }
+        .prompts-prompt-text { color: #ddd; font-size: 13px; word-break: break-word; line-height: 1.4; }
+        .prompts-batch-label { display: inline-block; font-size: 10px; color: #777; margin-top: 4px; }
+        .prompts-entry-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            flex-shrink: 0;
+            min-width: 90px;
+        }
+        .prompts-show-more, .prompts-toggle-neg, .prompts-toggle-images {
+            display: block;
+            width: 100%;
+            padding: 3px 6px;
+            border: 1px solid #444;
+            background: #2a2a2a;
+            color: #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+            white-space: nowrap;
+            margin: 0;
+        }
+        .prompts-copy-btn {
+            display: block;
+            width: 100%;
+            padding: 3px 6px;
+            border: 1px solid #0066cc;
+            background: rgba(0,102,204,0.15);
+            color: #5ba3f5;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+            white-space: nowrap;
+            margin-bottom: 4px;
+        }
+        .prompts-negative { background: #2a2a2a; border-radius: 6px; padding: 6px; margin-top: 6px; color: #bbb; font-size: 12px; white-space: pre-wrap; }
+        .prompts-images-list { margin-top: 6px; color: #777; font-size: 11px; line-height: 1.4; }
+        .prompts-footer { display: flex; align-items: center; gap: 12px; margin: 10px 0; color: #777; font-size: 11px; }
+        #prompts-built-at { margin-left: auto; }
+        .prompts-stale { color: #e8a33d; }
+        .prompts-stale button:disabled { opacity: 0.5; cursor: not-allowed; }

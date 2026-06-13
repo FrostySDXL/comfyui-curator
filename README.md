@@ -142,6 +142,12 @@ with auth (nginx, Caddy, etc.). Read `SECURITY.md` for related guidance.
 AI scoring runs in a single background thread. One job at a time; others
 queue FIFO. Designed for single-user operation, not concurrent scoring.
 
+## Development verification
+
+Use `python scripts/run_all.py` before sharing changes. The runner checks
+Python formatting/linting/tests, JavaScript syntax, git diff whitespace, and
+the split CSS file list/order loaded by `templates/index.html`.
+
 ## More
 
 - **Contributing:** `CONTRIBUTING.md` -- verification, dependency

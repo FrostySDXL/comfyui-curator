@@ -1,0 +1,288 @@
+        /* Sidebar */
+        .sidebar {
+            width: var(--sidebar-effective-width);
+            background: #202020;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #2a2a2a;
+            flex-shrink: 0;
+            transition: width 0.2s ease;
+        }
+        .sidebar.collapsed {
+            width: 0;
+            border-right: none;
+            overflow: hidden;
+        }
+        .sidebar-resizer {
+            width: 8px;
+            cursor: col-resize;
+            background: #1a1a1a;
+            border-right: 1px solid #2a2a2a;
+            border-left: 1px solid #2a2a2a;
+            flex-shrink: 0;
+            transition: background 0.15s;
+        }
+        .sidebar-resizer:hover,
+        .sidebar-resizer.active {
+            background: #2a2a2a;
+        }
+        .sidebar-resizer.collapsed {
+            display: none;
+        }
+        .sidebar-section {
+            padding: 14px;
+        }
+        .sidebar-section + .sidebar-section {
+            border-top: 1px solid #2a2a2a;
+        }
+        .sidebar h2 {
+            font-size: 10px;
+            color: #888;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            font-weight: 600;
+        }
+        .active-batch select {
+            width: 100%;
+            padding: 7px 8px;
+            background: #2a2a2a;
+            border: 1px solid #333;
+            color: #ccc;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        /* Custom dropdown replaces the native <select> for rendering reliability */
+        .custom-select {
+            position: relative;
+            width: 100%;
+        }
+        .custom-select-input {
+            width: 100%;
+            padding: 7px 34px 7px 8px;
+            background: #2a2a2a;
+            border: 1px solid #333;
+            color: #ccc;
+            border-radius: 4px;
+            font-size: 12px;
+            line-height: 1.4;
+            font-family: inherit;
+            caret-color: #5ba3f5;
+        }
+        .custom-select-input:focus {
+            outline: none;
+            border-color: #0066cc;
+            box-shadow: 0 0 0 1px rgba(0, 102, 204, 0.3);
+        }
+        .custom-select-arrow {
+            position: absolute;
+            top: 50%;
+            right: 8px;
+            transform: translateY(-50%);
+            font-size: 10px;
+            color: #666;
+            pointer-events: none;
+            transition: transform 0.18s ease;
+        }
+        .custom-select.open .custom-select-arrow {
+            transform: translateY(-50%) rotate(180deg);
+        }
+        .custom-select-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            max-height: 260px;
+            overflow-y: auto;
+            background: #2a2a2a;
+            border: 1px solid #333;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            list-style: none;
+            display: none;
+            margin: 0;
+            padding: 0;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+        }
+        .custom-select.open .custom-select-dropdown {
+            display: block;
+        }
+        .custom-select-option {
+            padding: 6px 8px;
+            font-size: 12px;
+            color: #ccc;
+            cursor: pointer;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .custom-select-option:hover {
+            background: #333;
+        }
+        .custom-select-option.focus {
+            background: #333;
+            outline: none;
+        }
+        .custom-select-option.selected {
+            background: #0066cc;
+            color: #fff;
+        }
+        .pending-bar {
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: #888;
+        }
+        .pending-bar .import-btn {
+            padding: 3px 8px;
+            background: #333;
+            border: 1px solid #444;
+            color: #ccc;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+            margin-left: auto;
+        }
+        .pending-bar .import-btn:hover { background: #444; }
+        .sidebar-batches {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .batch-controls {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: #202020;
+            padding-bottom: 8px;
+        }
+        .batch-controls-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+        .batch-count-label {
+            font-size: 11px;
+            color: #999;
+            margin-bottom: 8px;
+        }
+        .batch-search-wrap {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 2px;
+        }
+        .batch-search {
+            width: 100%;
+            padding: 7px 8px;
+            background: #2a2a2a;
+            border: 1px solid #333;
+            color: #ccc;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .batch-search:focus {
+            outline: none;
+            border-color: #0066cc;
+            box-shadow: 0 0 0 1px rgba(0, 102, 204, 0.3);
+        }
+        .batch-search-clear {
+            width: 24px;
+            height: 24px;
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            background: #2a2a2a;
+            color: #888;
+            cursor: pointer;
+            line-height: 1;
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+        .batch-search-clear:hover { color: #ddd; border-color: #4a4a4a; }
+        .batch-search-clear.hidden { visibility: hidden; }
+        .batch-list {
+            list-style: none;
+            flex: 1;
+            overflow-y: auto;
+        }
+        .batch-item { margin-bottom: 2px; }
+        .batch-name {
+            padding: 8px 10px;
+            cursor: pointer;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            color: #aaa;
+            border-left: 3px solid transparent;
+            transition: all 0.15s;
+            min-width: 0;
+        }
+        .batch-name span:first-of-type {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
+        }
+        .batch-name:hover { background: #2a2a2a; color: #ddd; }
+        .batch-name.selected {
+            background: #252525;
+            color: #fff;
+            border-left-color: #0066cc;
+        }
+        .batch-count {
+            font-size: 11px;
+            color: #555;
+            background: #2a2a2a;
+            padding: 1px 6px;
+            border-radius: 8px;
+            width: 52px;
+            min-width: 52px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+        .batch-name.selected .batch-count { color: #888; }
+        .batch-meta {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            flex-shrink: 0;
+            margin-left: 4px;
+        }
+        .batch-ai-dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #0066cc;
+            flex-shrink: 0;
+        }
+        .batch-empty {
+            padding: 10px;
+            color: #777;
+            font-size: 12px;
+        }
+        .batch-item-favorites {
+            border-bottom: 1px solid #2a2a2a;
+            margin-bottom: 4px;
+            padding-bottom: 6px;
+        }
+        .new-batch-btn {
+            width: 100%;
+            padding: 9px;
+            margin-top: 10px;
+            background: transparent;
+            border: 1px dashed #333;
+            color: #555;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 12px;
+            transition: all 0.15s;
+        }
+        .new-batch-btn:hover { border-color: #555; color: #888; background: #252525; }

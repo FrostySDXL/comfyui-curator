@@ -1,6 +1,6 @@
 # CONTRIBUTING.md
 
-**Last Updated:** 2026-06-01
+**Last Updated:** 2026-06-13
 
 This repository is operator-maintained. Keep changes minimal, explicit, and easy to verify.
 
@@ -29,6 +29,24 @@ This repository is operator-maintained. Keep changes minimal, explicit, and easy
 
 Avoid adding new production modules at repo root unless they are explicit entrypoints. Prefer `image_curator/`, `ai_curate/`, or another responsibility-based package with docs and tests.
 
+### CSS file map
+
+The browser loads split CSS files directly from `templates/index.html`. Edit the focused file for the affected surface:
+
+| File | Responsibility |
+|------|----------------|
+| `static/css/base.css` | Root variables, reset, body, focus-visible, reduced-motion rules |
+| `static/css/sidebar.css` | Left batch sidebar, auto-import dropdown, batch list/search controls |
+| `static/css/layout.css` | Main content, header buttons, folder tabs, sort controls, count pulse animation |
+| `static/css/grid.css` | Workspace/grid/thumb styling, favorite stars, thumb metadata, multi-select action bar |
+| `static/css/lightbox.css` | Lightbox viewer, metadata panel, controls, key hints |
+| `static/css/modals.css` | Base modal styles, Help modal, new-batch/delete modal buttons |
+| `static/css/prompts.css` | Prompt History modal controls, batch picker, entries, footer, stale warning |
+| `static/css/toast.css` | Undo toast styling |
+| `static/css/ai.css` | AI sidebar, AI form/history/run comparison, AI thumb badges and filtering |
+| `static/css/responsive.css` | `900px` responsive breakpoint rules; loads last |
+| `static/css/app.css` | Temporary raw-text compatibility stylesheet for tests; not browser-loaded |
+
 ## Verification before claiming completion
 
 Run the narrowest checks that prove the change, then broaden if the surface changed.
@@ -38,6 +56,8 @@ Use the shared runner when possible so local verification matches repo expectati
 ```bash
 python scripts/run_all.py
 ```
+
+The shared runner includes a CSS asset check that verifies split CSS files exist and match the stylesheet order in `templates/index.html`.
 
 During edit loops, use:
 
@@ -117,6 +137,7 @@ Also update the runner tests in `tests/unit/test_run_all_script.py` so the expec
 - Load at least one test batch
 - Verify changed UI controls render and behave correctly
 - Verify any changed API route returns expected JSON
+- For CSS-only changes, also confirm browser developer tools show no missing CSS file 404s and resize below `900px` to check responsive layout.
 
 ## Change playbooks
 

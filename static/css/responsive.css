@@ -1,0 +1,41 @@
+        @media (max-width: 900px) {
+            :root {
+                --sidebar-width: 220px;
+                --ai-sidebar-width: 300px;
+            }
+            .sidebar-resizer {
+                display: none;
+            }
+            .ai-sidebar-resizer {
+                display: none;
+            }
+            .action-bar {
+                left: var(--sidebar-effective-width);
+            }
+            .header {
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            .workspace {
+                flex-direction: column;
+            }
+            .ai-sidebar-shell {
+                width: 100%;
+                border-left: none;
+                border-top: 1px solid #262626;
+            }
+            .ai-history-controls,
+            .ai-form-row {
+                flex-direction: column;
+            }
+            .ai-run-summary-meta {
+                grid-template-columns: 1fr;
+            }
+            .ai-run-summary-stats,
+            .ai-diff-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .metadata-grid {
+                grid-template-columns: 1fr;
+            }
+        }
