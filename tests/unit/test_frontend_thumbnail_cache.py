@@ -1,13 +1,10 @@
-from pathlib import Path
-
-
-APP_JS = Path("static/js/app.js")
+from tests.unit.frontend_source import read_frontend_js
 
 
 def test_thumbnail_grid_uses_blob_url_cache():
     """Thumbnail src assignment goes through the app-owned blob cache."""
 
-    source = APP_JS.read_text(encoding="utf-8")
+    source = read_frontend_js()
 
     assert "const thumbnailBlobUrlCache = new Map();" in source
     assert "const thumbnailBlobInflight = new Map();" in source

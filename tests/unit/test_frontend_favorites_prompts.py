@@ -1,11 +1,11 @@
 from pathlib import Path
 
-APP_JS = Path("static/js/app.js")
 INDEX_HTML = Path("templates/index.html")
+from tests.unit.frontend_source import read_frontend_js
 
 
 def test_favorites_frontend_functions_and_virtual_batch_handling_exist():
-    source = APP_JS.read_text(encoding="utf-8")
+    source = read_frontend_js()
     for name in (
         "toggleFavorite",
         "toggleFavoritesFilter",
@@ -19,7 +19,7 @@ def test_favorites_frontend_functions_and_virtual_batch_handling_exist():
 
 
 def test_prompt_history_frontend_functions_exist():
-    source = APP_JS.read_text(encoding="utf-8")
+    source = read_frontend_js()
     for name in (
         "showPromptsModal",
         "hidePromptsModal",

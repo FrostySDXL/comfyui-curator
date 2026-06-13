@@ -1,24 +1,19 @@
-from pathlib import Path
-
-
-APP_JS = Path("static/js/app.js")
-APP_CSS = Path("static/css/app.css")
+from tests.unit.frontend_source import (
+    extract_function_body,
+    read_frontend_css,
+    read_frontend_js,
+)
 
 
 def test_batch_switch_renders_loading_thumbnail_placeholders():
     """Batch switches show thumb-shaped placeholders while image names load."""
 
-    source = APP_JS.read_text(encoding="utf-8")
-    styles = APP_CSS.read_text(encoding="utf-8")
+    source = read_frontend_js()
+    styles = read_frontend_css()
 
     assert "const MAX_GRID_LOADING_PLACEHOLDERS = 200;" in source
     assert "function showGridLoadingPlaceholders(batch, folder)" in source
     assert "thumb.className = 'thumb loading-placeholder';" in source
     assert "showGridLoadingPlaceholders(batch, 'inbox');" in source
-    assert (
-        "clearGrid();"
-        not in source.split("function selectBatch(batch)", 1)[1].split("function selectFolder", 1)[
-            0
-        ]
-    )
+    assert "clearGrid();" not in extract_function_body(source, "function selectBatch(batch)")
     assert ".thumb.loading-placeholder" in styles

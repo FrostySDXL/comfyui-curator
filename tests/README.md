@@ -49,7 +49,7 @@ Applied via `@pytest.mark.component`, `@pytest.mark.integration`, or `pytestmark
 
 ### Frontend Test Pattern (Special)
 
-The 6 `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tests** -- they read `static/js/app.js` as a string and assert on regex matches for function names, code patterns, or the absence of undefined references. There is no headless browser, DOM testing, or JS test framework. These tests catch regressions in function naming and structural invariants but do NOT test interactive behavior.
+The 6 `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tests** -- they read ordered split JS sources through `tests/unit/frontend_source.py` and assert on regex matches for function names, code patterns, or the absence of undefined references. There is no headless browser, DOM testing, or JS test framework. These tests catch regressions in function naming and structural invariants but do NOT test interactive behavior.
 
 ## Key Files & Responsibilities
 
@@ -73,7 +73,7 @@ The 6 `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping t
 | `tests/unit/test_scoring.py` | `ai_curate.scoring` -- `find_images`, `build_scoring_prompt`, `score_images` | `mock.patch` on VisionClient, cancel-check testing |
 | `tests/unit/test_storage.py` | `ai_curate.storage.RunStorage` -- save, load, list, latest, corrupt data, path traversal | `tmp_path`-based `tmp_batches` + `storage` fixtures |
 | `tests/unit/test_run_all_script.py` | `scripts/run_all.py` -- build checks, format display, parse args | `importlib.util` dynamic import |
-| `tests/unit/test_frontend_*.py` (6 files) | `static/js/app.js` -- source scanning for function names, invariants, undefined references | `Path.read_text()` + regex assertions |
+| `tests/unit/test_frontend_*.py` (6 files) | Ordered `static/js/*.js` sources -- source scanning for function names, invariants, undefined references | `tests/unit/frontend_source.py` helpers + regex assertions |
 | `tests/component/test_batch_api.py` | Flask route contracts: batches, images, move, delete-rejects, thumbnails | `client` fixture, PIL image generation |
 | `tests/component/test_ai_curate_worker.py` | `app._run_scoring_worker_inner` -- cancel timing (scoring vs move vs race) | Real `QueueManager` + `RunStorage`, patched `score_images` |
 | `tests/component/test_workflow_constraints.py` | AI workflow invariants: move-after-scoring, cancel-no-history, failed-never-move | `RunStorage` + `QueueManager` integration |
@@ -87,7 +87,7 @@ The 6 `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping t
 
 | Gap | Risk | Notes |
 |-----|------|-------|
-| No browser-level frontend tests | **Medium** | All 5 frontend tests are source-scraping. No DOM, interaction, or visual regression testing. |
+| No browser-level frontend tests | **Medium** | All 6 frontend tests are source-scraping. No DOM, interaction, or visual regression testing. |
 | No real AI client integration test | **Medium** | Worker is always patched/stubbed. No end-to-end test against even a mock LLM endpoint. |
 | No concurrent/multi-user stress tests | **Low** | QueueManager is single-threaded tested. Intended for single-user operation. |
 | No drag-and-drop tests | **Low** | UI has drag-to-move but it's untested. |
@@ -100,7 +100,7 @@ The 6 `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping t
 - Add new tests to the narrowest layer that proves the claim. Unit tests for pure logic, component for route contracts, integration for full workflows.
 - Use `tmp_path` for all filesystem isolation -- never hardcode paths.
 - When mocking, prefer `unittest.mock.patch` at the module level (e.g., `patch("ai_curate.scoring.VisionClient")`) over instance patching.
-- Frontend tests must regex-scan `app.js` -- do not convert them to a JS framework without explicit approval (the project intentionally avoids one).
+- Frontend tests must regex-scan the ordered split JS sources -- do not convert them to a JS framework without explicit approval (the project intentionally avoids one).
 - When adding a new verification surface, update `scripts/run_all.py`, `tests/unit/test_run_all_script.py`, and this README together.
 - For parametrized validation tests, follow `test_storage.py`'s `bad_batch` pattern (matrix of bad inputs x methods = many assertions in one test).
 

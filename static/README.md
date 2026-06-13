@@ -18,9 +18,9 @@
 
 ### Architecture
 
-- **Single-file vanilla JS** (`app.js`, ~3477 lines). No framework, no modules, no build step.
-- **Imperative, event-driven.** Global `let` variables for state. DOM manipulation is direct.
-- **Script loaded at bottom of `<body>`** in `index.html`. Initialization runs immediately (calls `loadBatches()`).
+- **Ordered vanilla JS files** under `static/js/`. No framework, ES modules, bundler, transpiler, or build step.
+- **Imperative, event-driven.** Classic scripts share top-level globals intentionally. DOM manipulation is direct.
+- **Scripts load at bottom of `<body>`** in `index.html` in deterministic order. Initialization lives in `bootstrap.js`.
 - **Split plain CSS files** under `static/css/`, loaded directly by `index.html` in deterministic order. No CSS framework, preprocessor, bundler, or build step.
 
 ### CSS File Map
@@ -39,7 +39,28 @@
 | `responsive.css` | `900px` responsive breakpoint rules; loads last |
 | `app.css` | Temporary full compatibility stylesheet for raw-text tests; not browser-loaded by `index.html` |
 
-### Global State Variables (app.js)
+### JavaScript File Map
+
+| File | Responsibility |
+|------|----------------|
+| `state.js` | Shared localStorage keys and cross-feature mutable state |
+| `dom-utils.js` | Text/format helpers, modal focus trap, clipboard helpers, toast helpers |
+| `api.js` | API wrapper helpers for route calls |
+| `sidebar.js` | Left sidebar width/open state and resize behavior |
+| `batches.js` | Batch list/search/sort, active-batch combobox, batch/folder selection, import/create batch |
+| `grid.js` | Thumbnail cache, image loading, sort controls, display filtering, grid rendering |
+| `favorites.js` | Favorites filter/toggle and All Favorites view/count |
+| `moves.js` | Multi-select, drag/drop, move, undo, Empty Rejects modal |
+| `lightbox.js` | Lightbox open/close, navigation, zoom, scored navigation, lightbox favorite UI |
+| `metadata.js` | PNG metadata loading/cache/rendering and prompt copy helpers |
+| `prompts.js` | Prompt History modal state, selector, rendering, build/rebuild controls |
+| `ai.js` | AI sidebar, optional elements, jobs, run history, overlays, score helpers |
+| `polling.js` | Interaction-aware background polling helpers |
+| `events.js` | Keyboard shortcuts, modal helpers, delegated browser event binding |
+| `bootstrap.js` | Startup initialization and poll interval registration |
+| `app.js` | Compatibility stub pointing to split files |
+
+### Global State Variables
 
 | Variable | Type | Purpose |
 |----------|------|---------|
@@ -154,10 +175,10 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 
 ## Agent Instructions
 
-- Start with `templates/index.html` to understand the DOM structure (IDs, CSS classes), then trace behavior in `app.js` by searching for those IDs.
+- Start with `templates/index.html` to understand the DOM structure (IDs, CSS classes), then trace behavior in the focused `static/js/*.js` file from the JavaScript File Map above.
 - Changes to styling go in the focused `static/css/*.css` file for the affected surface. Keep selector names stable unless all HTML/JS/test references are updated. The dark theme is fixed -- no light mode.
 - When adding a new API call, add it to the API Call Inventory table above.
-- The 6 `test_frontend_*.py` files in `tests/unit/` regex-scan `app.js` for function names and invariants. They are NOT browser tests. After JS changes, run them to avoid regressions on the invariants they check, but always also test manually in a browser.
+- The 6 `test_frontend_*.py` files in `tests/unit/` regex-scan the ordered split JS sources via `tests/unit/frontend_source.py` for function names and invariants. They are NOT browser tests. After JS changes, run them to avoid regressions on the invariants they check, but always also test manually in a browser.
 - `gridThumbMap` is the key optimization -- it preserves DOM elements across re-renders. `_gridChildrenMatchDesiredOrder()` avoids `replaceChildren()` when order is already correct.
 - Thumbnail blob URLs must be revoked on `beforeunload` to prevent memory leaks -- the `thumbnailBlobUrlCache` FIFO eviction and the `beforeunload` handler manage this.
 
