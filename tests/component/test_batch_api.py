@@ -73,6 +73,22 @@ def test_delete_rejects_removes_files(client, app_module, make_file):
 
 
 @pytest.mark.component
+def test_delete_rejects_removes_namespaced_thumbnail_cache(client, app_module, make_file):
+    app_module.create_batch("test-batch")
+    rejects_dir = app_module.BATCHES_DIR / "test-batch" / "rejects"
+    thumbs_dir = app_module.BATCHES_DIR / "test-batch" / ".thumbs"
+
+    make_file(rejects_dir / "bad1.png")
+    make_file(thumbs_dir / "rejects__bad1.webp")
+
+    response = client.post("/api/delete-rejects/test-batch")
+
+    assert response.status_code == 200
+    assert not (rejects_dir / "bad1.png").exists()
+    assert not (thumbs_dir / "rejects__bad1.webp").exists()
+
+
+@pytest.mark.component
 def test_delete_rejects_nonexistent_batch(client):
     response = client.post("/api/delete-rejects/no-such-batch")
     assert response.status_code == 404

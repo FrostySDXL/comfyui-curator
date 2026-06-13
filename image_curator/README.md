@@ -1,8 +1,8 @@
 # image_curator -- Guidance
 
-**One-sentence purpose:** Shared non-AI backend support for batch filesystem operations and ComfyUI PNG generation metadata extraction.
+**One-sentence purpose:** Shared non-AI backend support for batch filesystem operations, web validation, media cache helpers, watcher logic, and ComfyUI PNG generation metadata extraction.
 
-**Role in the Project:** Called by `app.py` (Flask) and `curate.py` (CLI) for all filesystem-bound operations (batch creation, file moves, counts, import, state persistence) and PNG metadata inspection. Contains no AI logic.
+**Role in the Project:** Called by `app.py` (Flask) and `curate.py` (CLI) for filesystem-bound operations (batch creation, file moves, counts, import, state persistence), PNG metadata inspection, non-AI web validation, thumbnail cache helpers, and the ComfyUI auto-import watcher. Contains no AI logic.
 
 ## What This Module Does
 
@@ -10,8 +10,11 @@
 - **PNG metadata extraction** (`png_metadata.py`): Reads ComfyUI/A1111 PNG text chunks with Pillow, parses generation parameters (prompt, seed, sampler, CFG, LoRAs, etc.).
 - **Favorites persistence** (`favorites.py`): Stores batch-scoped and universal favorite image records with atomic JSON writes.
 - **Prompt history indexing** (`prompt_history.py`): Builds manual prompt indexes from PNG metadata, deduplicated by normalized prompt/negative prompt.
+- **Web validation** (`web_validation.py`): Path traversal guard and existing-batch validation helpers used by Flask route wrappers.
+- **Auto-import watcher** (`watcher.py`): Dependency-injected polling watcher for moving new ComfyUI outputs into the active batch inbox.
+- **Media cache helpers** (`media.py`): Thumbnail cache path/freshness checks and WebP thumbnail generation.
 
-The two modules are independent -- neither imports the other.
+Modules are responsibility-scoped; keep AI-specific validation and worker orchestration in `ai_curate/`.
 
 ## Key Concepts
 
@@ -22,6 +25,9 @@ app.py ──> batch_store (nearly all functions: create, list, move, counts, im
        ──> png_metadata.extract_png_metadata (Flask route for metadata inspection)
        ──> favorites (favorite toggles, batch filter data, universal favorites)
        ──> prompt_history (manual prompt index build/load routes)
+       ──> web_validation (safe path and existing-batch route wrappers)
+       ──> media (thumbnail cache/generation helpers)
+       ──> watcher.ImageWatcher (auto-import polling via app dependency wrapper)
 
 curate.py ──> batch_store.move_image (single-file moves in --move mode)
 
@@ -37,7 +43,7 @@ Each batch is a directory under `BATCHES_DIR/<batch_name>/` containing four work
 - `rejects/` -- operator-rejected images
 
 Additional runtime directories (NOT managed by batch_store):
-- `.thumbs/` -- thumbnail cache (managed by `app.py`)
+- `.thumbs/` -- thumbnail cache (route lives in `app.py`; cache path/generation helpers live in `media.py`)
 - `ai-curate/` -- AI run history (managed by `ai_curate/storage.py`)
 - `.favorites.json` -- batch favorites; root-level `.favorites.json` stores universal favorites
 - `prompt-history.json` -- manual PNG prompt-history cache per batch
@@ -73,12 +79,17 @@ Written atomically via `.tmp` + `os.replace()`.
 | `png_metadata.py` | 153 | `extract_png_metadata(path)` -- opens PNG with Pillow, reads `image.text` dictionary, parses generation parameters. Top-level keys: `has_metadata`, `source`, `parameters` (nested dict with `prompt`, `negative_prompt`, `seed`, `steps`, `sampler`, `cfg_scale`, `width`/`height`, `model`, `model_hash`, `version`, `clip_skip`), `loras` (list of `{name, weight, hash}`), `raw_keys` (list of chunk key names), `raw_parameters`, `workflow_available`, `workflow_size`. Also exports `parse_parameters()` (public but currently unused externally). |
 | `favorites.py` | varies | `load_favorites`, `save_favorites`, `toggle_favorite`, `get_batch_favorite_filenames`, `resolve_universal_favorites`; uses `_validate_name`, `RLock`, and atomic `.tmp` replacement. |
 | `prompt_history.py` | varies | `build_prompt_index`, `load_prompt_index`, `load_all_prompt_indices`; scans PNG metadata, strips LoRA tags with `png_metadata.LORA_RE`, hashes normalized prompt pairs, and writes `prompt-history.json` atomically. |
+| `web_validation.py` | varies | `safe_path(base, *parts)` blocks traversal/absolute path escape; `require_existing_batch()` validates app-provided batch lists while preserving Flask route response shape. |
+| `watcher.py` | varies | Dependency-injected `ImageWatcher` with start/stop/reset, file-size stability wait, seen-file diff/rescan behavior, and app-level wrapper compatibility in `app.py`. |
+| `media.py` | varies | `thumbnail_cache_path()`, `thumbnail_is_fresh()`, and `generate_thumbnail()` for WebP thumbnail cache semantics. |
 
 ## Agent Instructions
 
 - For filesystem work (batch creation, moves, imports, counts): read `batch_store.py`.
+- For route path or existing-batch validation: read `web_validation.py` and the app-level wrappers in `app.py`.
+- For auto-import watcher behavior: read `watcher.py` and the app-level `ImageWatcher` wrapper in `app.py`.
+- For thumbnail cache/generation behavior: read `media.py` and the `serve_thumbnail` route in `app.py`.
 - For PNG metadata work (parameter extraction, LoRA parsing): read `png_metadata.py`.
-- The two modules are fully independent -- knowing one does not require reading the other.
 - `batch_store.get_images()` gracefully handles files deleted between `iterdir()` and `stat()` (catches `FileNotFoundError`/`OSError`).
 - `batch_store.get_batch_metadata()` computes `modified_at` from directory mtimes only (not file mtimes). Hidden directories (`.` prefix) like `.thumbs/` are excluded, but `ai-curate/` is NOT hidden and its mtime IS included in the result.
 
@@ -88,7 +99,7 @@ Written atomically via `.tmp` + `os.replace()`.
 - **LoRA hash is always `None`:** `_parse_loras()` hardcodes `"hash": None`. The field exists in the return schema but is never populated.
 - **Workflow JSON is size-only:** `extract_png_metadata` returns `workflow_available: bool` and `workflow_size: int` but not the workflow JSON content itself. Callers needing the full workflow must re-read the file.
 - **No delete operations in batch_store:** Reject cleanup (deleting files from `rejects/`) is handled directly in `app.py`, not via batch_store.
-- **Thumbnail cache is NOT in this module:** Thumbnail generation and caching live in `app.py`. `batch_store` only provides the image listing that thumbnails are built from.
+- **Thumbnail routes still live in `app.py`:** Thumbnail cache path/freshness/generation helpers live in `media.py`. `batch_store` only provides image listing and file moves.
 - **`get_batch_metadata` includes `ai-curate/` mtime:** The AI run-history directory's mtime contributes to batch `modified_at` for recent-first sorting, even though AI-curate is not a workflow folder.
 
 **Completion Standard:** For any task in this directory, include files changed, commands run (unit tests for the touched module), and verification that callers in `app.py` or `curate.py` are not broken.

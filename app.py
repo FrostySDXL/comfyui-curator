@@ -17,7 +17,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from flask import Flask, render_template, send_file, jsonify, request
-from PIL import Image
 from image_curator import batch_store
 from image_curator.favorites import (
     get_batch_favorite_filenames,
@@ -25,11 +24,14 @@ from image_curator.favorites import (
     toggle_favorite,
 )
 from image_curator.png_metadata import extract_png_metadata
+from image_curator.media import generate_thumbnail, thumbnail_cache_path, thumbnail_is_fresh
 from image_curator.prompt_history import (
     build_prompt_index,
     load_all_prompt_indices,
     load_prompt_index,
 )
+from image_curator.watcher import ImageWatcher as _ImageWatcher
+from image_curator.web_validation import require_existing_batch, safe_path
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +48,13 @@ from ai_curate.config import (
     ALLOWED_DEST_FOLDERS,
 )
 from ai_curate.elements import extract_elements, build_element_list
-from ai_curate.models import JobState, RunTotals
+from ai_curate.job_validation import validate_ai_curate_request
+from ai_curate.models import JobState
 from ai_curate.client import VisionClient
 from ai_curate.scoring import score_images, find_images
 from ai_curate.storage import RunStorage
 from ai_curate.queue import QueueManager
+from ai_curate.worker import run_scoring_worker_inner
 
 app = Flask(__name__)
 
@@ -148,94 +152,18 @@ def import_all_pending(batch_name):
     return count
 
 
-# Background watcher for auto-importing images
-class ImageWatcher:
-    def __init__(self):
-        self.running = False
-        self.thread = None
-        self._seen_lock = threading.Lock()
-        self.seen_files: set[str] = set()
-        # Initialize with existing files so we don't import old images on startup
-        if COMFYUI_OUTPUT.exists():
-            self.seen_files = {
-                f.name for f in COMFYUI_OUTPUT.iterdir() if f.suffix.lower() in IMAGE_EXTENSIONS
-            }
+class ImageWatcher(_ImageWatcher):
+    """Compatibility wrapper using app-level dependencies."""
 
-    def start(self):
-        if self.running:
-            return
-        self.running = True
-        self.thread = threading.Thread(target=self._watch_loop, daemon=True)
-        self.thread.start()
-
-    def stop(self):
-        """Signal the watcher to stop and wait for the current iteration."""
-        self.running = False
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=3)
-
-    def reset_seen(self):
-        """Clear the seen-files set after a manual import.
-
-        External callers (e.g. import_all_pending) must be able to
-        reset tracking without touching internal state directly.
-        """
-        with self._seen_lock:
-            self.seen_files = set()
-
-    def _watch_loop(self):
-        while self.running:
-            try:
-                self._check_for_new_images()
-            except Exception as e:
-                print(f"Watcher error: {e}")
-            time.sleep(POLL_INTERVAL)
-
-    def _check_for_new_images(self):
-        state = load_state()
-        active_batch = state.get("active_batch")
-
-        if not active_batch or not COMFYUI_OUTPUT.exists():
-            return
-
-        dest_inbox = get_batch_folder(active_batch, "inbox")
-        if not dest_inbox.exists():
-            return
-
-        current_files = {
-            f.name for f in COMFYUI_OUTPUT.iterdir() if f.suffix.lower() in IMAGE_EXTENSIONS
-        }
-        with self._seen_lock:
-            new_files = current_files - self.seen_files
-
-        for filename in new_files:
-            src = COMFYUI_OUTPUT / filename
-            if not src.exists():
-                continue
-            # Wait for file-size stability (file still being written)
-            for _ in range(10):
-                if not src.exists():
-                    break
-                size1 = src.stat().st_size
-                time.sleep(0.1)
-                if not src.exists():
-                    break
-                if src.stat().st_size == size1 and size1 > 0:
-                    break
-            if src.exists():
-                dst = dest_inbox / filename
-                if batch_store.move_image(src, dst):
-                    print(f"Auto-imported: {filename} -> {active_batch}/inbox")
-                else:
-                    print(f"Failed to move {filename}")
-
-        # Update seen files under lock
-        with self._seen_lock:
-            self.seen_files = (
-                {f.name for f in COMFYUI_OUTPUT.iterdir() if f.suffix.lower() in IMAGE_EXTENSIONS}
-                if COMFYUI_OUTPUT.exists()
-                else set()
-            )
+    def __init__(self) -> None:
+        super().__init__(
+            comfyui_output=lambda: COMFYUI_OUTPUT,
+            image_extensions=IMAGE_EXTENSIONS,
+            load_state=load_state,
+            get_batch_folder=get_batch_folder,
+            move_image=batch_store.move_image,
+            poll_interval=POLL_INTERVAL,
+        )
 
 
 watcher = ImageWatcher()
@@ -255,15 +183,7 @@ def _safe_path(base: Path, *parts: str) -> tuple[Path | None, str | None]:
 
     Returns (resolved_path, None) if safe, (None, error_message) if unsafe.
     """
-    try:
-        resolved = (base / Path(*parts)).resolve()
-    except (ValueError, OSError, TypeError):
-        return None, "Invalid path"
-    try:
-        resolved.relative_to(base.resolve())
-    except ValueError:
-        return None, "Invalid path"
-    return resolved, None
+    return safe_path(base, *parts)
 
 
 def _require_batch(batch_name: str) -> tuple[str | None, tuple | None]:
@@ -271,9 +191,7 @@ def _require_batch(batch_name: str) -> tuple[str | None, tuple | None]:
 
     Returns (batch_name, None) if valid, (None, (error_response, status_code)) if invalid.
     """
-    if not batch_name or batch_name not in get_batches():
-        return None, ({"error": "Batch does not exist"}, 404)
-    return batch_name, None
+    return require_existing_batch(batch_name, get_batches)
 
 
 @app.route("/api/batches", methods=["GET"])
@@ -461,7 +379,6 @@ def api_delete_rejects(batch):
 
     count = 0
     failed = 0
-    cache_dir = BATCHES_DIR / batch_name / ".thumbs"
     for f in rejects_dir.iterdir():
         if f.suffix.lower() in IMAGE_EXTENSIONS:
             try:
@@ -470,7 +387,7 @@ def api_delete_rejects(batch):
                 failed += 1
                 continue
             # Remove cached thumbnail too
-            cache_file = cache_dir / (f.stem + ".webp")
+            cache_file = thumbnail_cache_path(BATCHES_DIR, batch_name, "rejects", f.name)
             if cache_file.exists():
                 try:
                     cache_file.unlink()
@@ -571,23 +488,15 @@ def serve_thumbnail(batch, folder, filename):
     if not filepath.exists():
         return jsonify({"error": "File not found"}), 404
 
-    # Thumbnail caching: WebP at 200px for minimal storage (~5KB each)
-    # Per-batch cache so thumbs survive folder moves within a batch.
-    # Cache key includes the folder so the same stem in different folders
-    # of the same batch does not collide.
-    cache_dir = BATCHES_DIR / batch_name / ".thumbs"
-    cache_path = cache_dir / f"{folder}__{Path(filename).stem}.webp"
+    cache_path = thumbnail_cache_path(BATCHES_DIR, batch_name, folder, filename)
 
-    if cache_path.exists() and cache_path.stat().st_mtime >= filepath.stat().st_mtime:
+    if thumbnail_is_fresh(cache_path, filepath):
         resp = send_file(str(cache_path), mimetype="image/webp", max_age=3600)
         resp.headers["Cache-Control"] = "public, max-age=3600, immutable"
         return resp
 
     try:
-        with Image.open(filepath) as img:
-            img.thumbnail(THUMB_SIZE, Image.Resampling.LANCZOS)
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            img.save(str(cache_path), format="WEBP", quality=60)
+        generate_thumbnail(filepath, cache_path, THUMB_SIZE)
         resp = send_file(str(cache_path), mimetype="image/webp", max_age=3600)
         resp.headers["Cache-Control"] = "public, max-age=3600, immutable"
         return resp
@@ -712,76 +621,16 @@ def _validate_ai_curate_request(data):
     Returns (validated_params, error_response).
     If validation passes, error_response is None.
     """
-    batch = data.get("batch", "").strip()
-    if not batch:
-        return None, ({"error": "batch is required"}, 400)
-    if batch not in get_batches():
-        return None, ({"error": f"batch '{batch}' does not exist"}, 400)
-
-    prompt = data.get("prompt", "").strip()
-
-    source_folder = data.get("source_folder", "inbox")
-    if source_folder not in ALLOWED_SOURCE_FOLDERS:
-        return None, (
-            {"error": f"source_folder must be one of {sorted(ALLOWED_SOURCE_FOLDERS)}"},
-            400,
-        )
-
-    # Elements: required explicit list (auto-extraction removed from web UI)
-    elements = data.get("elements")
-    if not elements or not isinstance(elements, list) or not any(elements):
-        return None, ({"error": "elements is required (at least one element)"}, 400)
-    if len(elements) > ELEMENT_CAP:
-        return None, ({"error": f"too many elements (max {ELEMENT_CAP})"}, 400)
-    elements = [str(e).strip() for e in elements if str(e).strip()]
-    if not elements:
-        return None, ({"error": "elements must contain at least one non-empty entry"}, 400)
-
-    # Quality flags: optional list of QUALITY_CHECKS keys to append
-    quality_flags = data.get("quality_flags")
-    if quality_flags is not None and not isinstance(quality_flags, list):
-        return None, ({"error": "quality_flags must be a list of strings"}, 400)
-
-    # top_n validation
-    top_n = data.get("top_n", DEFAULT_TOP_N)
-    try:
-        top_n = int(top_n)
-    except (ValueError, TypeError):
-        return None, ({"error": "top_n must be an integer"}, 400)
-    if top_n < 1 or top_n > TOP_N_CAP:
-        return None, ({"error": f"top_n must be between 1 and {TOP_N_CAP}"}, 400)
-
-    # Move mode validation
-    move_enabled = bool(data.get("move_enabled", False))
-    destination_folder = data.get("destination_folder")
-    if move_enabled:
-        if not destination_folder or destination_folder not in ALLOWED_DEST_FOLDERS:
-            return None, (
-                {
-                    "error": f"destination_folder is required when move_enabled and must be one of {sorted(ALLOWED_DEST_FOLDERS)}"
-                },
-                400,
-            )
-
-    model = (data.get("model") or DEFAULT_MODEL or "").strip()
-    if not model:
-        return None, (
-            {"error": "model is required — set IMAGE_CURATOR_MODEL or pass model in request"},
-            400,
-        )
-
-    params = {
-        "batch": batch,
-        "prompt": prompt,
-        "source_folder": source_folder,
-        "elements": elements,
-        "quality_flags": quality_flags,
-        "top_n": top_n,
-        "move_enabled": move_enabled,
-        "destination_folder": destination_folder if move_enabled else None,
-        "model": model,
-    }
-    return params, None
+    return validate_ai_curate_request(
+        data,
+        get_batches=get_batches,
+        default_model=DEFAULT_MODEL,
+        default_top_n=DEFAULT_TOP_N,
+        top_n_cap=TOP_N_CAP,
+        element_cap=ELEMENT_CAP,
+        allowed_source_folders=ALLOWED_SOURCE_FOLDERS,
+        allowed_dest_folders=ALLOWED_DEST_FOLDERS,
+    )
 
 
 def _run_scoring_worker(run_id):
@@ -805,99 +654,18 @@ def _run_scoring_worker(run_id):
 
 def _run_scoring_worker_inner(run_id, run):
     """Core scoring logic, extracted so the outer handler can catch exceptions."""
-
-    # Determine elements (quality_flags come from web UI as named toggles)
-    elements = build_element_list(run.elements, run.quality_flags)
-
-    # Update run with resolved elements
-    run.elements = elements
-
-    # Find images
-    image_dir = get_batch_folder(run.batch, run.source_folder)
-    image_paths = find_images(image_dir)
-
-    if not image_paths:
-        _ai_queue.fail_job(run_id, error_message="No images found in source folder")
-        return
-
-    # Scoring phase with cancellation check
-    def cancel_check():
-        return _ai_queue.is_cancel_requested(run_id)
-
-    progress_counter = {"scored": 0, "failed": 0}
-
-    def on_progress(index, total, result):
-        if result.failed:
-            progress_counter["failed"] += 1
-        else:
-            progress_counter["scored"] += 1
-
-    results, total_images = score_images(
-        image_dir=image_dir,
-        elements=elements,
+    run_scoring_worker_inner(
+        run_id=run_id,
+        run=run,
+        queue=_ai_queue,
         client=_ai_client,
-        model=run.model,
-        progress_callback=on_progress,
-        cancel_check=cancel_check,
+        build_element_list_func=build_element_list,
+        get_batch_folder=get_batch_folder,
+        find_images_func=find_images,
+        score_images_func=score_images,
+        move_image_func=batch_store.move_image,
+        logger=logger,
     )
-
-    # Check if cancelled during scoring
-    if _ai_queue.is_cancel_requested(run_id):
-        _ai_queue.finalize_cancelled(run_id)
-        return
-
-    # If no results (all failed or empty), still complete
-    scored = [r for r in results if not r.failed]
-    failed = [r for r in results if r.failed]
-
-    # Move phase (only if move_enabled and scoring completed)
-    moved = 0
-    if run.move_enabled and run.destination_folder:
-        # Check if cancelled between scoring and move
-        if _ai_queue.is_cancel_requested(run_id):
-            _ai_queue.finalize_cancelled(run_id)
-            return
-
-        # Only move top-N non-failed images
-        scored.sort(key=lambda r: r.score, reverse=True)
-        top_results = scored[: run.top_n]
-
-        dest_dir = get_batch_folder(run.batch, run.destination_folder)
-        dest_dir.mkdir(parents=True, exist_ok=True)
-
-        for r in top_results:
-            if _ai_queue.is_cancel_requested(run_id):
-                break
-            src_path = image_dir / r.filename
-            dst_path = dest_dir / r.filename
-            if batch_store.move_image(src_path, dst_path):
-                r.moved_to = str(dst_path)
-                moved += 1
-            else:
-                logger.warning("AI curate move failed for %s", r.filename)
-
-    # Compute totals
-    totals = RunTotals(
-        images=total_images,
-        scored=len(scored),
-        failed=len(failed),
-        moved=moved,
-    )
-
-    # Check: was cancellation requested during the move loop?
-    # If files were already moved, persist partial results as cancelled
-    # so the operator has an audit trail of what was moved.
-    if _ai_queue.is_cancel_requested(run_id):
-        if moved > 0:
-            # Persist a cancelled run with partial move information
-            _ai_queue.finalize_cancelled(run_id, results=results, totals=totals)
-            return
-        _ai_queue.finalize_cancelled(run_id)
-        return
-
-    # Complete the job; if cancel raced with completion, finalize the cancel instead
-    if not _ai_queue.complete_job(run_id, results=results, totals=totals):
-        _ai_queue.finalize_cancelled(run_id)
 
 
 @app.route("/api/ai-curate/preview-elements", methods=["POST"])

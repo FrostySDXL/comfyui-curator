@@ -9,4 +9,6 @@ Provides reusable modules for:
 - Scoring orchestration (scoring)
 - Run history storage (storage)
 - Single-job queue management (queue)
+- Web job submission validation (job_validation)
+- Flask worker orchestration core (worker)
 """

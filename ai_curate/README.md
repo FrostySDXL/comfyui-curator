@@ -9,7 +9,7 @@
 - Extracts or accepts scoring elements from operator prompts.
 - Calls an OpenAI-compatible `/v1/chat/completions` endpoint with base64-encoded images.
 - Parses YES/NO responses into per-image scores and missing-element details.
-- Queues scoring jobs FIFO with a single-worker constraint, cancel support, and partial-move audit trails.
+- Validates web job submissions and queues scoring jobs FIFO with a single-worker constraint, cancel support, and partial-move audit trails.
 - Persists completed runs as JSON files under `<batch>/ai-curate/runs/` with a `latest.json` pointer.
 
 ## Key Concepts
@@ -17,20 +17,25 @@
 ### Pipeline Flow
 
 ```
-config.py ──(constants)──> models.py ──(types)──> elements.py ──(prompt parsing)
-                                                      │
-                           client.py ◄────────────────┘
-                              │
-                           scoring.py ──(enumeration + loop)
-                              │
-                    ┌─────────┴─────────┐
-               queue.py              storage.py
-            (job lifecycle)      (JSON persistence)
+config.py ──(constants)──> job_validation.py ──(web payload validation)
+     │
+     └──────> models.py ──(types)──> elements.py ──(prompt parsing)
+                                             │
+                          client.py ◄───────┘
+                             │
+                          scoring.py ──(enumeration + loop)
+                             │
+                    ┌────────┴────────┐
+                 worker.py          queue.py
+              (app orchestration) (job lifecycle)
+                    │                │
+                    └──── storage.py ┘
+                       (JSON persistence)
 ```
 
 - **config.py** is the dependency root -- most other modules import constants from it (`elements.py` is the exception; it uses only locally-defined quality checks).
 - **client.py** uses raw `urllib`, not `requests`, to avoid an external dependency.
-- **queue.py** is used only by `app.py` (Flask). `curate.py` calls `scoring.py` + `storage.py` directly.
+- **job_validation.py**, **queue.py**, and **worker.py** are used by `app.py` (Flask). `curate.py` calls `scoring.py` + `storage.py` directly.
 - **models.py** defines the serializable data types shared by all modules.
 
 ### Core Abstractions
@@ -68,11 +73,15 @@ config.py ──(constants)──> models.py ──(types)──> elements.py �
 | `scoring.py` | 119 | `find_images()` (enumerate by extension), `build_scoring_prompt()` (fill template), `score_images()` (main loop with cancel check and progress callback). |
 | `queue.py` | 371 | `QueueManager`: `submit`, `cancel`, `complete_job`, `fail_job`, `finalize_cancelled`, `prune`, `is_cancel_requested`, `_promote_next`. FIFO deque, single running job, thread-safe. |
 | `storage.py` | 199 | `RunStorage`: `save_run`, `load_run`, `list_runs`, `load_latest`. Atomic writes (`.tmp` + `os.replace`), thread-safe via `RLock`, path-traversal validation. |
+| `job_validation.py` | varies | `validate_ai_curate_request()` validates Flask AI job payloads with injected app dependencies and preserves API error shapes. |
+| `worker.py` | varies | `run_scoring_worker_inner()` orchestrates element expansion, image enumeration, scoring, cancellation, optional top-N moves, and queue completion with injected dependencies. |
 
 ## Agent Instructions
 
 - Start with `config.py` to understand what env vars drive behavior, then trace the pipeline forward.
 - When changing scoring logic: `elements.py` (what is checked) -> `client.py` (how the LLM is called) -> `scoring.py` (how results are collected).
+- When changing Flask AI job submission validation: `job_validation.py` plus the `_validate_ai_curate_request` wrapper in `app.py`.
+- When changing Flask AI worker orchestration: `worker.py` plus the `_run_scoring_worker_inner` wrapper in `app.py`.
 - When changing job lifecycle: `models.py` (state definitions) -> `queue.py` (state transitions) -> `storage.py` (persistence).
 - The `QUALITY_CHECKS` dict (keys: "anatomy", "artifacts") is separate from `QUALITY_ELEMENTS` tuple for backward compat -- `build_element_list` uses the dict path for web UI, the tuple for CLI legacy.
 - Cancelled runs are normally ephemeral (not persisted). The exception is partial-move audit trails (if files were moved before cancellation landed).

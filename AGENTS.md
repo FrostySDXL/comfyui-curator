@@ -31,10 +31,15 @@ app.py (Flask, 28 routes)
   ├── image_curator/png_metadata.py ← PNG text-chunk extraction (Pillow)
   ├── image_curator/favorites.py    ← batch + universal favorites JSON storage
   ├── image_curator/prompt_history.py ← manual PNG prompt index cache
+  ├── image_curator/web_validation.py ← route path/batch validation helpers
+  ├── image_curator/watcher.py      ← dependency-injected ComfyUI auto-import watcher
+  ├── image_curator/media.py        ← thumbnail cache/generation helpers
   ├── ai_curate/config.py           ← env-backed constants, paths, caps
   ├── ai_curate/elements.py         ← prompt parsing + element extraction + quality checklists
+  ├── ai_curate/job_validation.py   ← AI curation submit payload validation
   ├── ai_curate/client.py           ← VisionClient (raw urllib -> /v1/chat/completions)
   ├── ai_curate/scoring.py          ← image enumeration + scoring loop
+  ├── ai_curate/worker.py           ← scoring worker orchestration core
   ├── ai_curate/queue.py            ← FIFO single-worker job queue (threading)
   ├── ai_curate/storage.py          ← run history JSON persistence (atomic .tmp writes)
   └── ai_curate/models.py           ← JobState, ImageResult, CurationRun, RunTotals
@@ -60,13 +65,18 @@ Frontend (templates/index.html + static/js/app.js + static/css/app.css)
 | | `image_curator/png_metadata.py` | ComfyUI/A1111 PNG text-chunk extraction (prompt, seed, sampler, CFG, LoRAs, etc.) |
 | | `image_curator/favorites.py` | Batch/universal favorites storage, toggle helper, universal favorite resolution |
 | | `image_curator/prompt_history.py` | Manual prompt-history cache builder from PNG metadata |
+| | `image_curator/web_validation.py` | Path traversal and existing-batch validation helpers used by app route wrappers |
+| | `image_curator/watcher.py` | Dependency-injected ComfyUI output watcher used by app-level `ImageWatcher` wrapper |
+| | `image_curator/media.py` | Thumbnail cache key/freshness helpers and WebP generation |
 | | `image_curator/README.md` | Module-scoped agent startup guide (layout, contracts, gotchas) |
 | **AI Backend** | `ai_curate/config.py` | Env-backed constants: `BATCHES_DIR`, `COMFYUI_OUTPUT`, `DEFAULT_BASE_URL`, `DEFAULT_TOP_N` (15), `TOP_N_CAP` (100), `ELEMENT_CAP` (12) |
 | | `ai_curate/README.md` | Module-scoped agent startup guide (pipeline, internal contracts, gotchas) |
 | | `ai_curate/elements.py` | Prompt auto-extraction, explicit element building, quality baseline checks |
+| | `ai_curate/job_validation.py` | Web AI job payload validation with app-injected dependencies |
 | | `ai_curate/models.py` | `JobState` enum, `ImageResult` (per-image score), `CurationRun`, `RunTotals` |
 | | `ai_curate/client.py` | `VisionClient`: base64 encode + POST to `/v1/chat/completions` (raw urllib) |
 | | `ai_curate/scoring.py` | `find_images`, `build_scoring_prompt`, `score_images` loop |
+| | `ai_curate/worker.py` | AI scoring worker core for scoring, cancellation, optional top-N moves, and queue completion |
 | | `ai_curate/queue.py` | `QueueManager`: FIFO single-worker job queue with cancel support |
 | | `ai_curate/storage.py` | `RunStorage`: atomic JSON persistence for run history |
 | **Frontend** | `templates/index.html` | Single-page Flask template (Jinja2, server-injected model list) |

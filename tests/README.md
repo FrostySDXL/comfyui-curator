@@ -56,7 +56,7 @@ The 6 `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping t
 | File | Subject Under Test | Key Patterns |
 |------|-------------------|--------------|
 | `tests/conftest.py` | Shared fixtures | `app_module`, `client`, `make_file`, `sample_image_names` |
-| `tests/unit/test_app_helpers.py` | `app.py` -- `load_state`, `save_state`, `create_batch`, `get_images`, `_safe_path`, `_validate_ai_curate_request`, `ImageWatcher` | `app_module` fixture, `tmp_path`, 13 `_validate_ai_curate_*` tests |
+| `tests/unit/test_app_helpers.py` | `app.py` -- `load_state`, `save_state`, `create_batch`, `get_images`, compatibility wrappers for `_safe_path`, `_validate_ai_curate_request`, `ImageWatcher` | `app_module` fixture, `tmp_path`, app-level wrapper/monkeypatch seam coverage |
 | `tests/unit/test_batch_store.py` | `image_curator.batch_store` -- all public functions, 9 `_validate_name` tests | `tmp_path`, `monkeypatch` on `shutil.move` and `Path.stat` |
 | `tests/unit/test_client.py` | `ai_curate.client` -- `VisionClient`, `build_score_payload`, `parse_score_response` | `unittest.mock.patch` on `urllib.request.urlopen`, MagicMock |
 | `tests/unit/test_config.py` | `ai_curate.config` -- all constants and defaults | `importlib.reload` for env-dependent values |
@@ -66,7 +66,10 @@ The 6 `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping t
 | `tests/unit/test_png_metadata.py` | `image_curator.png_metadata` -- parsing, missing metadata, malformed input | `PIL.Image.new` + `PngInfo` for test PNGs |
 | `tests/unit/test_favorites.py` | `image_curator.favorites` -- batch/universal favorite load/save/toggle/resolve | `tmp_path`, real files, JSON shape checks |
 | `tests/unit/test_prompt_history.py` | `image_curator.prompt_history` -- normalization, hash, PNG prompt index build/cache | `tmp_path`, `PIL.Image.new` + `PngInfo` |
-| `tests/unit/test_queue.py` | `ai_curate.queue.QueueManager` -- 11 test classes, 30+ tests | `MagicMock` storage, custom `qm` fixture |
+| `tests/unit/test_web_validation.py` | `image_curator.web_validation` -- path traversal blocking and existing-batch validation | `tmp_path`, pure helper assertions |
+| `tests/unit/test_media.py` | `image_curator.media` -- thumbnail cache names, freshness checks, WebP generation | `tmp_path`, `PIL.Image.new` |
+| `tests/unit/test_ai_job_validation.py` | `ai_curate.job_validation` -- AI submit payload validation and defaulting | Pure helper assertions with injected batch/model constants |
+| `tests/unit/test_queue.py` | `ai_curate.queue.QueueManager` -- 11 test classes, 30+ tests plus app worker interface coverage | `MagicMock` storage, custom `qm` fixture |
 | `tests/unit/test_scoring.py` | `ai_curate.scoring` -- `find_images`, `build_scoring_prompt`, `score_images` | `mock.patch` on VisionClient, cancel-check testing |
 | `tests/unit/test_storage.py` | `ai_curate.storage.RunStorage` -- save, load, list, latest, corrupt data, path traversal | `tmp_path`-based `tmp_batches` + `storage` fixtures |
 | `tests/unit/test_run_all_script.py` | `scripts/run_all.py` -- build checks, format display, parse args | `importlib.util` dynamic import |

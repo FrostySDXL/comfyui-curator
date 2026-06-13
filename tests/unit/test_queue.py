@@ -27,6 +27,23 @@ def _make_job(batch="test-batch", prompt="test prompt", **kwargs):
     return job
 
 
+def test_queue_manager_exposes_app_worker_interface():
+    """QueueManager keeps the methods consumed by app.py and ai_curate.worker."""
+    required_methods = {
+        "fail_job",
+        "is_cancel_requested",
+        "finalize_cancelled",
+        "complete_job",
+        "submit",
+        "list_jobs",
+        "cancel",
+        "get_job",
+    }
+
+    for method_name in required_methods:
+        assert callable(getattr(QueueManager, method_name))
+
+
 class TestQueueManagerSubmit:
     def test_first_job_runs_immediately(self, qm):
         """First submitted job goes to running state."""
