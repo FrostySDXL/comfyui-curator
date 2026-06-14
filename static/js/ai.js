@@ -1,7 +1,6 @@
 /* Ordered classic script.
  * Defines: AI sidebar state, optional elements, jobs, run history, overlays, score helpers.
  */
-        let aiPanelOpen = true;
         let aiSidebarOpen = true;
         let aiCurrentJobId = null;
         let aiPollTimer = null;
@@ -9,7 +8,8 @@
         let aiLatestRun = null;  // The latest completed run for comparison
         let aiRunIds = [];
         let aiRunDetails = {};
-        let aiCompareRunId = 'latest';
+        let aiCompareRunId = 'previous';
+        let aiActivePanelTab = 'inspect';
         let aiShowOverlays = false;
         let aiFilterMode = 'all';
         let aiInspectedImageName = null;
@@ -17,7 +17,6 @@
         let aiBatchRunCountsLoaded = false;  // true after first successful load
         const AI_SIDEBAR_WIDTH_KEY = 'imageCurator.aiSidebarWidth';
         const AI_SIDEBAR_OPEN_KEY = 'imageCurator.aiSidebarOpen';
-        const AI_PANEL_OPEN_KEY = 'imageCurator.aiPanelOpen';
         const AI_SIDEBAR_WIDTH_DEFAULT = 360;
         const AI_SIDEBAR_WIDTH_MIN = 280;
         const AI_SIDEBAR_WIDTH_MAX = 560;
@@ -43,25 +42,18 @@ function initializeAiSidebarState() {
 
             const sidebarOpenRaw = localStorage.getItem(AI_SIDEBAR_OPEN_KEY);
             aiSidebarOpen = sidebarOpenRaw === null ? true : sidebarOpenRaw === 'true';
-            const panelOpenRaw = localStorage.getItem(AI_PANEL_OPEN_KEY);
-            aiPanelOpen = panelOpenRaw === null ? true : panelOpenRaw === 'true';
             syncAiSidebarUi(false);
+            aiSetPanelTab(aiActivePanelTab);
         }
 
 function syncAiSidebarUi(persist = true) {
             const shell = document.getElementById('ai-sidebar-shell');
-            const panel = document.getElementById('ai-curate-panel');
-            const toggle = document.getElementById('ai-curate-toggle');
-            const body = document.getElementById('ai-curate-body');
             const headerBtn = document.getElementById('ai-sidebar-toggle-btn');
             if (shell) {
                 shell.classList.remove('hidden');
                 shell.style.display = currentBatch ? 'flex' : 'none';
                 shell.classList.toggle('collapsed', !aiSidebarOpen);
             }
-            if (panel) panel.classList.toggle('collapsed', !aiPanelOpen);
-            if (body) body.style.display = aiPanelOpen ? 'block' : 'none';
-            if (toggle) toggle.textContent = aiPanelOpen ? '−' : '+';
             if (headerBtn) {
                 if (currentBatch) {
                     headerBtn.classList.remove('hidden');
@@ -72,13 +64,7 @@ function syncAiSidebarUi(persist = true) {
             }
             if (persist) {
                 localStorage.setItem(AI_SIDEBAR_OPEN_KEY, String(aiSidebarOpen));
-                localStorage.setItem(AI_PANEL_OPEN_KEY, String(aiPanelOpen));
             }
-        }
-
-function toggleAiCuratePanel() {
-            aiPanelOpen = !aiPanelOpen;
-            syncAiSidebarUi();
         }
 
 function toggleAiSidebar() {
@@ -134,6 +120,18 @@ function showAiCuratePanel() {
             aiRefreshRunData().catch(() => {});
             aiLoadElementHistory();
             aiPopulateOptionalElements();
+        }
+
+function aiSetPanelTab(tabName) {
+            aiActivePanelTab = ['inspect', 'score', 'runs'].includes(tabName) ? tabName : 'inspect';
+            document.querySelectorAll('.ai-panel-tab').forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.aiTab === aiActivePanelTab);
+            });
+            document.querySelectorAll('.ai-panel-section').forEach(section => {
+                section.style.display = section.dataset.aiPanelSection === aiActivePanelTab ? '' : 'none';
+            });
+            const reviewSection = document.getElementById('ai-review-section');
+            if (reviewSection) reviewSection.style.display = aiActivePanelTab === 'inspect' ? '' : 'none';
         }
 
 function toggleAiOptionalSection() {
@@ -307,10 +305,11 @@ function aiPopulateRunSelect(selectId, options, selectedValue, placeholder) {
 function aiSyncCompareSelect() {
             const compareSelect = document.getElementById('ai-compare-run-select');
             if (!compareSelect || aiRunIds.length === 0) return;
+            const previousId = aiGetPreviousRunId();
             const compareOptions = [
                 {
-                    value: 'latest',
-                    label: aiLatestRun ? `Latest completed · ${formatAiRunLabel(aiLatestRun)}` : 'Latest completed run',
+                    value: 'previous',
+                    label: previousId ? `Previous completed · ${formatAiRunLabel(aiRunDetails[previousId] || {run_id: previousId})}` : 'Need another run to compare',
                 },
                 ...aiRunIds
                     .filter(id => id !== aiActiveRun?.run_id)
@@ -319,11 +318,18 @@ function aiSyncCompareSelect() {
                         label: formatAiRunLabel(aiRunDetails[id] || {run_id: id}),
                     }))
             ];
-            const desiredValue = aiCompareRunId === 'latest' || compareOptions.some(option => option.value === aiCompareRunId)
+            const desiredValue = aiCompareRunId === 'previous' || compareOptions.some(option => option.value === aiCompareRunId)
                 ? aiCompareRunId
-                : 'latest';
+                : 'previous';
             aiCompareRunId = desiredValue;
             aiPopulateRunSelect('ai-compare-run-select', compareOptions, desiredValue, null);
+        }
+
+function aiGetPreviousRunId() {
+            if (!aiActiveRun || aiRunIds.length < 2) return null;
+            const activeIndex = aiRunIds.indexOf(aiActiveRun.run_id);
+            if (activeIndex > 0) return aiRunIds[activeIndex - 1];
+            return aiRunIds.find(id => id !== aiActiveRun.run_id) || null;
         }
 
 function aiUpdateRunHistoryUi() {
@@ -379,7 +385,7 @@ async function aiRefreshRunData(existingRuns = null) {
                     aiRunDetails = {};
                     aiLatestRun = null;
                     aiActiveRun = null;
-                    aiCompareRunId = 'latest';
+                    aiCompareRunId = 'previous';
                     await aiRenderCurrentRunUi();
                 }
             } catch { console.warn('aiRefreshRunData failed'); }
@@ -392,7 +398,7 @@ function resetAiBatchState(refreshGrid = true) {
             aiLatestRun = null;
             aiRunIds = [];
             aiRunDetails = {};
-            aiCompareRunId = 'latest';
+            aiCompareRunId = 'previous';
             aiInspectedImageName = null;
             aiShowHeaderControls(false);
             document.getElementById('ai-run-summary').style.display = 'none';
@@ -401,7 +407,7 @@ function resetAiBatchState(refreshGrid = true) {
             const runSelect = document.getElementById('ai-run-select');
             if (runSelect) runSelect.value = '';
             const compareSelect = document.getElementById('ai-compare-run-select');
-            if (compareSelect) compareSelect.value = 'latest';
+            if (compareSelect) compareSelect.value = 'previous';
             if (refreshGrid) updateGrid();
         }
 
@@ -519,22 +525,16 @@ function aiShowJobStatus(job) {
             const stateEl = document.getElementById('ai-job-state');
             const progressEl = document.getElementById('ai-job-progress');
             const cancelBtn = document.getElementById('ai-cancel-btn');
+            const statusDot = document.getElementById('ai-status-dot');
 
             section.style.display = 'block';
+            section.classList.remove('hidden');
             stateEl.textContent = job.status;
             stateEl.className = 'ai-job-state ' + job.status;
+            if (statusDot) statusDot.className = `ai-status-dot ${job.status}`;
 
-            // Show progress bar for running jobs
-            if (job.status === 'running' && job.results) {
-                const scored = job.results.filter(r => !r.failed).length;
-                const failed = job.results.filter(r => r.failed).length;
-                const total = job.totals?.images || 0;
-                const done = scored + failed;
-                const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-                progressEl.innerHTML = `<div class="ai-progress-bar"><div class="ai-progress-fill" style="width:${pct}%"></div></div><span class="ai-progress-text">${done}/${total}</span>`;
-            } else {
-                progressEl.innerHTML = '';
-            }
+            const isActive = job.status === 'running' || job.status === 'queued' || job.status === 'cancelling';
+            progressEl.textContent = isActive ? 'Scoring in progress' : '';
 
             // Show cancel button for queued or running jobs
             cancelBtn.style.display = (job.status === 'queued' || job.status === 'running') ? 'inline-block' : 'none';
@@ -554,6 +554,7 @@ function aiShowJobStatus(job) {
                 aiStopPolling();
                 aiRefreshRunData().catch(() => { console.warn('aiRefreshRunData failed'); });
             }
+            aiSetPanelTab(aiActivePanelTab);
         }
 
 function aiStartPolling() {
@@ -668,6 +669,7 @@ function aiGetInspectedImage() {
 function aiSetInspectedImage(img) {
             aiInspectedImageName = img ? img.name : null;
             aiRenderImageInspector(img || null);
+            if (typeof renderLightboxAiPanel === 'function') renderLightboxAiPanel();
             document.querySelectorAll('#grid .thumb').forEach(thumb => {
                 thumb.classList.toggle('inspected', !!aiInspectedImageName && thumb.dataset.name === aiInspectedImageName);
             });
@@ -676,9 +678,88 @@ function aiSetInspectedImage(img) {
 function aiRenderImageInspector(img = null) {
             const inspector = document.getElementById('ai-image-inspector');
             if (!inspector) return;
+            if (selectedImages.size > 1) {
+                if (!document.getElementById('lightbox')?.classList.contains('active')) {
+                    aiRenderSelectionInspector();
+                    return;
+                }
+            }
             const target = img || aiGetInspectedImage();
             inspector.replaceChildren();
             inspector.className = 'ai-image-inspector';
+            aiAppendImageInspectorContent(inspector, target);
+        }
+
+function aiRenderSelectionInspector() {
+            const inspector = document.getElementById('ai-image-inspector');
+            if (!inspector) return;
+            inspector.replaceChildren();
+            inspector.className = 'ai-image-inspector ai-selection-summary';
+
+            const selected = images.filter(img => selectedImages.has(img.name));
+            inspector.appendChild(createTextElement('div', 'ai-inspector-title', `${selected.length} selected`));
+
+            if (!aiActiveRun) {
+                inspector.appendChild(createTextElement('div', 'ai-inspector-empty-detail', 'No AI run selected for this batch.'));
+                return;
+            }
+
+            const scored = [];
+            let failed = 0;
+            let unscored = 0;
+            const missingCounts = new Map();
+            selected.forEach(img => {
+                const result = aiGetImageScore(img.name);
+                if (!result) {
+                    unscored += 1;
+                    return;
+                }
+                if (result.failed) {
+                    failed += 1;
+                    return;
+                }
+                scored.push(result);
+                if (aiActiveRun.elements && result.details) {
+                    for (const [key, value] of Object.entries(result.details)) {
+                        if (value === 'YES') continue;
+                        const idx = parseInt(key, 10);
+                        const element = aiActiveRun.elements[idx - 1] || `#${idx}`;
+                        missingCounts.set(element, (missingCounts.get(element) || 0) + 1);
+                    }
+                }
+            });
+
+            const avg = scored.length > 0
+                ? (scored.reduce((sum, result) => sum + result.score, 0) / scored.length).toFixed(1)
+                : '—';
+            const stats = document.createElement('div');
+            stats.className = 'ai-selection-stats';
+            [['Scored', scored.length], ['Failed', failed], ['Unscored', unscored], ['Avg', avg]].forEach(([label, value]) => {
+                const stat = document.createElement('div');
+                stat.className = 'ai-selection-stat';
+                stat.append(createTextElement('div', 'ai-stat-label', label), createTextElement('div', 'ai-stat-value', String(value)));
+                stats.appendChild(stat);
+            });
+            inspector.appendChild(stats);
+
+            const common = [...missingCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+            inspector.appendChild(createTextElement('div', 'ai-inspector-empty-title', 'Common missing'));
+            const details = document.createElement('div');
+            details.className = 'ai-inspector-details';
+            if (common.length === 0) {
+                details.appendChild(createTextElement('div', 'ai-inspector-empty-detail', 'No shared missing elements among scored selected images.'));
+            } else {
+                common.forEach(([element, count]) => {
+                    const chip = document.createElement('div');
+                    chip.className = 'ai-inspector-detail missing';
+                    chip.textContent = `${count} × ${element}`;
+                    details.appendChild(chip);
+                });
+            }
+            inspector.appendChild(details);
+        }
+
+function aiAppendImageInspectorContent(inspector, target) {
 
             if (!currentBatch) {
                 inspector.classList.add('ai-image-inspector-empty');
@@ -762,8 +843,8 @@ async function aiLoadRun(runId) {
         }
 
 async function aiSetCompareRun(runId) {
-            aiCompareRunId = runId || 'latest';
-            if (aiCompareRunId !== 'latest' && !aiRunDetails[aiCompareRunId]) {
+            aiCompareRunId = runId || 'previous';
+            if (aiCompareRunId !== 'previous' && !aiRunDetails[aiCompareRunId]) {
                 await aiFetchRun(aiCompareRunId);
             }
             await aiShowRunDiff(aiActiveRun);
@@ -776,9 +857,12 @@ async function aiShowRunDiff(run) {
                 diffEl.style.display = 'none';
                 return;
             }
-            const compareRun = aiCompareRunId === 'latest' ? aiLatestRun : aiRunDetails[aiCompareRunId] || await aiFetchRun(aiCompareRunId);
+            const previousId = aiGetPreviousRunId();
+            const compareRun = aiCompareRunId === 'previous'
+                ? (previousId ? aiRunDetails[previousId] || await aiFetchRun(previousId) : null)
+                : aiRunDetails[aiCompareRunId] || await aiFetchRun(aiCompareRunId);
             if (!compareRun || run.run_id === compareRun.run_id) {
-                diffEl.innerHTML = `<div class="ai-diff-empty">Select a different run to compare against.</div>`;
+                diffEl.innerHTML = `<div class="ai-diff-empty">Need another run to compare.</div>`;
                 diffEl.style.display = 'block';
                 aiSyncCompareSelect();
                 return;
@@ -812,8 +896,8 @@ async function aiShowRunDiff(run) {
 
             diffEl.innerHTML = `
                 <div class="ai-diff-header">
-                    <div class="ai-diff-title">Comparing ${_escapeHtml(formatAiRunTimestamp(run))}</div>
-                    <div class="ai-diff-subtitle">against ${_escapeHtml(formatAiRunLabel(compareRun))}</div>
+                    <div class="ai-diff-title">Delta from baseline</div>
+                    <div class="ai-diff-subtitle">${_escapeHtml(formatAiRunTimestamp(run))} vs ${_escapeHtml(formatAiRunLabel(compareRun))}</div>
                 </div>
                 <div class="ai-diff-grid">
                     <div class="ai-diff-card"><div class="ai-stat-label">Scores changed</div><div class="ai-stat-value">${scoreChanged}</div></div>

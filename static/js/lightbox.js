@@ -4,6 +4,7 @@
  */
 let lightboxZoom = 1;
 let lightboxImageToken = 0;
+let lightboxAiOpen = false;
 
 function openLightbox(index) {
             currentIndex = index;
@@ -16,7 +17,9 @@ function closeLightbox() {
             document.getElementById('lightbox').classList.remove('active');
             resetLightboxZoom();
             lightboxMetadataOpen = false;
+            lightboxAiOpen = false;
             renderLightboxMetadataPanel();
+            renderLightboxAiPanel();
         }
 
 function applyLightboxZoom() {
@@ -116,6 +119,38 @@ function showCurrentImage() {
                 el.src = newSrc;
             }
             loadLightboxMetadata(img, metadataToken);
+            renderLightboxAiPanel();
+        }
+
+function toggleLightboxAiPanel() {
+            lightboxAiOpen = !lightboxAiOpen;
+            renderLightboxAiPanel();
+        }
+
+function renderLightboxAiPanel() {
+            const panel = document.getElementById('lightbox-ai-panel');
+            const btn = document.getElementById('lightbox-ai-toggle-btn');
+            if (!panel) return;
+            panel.classList.toggle('open', lightboxAiOpen);
+            if (btn) btn.textContent = lightboxAiOpen ? 'Hide AI' : 'AI';
+            panel.replaceChildren();
+            if (!lightboxAiOpen) return;
+            const img = images[currentIndex];
+            const header = document.createElement('div');
+            header.className = 'metadata-header';
+            const titleWrap = document.createElement('div');
+            titleWrap.appendChild(createTextElement('div', 'metadata-title', 'AI Review'));
+            titleWrap.appendChild(createTextElement('div', 'metadata-subtitle', 'Lightbox image score details'));
+            header.appendChild(titleWrap);
+            panel.appendChild(header);
+            const body = document.createElement('div');
+            body.className = 'ai-image-inspector';
+            if (typeof aiAppendImageInspectorContent === 'function') {
+                aiAppendImageInspectorContent(body, img || null);
+            } else {
+                body.appendChild(createTextElement('div', 'ai-inspector-empty-detail', 'AI inspector is unavailable.'));
+            }
+            panel.appendChild(body);
         }
 
 function updateLightboxInfo(img, w, h) {

@@ -116,6 +116,24 @@
             color: #b8c2cc;
         }
         .lightbox-metadata-panel.open { display: block; }
+        .lightbox-ai-panel {
+            display: none;
+            position: fixed;
+            top: 78px;
+            right: 20px;
+            width: min(420px, calc(100vw - 40px));
+            max-height: calc(100vh - 180px);
+            overflow: auto;
+            padding: 14px;
+            border-radius: 12px;
+            background: rgba(18, 22, 26, 0.94);
+            border: 1px solid rgba(91, 163, 245, 0.22);
+            box-shadow: 0 18px 48px rgba(0,0,0,0.45);
+            backdrop-filter: blur(10px);
+            z-index: 1001;
+            color: #b8c2cc;
+        }
+        .lightbox-ai-panel.open { display: block; }
         .metadata-header {
             display: flex;
             align-items: flex-start;

@@ -13,7 +13,7 @@
             border-left: none;
         }
         .ai-sidebar-resizer {
-            width: 8px;
+            width: 4px;
             cursor: col-resize;
             background: #161616;
             border-right: 1px solid #262626;
@@ -41,21 +41,14 @@
             align-items: center;
             gap: 8px;
             padding: 14px 16px;
-            cursor: pointer;
             user-select: none;
             border-bottom: 1px solid #2a2a2a;
         }
-        .ai-curate-header:hover { background: #222; }
         .ai-curate-header h3 {
             font-size: 13px;
             font-weight: 600;
             color: #ccc;
             margin: 0;
-        }
-        .ai-curate-toggle {
-            font-size: 16px;
-            color: #666;
-            margin-left: auto;
         }
         .ai-curate-advisory {
             font-size: 10px;
@@ -68,9 +61,28 @@
             flex: 1;
             overflow-y: auto;
         }
-        .ai-curate-panel.collapsed .ai-curate-body {
-            display: none;
+        .ai-panel-tabs {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 4px;
+            margin-bottom: 12px;
+            padding: 3px;
+            border: 1px solid #2b2b2b;
+            border-radius: 8px;
+            background: #181818;
         }
+        .ai-panel-tab {
+            padding: 7px 8px;
+            border: 0;
+            border-radius: 6px;
+            background: transparent;
+            color: #777;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .ai-panel-tab:hover { color: #ddd; background: #222; }
+        .ai-panel-tab.active { color: #fff; background: #0066cc; }
         .ai-curate-form {
             display: flex;
             flex-direction: column;
@@ -143,6 +155,20 @@
             display: flex;
             flex-direction: column;
             gap: 5px;
+        }
+        .ai-selection-summary {
+            gap: 10px;
+        }
+        .ai-selection-stats {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 7px;
+        }
+        .ai-selection-stat {
+            padding: 8px;
+            border: 1px solid #2d2d2d;
+            border-radius: 7px;
+            background: #1c1c1c;
         }
         .ai-inspector-detail {
             padding: 6px 8px;
@@ -382,29 +408,25 @@
         .ai-job-state.cancelled { color: #888; }
         .ai-job-state.failed { color: #dc3545; }
         .ai-job-progress {
-            display: flex;
-            align-items: center;
-            gap: 6px;
             flex: 1;
-        }
-        .ai-progress-bar {
-            flex: 1;
-            height: 6px;
-            background: #333;
-            border-radius: 3px;
-            overflow: hidden;
-        }
-        .ai-progress-fill {
-            height: 100%;
-            background: #0066cc;
-            border-radius: 3px;
-            transition: width 0.3s ease;
-        }
-        .ai-progress-text {
-            font-size: 11px;
             color: #888;
-            white-space: nowrap;
+            font-size: 11px;
         }
+        .ai-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: #555;
+            flex-shrink: 0;
+        }
+        .ai-status-dot.running,
+        .ai-status-dot.queued,
+        .ai-status-dot.cancelling {
+            background: #5ba3f5;
+            box-shadow: 0 0 0 4px rgba(91,163,245,0.12);
+        }
+        .ai-status-dot.completed { background: #28a745; }
+        .ai-status-dot.failed { background: #dc3545; }
         .ai-history-section {
             margin-top: 10px;
         }

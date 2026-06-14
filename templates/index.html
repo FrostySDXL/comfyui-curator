@@ -138,22 +138,26 @@
             <div class="ai-sidebar-shell hidden" id="ai-sidebar-shell">
                 <div class="ai-sidebar-resizer" id="ai-sidebar-resizer"></div>
                 <aside class="ai-curate-panel" id="ai-curate-panel">
-                    <div class="ai-curate-header" role="button" tabindex="0">
+                    <div class="ai-curate-header">
                         <div>
                             <h3>AI Curate</h3>
                             <div class="ai-curate-advisory">Scores are advisory</div>
                         </div>
-                        <span class="ai-curate-toggle" id="ai-curate-toggle">−</span>
                     </div>
                     <div class="ai-curate-body" id="ai-curate-body">
+                        <div class="ai-panel-tabs" role="tablist" aria-label="AI Curate sections">
+                            <button class="ai-panel-tab active" id="ai-panel-tab-inspect" data-ai-tab="inspect" type="button">Inspect</button>
+                            <button class="ai-panel-tab" id="ai-panel-tab-score" data-ai-tab="score" type="button">Score</button>
+                            <button class="ai-panel-tab" id="ai-panel-tab-runs" data-ai-tab="runs" type="button">Runs</button>
+                        </div>
                         <div class="ai-review-section" id="ai-review-section">
-                            <div class="ai-section-heading">Review inspector</div>
+                            <div class="ai-section-heading">AI Review</div>
                             <div id="ai-image-inspector" class="ai-image-inspector ai-image-inspector-empty">
                                 Select an image to inspect AI score details.
                             </div>
                         </div>
 
-                        <div class="ai-curate-form">
+                        <div class="ai-curate-form ai-panel-section" data-ai-panel-section="score">
                             <label class="ai-label" for="ai-elements">Elements</label>
                             <textarea id="ai-elements" class="ai-textarea" rows="3" placeholder="One element per line, e.g.:&#10;blushing&#10;blonde hair&#10;black dress"></textarea>
 
@@ -224,8 +228,9 @@
                             <button class="ai-btn ai-btn-primary" id="ai-submit-btn">Score only</button>
                         </div>
 
-                        <div class="ai-job-section hidden" id="ai-job-section">
+                        <div class="ai-job-section hidden ai-panel-section" id="ai-job-section" data-ai-panel-section="score">
                             <div class="ai-job-status">
+                                <span class="ai-status-dot" id="ai-status-dot" aria-hidden="true"></span>
                                 <span class="ai-job-label">Job status:</span>
                                 <span class="ai-job-state" id="ai-job-state">--</span>
                                 <span class="ai-job-progress" id="ai-job-progress"></span>
@@ -233,7 +238,7 @@
                             <button class="ai-btn ai-btn-danger hidden" id="ai-cancel-btn">Cancel</button>
                         </div>
 
-                        <div class="ai-history-section hidden" id="ai-history-section">
+                        <div class="ai-history-section hidden ai-panel-section" id="ai-history-section" data-ai-panel-section="runs">
                             <div class="ai-history-controls">
                                 <div class="ai-form-field">
                                     <label class="ai-label" for="ai-run-select">View run</label>
@@ -242,9 +247,9 @@
                                     </select>
                                 </div>
                                 <div class="ai-form-field">
-                                    <label class="ai-label" for="ai-compare-run-select">Compare against</label>
+                                    <label class="ai-label" for="ai-compare-run-select">Baseline</label>
                                     <select id="ai-compare-run-select" class="ai-select">
-                                        <option value="latest">Latest completed run</option>
+                                        <option value="previous">Previous completed run</option>
                                     </select>
                                 </div>
                             </div>
@@ -272,6 +277,7 @@
         <span class="lightbox-close" role="button" aria-label="Close lightbox" tabindex="0">&times;</span>
         <span class="lightbox-info" id="lightbox-info"></span>
         <aside class="lightbox-metadata-panel" id="lightbox-metadata-panel" aria-live="polite"></aside>
+        <aside class="lightbox-ai-panel" id="lightbox-ai-panel" aria-live="polite"></aside>
         <span class="lightbox-nav prev" role="button" aria-label="Previous image" tabindex="0">&#8249;</span>
         <div class="lightbox-image-wrap" id="lightbox-image-wrap">
             <img id="lightbox-img" src="">
@@ -284,6 +290,7 @@
             <div><button class="btn btn-secondary">Zoom +</button><div class="key-hint">+</div></div>
             <div><button class="btn btn-secondary">Next scored</button><div class="key-hint">]</div></div>
             <div><button class="btn btn-secondary" id="metadata-toggle-btn" disabled>Metadata</button><div class="key-hint">M</div></div>
+            <div><button class="btn btn-secondary" id="lightbox-ai-toggle-btn">AI</button><div class="key-hint">I</div></div>
             <div><button class="btn btn-shortlist">Shortlisted</button><div class="key-hint">S</div></div>
             <div><button class="btn btn-finals">Finals</button><div class="key-hint">F</div></div>
             <div><button class="btn btn-reject">Reject</button><div class="key-hint">R</div></div>

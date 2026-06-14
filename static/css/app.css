@@ -1433,23 +1433,12 @@
             gap: 6px;
             flex: 1;
         }
-        .ai-progress-bar {
-            flex: 1;
-            height: 6px;
-            background: #333;
-            border-radius: 3px;
-            overflow: hidden;
-        }
-        .ai-progress-fill {
-            height: 100%;
-            background: #0066cc;
-            border-radius: 3px;
-            transition: width 0.3s ease;
-        }
-        .ai-progress-text {
-            font-size: 11px;
-            color: #888;
-            white-space: nowrap;
+        .ai-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: #555;
+            flex-shrink: 0;
         }
         .ai-history-section {
             margin-top: 10px;

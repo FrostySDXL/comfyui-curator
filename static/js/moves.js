@@ -26,6 +26,7 @@ function toggleSelect(index, event) {
             lastSelectIndex = index;
             updateSelectionVisuals();
             updateActionBar();
+            if (typeof aiRenderImageInspector === 'function') aiRenderImageInspector();
         }
 
 function clearSelection() {
@@ -33,6 +34,7 @@ function clearSelection() {
             lastSelectIndex = -1;
             updateSelectionVisuals();
             updateActionBar();
+            if (typeof aiRenderImageInspector === 'function') aiRenderImageInspector();
         }
 
 function selectAllDisplayedImages() {
@@ -43,6 +45,7 @@ function selectAllDisplayedImages() {
             lastSelectIndex = images.length - 1;
             updateSelectionVisuals();
             updateActionBar();
+            if (typeof aiRenderImageInspector === 'function') aiRenderImageInspector();
         }
 
 function updateSelectionVisuals() {

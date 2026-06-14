@@ -15,7 +15,10 @@ def test_ai_sidebar_contains_contextual_image_inspector() -> None:
     assert 'class="ai-review-section"' in html
     assert 'id="ai-image-inspector"' in html
     assert 'class="ai-image-inspector ai-image-inspector-empty"' in html
-    assert "Review inspector" in html
+    assert "AI Review" in html
+    assert 'id="ai-panel-tab-inspect"' in html
+    assert 'id="ai-panel-tab-score"' in html
+    assert 'id="ai-panel-tab-runs"' in html
     assert ".ai-review-section" in css
     assert ".ai-image-inspector" in css
     assert ".ai-image-inspector-empty" in css
@@ -28,6 +31,9 @@ def test_ai_inspector_renders_score_details_without_api_calls() -> None:
     assert "let aiInspectedImageName = null;" in js
     assert "function aiSetInspectedImage(img)" in js
     assert "function aiRenderImageInspector(img = null)" in js
+    assert "function aiRenderSelectionInspector()" in js
+    assert "if (selectedImages.size > 1)" in js
+    assert "Common missing" in js
     assert "const result = aiGetImageScore(target.name);" in js
     assert "detailChip.className = `ai-inspector-detail ${matched ? 'matched' : 'missing'}`;" in js
     assert "detailChip.textContent = `${matched ? 'YES' : 'NO'} · ${element}`;" in js
@@ -35,6 +41,7 @@ def test_ai_inspector_renders_score_details_without_api_calls() -> None:
     assert ".ai-inspector-score" in css
     assert ".ai-inspector-detail.matched" in css
     assert ".ai-inspector-detail.missing" in css
+    assert ".ai-selection-summary" in css
 
 
 def test_grid_and_lightbox_update_ai_inspected_image() -> None:
@@ -50,7 +57,7 @@ def test_grid_and_lightbox_update_ai_inspected_image() -> None:
         in js
     )
     assert ".thumb.inspected" in css
-    assert ".thumb.inspected::before" in css
+    assert ".thumb.inspected::before" not in css
 
 
 def test_ai_run_changes_refresh_inspector_context() -> None:
@@ -59,3 +66,40 @@ def test_ai_run_changes_refresh_inspector_context() -> None:
     assert "aiRenderImageInspector();" in js
     assert "aiInspectedImageName = null;" in js
     assert "function aiGetInspectedImage()" in js
+
+
+def test_lightbox_has_visible_ai_inspector_opposite_metadata_panel() -> None:
+    html = read_index_html()
+    js = read_frontend_js()
+    css = read_frontend_css()
+
+    assert 'id="lightbox-ai-panel"' in html
+    assert 'id="lightbox-ai-toggle-btn"' in html
+    assert "function toggleLightboxAiPanel()" in js
+    assert "function renderLightboxAiPanel()" in js
+    assert "lightboxAiOpen" in js
+    assert "case 'i': e.preventDefault(); toggleLightboxAiPanel(); break;" in js
+    assert ".lightbox-ai-panel" in css
+    assert "right: 20px;" in css
+    assert ".lightbox-metadata-panel" in css
+    assert "left: 20px;" in css
+
+
+def test_ai_sidebar_removes_internal_whole_panel_collapse() -> None:
+    html = read_index_html()
+    js = read_frontend_js()
+
+    assert 'id="ai-curate-toggle"' not in html
+    assert "function toggleAiCuratePanel()" not in js
+    assert "AI_PANEL_OPEN_KEY" not in js
+
+
+def test_ai_job_status_uses_running_indicator_not_progress_bar() -> None:
+    js = read_frontend_js()
+    css = read_frontend_css()
+
+    assert "ai-progress-bar" not in js
+    assert "ai-progress-fill" not in js
+    assert "Scoring in progress" in js
+    assert ".ai-status-dot" in css
+    assert ".ai-progress-bar" not in css

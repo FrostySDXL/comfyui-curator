@@ -9,6 +9,9 @@
             .ai-sidebar-resizer {
                 display: none;
             }
+            .content {
+                padding-right: 18px;
+            }
             .action-bar {
                 left: var(--sidebar-effective-width);
             }
@@ -47,5 +50,10 @@
             }
             .metadata-grid {
                 grid-template-columns: 1fr;
+            }
+            .lightbox-ai-panel {
+                right: 10px;
+                left: 10px;
+                width: auto;
             }
         }

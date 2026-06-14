@@ -5,7 +5,7 @@
             min-height: 0;
             overflow: hidden;
         }
-        .content { flex: 1; padding: 14px 18px 18px; overflow-y: auto; min-width: 0; background: #181818; }
+        .content { flex: 1; padding: 14px 10px 18px 18px; overflow-y: auto; min-width: 0; background: #181818; }
         .grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, 180px);
@@ -65,15 +65,6 @@
         }
         .thumb.inspected {
             box-shadow: 0 0 0 1px rgba(91,163,245,0.32), 0 5px 16px rgba(0,0,0,0.32);
-        }
-        .thumb.inspected::before {
-            content: '';
-            position: absolute;
-            inset: 5px;
-            border: 1px dashed rgba(91,163,245,0.7);
-            border-radius: 5px;
-            pointer-events: none;
-            z-index: 4;
         }
         .thumb.loading-placeholder {
             cursor: default;

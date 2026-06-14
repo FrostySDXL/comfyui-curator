@@ -222,6 +222,7 @@ function closeModalOnBackdropClick(event, hideFn) {
                 case '[': e.preventDefault(); navigateScored(-1); break;
                 case ']': e.preventDefault(); navigateScored(1); break;
                 case 'm': e.preventDefault(); toggleLightboxMetadata(); break;
+                case 'i': e.preventDefault(); toggleLightboxAiPanel(); break;
                 case '+':
                 case '=': e.preventDefault(); zoomLightbox(0.2); break;
                 case '-': e.preventDefault(); zoomLightbox(-0.2); break;
@@ -450,14 +451,9 @@ function _bindDelegatedEvents() {
                 aiResizer.addEventListener('pointerdown', startAiSidebarResize);
             }
 
-            // AI curate header collapse toggle
-            const aiCurateHeader = document.querySelector('.ai-curate-header');
-            if (aiCurateHeader) {
-                aiCurateHeader.addEventListener('click', toggleAiCuratePanel);
-                aiCurateHeader.addEventListener('keydown', function(e) {
-                    if (e.key === 'Enter' || e.key === ' ') toggleAiCuratePanel();
-                });
-            }
+            document.querySelectorAll('.ai-panel-tab').forEach(tab => {
+                tab.addEventListener('click', function() { aiSetPanelTab(this.dataset.aiTab); });
+            });
 
             // AI overlay toggle
             const aiOverlayToggle = document.getElementById('ai-overlay-toggle');
@@ -563,6 +559,7 @@ function _bindDelegatedEvents() {
                     else if (btn.classList.contains('btn-finals')) moveImage('finals');
                     else if (btn.classList.contains('btn-reject')) moveImage('rejects');
                     else if (btn.id === 'metadata-toggle-btn') toggleLightboxMetadata();
+                    else if (btn.id === 'lightbox-ai-toggle-btn') toggleLightboxAiPanel();
                 });
                 // Map button text to handlers for generic buttons
                 lightboxActions.querySelectorAll('button').forEach(btn => {
