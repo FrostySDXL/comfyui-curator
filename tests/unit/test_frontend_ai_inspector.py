@@ -122,3 +122,16 @@ def test_ai_job_status_uses_running_indicator_not_progress_bar() -> None:
     assert "Scoring in progress" in js
     assert ".ai-status-dot" in css
     assert ".ai-progress-bar" not in css
+
+
+def test_ai_score_form_resists_narrow_panel_overflow() -> None:
+    css = read_frontend_css()
+
+    assert ".ai-curate-body" in css
+    assert "overflow-x: hidden;" in css
+    assert ".ai-form-row" in css
+    assert "flex-wrap: wrap;" in css
+    assert "flex: 1 1 96px;" in css
+    assert "min-width: 0;" in css
+    assert "#ai-top-n" in css
+    assert "#ai-model" in css

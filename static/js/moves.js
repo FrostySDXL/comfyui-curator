@@ -66,12 +66,14 @@ function updateActionBar() {
             if (selectedImages.size > 0) {
                 bar.classList.add('visible');
                 grid.classList.add('selecting');
+                document.body.classList.add('has-active-selection');
                 document.getElementById('action-count').textContent = selectedImages.size + ' selected';
                 bar.querySelectorAll('.action-btn[data-dest]').forEach(b =>
                     b.style.display = currentBatch === '__favorites__' || b.dataset.dest === currentFolder ? 'none' : '');
             } else {
                 bar.classList.remove('visible');
                 grid.classList.remove('selecting');
+                document.body.classList.remove('has-active-selection');
             }
         }
 

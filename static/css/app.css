@@ -1690,3 +1690,20 @@
                 grid-template-columns: 1fr;
             }
         }
+
+        /* Compatibility mirror for split CSS layout fixes. */
+        .ai-curate-body { overflow-x: hidden; }
+        body.has-active-selection .ai-curate-body { padding-bottom: 92px; }
+        .ai-form-row { flex-wrap: wrap; }
+        .ai-form-field { flex: 1 1 96px; min-width: 0; }
+        .ai-select, .ai-input, #ai-model { min-width: 0; }
+        #ai-top-n { padding-right: 4px; }
+        .sidebar-library-header { align-items: flex-start; flex-wrap: wrap; }
+        .sidebar-title-group { flex: 1 1 78px; min-width: 0; }
+        .sidebar-title-group h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .batch-sort-group { max-width: 100%; }
+        .grid { justify-content: center; }
+        .grid.is-empty { display: flex; min-height: 100%; justify-content: stretch; }
+        .grid.is-empty .empty { flex: 1; width: 100%; min-height: min(420px, calc(100vh - 220px)); }
+        .lightbox-nav { top: auto; bottom: 86px; transform: none; z-index: 1002; }
+        .workspace-select-all-btn { height: 28px; background: transparent; color: #666; font-weight: 600; }

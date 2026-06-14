@@ -60,6 +60,10 @@
             padding: 14px 16px 18px;
             flex: 1;
             overflow-y: auto;
+            overflow-x: hidden;
+        }
+        body.has-active-selection .ai-curate-body {
+            padding-bottom: 92px;
         }
         .ai-panel-tabs {
             display: grid;
@@ -266,6 +270,7 @@
         }
         .ai-select {
             width: 100%;
+            min-width: 0;
             padding: 6px 8px;
             background: #2a2a2a;
             border: 1px solid #333;
@@ -279,6 +284,7 @@
         }
         .ai-input {
             width: 100%;
+            min-width: 0;
             padding: 6px 8px;
             background: #2a2a2a;
             border: 1px solid #333;
@@ -297,11 +303,15 @@
         }
         .ai-form-row {
             display: flex;
+            flex-wrap: wrap;
             gap: 10px;
         }
         .ai-form-field {
-            flex: 1;
+            flex: 1 1 96px;
+            min-width: 0;
         }
+        #ai-top-n { padding-right: 4px; }
+        #ai-model { min-width: 0; }
         .ai-toggle-field {
             display: flex;
             align-items: center;

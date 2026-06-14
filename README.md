@@ -22,8 +22,8 @@ before manual selection. Single-user, local-first, filesystem-backed.
   the active batch inbox. One-click manual import also available.
 - **AI-assisted scoring (optional)** -- sends images to a local vision LLM
   to check for prompt elements and quality baselines. The AI sidebar includes a
-  contextual image inspector for the selected/open image. Scores are advisory;
-  manual curation is authoritative.
+  contextual image inspector plus Inspect / Score / Runs tabs. Scores are
+  advisory; manual curation is authoritative.
 - **Run history and comparison** -- scored runs are saved per-batch.
   Compare two runs to see which images gained or lost points.
 - **CLI scoring** -- `python curate.py --batch my-batch --prompt "a cat"`
@@ -131,6 +131,7 @@ baseline checks for anatomy and artifacts are appended automatically.
 | `←` `→` | Previous / next image |
 | `[` `]` | Previous / next scored image |
 | `M` | Toggle PNG metadata panel |
+| `I` | Toggle lightbox AI review panel |
 | `S` | Move to shortlisted |
 | `F` | Move to finals |
 | `Shift+F` | Toggle favorite for current image |
@@ -142,7 +143,7 @@ baseline checks for anatomy and artifacts are appended automatically.
 
 ## UI behavior
 
-- AI sidebar width, open state, and panel collapse persist across sessions.
+- AI sidebar width and open state persist across sessions.
 - Batch sidebar open state persists across sessions.
 - Thumbnail density mode persists across sessions.
 - The workspace toolbar keeps folder tabs, sorting, favorites, density, and
@@ -151,8 +152,9 @@ baseline checks for anatomy and artifacts are appended automatically.
   pinned All Favorites collection.
 - AI badges and score filtering reset when switching to a batch with no
   active run.
-- The AI review inspector follows clicked thumbnails and lightbox navigation,
-  showing active-run score details when available.
+- The AI review inspector shows selected-image details, multi-select summaries,
+  and active-run score evidence when available; the lightbox has its own AI
+  review panel.
 - Favorite toggles update both the current batch and the universal favorites
   list; the All Favorites sidebar count refreshes during batch polling.
 - The All Favorites view is virtual: thumbnails show batch labels and

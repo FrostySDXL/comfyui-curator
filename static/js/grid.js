@@ -313,10 +313,12 @@ function updateGrid() {
             const displayImages = getDisplayImages();
 
             if (images.length === 0 || displayImages.length === 0) {
+                grid.classList.add('is-empty');
                 grid.replaceChildren(createGridEmptyState(getGridEmptyStateMessage()));
                 gridThumbMap.clear();
                 return;
             }
+            grid.classList.remove('is-empty');
 
             const activeNames = new Set(displayImages.map(img => img.name));
             for (const [name, element] of gridThumbMap.entries()) {

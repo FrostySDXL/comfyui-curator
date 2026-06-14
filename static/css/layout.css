@@ -209,13 +209,15 @@
         }
 
         .workspace-select-all-btn {
-            padding: 5px 9px;
+            height: 28px;
+            padding: 5px 10px;
             border: 1px solid #333;
-            background: #202020;
-            color: #888;
+            background: transparent;
+            color: #666;
             border-radius: 4px;
             font-size: 11px;
             font-family: inherit;
+            font-weight: 600;
             cursor: pointer;
             white-space: nowrap;
             transition: all 0.15s;

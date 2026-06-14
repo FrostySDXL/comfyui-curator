@@ -48,6 +48,11 @@
             .ai-diff-list {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
+            .lightbox-nav {
+                bottom: 96px;
+                padding: 12px;
+                font-size: 38px;
+            }
             .metadata-grid {
                 grid-template-columns: 1fr;
             }

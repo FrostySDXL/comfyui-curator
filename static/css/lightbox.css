@@ -66,9 +66,10 @@
             backdrop-filter: blur(8px);
         }
         .lightbox-nav {
-            position: fixed; top: 50%; transform: translateY(-50%);
+            position: fixed; top: auto; bottom: 86px; transform: none;
             font-size: 48px; color: #fff; cursor: pointer;
             padding: 20px; user-select: none;
+            z-index: 1002;
         }
         .lightbox-nav:hover { color: #0066cc; }
         .lightbox-nav.prev { left: 20px; }

@@ -19,7 +19,7 @@
 - **Lightbox viewer:** Full-image review with zoom, PNG generation metadata inspection (`M` toggle), scored-image navigation (`[`/`]`), keyboard folder moves (`S`/`F`/`R`).
 - **Favorites workflow:** One-click favorites update batch and universal scope, with a favorites-only filter and virtual All Favorites sidebar view.
 - **Prompt history:** Manual PNG metadata prompt indexes with searchable/copyable Prompt History modal and staleness warning.
-- **AI-assisted scoring:** Vision-LLM evaluation against element checklists via OpenAI-compatible `/v1/chat/completions`. Optional auto-move of top-N images. Run history with comparison and a contextual image inspector in the AI sidebar.
+- **AI-assisted scoring:** Vision-LLM evaluation against element checklists via OpenAI-compatible `/v1/chat/completions`. Optional auto-move of top-N images. The AI sidebar has Inspect / Score / Runs tabs, run comparison, and contextual image inspection.
 - **CLI headless scoring:** Same pipeline available via `curate.py` (dry-run, score-only, or score-and-move).
 - **Core philosophy:** Manual curation is authoritative. AI is advisory. Filesystem is the operational truth.
 
@@ -177,12 +177,13 @@ Treat these as stability-sensitive:
 - Undo must work for both drag moves and lightbox keyboard moves while the undo toast is active
 - Thumbnail updates should prefer incremental DOM updates over full grid rebuilds when possible
 - Density classes (`density-compact`, `density-comfortable`, `density-large`) should keep thumbnail sizing stable when sidebars open/close
-- The AI sidebar open state, collapsed state, and width persist in local storage
+- The AI sidebar open state and width persist in local storage
 - The batch sidebar open state persists in local storage
 - Batch-search shortcuts should reopen the batch sidebar before focusing the search input
 - The Help modal should reflect current shortcuts and major workflow notes
 - AI history should support comparing the selected run against another run from the same batch
 - Lightbox supports zoom and scored-image navigation shortcuts
+- Lightbox supports a separate AI review panel toggled with `I`
 - Lightbox metadata supports the `M` toggle and should keep full prompt/negative prompt inspection available without disrupting image review
 
 ### API or backend change

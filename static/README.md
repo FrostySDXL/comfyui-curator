@@ -10,9 +10,9 @@
 - **Keyboard-first navigation:** 15+ shortcuts for search, selection, AI toggles, lightbox, undo.
 - **Drag/drop curation:** HTML5 drag from grid to folder tabs for single or multi-select moves.
 - **Lightbox viewer:** Full-image review with zoom, scored-image navigation, PNG metadata inspection.
-- **AI score integration:** Overlay badges, score gradient coloring, filter/sort by score, contextual image inspector, job submission/status/history UI.
+- **AI score integration:** Overlay badges, score gradient coloring, filter/sort by score, Inspect / Score / Runs sidebar tabs, contextual image inspector, job submission/status/history UI.
 - **Background polling:** 5-second interval for batches, images, and AI runs, with interaction-aware skip logic.
-- **Local storage persistence:** Sidebar widths, open states, last batch/folder, AI panel collapse.
+- **Local storage persistence:** Sidebar widths, open states, last batch/folder, grid density, and batch sort.
 
 ## Key Concepts
 
@@ -88,10 +88,10 @@
 | `aiFilterMode` | `string` | 'all' \| 'scored' \| 'failed' \| 'top-n' |
 | `aiInspectedImageName` | `string\|null` | Image currently shown in the AI review inspector |
 | `aiSidebarOpen` | `boolean` | AI sidebar visibility |
-| `aiPanelOpen` | `boolean` | AI panel collapse state within sidebar |
+| `aiActivePanelTab` | `string` | Active AI sidebar tab (`inspect`, `score`, or `runs`) |
 | `currentSort` | `string` | 'date' \| 'name' \| 'shuffle' \| 'score-desc' |
 | `folderRequestToken` | `number` | Incrementing token to discard stale fetch responses |
-| `batchSort` | `string` | 'alpha' \| 'count' \| 'recent' for batch list |
+| `batchSort` | `string` | 'alpha' \| 'count' \| 'recent' \| 'ai' for batch list |
 | `batchFilterQuery` | `string` | Debounced filter for batch search |
 | `favoritesFilterOn` | `boolean` | Whether the grid shows only favorite images |
 | `promptsData` | `object\|null` | Current Prompt History modal payload |
@@ -110,8 +110,8 @@
 | **Drag/Drop** | `onDragStart`, `onDragOver`, `onDrop`, `moveBatch` | `.thumb`, `.folder-tab` |
 | **Multi-Select** | `toggleSelect`, `clearSelection`, `updateActionBar` | `#action-bar`, `.thumb-select` |
 | **Undo** | `recordLastAction`, `showToast`, `undoLastMove` | `#toast` |
-| **Lightbox** | `openLightbox`, `closeLightbox`, `navigate`, `navigateScored`, `zoomLightbox`, `toggleLightboxMetadata`, `loadLightboxMetadata` | `#lightbox` |
-| **AI Sidebar** | `toggleAiSidebar`, `toggleAiCuratePanel`, `syncAiSidebarUi`, `aiSubmitJob`, `aiPollJobStatus`, `aiRefreshRunData`, `aiLoadElementHistory`, `aiRenderImageInspector` | `#ai-sidebar-shell`, `#ai-curate-panel`, `#ai-image-inspector` |
+| **Lightbox** | `openLightbox`, `closeLightbox`, `navigate`, `navigateScored`, `zoomLightbox`, `toggleLightboxMetadata`, `toggleLightboxAiPanel`, `loadLightboxMetadata` | `#lightbox` |
+| **AI Sidebar** | `toggleAiSidebar`, `syncAiSidebarUi`, `aiSetPanelTab`, `aiSubmitJob`, `aiPollJobStatus`, `aiRefreshRunData`, `aiLoadElementHistory`, `aiRenderImageInspector` | `#ai-sidebar-shell`, `#ai-curate-panel`, `#ai-image-inspector` |
 | **AI Grid Overlay** | `aiToggleOverlays`, `aiScoreGradient`, `aiShouldShowImage`, `aiSortImages`, `aiShowHeaderControls` | `.ai-score-badge`, `#ai-display-controls` |
 | **Polling** | `pollForChanges` (5s interval), `isInteractionBusy`, `aiPollJobStatus` (2s interval) | `setInterval` |
 | **Batch Search** | `setBatchFilter`, `filterBatches`, `clearBatchSearch` | `#batch-search` |
@@ -162,7 +162,6 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 | `imageCurator.gridDensity` | Thumbnail density mode (`compact`, `comfortable`, `large`) |
 | `imageCurator.aiSidebarWidth` | AI sidebar width (px) |
 | `imageCurator.aiSidebarOpen` | AI sidebar visibility ('true'/'false') |
-| `imageCurator.aiPanelOpen` | AI panel collapse state ('true'/'false') |
 
 ## Constraints & Hard Rules
 
@@ -192,6 +191,10 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **`_gridChildrenMatchDesiredOrder()` optimization:** The grid is only rebuilt if the order of thumb elements actually changed. Removing this check causes visible flicker on every poll cycle.
 - **Score gradient is hardcoded:** `aiScoreGradient()` uses a fixed dark-red-to-dark-yellow-to-green gradient. There is no configuration for color thresholds.
 - **AI inspector is frontend-only:** `aiRenderImageInspector()` reads the active run already loaded in `aiActiveRun`; do not add per-image API calls for inspector refresh unless the run-history contract changes.
+- **AI sidebar tabs are presentation state:** `aiActivePanelTab` switches Inspect / Score / Runs without changing backend state. Keep hidden run/job sections owned by `aiSetPanelTab()`.
+- **Selection overlay clearance:** `body.has-active-selection` adds bottom scroll clearance to the AI sidebar so long Inspect content is not covered by the fixed action bar.
+- **Empty grid centering:** `grid.is-empty` switches the grid to a stable empty-state layout so density classes and sidebar widths do not move the placeholder around.
+- **Lightbox arrows sit low:** `.lightbox-nav` is positioned near the lower left/right so the metadata and AI panels do not cover navigation controls.
 - **CSS variables for layout only, not theming:** `--sidebar-width`, `--sidebar-effective-width`, `--ai-sidebar-width`, `--lightbox-zoom`. All colors are hardcoded.
 - **Single responsive breakpoint at 900px:** Rules live in `responsive.css`, which must load last. Below this, sidebars shrink, AI sidebar moves below grid, resizers hide.
 - **`__favorites__` is a virtual batch sentinel:** Do not call real batch APIs with it. Use per-image `img.batch` and `img.folder` for image src, lightbox metadata, and lightbox moves.

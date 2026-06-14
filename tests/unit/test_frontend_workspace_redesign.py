@@ -43,6 +43,10 @@ def test_grid_empty_states_distinguish_filters_and_empty_folders() -> None:
     assert "No favorite images in this view" in js
     assert "No images match the active AI filter" in js
     assert "No images in this folder" in js
+    assert "grid.classList.add('is-empty');" in js
+    assert "grid.classList.remove('is-empty');" in js
+    assert ".grid.is-empty" in css
+    assert ".grid.is-empty .empty" in css
     assert ".empty-title" in css
     assert ".empty-detail" in css
 
@@ -92,12 +96,12 @@ def test_grid_density_uses_fixed_columns_to_avoid_sidebar_snap() -> None:
     assert "grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));" not in css
 
 
-def test_grid_padding_is_symmetric_unless_ai_sidebar_open() -> None:
+def test_grid_padding_stays_symmetric_with_or_without_ai_sidebar() -> None:
     js = read_frontend_js()
     css = read_frontend_css()
 
     assert ".content { flex: 1; padding: 14px 18px 18px;" in css
-    assert "body.ai-sidebar-open .content" in css
+    assert "body.ai-sidebar-open .content { padding-right: 10px; }" not in css
     assert "document.body.classList.toggle('ai-sidebar-open', currentBatch && aiSidebarOpen);" in js
 
 
@@ -143,3 +147,34 @@ def test_workspace_select_all_button_selects_displayed_images() -> None:
     assert "updateActionBar();" in js
     assert "selectAllBtn.addEventListener('click', selectAllDisplayedImages);" in js
     assert ".workspace-select-all-btn" in css
+
+
+def test_action_bar_selection_adds_scroll_clearance_to_ai_panel() -> None:
+    js = read_frontend_js()
+    css = read_frontend_css()
+
+    assert "document.body.classList.add('has-active-selection');" in js
+    assert "document.body.classList.remove('has-active-selection');" in js
+    assert "body.has-active-selection .ai-curate-body" in css
+    assert "padding-bottom: 92px;" in css
+
+
+def test_lightbox_navigation_sits_below_metadata_panels() -> None:
+    css = read_frontend_css()
+
+    assert ".lightbox-nav" in css
+    assert "top: auto;" in css
+    assert "bottom: 86px;" in css
+    assert "transform: none;" in css
+    assert ".lightbox-nav.prev { left: 20px; }" in css
+    assert ".lightbox-nav.next { right: 20px; }" in css
+
+
+def test_select_all_matches_compact_toolbar_button_style() -> None:
+    css = read_frontend_css()
+
+    assert ".workspace-select-all-btn" in css
+    assert "height: 28px;" in css
+    assert "background: transparent;" in css
+    assert "color: #666;" in css
+    assert "font-weight: 600;" in css

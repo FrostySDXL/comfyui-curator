@@ -62,3 +62,17 @@ def test_sidebar_microcopy_stays_single_line_when_narrow() -> None:
     assert ".sidebar-subtitle" in css
     assert "white-space: nowrap;" in css
     assert "text-overflow: ellipsis;" in css
+
+
+def test_batch_library_header_wraps_before_overlapping_sort_buttons() -> None:
+    css = read_frontend_css()
+
+    assert ".sidebar-library-header" in css
+    assert "flex-wrap: wrap;" in css
+    assert "align-items: flex-start;" in css
+    assert ".sidebar-title-group" in css
+    assert "flex: 1 1 78px;" in css
+    assert ".sidebar-title-group h2" in css
+    assert "overflow: hidden;" in css
+    assert ".batch-sort-group" in css
+    assert "max-width: 100%;" in css

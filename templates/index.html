@@ -346,6 +346,7 @@
                     <li><strong>Left / Right</strong> previous or next image</li>
                     <li><strong>[ / ]</strong> previous or next scored image</li>
                     <li><strong>M</strong> toggle PNG generation metadata when available</li>
+                    <li><strong>I</strong> toggle the lightbox AI review panel</li>
                     <li><strong>S / F / R</strong> move to shortlisted, finals, or rejects</li>
                     <li><strong>Shift+F</strong> toggle favorite for the current image</li>
                     <li><strong>+ / - / 0</strong> zoom in, zoom out, reset zoom</li>
@@ -353,13 +354,13 @@
                 </ul>
             </div>
             <div class="help-section">
-                <h4>Service notes</h4>
+                <h4>AI Curate</h4>
                 <ul class="help-list">
-                    <li>The center grid is the primary review surface.</li>
-                    <li>AI scores are advisory and batch-scoped.</li>
-                    <li>Background polling avoids interrupting lightbox, drag, and resize interactions.</li>
-                    <li>You can skip import by saving images directly into a batch inbox.</li>
-                    <li>Auto-import targets the batch selected in the left sidebar dropdown.</li>
+                    <li><strong>Inspect</strong> shows selected-image AI details, or a multi-select summary with expandable image rows.</li>
+                    <li><strong>Score</strong> sends the chosen source folder, elements, Top N, and model to the configured vision endpoint.</li>
+                    <li><strong>Runs</strong> shows saved batch runs and can compare a run against the previous completed baseline.</li>
+                    <li>AI badges, score sorting, and filters are batch-scoped and reset when no active run is available.</li>
+                    <li>Manual moves remain authoritative; AI scores are advisory evidence only.</li>
                 </ul>
             </div>
             <div class="modal-buttons">
