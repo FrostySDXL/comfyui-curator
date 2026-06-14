@@ -111,7 +111,7 @@ function updateGridShellLayout() {
             }
 
             const {track, gap} = getGridDensityConfig();
-            const displayCount = getDisplayImages().length;
+            const displayCount = getDisplayImages().length || grid.querySelectorAll('.thumb.loading-placeholder').length;
             if (displayCount <= 0) {
                 grid.style.removeProperty('--grid-columns');
                 return;
@@ -341,6 +341,7 @@ function showGridLoadingPlaceholders(batch, folder) {
             gridThumbMap.clear();
             if (expectedCount <= 0) {
                 grid.replaceChildren();
+                updateGridShellLayout();
                 return;
             }
 
@@ -353,6 +354,8 @@ function showGridLoadingPlaceholders(batch, folder) {
                 fragment.appendChild(thumb);
             }
             grid.replaceChildren(fragment);
+            grid.classList.remove('is-empty');
+            updateGridShellLayout();
         }
 
 function updateGrid() {
