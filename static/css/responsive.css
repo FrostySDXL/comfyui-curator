@@ -16,6 +16,16 @@
                 flex-wrap: wrap;
                 gap: 8px;
             }
+            .workspace-toolbar {
+                align-items: stretch;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .folder-tabs.visible,
+            .sort-controls {
+                justify-content: flex-start;
+                margin-left: 0;
+            }
             .workspace {
                 flex-direction: column;
             }

@@ -44,6 +44,7 @@ function ensureBatchSidebarOpen() {
         }
 
 function updateSidebarResizeVisualState(active) {
+            document.body.classList.toggle('resizing-layout', active);
             const resizer = document.getElementById('sidebar-resizer');
             if (!resizer) return;
             resizer.classList.toggle('active', active);

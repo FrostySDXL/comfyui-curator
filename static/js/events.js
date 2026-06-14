@@ -18,11 +18,17 @@ function showHelpModal() {
             const modal = document.getElementById('help-modal');
             modal.classList.add('active');
             _trapFocus(modal);
+            modal.querySelector('.modal-content').scrollTop = 0;
         }
 
 function hideHelpModal() {
             document.getElementById('help-modal').classList.remove('active');
             _releaseFocusTrap();
+        }
+
+function closeModalOnBackdropClick(event, hideFn) {
+            if (event.target !== event.currentTarget) return;
+            hideFn();
         }
 
         // Keyboard navigation + live-filter (input-based, no stopPropagation needed
@@ -288,6 +294,10 @@ function _bindDelegatedEvents() {
             const favFilterBtn = document.getElementById('favorites-filter-btn');
             if (favFilterBtn) favFilterBtn.addEventListener('click', toggleFavoritesFilter);
 
+            document.querySelectorAll('.density-btn').forEach(btn => {
+                btn.addEventListener('click', function() { setGridDensity(this.dataset.density); });
+            });
+
             // Folder tabs (delegated)
             const folderTabs = document.getElementById('folder-tabs');
             if (folderTabs) {
@@ -347,10 +357,14 @@ function _bindDelegatedEvents() {
             document.querySelectorAll('#help-modal .cancel').forEach(btn => {
                 btn.addEventListener('click', hideHelpModal);
             });
+            const helpModal = document.getElementById('help-modal');
+            if (helpModal) helpModal.addEventListener('click', function(event) { closeModalOnBackdropClick(event, hideHelpModal); });
 
             document.querySelectorAll('#prompts-modal .cancel').forEach(btn => {
                 btn.addEventListener('click', hidePromptsModal);
             });
+            const promptsModal = document.getElementById('prompts-modal');
+            if (promptsModal) promptsModal.addEventListener('click', function(event) { closeModalOnBackdropClick(event, hidePromptsModal); });
             const promptsBuildBtn = document.getElementById('prompts-build-btn');
             if (promptsBuildBtn) promptsBuildBtn.addEventListener('click', buildPromptIndex);
             const promptsRebuildBtn = document.getElementById('prompts-rebuild-btn');

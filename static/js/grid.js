@@ -78,19 +78,90 @@ async function loadCurrentFolderImages() {
 function setSort(sort) {
             currentSort = sort;
             document.querySelectorAll('.sort-btn:not(.batch-sort-btn)').forEach(b => b.classList.toggle('active', b.dataset.sort === sort));
-            document.getElementById('sort-dir-btn').style.display = sort === 'shuffle' || sort === 'score-desc' ? 'none' : 'flex';
+            document.getElementById('sort-dir-btn').classList.toggle('is-placeholder', sort === 'shuffle' || sort === 'score-desc');
+            if (currentBatch === '__favorites__') { updateGrid(); return; }
             if (currentBatch && currentFolder) loadCurrentFolderImages();
         }
 
 function toggleOrder() {
             currentOrder = currentOrder === 'desc' ? 'asc' : 'desc';
             document.getElementById('sort-dir-btn').classList.toggle('asc', currentOrder === 'asc');
+            if (currentBatch === '__favorites__') { updateGrid(); return; }
             if (currentBatch && currentFolder) loadCurrentFolderImages();
+        }
+
+function normalizeGridDensity(density) {
+            return ['compact', 'comfortable', 'large'].includes(density) ? density : 'comfortable';
+        }
+
+function setGridDensity(density) {
+            gridDensity = normalizeGridDensity(density);
+            const grid = document.getElementById('grid');
+            if (grid) {
+                grid.classList.remove('density-compact', 'density-comfortable', 'density-large');
+                grid.classList.add(`density-${gridDensity}`);
+            }
+            document.querySelectorAll('.density-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.density === gridDensity);
+            });
+            localStorage.setItem(GRID_DENSITY_KEY, gridDensity);
+        }
+
+function initializeGridDensity() {
+            setGridDensity(gridDensity);
+        }
+
+function sortImagesForDisplay(imgList) {
+            if (aiActiveRun && currentSort === 'score-desc') return aiSortImages(imgList);
+            if (currentBatch !== '__favorites__') return imgList;
+            if (currentSort === 'shuffle') return [...imgList].sort(() => Math.random() - 0.5);
+            const direction = currentOrder === 'asc' ? 1 : -1;
+            if (currentSort === 'date') {
+                return [...imgList].sort((a, b) => {
+                    const dateA = Number(a.modified_at || a.mtime || a.created_at || 0);
+                    const dateB = Number(b.modified_at || b.mtime || b.created_at || 0);
+                    if (dateA !== dateB) return (dateA - dateB) * direction;
+                    return String(a.name || '').localeCompare(String(b.name || '')) * direction;
+                });
+            }
+            return [...imgList].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')) * direction);
         }
 
 function getDisplayImages() {
             const filtered = favoritesFilterOn ? images.filter(img => img.favorite === true) : images;
-            return (aiActiveRun && currentSort === 'score-desc') ? aiSortImages(filtered) : filtered;
+            return sortImagesForDisplay(filtered);
+        }
+
+function getGridEmptyStateMessage() {
+            if (favoritesFilterOn && images.length > 0) {
+                return {
+                    title: 'No favorite images in this view',
+                    detail: 'Toggle favorites-only off or star images to build a focused review set.',
+                };
+            }
+            if (aiActiveRun && aiShowOverlays && aiFilterMode !== 'all' && images.length > 0) {
+                return {
+                    title: 'No images match the active AI filter',
+                    detail: 'Change the AI filter or turn AI badges off to return to the full folder.',
+                };
+            }
+            return {
+                title: 'No images in this folder',
+                detail: currentBatch ? 'Move or import images into this folder to continue reviewing.' : 'Select a batch from the sidebar.',
+            };
+        }
+
+function createGridEmptyState(message) {
+            const empty = document.createElement('div');
+            empty.className = 'empty';
+            const title = document.createElement('div');
+            title.className = 'empty-title';
+            title.textContent = message.title;
+            const detail = document.createElement('div');
+            detail.className = 'empty-detail';
+            detail.textContent = message.detail;
+            empty.append(title, detail);
+            return empty;
         }
 
 function updateImageCountLabel() {
@@ -153,7 +224,7 @@ function createThumbElement() {
 
             const meta = document.createElement('div');
             meta.className = 'thumb-meta';
-            meta.innerHTML = '<span class="meta-name"></span><span class="meta-size"></span>';
+            meta.innerHTML = '<span class="meta-name"></span><span class="meta-detail"></span>';
 
             thumb.append(badge, select, favStar, img, metaBatch, meta);
             return thumb;
@@ -166,7 +237,7 @@ function updateThumbElement(thumb, img, index) {
             const selectBtn = thumb.querySelector('.thumb-select');
             const imageEl = thumb.querySelector('img');
             const metaName = thumb.querySelector('.meta-name');
-            const metaSize = thumb.querySelector('.meta-size');
+            const metaSize = thumb.querySelector('.meta-detail');
             const favStar = thumb.querySelector('.favorite-star');
             const source = getImageBatchAndFolder(img);
             const imageSrc = `/thumb/${encodeURIComponent(source.batch)}/${encodeURIComponent(source.folder)}/${encodeURIComponent(img.name)}`;
@@ -202,7 +273,9 @@ function updateThumbElement(thumb, img, index) {
                 setThumbnailImageSrc(imageEl, imageSrc, getThumbnailCacheKey(imageSrc, img));
             }
             if (metaName) metaName.textContent = img.name;
-            if (metaSize) metaSize.textContent = formatSize(img.size);
+            if (metaSize) metaSize.textContent = currentBatch === '__favorites__'
+                ? `${img.folder || 'folder'} · ${formatSize(img.size)}`
+                : formatSize(img.size);
             const metaBatch = thumb.querySelector('.meta-batch');
             if (currentBatch === '__favorites__') {
                 if (metaBatch) {
@@ -236,17 +309,14 @@ function showGridLoadingPlaceholders(batch, folder) {
 
 function updateGrid() {
             const grid = document.getElementById('grid');
+            const displayImages = getDisplayImages();
 
-            if (images.length === 0) {
-                grid.replaceChildren(Object.assign(document.createElement('div'), {
-                    className: 'empty',
-                    textContent: 'No images in this folder',
-                }));
+            if (images.length === 0 || displayImages.length === 0) {
+                grid.replaceChildren(createGridEmptyState(getGridEmptyStateMessage()));
                 gridThumbMap.clear();
                 return;
             }
 
-            const displayImages = getDisplayImages();
             const activeNames = new Set(displayImages.map(img => img.name));
             for (const [name, element] of gridThumbMap.entries()) {
                 if (!activeNames.has(name)) {

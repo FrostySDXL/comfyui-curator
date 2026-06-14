@@ -6,6 +6,7 @@ function syncFavoriteButton(btn, isOn) {
             if (!btn) return;
             btn.innerHTML = isOn ? '&#9733;' : '&#9734;';
             btn.style.color = isOn ? '#e8c84a' : '';
+            btn.classList.toggle('active', isOn);
         }
 
 function toggleFavoritesFilter() {
@@ -97,6 +98,7 @@ async function loadUniversalFavorites() {
                 size: f.size || 0,
                 batch: f.batch,
                 folder: f.folder,
+                modified_at: f.modified_at || f.mtime || f.created_at || 0,
                 favorite: true,
             }));
             updateImageCountLabel();

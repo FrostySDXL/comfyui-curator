@@ -58,13 +58,35 @@
 
     <main class="main">
         <div class="header">
-            <h1><span id="current-path">Select a batch</span><span id="img-count" class="img-count"></span></h1>
+            <div class="workspace-context">
+                <div class="context-kicker">Review workspace</div>
+                <h1><span id="current-path">Select a batch</span><span id="img-count" class="img-count"></span></h1>
+            </div>
             <div class="header-actions">
                 <button id="batch-sidebar-toggle-btn" class="batch-sidebar-toggle-btn" type="button">Hide Batches</button>
                 <button id="ai-sidebar-toggle-btn" class="ai-sidebar-toggle-btn hidden" type="button">Hide AI</button>
                 <button id="help-btn" class="help-btn" type="button">Help</button>
                 <button id="prompts-btn" class="help-btn" type="button">Prompts</button>
                 <button id="set-auto-import-btn" class="set-auto-import-btn hidden" type="button">Set as Auto-import</button>
+            </div>
+        </div>
+
+        <div class="workspace-toolbar" id="workspace-toolbar">
+            <div class="folder-tabs" id="folder-tabs">
+                <div class="folder-tab" data-folder="inbox" role="button" tabindex="0">
+                    inbox <span class="tab-count" id="tc-inbox">0</span>
+                </div>
+                <div class="folder-tab" data-folder="shortlisted" role="button" tabindex="0">
+                    shortlisted <span class="tab-count" id="tc-shortlisted">0</span>
+                </div>
+                <div class="folder-tab" data-folder="finals" role="button" tabindex="0">
+                    finals <span class="tab-count" id="tc-finals">0</span>
+                </div>
+                <div class="folder-tab" data-folder="rejects" role="button" tabindex="0">
+                    rejects <span class="tab-count" id="tc-rejects">0</span>
+                </div>
+                <div class="folder-tabs-spacer"></div>
+                <button class="delete-rejects-btn" id="delete-rejects-btn">Empty Rejects</button>
             </div>
             <div class="sort-controls hidden" id="sort-controls">
                 <span class="sort-label">Sort</span>
@@ -79,24 +101,25 @@
                     </svg>
                 </button>
                 <button class="favorites-filter-btn" id="favorites-filter-btn" title="Favorites only (F)" type="button">&#9734;</button>
+                <span class="sort-label density-label">Density</span>
+                <div class="density-controls" id="density-controls" aria-label="Thumbnail density">
+                    <button class="density-btn" data-density="compact" type="button" title="Compact thumbnails">Compact</button>
+                    <button class="density-btn active" data-density="comfortable" type="button" title="Comfortable thumbnails">Comfort</button>
+                    <button class="density-btn" data-density="large" type="button" title="Large thumbnails">Large</button>
+                </div>
+                <div class="ai-display-controls hidden ai-header-controls" id="ai-display-controls">
+                    <label class="ai-checkbox-label ai-header-toggle">
+                        <input type="checkbox" id="ai-overlay-toggle">
+                        AI badges <span class="shortcut-hint">B</span>
+                    </label>
+                    <select id="ai-filter-mode" class="ai-select ai-select-sm">
+                        <option value="all">All</option>
+                        <option value="scored">Scored</option>
+                        <option value="failed">Failed</option>
+                        <option value="top-n">Top-N</option>
+                    </select>
+                </div>
             </div>
-        </div>
-
-        <div class="folder-tabs" id="folder-tabs">
-            <div class="folder-tab" data-folder="inbox" role="button" tabindex="0">
-                inbox <span class="tab-count" id="tc-inbox">0</span>
-            </div>
-            <div class="folder-tab" data-folder="shortlisted" role="button" tabindex="0">
-                shortlisted <span class="tab-count" id="tc-shortlisted">0</span>
-            </div>
-            <div class="folder-tab" data-folder="finals" role="button" tabindex="0">
-                finals <span class="tab-count" id="tc-finals">0</span>
-            </div>
-            <div class="folder-tab" data-folder="rejects" role="button" tabindex="0">
-                rejects <span class="tab-count" id="tc-rejects">0</span>
-            </div>
-            <div class="folder-tabs-spacer"></div>
-            <button class="delete-rejects-btn" id="delete-rejects-btn">Empty Rejects</button>
         </div>
 
         <div class="workspace">
@@ -117,19 +140,6 @@
                         <span class="ai-curate-toggle" id="ai-curate-toggle">−</span>
                     </div>
                     <div class="ai-curate-body" id="ai-curate-body">
-                        <div class="ai-display-controls hidden" id="ai-display-controls">
-                            <label class="ai-checkbox-label ai-header-toggle">
-                                <input type="checkbox" id="ai-overlay-toggle">
-                                AI badges <span class="shortcut-hint">B</span>
-                            </label>
-                            <select id="ai-filter-mode" class="ai-select ai-select-sm">
-                                <option value="all">All</option>
-                                <option value="scored">Scored</option>
-                                <option value="failed">Failed</option>
-                                <option value="top-n">Top-N</option>
-                            </select>
-                        </div>
-
                         <div class="ai-curate-form">
                             <label class="ai-label" for="ai-elements">Elements</label>
                             <textarea id="ai-elements" class="ai-textarea" rows="3" placeholder="One element per line, e.g.:&#10;blushing&#10;blonde hair&#10;black dress"></textarea>

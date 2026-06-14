@@ -86,6 +86,14 @@
             border: 1px solid #2e2e2e;
             border-radius: 8px;
         }
+        .ai-display-controls.ai-header-controls {
+            margin-bottom: 0;
+            padding: 0 0 0 8px;
+            background: transparent;
+            border: none;
+            border-left: 1px solid #333;
+            border-radius: 0;
+        }
         .ai-label {
             font-size: 10px;
             color: #999;

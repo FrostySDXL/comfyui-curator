@@ -6,15 +6,28 @@
             overflow: hidden;
         }
         .header {
-            padding: 12px 20px;
-            background: #1e1e1e;
+            padding: 9px 18px 8px;
+            background: #1a1a1a;
             border-bottom: 1px solid #2a2a2a;
             display: flex;
             justify-content: space-between;
             align-items: center;
             gap: 12px;
         }
-        .header h1 { font-size: 16px; font-weight: 500; }
+        .workspace-context {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            min-width: 0;
+        }
+        .context-kicker {
+            font-size: 9px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1.4px;
+            font-weight: 700;
+        }
+        .header h1 { font-size: 15px; font-weight: 600; line-height: 1.2; }
         .header .path { color: #0066cc; }
         .header .img-count { font-size: 12px; color: #555; margin-left: 10px; }
         .header-actions {
@@ -52,45 +65,62 @@
             border-color: #54697d;
         }
 
+        .workspace-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 18px;
+            background: #1d1d1d;
+            border-bottom: 1px solid #2a2a2a;
+            min-height: 48px;
+        }
+
         /* Folder tabs */
         .folder-tabs {
             display: none;
             align-items: center;
-            padding: 0 20px;
-            background: #1c1c1c;
-            border-bottom: 1px solid #2a2a2a;
+            gap: 6px;
+            flex: 1;
+            min-width: 0;
         }
         .folder-tabs.visible { display: flex; }
         .folder-tab {
-            padding: 10px 18px;
+            padding: 7px 10px;
             cursor: pointer;
-            font-size: 13px;
-            color: #666;
-            border-bottom: 2px solid transparent;
-            transition: all 0.15s;
+            font-size: 12px;
+            color: #888;
+            border: 1px solid #2b2b2b;
+            border-radius: 999px;
+            background: #202020;
+            transition: color 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 7px;
             user-select: none;
+            text-transform: capitalize;
         }
-        .folder-tab:hover { color: #bbb; }
-        .folder-tab.active { color: #eee; }
-        .folder-tab[data-folder="inbox"].active { border-bottom-color: #e8a33d; }
-        .folder-tab[data-folder="shortlisted"].active { border-bottom-color: #28a745; }
-        .folder-tab[data-folder="finals"].active { border-bottom-color: #0066cc; }
-        .folder-tab[data-folder="rejects"].active { border-bottom-color: #dc3545; }
+        .folder-tab:hover { color: #ddd; background: #252525; border-color: #3a3a3a; }
+        .folder-tab.active { color: #eee; background: #252525; }
+        .folder-tab[data-folder="inbox"].active { border-color: #e8a33d; box-shadow: inset 0 0 0 1px rgba(232,163,61,0.25); }
+        .folder-tab[data-folder="shortlisted"].active { border-color: #28a745; box-shadow: inset 0 0 0 1px rgba(40,167,69,0.25); }
+        .folder-tab[data-folder="finals"].active { border-color: #0066cc; box-shadow: inset 0 0 0 1px rgba(0,102,204,0.28); }
+        .folder-tab[data-folder="rejects"].active { border-color: #dc3545; box-shadow: inset 0 0 0 1px rgba(220,53,69,0.25); }
         .tab-count {
             font-size: 11px;
-            color: #444;
-            background: #252525;
-            padding: 1px 7px;
-            border-radius: 8px;
+            color: #888;
+            background: #181818;
+            min-width: 24px;
+            text-align: center;
+            padding: 2px 7px;
+            border-radius: 999px;
         }
-        .folder-tab.active .tab-count { color: #999; background: #2a2a2a; }
+        .folder-tab.active .tab-count { color: #ddd; background: #303030; }
         .folder-tab.drag-over {
-            background: rgba(255,255,255,0.04);
+            background: rgba(91,163,245,0.16);
             color: #fff;
-            border-bottom-color: #fff !important;
+            border-color: #5ba3f5 !important;
+            box-shadow: 0 0 0 3px rgba(91,163,245,0.16), inset 0 0 0 1px rgba(255,255,255,0.18);
+            transform: translateY(-1px);
         }
         .folder-tabs-spacer { flex: 1; }
         .delete-rejects-btn {
@@ -107,7 +137,14 @@
         .delete-rejects-btn:hover { background: #331111; border-color: #663333; }
 
         /* Sort controls */
-        .sort-controls { display: flex; align-items: center; gap: 6px; }
+        .sort-controls {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-left: auto;
+        }
         .sort-label {
             font-size: 10px;
             color: #777;
@@ -147,6 +184,10 @@
             padding: 0;
         }
         .sort-dir:hover { color: #bbb; background: #252525; }
+        .sort-dir.is-placeholder {
+            visibility: hidden;
+            pointer-events: none;
+        }
         .sort-dir svg { width: 12px; height: 12px; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         .sort-dir.asc svg { transform: rotate(180deg); }
         .favorites-filter-btn {
@@ -162,6 +203,32 @@
             font-size: 14px;
         }
         .favorites-filter-btn:hover { color: #bbb; background: #252525; }
+        .favorites-filter-btn.active {
+            border-color: rgba(232,200,74,0.45);
+            background: rgba(232,200,74,0.08);
+        }
+
+        .density-label { margin-left: 4px; }
+        .density-controls {
+            display: flex;
+            border: 1px solid #333;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .density-btn {
+            padding: 5px 8px;
+            background: transparent;
+            border: none;
+            border-right: 1px solid #333;
+            color: #666;
+            font-size: 11px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .density-btn:last-child { border-right: none; }
+        .density-btn:hover { color: #bbb; background: #252525; }
+        .density-btn.active { color: #fff; background: #333; }
 
         .set-auto-import-btn {
             padding: 6px 10px;

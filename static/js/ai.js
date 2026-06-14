@@ -101,6 +101,7 @@ function onAiSidebarResizeMove(event) {
 function stopAiSidebarResize() {
             if (!isAiSidebarResizing) return;
             isAiSidebarResizing = false;
+            document.body.classList.remove('resizing-layout');
             const resizer = document.getElementById('ai-sidebar-resizer');
             if (resizer) resizer.classList.remove('active');
             document.removeEventListener('mousemove', onAiSidebarResizeMove);
@@ -114,6 +115,7 @@ function startAiSidebarResize(event) {
             if (!aiSidebarOpen) return;
             event.preventDefault();
             isAiSidebarResizing = true;
+            document.body.classList.add('resizing-layout');
             const resizer = document.getElementById('ai-sidebar-resizer');
             if (resizer) resizer.classList.add('active');
             if (event.type === 'pointerdown') {

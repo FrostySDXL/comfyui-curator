@@ -6,6 +6,7 @@
         const BATCH_STATE_KEY = 'imageCurator.lastBatch';
         const FOLDER_STATE_KEY = 'imageCurator.lastFolder';
         const BATCH_SORT_KEY = 'imageCurator.batchSort';
+        const GRID_DENSITY_KEY = 'imageCurator.gridDensity';
         let currentBatch = null;
         let currentFolder = null;
         let images = [];
@@ -19,6 +20,7 @@
         let draggedFiles = [];
         let toastTimeout = null;
         let batchSort = (localStorage.getItem(BATCH_SORT_KEY) || 'alpha');
+        let gridDensity = localStorage.getItem(GRID_DENSITY_KEY) || 'comfortable';
         let batchFilterQuery = '';
         let batchFilterTimer = null;
         let favoritesFilterOn = false;

@@ -19,6 +19,13 @@
             max-height: 80vh;
             overflow-y: auto;
         }
+        .help-modal-content .modal-buttons {
+            position: sticky;
+            bottom: -25px;
+            margin: 12px -25px -25px;
+            padding: 12px 25px 25px;
+            background: linear-gradient(180deg, rgba(37,37,37,0), #252525 28%);
+        }
         .help-section + .help-section {
             margin-top: 16px;
         }
