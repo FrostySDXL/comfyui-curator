@@ -54,6 +54,7 @@ function syncAiSidebarUi(persist = true) {
                 shell.style.display = currentBatch ? 'flex' : 'none';
                 shell.classList.toggle('collapsed', !aiSidebarOpen);
             }
+            document.body.classList.toggle('ai-sidebar-open', currentBatch && aiSidebarOpen);
             if (headerBtn) {
                 if (currentBatch) {
                     headerBtn.classList.remove('hidden');
@@ -128,6 +129,7 @@ function aiSetPanelTab(tabName) {
                 tab.classList.toggle('active', tab.dataset.aiTab === aiActivePanelTab);
             });
             document.querySelectorAll('.ai-panel-section').forEach(section => {
+                if (section.classList.contains('hidden')) return;
                 section.style.display = section.dataset.aiPanelSection === aiActivePanelTab ? '' : 'none';
             });
             const reviewSection = document.getElementById('ai-review-section');
@@ -336,10 +338,10 @@ function aiUpdateRunHistoryUi() {
             const historySection = document.getElementById('ai-history-section');
             if (!historySection) return;
             if (aiRunIds.length === 0) {
-                historySection.style.display = 'none';
+                historySection.classList.add('hidden');
                 return;
             }
-            historySection.style.display = 'block';
+            historySection.classList.remove('hidden');
             const runOptions = aiRunIds.map(id => ({
                 value: id,
                 label: formatAiRunLabel(aiRunDetails[id] || {run_id: id}),
@@ -349,6 +351,7 @@ function aiUpdateRunHistoryUi() {
                 label: '-- Active run --',
             });
             aiSyncCompareSelect();
+            aiSetPanelTab(aiActivePanelTab);
         }
 
 async function aiRenderCurrentRunUi() {
@@ -358,8 +361,8 @@ async function aiRenderCurrentRunUi() {
                 aiShowHeaderControls(true);
                 aiUpdateRunHistoryUi();
             } else {
-                document.getElementById('ai-run-summary').style.display = 'none';
-                document.getElementById('ai-run-diff').style.display = 'none';
+                document.getElementById('ai-run-summary').classList.add('hidden');
+                document.getElementById('ai-run-diff').classList.add('hidden');
                 aiShowHeaderControls(false);
             }
             aiRenderImageInspector();
@@ -380,7 +383,7 @@ async function aiRefreshRunData(existingRuns = null) {
                     await aiRenderCurrentRunUi();
                 } else {
                     const historySection = document.getElementById('ai-history-section');
-                    if (historySection) historySection.style.display = 'none';
+                    if (historySection) historySection.classList.add('hidden');
                     aiRunIds = [];
                     aiRunDetails = {};
                     aiLatestRun = null;
@@ -401,8 +404,8 @@ function resetAiBatchState(refreshGrid = true) {
             aiCompareRunId = 'previous';
             aiInspectedImageName = null;
             aiShowHeaderControls(false);
-            document.getElementById('ai-run-summary').style.display = 'none';
-            document.getElementById('ai-run-diff').style.display = 'none';
+            document.getElementById('ai-run-summary').classList.add('hidden');
+            document.getElementById('ai-run-diff').classList.add('hidden');
             aiRenderImageInspector();
             const runSelect = document.getElementById('ai-run-select');
             if (runSelect) runSelect.value = '';
@@ -599,33 +602,26 @@ function aiShowRunSummary(run) {
             const t = run.totals || {};
             const modeLabel = run.move_enabled ? `Move top-${run.top_n} to ${run.destination_folder}` : 'Score only';
 
-            // Build DOM tree instead of innerHTML to avoid XSS regression risk
-            const header = document.createElement('div');
-            header.className = 'ai-run-summary-header';
+            const brief = document.createElement('div');
+            brief.className = 'ai-run-brief';
             const headerLeft = document.createElement('div');
             const titleEl = document.createElement('div');
             titleEl.className = 'ai-run-summary-title';
             titleEl.textContent = formatAiRunLabel(run);
             const subtitleEl = document.createElement('div');
             subtitleEl.className = 'ai-run-summary-subtitle';
-            subtitleEl.textContent = `Run ID: ${run.run_id}`;
+            subtitleEl.textContent = modeLabel;
             headerLeft.append(titleEl, subtitleEl);
-            const badges = document.createElement('div');
-            badges.className = 'ai-run-summary-badges';
             const statusBadge = document.createElement('span');
             statusBadge.className = 'ai-run-badge';
             statusBadge.textContent = run.status || 'completed';
-            const topBadge = document.createElement('span');
-            topBadge.className = 'ai-run-badge';
-            topBadge.textContent = `Top-N ${run.top_n}`;
-            badges.append(statusBadge, topBadge);
-            header.append(headerLeft, badges);
+            brief.append(headerLeft, statusBadge);
 
             const stats = document.createElement('div');
-            stats.className = 'ai-run-summary-stats';
+            stats.className = 'ai-run-kpis';
             function addStatCard(label, value) {
                 const card = document.createElement('div');
-                card.className = 'ai-stat-card';
+                card.className = 'ai-run-kpi';
                 const lbl = document.createElement('div');
                 lbl.className = 'ai-stat-label';
                 lbl.textContent = label;
@@ -640,25 +636,15 @@ function aiShowRunSummary(run) {
             addStatCard('Failed', t.failed || 0);
             addStatCard('Moved', t.moved || 0);
 
-            const meta = document.createElement('div');
-            meta.className = 'ai-run-summary-meta';
-            function addMetaRow(label, value) {
-                const row = document.createElement('div');
-                row.className = 'ai-meta-row';
-                const lbl = document.createElement('div');
-                lbl.className = 'ai-meta-label';
-                lbl.textContent = label;
-                const val = document.createElement('div');
-                val.className = 'ai-meta-value';
-                val.textContent = value || '\u2014';
-                row.append(lbl, val);
-                meta.appendChild(row);
-            }
-            addMetaRow('Model', run.model);
-            addMetaRow('Mode', modeLabel);
-
-            summary.replaceChildren(header, stats, meta);
+            summary.replaceChildren(brief, stats);
+            summary.classList.remove('hidden');
             summary.style.display = 'block';
+        }
+
+function aiGetSingleSelectedImage() {
+            if (selectedImages.size !== 1) return null;
+            const [name] = selectedImages;
+            return images.find(img => img.name === name) || null;
         }
 
 function aiGetInspectedImage() {
@@ -678,13 +664,19 @@ function aiSetInspectedImage(img) {
 function aiRenderImageInspector(img = null) {
             const inspector = document.getElementById('ai-image-inspector');
             if (!inspector) return;
+            if (selectedImages.size === 0) {
+                inspector.replaceChildren();
+                inspector.className = 'ai-image-inspector';
+                aiAppendImageInspectorContent(inspector, null);
+                return;
+            }
             if (selectedImages.size > 1) {
                 if (!document.getElementById('lightbox')?.classList.contains('active')) {
                     aiRenderSelectionInspector();
                     return;
                 }
             }
-            const target = img || aiGetInspectedImage();
+            const target = aiGetSingleSelectedImage() || img || aiGetInspectedImage();
             inspector.replaceChildren();
             inspector.className = 'ai-image-inspector';
             aiAppendImageInspectorContent(inspector, target);
@@ -757,6 +749,35 @@ function aiRenderSelectionInspector() {
                 });
             }
             inspector.appendChild(details);
+
+            const list = document.createElement('div');
+            list.className = 'ai-selection-image-list';
+            selected.forEach(img => {
+                const card = document.createElement('div');
+                card.className = 'ai-selection-image-card';
+                card.dataset.name = img.name;
+                const button = document.createElement('button');
+                button.className = 'ai-selection-image-toggle';
+                button.type = 'button';
+                button.textContent = img.name;
+                button.title = img.name;
+                button.addEventListener('click', () => toggleAiSelectionImageCard(card, img));
+                const body = document.createElement('div');
+                body.className = 'ai-selection-image-body hidden';
+                card.append(button, body);
+                list.appendChild(card);
+            });
+            inspector.appendChild(list);
+        }
+
+function toggleAiSelectionImageCard(card, img) {
+            const body = card.querySelector('.ai-selection-image-body');
+            if (!body) return;
+            const isExpanded = card.classList.toggle('expanded');
+            body.classList.toggle('hidden', !isExpanded);
+            if (!isExpanded) return;
+            body.replaceChildren();
+            aiAppendImageInspectorContent(body, img);
         }
 
 function aiAppendImageInspectorContent(inspector, target) {
@@ -776,7 +797,9 @@ function aiAppendImageInspectorContent(inspector, target) {
 
             const header = document.createElement('div');
             header.className = 'ai-inspector-header';
-            header.appendChild(createTextElement('div', 'ai-inspector-title', target.name));
+            const title = createTextElement('div', 'ai-inspector-title', target.name);
+            title.title = target.name;
+            header.appendChild(title);
             const source = getImageBatchAndFolder(target);
             header.appendChild(createTextElement('div', 'ai-inspector-subtitle', `${source.batch} / ${source.folder}`));
             inspector.appendChild(header);
@@ -825,8 +848,8 @@ async function aiLoadRun(runId) {
                 if (aiActiveRun) {
                     await aiRenderCurrentRunUi();
                 } else {
-                    document.getElementById('ai-run-summary').style.display = 'none';
-                    document.getElementById('ai-run-diff').style.display = 'none';
+                document.getElementById('ai-run-summary').classList.add('hidden');
+                document.getElementById('ai-run-diff').classList.add('hidden');
                     aiShowHeaderControls(false);
                 }
                 updateGrid();
@@ -854,7 +877,7 @@ async function aiShowRunDiff(run) {
             const diffEl = document.getElementById('ai-run-diff');
             if (!diffEl) return;
             if (!run) {
-                diffEl.style.display = 'none';
+                diffEl.classList.add('hidden');
                 return;
             }
             const previousId = aiGetPreviousRunId();
@@ -863,6 +886,7 @@ async function aiShowRunDiff(run) {
                 : aiRunDetails[aiCompareRunId] || await aiFetchRun(aiCompareRunId);
             if (!compareRun || run.run_id === compareRun.run_id) {
                 diffEl.innerHTML = `<div class="ai-diff-empty">Need another run to compare.</div>`;
+                diffEl.classList.remove('hidden');
                 diffEl.style.display = 'block';
                 aiSyncCompareSelect();
                 return;
@@ -899,11 +923,11 @@ async function aiShowRunDiff(run) {
                     <div class="ai-diff-title">Delta from baseline</div>
                     <div class="ai-diff-subtitle">${_escapeHtml(formatAiRunTimestamp(run))} vs ${_escapeHtml(formatAiRunLabel(compareRun))}</div>
                 </div>
-                <div class="ai-diff-grid">
-                    <div class="ai-diff-card"><div class="ai-stat-label">Scores changed</div><div class="ai-stat-value">${scoreChanged}</div></div>
-                    <div class="ai-diff-card"><div class="ai-stat-label">Failure flips</div><div class="ai-stat-value">${failedStateChanged}</div></div>
-                    <div class="ai-diff-card"><div class="ai-stat-label">Only in current</div><div class="ai-stat-value">${newImages}</div></div>
-                    <div class="ai-diff-card"><div class="ai-stat-label">Only in compare</div><div class="ai-stat-value">${removedImages}</div></div>
+                <div class="ai-diff-list">
+                    <div><strong>${scoreChanged}</strong> scores changed</div>
+                    <div><strong>${failedStateChanged}</strong> failure flips</div>
+                    <div><strong>${newImages}</strong> only in current</div>
+                    <div><strong>${removedImages}</strong> only in baseline</div>
                 </div>
                 ${scoreChanged === 0 && failedStateChanged === 0 && newImages === 0 && removedImages === 0
                     ? '<div class="ai-diff-empty">These runs produced identical per-image results.</div>'
@@ -913,6 +937,7 @@ async function aiShowRunDiff(run) {
                         ${notes.map(note => `<span class="ai-diff-note">${_escapeHtml(note)}</span>`).join('')}
                     </div>`}
             `;
+            diffEl.classList.remove('hidden');
             diffEl.style.display = 'block';
             aiSyncCompareSelect();
         }

@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from PIL import Image
 
@@ -25,6 +26,28 @@ def test_thumbnail_is_fresh_compares_cache_and_source_mtime(tmp_path):
     assert thumbnail_is_fresh(cache, source) is False
 
 
+def test_thumbnail_is_fresh_rejects_stale_thumbnail_size(tmp_path):
+    source = tmp_path / "source.png"
+    cache = tmp_path / "cache.webp"
+    Image.new("RGB", (500, 500), color="red").save(str(source), format="PNG")
+    Image.new("RGB", (200, 200), color="red").save(str(cache), format="WEBP")
+    source_time = source.stat().st_mtime
+    os.utime(cache, (source_time + 10, source_time + 10))
+
+    assert thumbnail_is_fresh(cache, source, (320, 320)) is False
+
+
+def test_thumbnail_is_fresh_accepts_current_thumbnail_size(tmp_path):
+    source = tmp_path / "source.png"
+    cache = tmp_path / "cache.webp"
+    Image.new("RGB", (500, 500), color="red").save(str(source), format="PNG")
+    Image.new("RGB", (320, 320), color="red").save(str(cache), format="WEBP")
+    source_time = source.stat().st_mtime
+    os.utime(cache, (source_time + 10, source_time + 10))
+
+    assert thumbnail_is_fresh(cache, source, (320, 320)) is True
+
+
 def test_thumbnail_is_fresh_returns_false_for_missing_cache(tmp_path):
     source = tmp_path / "source.png"
     source.write_bytes(b"source")
@@ -43,3 +66,10 @@ def test_generate_thumbnail_writes_valid_webp(tmp_path):
         assert img.format == "WEBP"
         assert img.size[0] <= 8
         assert img.size[1] <= 8
+
+
+def test_generate_thumbnail_uses_high_quality_webp(tmp_path):
+    source = Path("image_curator/media.py").read_text(encoding="utf-8")
+
+    assert "quality=85" in source
+    assert "method=6" in source

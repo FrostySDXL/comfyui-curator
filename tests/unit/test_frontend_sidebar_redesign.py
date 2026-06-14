@@ -13,6 +13,7 @@ def test_sidebar_controls_use_structured_library_header() -> None:
     assert 'class="sidebar-library-header"' in html
     assert 'class="sidebar-title-group"' in html
     assert 'class="sidebar-action-row"' in html
+    assert 'data-bsort="ai"' in html
     assert 'style="margin-bottom:0;"' not in html
     assert 'style="border-color:#2a2a2a;"' not in html
 
@@ -50,4 +51,14 @@ def test_selected_and_ai_status_have_clear_sidebar_states() -> None:
     assert ".batch-name:hover .batch-breakdown" in css
     assert ".batch-name.selected .batch-breakdown" in css
     assert ".batch-ai-dot" in css
+    assert "sortByAiHistory" in read_frontend_js()
+    assert "batchSort === 'ai'" in read_frontend_js()
     assert "box-shadow: 0 0 0 3px rgba(0,102,204,0.12)" in css
+
+
+def test_sidebar_microcopy_stays_single_line_when_narrow() -> None:
+    css = read_frontend_css()
+
+    assert ".sidebar-subtitle" in css
+    assert "white-space: nowrap;" in css
+    assert "text-overflow: ellipsis;" in css

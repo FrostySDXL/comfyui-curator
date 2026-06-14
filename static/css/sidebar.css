@@ -180,6 +180,9 @@
             color: #666;
             font-size: 11px;
             line-height: 1.2;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         .batch-sort-group {
             border-color: #2a2a2a;

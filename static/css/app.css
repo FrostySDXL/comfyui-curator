@@ -1487,16 +1487,10 @@
             border: 1px solid #3a3a3a;
             white-space: nowrap;
         }
-        .ai-run-summary-stats {
+        .ai-run-kpis {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 8px;
-        }
-        .ai-stat-card {
-            background: #1b1b1b;
-            border: 1px solid #2e2e2e;
-            border-radius: 8px;
-            padding: 10px;
+            gap: 6px;
         }
         .ai-stat-label {
             font-size: 10px;
@@ -1556,10 +1550,10 @@
             font-size: 11px;
             color: #8fa0b2;
         }
-        .ai-diff-grid {
+        .ai-diff-list {
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 8px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 6px;
             margin-bottom: 10px;
         }
         .ai-diff-card {
@@ -1688,8 +1682,8 @@
             .ai-run-summary-meta {
                 grid-template-columns: 1fr;
             }
-            .ai-run-summary-stats,
-            .ai-diff-grid {
+            .ai-run-kpis,
+            .ai-diff-list {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
             .metadata-grid {

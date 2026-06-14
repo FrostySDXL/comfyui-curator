@@ -45,6 +45,7 @@
                         <button class="sort-btn batch-sort-btn active" data-bsort="alpha" title="A-Z">A-Z</button>
                         <button class="sort-btn batch-sort-btn" data-bsort="count" title="By image count">#</button>
                         <button class="sort-btn batch-sort-btn" data-bsort="recent" title="Most recent">Recent</button>
+                        <button class="sort-btn batch-sort-btn" data-bsort="ai" title="AI history first">AI</button>
                     </div>
                 </div>
                 <div id="batch-count-label" class="batch-count-label">Batches 0 (0 shown)</div>
@@ -204,7 +205,7 @@
                                     </select>
                                     {% else %}
                                     <input id="ai-model" class="ai-input" type="text" placeholder="model name (required)">
-                                    <small class="ai-hint">No models configured — set IMAGE_CURATOR_MODEL in .env</small>
+                                    <small class="ai-hint" title="Set IMAGE_CURATOR_MODEL in .env">Set IMAGE_CURATOR_MODEL.</small>
                                     {% endif %}
                                 </div>
                             </div>

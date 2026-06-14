@@ -155,6 +155,8 @@ async function loadBatches() {
                     if (mb !== ma) return mb - ma;
                     return a.localeCompare(b);
                 });
+            } else if (batchSort === 'ai') {
+                sortByAiHistory(sortedBatches);
             }
             // 'alpha' keeps the default server-sorted order
 
@@ -181,9 +183,19 @@ async function loadBatches() {
             const uncachedBatches = filteredBatches.filter(b => !(b in aiBatchRunCounts));
             if (uncachedBatches.length > 0) {
                 aiLoadBatchRunCounts(uncachedBatches).then(() => {
-                    renderBatchList(filteredBatches);
+                    if (batchSort === 'ai') loadBatches();
+                    else renderBatchList(filteredBatches);
                 });
             }
+        }
+
+function sortByAiHistory(sortedBatches) {
+            sortedBatches.sort((a, b) => {
+                const aiA = aiBatchRunCounts[a] || 0;
+                const aiB = aiBatchRunCounts[b] || 0;
+                if (aiB !== aiA) return aiB - aiA;
+                return a.localeCompare(b);
+            });
         }
 
 function formatBatchBreakdown(counts) {

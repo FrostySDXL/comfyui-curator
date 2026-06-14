@@ -92,6 +92,15 @@ def test_grid_density_uses_fixed_columns_to_avoid_sidebar_snap() -> None:
     assert "grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));" not in css
 
 
+def test_grid_padding_is_symmetric_unless_ai_sidebar_open() -> None:
+    js = read_frontend_js()
+    css = read_frontend_css()
+
+    assert ".content { flex: 1; padding: 14px 18px 18px;" in css
+    assert "body.ai-sidebar-open .content" in css
+    assert "document.body.classList.toggle('ai-sidebar-open', currentBatch && aiSidebarOpen);" in js
+
+
 def test_toolbar_controls_stay_right_aligned_without_folder_tabs() -> None:
     css = read_frontend_css()
 

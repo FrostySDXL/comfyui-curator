@@ -69,7 +69,7 @@ STATE_FILE = Path(
         str(Path.home() / ".config" / "image-curator" / "state.json"),
     )
 )
-THUMB_SIZE = (200, 200)
+THUMB_SIZE = (320, 320)
 IMAGE_EXTENSIONS = batch_store.IMAGE_EXTENSIONS
 POLL_INTERVAL = 2  # seconds
 ENABLE_WATCHER = os.environ.get("IMAGE_CURATOR_ENABLE_WATCHER", "").strip().lower() == "true"
@@ -490,7 +490,7 @@ def serve_thumbnail(batch, folder, filename):
 
     cache_path = thumbnail_cache_path(BATCHES_DIR, batch_name, folder, filename)
 
-    if thumbnail_is_fresh(cache_path, filepath):
+    if thumbnail_is_fresh(cache_path, filepath, THUMB_SIZE):
         resp = send_file(str(cache_path), mimetype="image/webp", max_age=3600)
         resp.headers["Cache-Control"] = "public, max-age=3600, immutable"
         return resp
