@@ -3,6 +3,7 @@
  */
 function onThumbClick(index, event) {
             if (!images[index]) return;
+            if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(images[index]);
             if (selectedImages.size > 0) {
                 toggleSelect(index, event);
             } else {
@@ -12,6 +13,7 @@ function onThumbClick(index, event) {
 
 function toggleSelect(index, event) {
             if (!images[index]) return;
+            if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(images[index]);
             const name = images[index].name;
             if (event.shiftKey && lastSelectIndex >= 0) {
                 const lo = Math.min(lastSelectIndex, index);

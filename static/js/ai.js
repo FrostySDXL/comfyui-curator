@@ -12,6 +12,7 @@
         let aiCompareRunId = 'latest';
         let aiShowOverlays = false;
         let aiFilterMode = 'all';
+        let aiInspectedImageName = null;
         let aiBatchRunCounts = {};  // batch -> number of AI runs (for sidebar indicator)
         let aiBatchRunCountsLoaded = false;  // true after first successful load
         const AI_SIDEBAR_WIDTH_KEY = 'imageCurator.aiSidebarWidth';
@@ -355,6 +356,7 @@ async function aiRenderCurrentRunUi() {
                 document.getElementById('ai-run-diff').style.display = 'none';
                 aiShowHeaderControls(false);
             }
+            aiRenderImageInspector();
         }
 
 async function aiRefreshRunData(existingRuns = null) {
@@ -391,9 +393,11 @@ function resetAiBatchState(refreshGrid = true) {
             aiRunIds = [];
             aiRunDetails = {};
             aiCompareRunId = 'latest';
+            aiInspectedImageName = null;
             aiShowHeaderControls(false);
             document.getElementById('ai-run-summary').style.display = 'none';
             document.getElementById('ai-run-diff').style.display = 'none';
+            aiRenderImageInspector();
             const runSelect = document.getElementById('ai-run-select');
             if (runSelect) runSelect.value = '';
             const compareSelect = document.getElementById('ai-compare-run-select');
@@ -654,6 +658,84 @@ function aiShowRunSummary(run) {
 
             summary.replaceChildren(header, stats, meta);
             summary.style.display = 'block';
+        }
+
+function aiGetInspectedImage() {
+            if (!aiInspectedImageName) return null;
+            return images.find(img => img.name === aiInspectedImageName) || null;
+        }
+
+function aiSetInspectedImage(img) {
+            aiInspectedImageName = img ? img.name : null;
+            aiRenderImageInspector(img || null);
+            document.querySelectorAll('#grid .thumb').forEach(thumb => {
+                thumb.classList.toggle('inspected', !!aiInspectedImageName && thumb.dataset.name === aiInspectedImageName);
+            });
+        }
+
+function aiRenderImageInspector(img = null) {
+            const inspector = document.getElementById('ai-image-inspector');
+            if (!inspector) return;
+            const target = img || aiGetInspectedImage();
+            inspector.replaceChildren();
+            inspector.className = 'ai-image-inspector';
+
+            if (!currentBatch) {
+                inspector.classList.add('ai-image-inspector-empty');
+                inspector.appendChild(createTextElement('div', 'ai-inspector-empty-title', 'Select a batch'));
+                inspector.appendChild(createTextElement('div', 'ai-inspector-empty-detail', 'AI inspection appears after a batch is open.'));
+                return;
+            }
+            if (!target) {
+                inspector.classList.add('ai-image-inspector-empty');
+                inspector.appendChild(createTextElement('div', 'ai-inspector-empty-title', 'Select an image'));
+                inspector.appendChild(createTextElement('div', 'ai-inspector-empty-detail', 'Click a thumbnail or navigate the lightbox to inspect AI details.'));
+                return;
+            }
+
+            const header = document.createElement('div');
+            header.className = 'ai-inspector-header';
+            header.appendChild(createTextElement('div', 'ai-inspector-title', target.name));
+            const source = getImageBatchAndFolder(target);
+            header.appendChild(createTextElement('div', 'ai-inspector-subtitle', `${source.batch} / ${source.folder}`));
+            inspector.appendChild(header);
+
+            if (!aiActiveRun) {
+                inspector.classList.add('ai-image-inspector-empty');
+                inspector.appendChild(createTextElement('div', 'ai-inspector-empty-detail', 'No AI run selected for this batch.'));
+                return;
+            }
+
+            const result = aiGetImageScore(target.name);
+            if (!result) {
+                inspector.classList.add('ai-image-inspector-empty');
+                inspector.appendChild(createTextElement('div', 'ai-inspector-empty-detail', 'No AI score for this image in the active run.'));
+                return;
+            }
+
+            const score = document.createElement('div');
+            score.className = result.failed ? 'ai-inspector-score failed' : 'ai-inspector-score';
+            score.textContent = result.failed ? 'FAIL' : `${result.score}/${result.total}`;
+            inspector.appendChild(score);
+
+            const details = document.createElement('div');
+            details.className = 'ai-inspector-details';
+            if (result.failed) {
+                details.appendChild(createTextElement('div', 'ai-inspector-empty-detail', result.error || 'Scoring failed for this image.'));
+            } else if (aiActiveRun.elements && result.details) {
+                for (const [key, value] of Object.entries(result.details)) {
+                    const idx = parseInt(key, 10);
+                    const element = aiActiveRun.elements[idx - 1] || `#${idx}`;
+                    const matched = value === 'YES';
+                    const detailChip = document.createElement('div');
+                    detailChip.className = `ai-inspector-detail ${matched ? 'matched' : 'missing'}`;
+                    detailChip.textContent = `${matched ? 'YES' : 'NO'} · ${element}`;
+                    details.appendChild(detailChip);
+                }
+            } else {
+                details.appendChild(createTextElement('div', 'ai-inspector-empty-detail', 'No element details were saved for this score.'));
+            }
+            inspector.appendChild(details);
         }
 
 async function aiLoadRun(runId) {

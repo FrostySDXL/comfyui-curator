@@ -72,6 +72,7 @@ function navigateScored(delta) {
 function showCurrentImage() {
             const img = images[currentIndex];
             if (!img) return;
+            if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(img);
             const imageToken = ++lightboxImageToken;
             const metadataToken = ++lightboxMetadataRequestToken;
             currentLightboxMetadata = null;

@@ -63,6 +63,18 @@
             pointer-events: none;
             z-index: 4;
         }
+        .thumb.inspected {
+            box-shadow: 0 0 0 1px rgba(91,163,245,0.32), 0 5px 16px rgba(0,0,0,0.32);
+        }
+        .thumb.inspected::before {
+            content: '';
+            position: absolute;
+            inset: 5px;
+            border: 1px dashed rgba(91,163,245,0.7);
+            border-radius: 5px;
+            pointer-events: none;
+            z-index: 4;
+        }
         .thumb.loading-placeholder {
             cursor: default;
             pointer-events: none;

@@ -76,6 +76,90 @@
             flex-direction: column;
             gap: 8px;
         }
+        .ai-review-section {
+            padding: 10px;
+            margin-bottom: 12px;
+            border: 1px solid #2d2d2d;
+            border-radius: 10px;
+            background: #181818;
+        }
+        .ai-section-heading {
+            margin-bottom: 8px;
+            color: #888;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.9px;
+            text-transform: uppercase;
+        }
+        .ai-image-inspector {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            color: #aaa;
+        }
+        .ai-image-inspector-empty {
+            color: #777;
+        }
+        .ai-inspector-empty-title {
+            color: #aaa;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .ai-inspector-empty-detail {
+            color: #777;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+        .ai-inspector-header {
+            min-width: 0;
+        }
+        .ai-inspector-title {
+            overflow: hidden;
+            color: #ddd;
+            font-size: 12px;
+            font-weight: 600;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .ai-inspector-subtitle {
+            margin-top: 2px;
+            color: #777;
+            font-size: 10px;
+        }
+        .ai-inspector-score {
+            align-self: flex-start;
+            padding: 4px 9px;
+            border-radius: 999px;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 800;
+            background: #246f38;
+        }
+        .ai-inspector-score.failed {
+            background: #662222;
+            color: #ee8888;
+        }
+        .ai-inspector-details {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .ai-inspector-detail {
+            padding: 6px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            line-height: 1.35;
+        }
+        .ai-inspector-detail.matched {
+            color: #9ed3a8;
+            background: rgba(40,167,69,0.1);
+            border: 1px solid rgba(40,167,69,0.18);
+        }
+        .ai-inspector-detail.missing {
+            color: #d9a0a6;
+            background: rgba(220,53,69,0.09);
+            border: 1px solid rgba(220,53,69,0.18);
+        }
         .ai-display-controls {
             display: flex;
             align-items: center;

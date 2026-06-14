@@ -246,6 +246,7 @@ function updateThumbElement(thumb, img, index) {
             thumb.dataset.name = img.name;
             thumb.dataset.index = String(index);
             thumb.classList.toggle('selected', selectedImages.has(img.name));
+            thumb.classList.toggle('inspected', typeof aiInspectedImageName !== 'undefined' && aiInspectedImageName === img.name);
             thumb.classList.toggle('ai-filtered-out', !shouldShow);
             thumb.classList.remove('removing');
             if (selectBtn) selectBtn.classList.toggle('selected', selectedImages.has(img.name));
