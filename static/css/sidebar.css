@@ -160,11 +160,30 @@
             background: #202020;
             padding-bottom: 8px;
         }
-        .batch-controls-row {
+        .sidebar-library-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
             margin-bottom: 6px;
+            gap: 10px;
+        }
+        .sidebar-title-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+        .sidebar-title-group h2 {
+            margin-bottom: 0;
+        }
+        .sidebar-subtitle {
+            color: #666;
+            font-size: 11px;
+            line-height: 1.2;
+        }
+        .batch-sort-group {
+            border-color: #2a2a2a;
+            flex-shrink: 0;
         }
         .batch-count-label {
             font-size: 11px;
@@ -212,30 +231,65 @@
         }
         .batch-item { margin-bottom: 2px; }
         .batch-name {
-            padding: 8px 10px;
+            position: relative;
+            padding: 8px 10px 8px 12px;
             cursor: pointer;
-            border-radius: 4px;
+            border-radius: 8px;
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            align-items: flex-start;
             font-size: 13px;
             color: #aaa;
-            border-left: 3px solid transparent;
-            transition: all 0.15s;
+            border: 1px solid transparent;
+            transition: color 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
+            min-width: 0;
+            gap: 8px;
+        }
+        .batch-name::before {
+            content: '';
+            position: absolute;
+            left: 5px;
+            top: 9px;
+            bottom: 9px;
+            width: 2px;
+            border-radius: 999px;
+            background: transparent;
+        }
+        .batch-name.selected::before {
+            background: #0066cc;
+            box-shadow: 0 0 0 3px rgba(0,102,204,0.12);
+        }
+        .batch-label {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
             min-width: 0;
         }
-        .batch-name span:first-of-type {
+        .batch-title {
+            display: block;
+            color: inherit;
+            font-weight: 500;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
             min-width: 0;
         }
-        .batch-name:hover { background: #2a2a2a; color: #ddd; }
-        .batch-name.selected {
-            background: #252525;
-            color: #fff;
-            border-left-color: #0066cc;
+        .batch-breakdown {
+            color: #666;
+            font-size: 10px;
+            line-height: 1.2;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
+        .batch-name:hover { background: #2a2a2a; color: #ddd; }
+        .batch-name:hover .batch-breakdown { color: #999; }
+        .batch-name.selected {
+            background: #24282e;
+            color: #fff;
+            border-color: rgba(91,163,245,0.26);
+        }
+        .batch-name.selected .batch-breakdown { color: #9fb8d7; }
         .batch-count {
             font-size: 11px;
             color: #555;
@@ -246,6 +300,11 @@
             min-width: 52px;
             text-align: center;
             flex-shrink: 0;
+        }
+        .batch-count-pill {
+            border: 1px solid #333;
+            color: #888;
+            background: #181818;
         }
         .batch-name.selected .batch-count { color: #888; }
         .batch-meta {
@@ -273,10 +332,27 @@
             margin-bottom: 4px;
             padding-bottom: 6px;
         }
+        .batch-item-favorites .batch-name {
+            background: rgba(232,200,74,0.04);
+            border-color: rgba(232,200,74,0.12);
+        }
+        .batch-item-favorites .batch-name:hover {
+            background: rgba(232,200,74,0.08);
+            border-color: rgba(232,200,74,0.2);
+        }
+        .batch-favorites-title {
+            color: #e8c84a;
+        }
+        .batch-favorites-subtitle {
+            color: #8e7b38;
+        }
+        .sidebar-action-row {
+            margin-top: 10px;
+        }
         .new-batch-btn {
             width: 100%;
             padding: 9px;
-            margin-top: 10px;
+            margin-top: 0;
             background: transparent;
             border: 1px dashed #333;
             color: #555;

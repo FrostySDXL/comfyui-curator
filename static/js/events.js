@@ -294,6 +294,9 @@ function _bindDelegatedEvents() {
             const favFilterBtn = document.getElementById('favorites-filter-btn');
             if (favFilterBtn) favFilterBtn.addEventListener('click', toggleFavoritesFilter);
 
+            const selectAllBtn = document.getElementById('workspace-select-all-btn');
+            if (selectAllBtn) selectAllBtn.addEventListener('click', selectAllDisplayedImages);
+
             document.querySelectorAll('.density-btn').forEach(btn => {
                 btn.addEventListener('click', function() { setGridDensity(this.dataset.density); });
             });

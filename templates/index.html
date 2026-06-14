@@ -36,9 +36,12 @@
         </div>
         <div class="sidebar-section sidebar-batches">
             <div class="batch-controls">
-                <div class="batch-controls-row">
-                    <h2 style="margin-bottom:0;">Batches</h2>
-                    <div class="sort-group" style="border-color:#2a2a2a;">
+                <div class="sidebar-library-header">
+                    <div class="sidebar-title-group">
+                        <h2>Batches</h2>
+                        <div class="sidebar-subtitle">Batch library</div>
+                    </div>
+                    <div class="sort-group batch-sort-group">
                         <button class="sort-btn batch-sort-btn active" data-bsort="alpha" title="A-Z">A-Z</button>
                         <button class="sort-btn batch-sort-btn" data-bsort="count" title="By image count">#</button>
                         <button class="sort-btn batch-sort-btn" data-bsort="recent" title="Most recent">Recent</button>
@@ -51,7 +54,9 @@
                 </div>
             </div>
             <ul id="batch-list" class="batch-list"></ul>
-            <button class="new-batch-btn">+ New Batch</button>
+            <div class="sidebar-action-row">
+                <button class="new-batch-btn">+ New Batch</button>
+            </div>
         </div>
     </div>
     <div id="sidebar-resizer" class="sidebar-resizer"></div>
@@ -89,6 +94,7 @@
                 <button class="delete-rejects-btn" id="delete-rejects-btn">Empty Rejects</button>
             </div>
             <div class="sort-controls hidden" id="sort-controls">
+                <button class="workspace-select-all-btn" id="workspace-select-all-btn" title="Select all visible images" type="button">Select All</button>
                 <span class="sort-label">Sort</span>
                 <div class="sort-group">
                     <button class="sort-btn active" data-sort="date">Date</button>

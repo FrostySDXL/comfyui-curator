@@ -33,6 +33,16 @@ function clearSelection() {
             updateActionBar();
         }
 
+function selectAllDisplayedImages() {
+            if (!currentBatch || images.length === 0) return;
+            const displayedNames = getDisplayImages().map(img => img.name);
+            const allDisplayedSelected = displayedNames.length > 0 && displayedNames.every(name => selectedImages.has(name));
+            selectedImages = allDisplayedSelected ? new Set() : new Set(displayedNames);
+            lastSelectIndex = images.length - 1;
+            updateSelectionVisuals();
+            updateActionBar();
+        }
+
 function updateSelectionVisuals() {
             const thumbs = document.querySelectorAll('#grid .thumb');
             thumbs.forEach(thumb => {

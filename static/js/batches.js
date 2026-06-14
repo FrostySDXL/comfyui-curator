@@ -186,6 +186,16 @@ async function loadBatches() {
             }
         }
 
+function formatBatchBreakdown(counts) {
+            const safeCounts = counts || {};
+            return [
+                `${safeCounts.inbox || 0} inbox`,
+                `${safeCounts.shortlisted || 0} shortlisted`,
+                `${safeCounts.finals || 0} finals`,
+                `${safeCounts.rejects || 0} rejects`,
+            ].join(' · ');
+        }
+
 function renderBatchList(filteredBatches) {
             const list = document.getElementById('batch-list');
             if (!list) return;
@@ -195,11 +205,21 @@ function renderBatchList(filteredBatches) {
             const favDiv = document.createElement('div');
             favDiv.className = 'batch-name' + (currentBatch === '__favorites__' ? ' selected' : '');
             favDiv.dataset.batch = '__favorites__';
-            favDiv.appendChild(createTextElement('span', '', '★ All Favorites'));
+            const favLabel = document.createElement('span');
+            favLabel.className = 'batch-label';
+            const favTitle = document.createElement('span');
+            favTitle.className = 'batch-title batch-favorites-title';
+            favTitle.textContent = '★ All Favorites';
+            const favSubtitle = document.createElement('span');
+            favSubtitle.className = 'batch-breakdown batch-favorites-subtitle';
+            favSubtitle.textContent = 'Universal review set';
+            favLabel.appendChild(favTitle);
+            favLabel.appendChild(favSubtitle);
+            favDiv.appendChild(favLabel);
             const favMeta = document.createElement('span');
             favMeta.className = 'batch-meta';
             const favCount = document.createElement('span');
-            favCount.className = 'batch-count';
+            favCount.className = 'batch-count batch-count-pill';
             favCount.id = 'all-favorites-count';
             favCount.textContent = String(universalFavoritesCount);
             favMeta.appendChild(favCount);
@@ -226,9 +246,17 @@ function renderBatchList(filteredBatches) {
                 div.className = 'batch-name' + (batch === currentBatch ? ' selected' : '');
                 div.dataset.batch = batch;
 
-                const nameSpan = document.createElement('span');
-                nameSpan.textContent = batch;
-                div.appendChild(nameSpan);
+                const label = document.createElement('span');
+                label.className = 'batch-label';
+                const batchTitle = document.createElement('span');
+                batchTitle.className = 'batch-title';
+                batchTitle.textContent = batch;
+                const breakdown = document.createElement('span');
+                breakdown.className = 'batch-breakdown';
+                breakdown.textContent = formatBatchBreakdown(c);
+                label.appendChild(batchTitle);
+                label.appendChild(breakdown);
+                div.appendChild(label);
 
                 // Right-aligned group: optional AI dot + image count badge
                 const metaDiv = document.createElement('span');
@@ -242,8 +270,9 @@ function renderBatchList(filteredBatches) {
                 }
 
                 const countSpan = document.createElement('span');
-                countSpan.className = 'batch-count';
+                countSpan.className = 'batch-count batch-count-pill';
                 countSpan.textContent = String(total);
+                countSpan.title = `${total} active images`;
                 metaDiv.appendChild(countSpan);
 
                 div.appendChild(metaDiv);

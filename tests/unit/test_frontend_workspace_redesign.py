@@ -116,3 +116,21 @@ def test_help_and_prompts_modals_close_on_backdrop_click() -> None:
     assert "if (event.target !== event.currentTarget) return;" in js
     assert "helpModal.addEventListener('click', function(event) { closeModalOnBackdropClick(event, hideHelpModal); });" in js
     assert "promptsModal.addEventListener('click', function(event) { closeModalOnBackdropClick(event, hidePromptsModal); });" in js
+
+
+def test_workspace_select_all_button_selects_displayed_images() -> None:
+    html = read_index_html()
+    js = read_frontend_js()
+    css = read_frontend_css()
+
+    assert 'id="workspace-select-all-btn"' in html
+    assert 'class="workspace-select-all-btn"' in html
+    assert "function selectAllDisplayedImages()" in js
+    assert "const displayedNames = getDisplayImages().map(img => img.name);" in js
+    assert "const allDisplayedSelected = displayedNames.length > 0 && displayedNames.every(name => selectedImages.has(name));" in js
+    assert "selectedImages = allDisplayedSelected ? new Set() : new Set(displayedNames);" in js
+    assert "lastSelectIndex = images.length - 1;" in js
+    assert "updateSelectionVisuals();" in js
+    assert "updateActionBar();" in js
+    assert "selectAllBtn.addEventListener('click', selectAllDisplayedImages);" in js
+    assert ".workspace-select-all-btn" in css
