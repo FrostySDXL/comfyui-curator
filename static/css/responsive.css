@@ -49,7 +49,7 @@
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
             .lightbox-nav {
-                bottom: 96px;
+                bottom: 20px;
                 padding: 12px;
                 font-size: 38px;
             }

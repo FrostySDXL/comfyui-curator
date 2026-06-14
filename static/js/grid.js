@@ -94,6 +94,51 @@ function normalizeGridDensity(density) {
             return ['compact', 'comfortable', 'large'].includes(density) ? density : 'comfortable';
         }
 
+function getGridDensityConfig(density = gridDensity) {
+            if (density === 'compact') return {track: 138, gap: 7};
+            if (density === 'large') return {track: 250, gap: 16};
+            return {track: 180, gap: 12};
+        }
+
+function updateGridShellLayout() {
+            const content = document.querySelector('.content');
+            const shell = document.getElementById('grid-shell');
+            const grid = document.getElementById('grid');
+            if (!content || !shell || !grid) return;
+            if (grid.classList.contains('is-empty')) {
+                grid.style.removeProperty('--grid-columns');
+                return;
+            }
+
+            const {track, gap} = getGridDensityConfig();
+            const displayCount = getDisplayImages().length;
+            if (displayCount <= 0) {
+                grid.style.removeProperty('--grid-columns');
+                return;
+            }
+
+            const styles = window.getComputedStyle(content);
+            const paddingLeft = parseFloat(styles.paddingLeft) || 0;
+            const paddingRight = parseFloat(styles.paddingRight) || 0;
+            const availableWidth = Math.max(0, content.clientWidth - paddingLeft - paddingRight);
+            const fittedColumns = Math.max(1, Math.floor((availableWidth + gap) / (track + gap)));
+            const usedColumns = Math.max(1, Math.min(fittedColumns, displayCount));
+            grid.style.setProperty('--grid-columns', String(usedColumns));
+        }
+
+function initializeGridShellLayout() {
+            const content = document.querySelector('.content');
+            if (!content) return;
+            if (!window._gridShellResizeObserver && window.ResizeObserver) {
+                window._gridShellResizeObserver = new ResizeObserver(() => updateGridShellLayout());
+                window._gridShellResizeObserver.observe(content);
+            } else if (!window._gridShellResizeBound) {
+                window.addEventListener('resize', updateGridShellLayout);
+                window._gridShellResizeBound = true;
+            }
+            updateGridShellLayout();
+        }
+
 function setGridDensity(density) {
             gridDensity = normalizeGridDensity(density);
             const grid = document.getElementById('grid');
@@ -101,6 +146,7 @@ function setGridDensity(density) {
                 grid.classList.remove('density-compact', 'density-comfortable', 'density-large');
                 grid.classList.add(`density-${gridDensity}`);
             }
+            updateGridShellLayout();
             document.querySelectorAll('.density-btn').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.density === gridDensity);
             });
@@ -108,6 +154,7 @@ function setGridDensity(density) {
         }
 
 function initializeGridDensity() {
+            initializeGridShellLayout();
             setGridDensity(gridDensity);
         }
 
@@ -316,6 +363,7 @@ function updateGrid() {
                 grid.classList.add('is-empty');
                 grid.replaceChildren(createGridEmptyState(getGridEmptyStateMessage()));
                 gridThumbMap.clear();
+                updateGridShellLayout();
                 return;
             }
             grid.classList.remove('is-empty');
@@ -347,10 +395,12 @@ function updateGrid() {
             // path above still guarantees correct ordering whenever the
             // display set actually changed.
             if (_gridChildrenMatchDesiredOrder(grid, displayImages)) {
+                updateGridShellLayout();
                 return;
             }
             // Replace all children atomically to prevent visible empty-grid flash
             grid.replaceChildren(fragment);
+            updateGridShellLayout();
         }
 
 function _gridChildrenMatchDesiredOrder(grid, displayImages) {

@@ -90,9 +90,10 @@ def test_sidebar_resize_disables_layout_transitions() -> None:
 def test_grid_density_uses_fixed_columns_to_avoid_sidebar_snap() -> None:
     css = read_frontend_css()
 
-    assert "repeat(auto-fill, 180px)" in css
-    assert "repeat(auto-fill, 138px)" in css
-    assert "repeat(auto-fill, 250px)" in css
+    assert "repeat(var(--grid-columns, 1), var(--grid-track-size, 180px))" in css
+    assert "--grid-track-size: 138px;" in css
+    assert "--grid-track-size: 180px;" in css
+    assert "--grid-track-size: 250px;" in css
     assert "grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));" not in css
 
 
@@ -164,7 +165,7 @@ def test_lightbox_navigation_sits_below_metadata_panels() -> None:
 
     assert ".lightbox-nav" in css
     assert "top: auto;" in css
-    assert "bottom: 86px;" in css
+    assert "bottom: 20px;" in css
     assert "transform: none;" in css
     assert ".lightbox-nav.prev { left: 20px; }" in css
     assert ".lightbox-nav.next { right: 20px; }" in css

@@ -5,30 +5,39 @@
             min-height: 0;
             overflow: hidden;
         }
-        .content { flex: 1; padding: 14px 18px 18px; overflow-y: auto; min-width: 0; background: #181818; }
+        .content { flex: 1; padding: 14px 18px 18px; overflow-y: auto; scrollbar-gutter: stable; min-width: 0; background: #181818; }
+        .grid-shell {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+        }
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, 180px);
-            gap: 12px;
+            width: auto;
+            grid-template-columns: repeat(var(--grid-columns, 1), var(--grid-track-size, 180px));
+            gap: var(--grid-gap, 12px);
             align-content: start;
-            justify-content: center;
+            justify-content: start;
         }
         .grid.is-empty {
             display: flex;
+            width: 100%;
             min-height: 100%;
             justify-content: stretch;
         }
         .grid.density-compact {
-            grid-template-columns: repeat(auto-fill, 138px);
-            gap: 7px;
+            --grid-track-size: 138px;
+            --grid-gap: 7px;
         }
         .grid.density-comfortable {
-            grid-template-columns: repeat(auto-fill, 180px);
-            gap: 12px;
+            --grid-track-size: 180px;
+            --grid-gap: 12px;
         }
         .grid.density-large {
-            grid-template-columns: repeat(auto-fill, 250px);
-            gap: 16px;
+            --grid-track-size: 250px;
+            --grid-gap: 16px;
         }
         .thumb {
             aspect-ratio: 1;
