@@ -6,11 +6,11 @@
 
 ## What This Module Does
 
-- **Single-page review UI:** Left batch sidebar, center thumbnail grid (CSS Grid), right AI Curate sidebar.
+- **Single-page review UI:** Asset-manager style batch sidebar, compact workspace toolbar, center thumbnail grid (CSS Grid), right AI Curate sidebar.
 - **Keyboard-first navigation:** 15+ shortcuts for search, selection, AI toggles, lightbox, undo.
 - **Drag/drop curation:** HTML5 drag from grid to folder tabs for single or multi-select moves.
 - **Lightbox viewer:** Full-image review with zoom, scored-image navigation, PNG metadata inspection.
-- **AI score integration:** Overlay badges, score gradient coloring, filter/sort by score, job submission/status/history UI.
+- **AI score integration:** Overlay badges, score gradient coloring, filter/sort by score, contextual image inspector, job submission/status/history UI.
 - **Background polling:** 5-second interval for batches, images, and AI runs, with interaction-aware skip logic.
 - **Local storage persistence:** Sidebar widths, open states, last batch/folder, AI panel collapse.
 
@@ -29,13 +29,13 @@
 |------|----------------|
 | `base.css` | Root CSS variables, reset, body, focus-visible, reduced-motion rules |
 | `sidebar.css` | Left batch sidebar, auto-import dropdown, batch list/search controls |
-| `layout.css` | Main content shell, header buttons, folder tabs, sort controls, count pulse animation |
-| `grid.css` | Workspace/grid/thumb styling, favorite stars, thumb metadata, multi-select action bar |
+| `layout.css` | Main content shell, workspace toolbar, header buttons, folder tabs, sort/density controls, count pulse animation |
+| `grid.css` | Workspace/grid/thumb styling, density modes, inspected/selected states, favorite stars, thumb metadata, multi-select action bar |
 | `lightbox.css` | Lightbox viewer, metadata panel, lightbox controls and key hints |
 | `modals.css` | Base modal styles, Help modal, new-batch/delete modal buttons |
 | `prompts.css` | Prompt History modal controls, batch picker, entries, footer, stale warning |
 | `toast.css` | Undo toast styling |
-| `ai.css` | AI sidebar, AI form/history/run comparison, AI thumb badges and filtering |
+| `ai.css` | AI sidebar, image inspector, AI form/history/run comparison, AI thumb badges and filtering |
 | `responsive.css` | `900px` responsive breakpoint rules; loads last |
 | `app.css` | Temporary full compatibility stylesheet for raw-text tests; not browser-loaded by `index.html` |
 
@@ -54,7 +54,7 @@
 | `lightbox.js` | Lightbox open/close, navigation, zoom, scored navigation, lightbox favorite UI |
 | `metadata.js` | PNG metadata loading/cache/rendering and prompt copy helpers |
 | `prompts.js` | Prompt History modal state, selector, rendering, build/rebuild controls |
-| `ai.js` | AI sidebar, optional elements, jobs, run history, overlays, score helpers |
+| `ai.js` | AI sidebar, image inspector, optional elements, jobs, run history, overlays, score helpers |
 | `polling.js` | Interaction-aware background polling helpers |
 | `events.js` | Keyboard shortcuts, modal helpers, delegated browser event binding |
 | `bootstrap.js` | Startup initialization and poll interval registration |
@@ -86,6 +86,7 @@
 | `aiActiveRun` | `object\|null` | Currently selected AI run data |
 | `aiShowOverlays` | `boolean` | Score badge visibility on thumbs |
 | `aiFilterMode` | `string` | 'all' \| 'scored' \| 'failed' \| 'top-n' |
+| `aiInspectedImageName` | `string\|null` | Image currently shown in the AI review inspector |
 | `aiSidebarOpen` | `boolean` | AI sidebar visibility |
 | `aiPanelOpen` | `boolean` | AI panel collapse state within sidebar |
 | `currentSort` | `string` | 'date' \| 'name' \| 'shuffle' \| 'score-desc' |
@@ -110,7 +111,7 @@
 | **Multi-Select** | `toggleSelect`, `clearSelection`, `updateActionBar` | `#action-bar`, `.thumb-select` |
 | **Undo** | `recordLastAction`, `showToast`, `undoLastMove` | `#toast` |
 | **Lightbox** | `openLightbox`, `closeLightbox`, `navigate`, `navigateScored`, `zoomLightbox`, `toggleLightboxMetadata`, `loadLightboxMetadata` | `#lightbox` |
-| **AI Sidebar** | `toggleAiSidebar`, `toggleAiCuratePanel`, `syncAiSidebarUi`, `aiSubmitJob`, `aiPollJobStatus`, `aiRefreshRunData`, `aiLoadElementHistory` | `#ai-sidebar-shell`, `#ai-curate-panel` |
+| **AI Sidebar** | `toggleAiSidebar`, `toggleAiCuratePanel`, `syncAiSidebarUi`, `aiSubmitJob`, `aiPollJobStatus`, `aiRefreshRunData`, `aiLoadElementHistory`, `aiRenderImageInspector` | `#ai-sidebar-shell`, `#ai-curate-panel`, `#ai-image-inspector` |
 | **AI Grid Overlay** | `aiToggleOverlays`, `aiScoreGradient`, `aiShouldShowImage`, `aiSortImages`, `aiShowHeaderControls` | `.ai-score-badge`, `#ai-display-controls` |
 | **Polling** | `pollForChanges` (5s interval), `isInteractionBusy`, `aiPollJobStatus` (2s interval) | `setInterval` |
 | **Batch Search** | `setBatchFilter`, `filterBatches`, `clearBatchSearch` | `#batch-search` |
@@ -158,6 +159,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 | `imageCurator.lastBatch` | Last viewed batch name |
 | `imageCurator.lastFolder` | Last viewed folder |
 | `imageCurator.batchSort` | Batch list sort mode |
+| `imageCurator.gridDensity` | Thumbnail density mode (`compact`, `comfortable`, `large`) |
 | `imageCurator.aiSidebarWidth` | AI sidebar width (px) |
 | `imageCurator.aiSidebarOpen` | AI sidebar visibility ('true'/'false') |
 | `imageCurator.aiPanelOpen` | AI panel collapse state ('true'/'false') |
@@ -178,7 +180,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - Start with `templates/index.html` to understand the DOM structure (IDs, CSS classes), then trace behavior in the focused `static/js/*.js` file from the JavaScript File Map above.
 - Changes to styling go in the focused `static/css/*.css` file for the affected surface. Keep selector names stable unless all HTML/JS/test references are updated. The dark theme is fixed -- no light mode.
 - When adding a new API call, add it to the API Call Inventory table above.
-- The 6 `test_frontend_*.py` files in `tests/unit/` regex-scan the ordered split JS sources via `tests/unit/frontend_source.py` for function names and invariants. They are NOT browser tests. After JS changes, run them to avoid regressions on the invariants they check, but always also test manually in a browser.
+- The `test_frontend_*.py` files in `tests/unit/` regex-scan the ordered split JS/CSS sources via `tests/unit/frontend_source.py` for function names and invariants. They are NOT browser tests. After JS changes, run them to avoid regressions on the invariants they check, but always also test manually in a browser.
 - `gridThumbMap` is the key optimization -- it preserves DOM elements across re-renders. `_gridChildrenMatchDesiredOrder()` avoids `replaceChildren()` when order is already correct.
 - Thumbnail blob URLs must be revoked on `beforeunload` to prevent memory leaks -- the `thumbnailBlobUrlCache` FIFO eviction and the `beforeunload` handler manage this.
 
@@ -189,6 +191,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **Polling skips during interaction:** `isInteractionBusy()` returns true during lightbox, drag, or resize. This prevents API responses from overwriting DOM elements the operator is actively interacting with.
 - **`_gridChildrenMatchDesiredOrder()` optimization:** The grid is only rebuilt if the order of thumb elements actually changed. Removing this check causes visible flicker on every poll cycle.
 - **Score gradient is hardcoded:** `aiScoreGradient()` uses a fixed dark-red-to-dark-yellow-to-green gradient. There is no configuration for color thresholds.
+- **AI inspector is frontend-only:** `aiRenderImageInspector()` reads the active run already loaded in `aiActiveRun`; do not add per-image API calls for inspector refresh unless the run-history contract changes.
 - **CSS variables for layout only, not theming:** `--sidebar-width`, `--sidebar-effective-width`, `--ai-sidebar-width`, `--lightbox-zoom`. All colors are hardcoded.
 - **Single responsive breakpoint at 900px:** Rules live in `responsive.css`, which must load last. Below this, sidebars shrink, AI sidebar moves below grid, resizers hide.
 - **`__favorites__` is a virtual batch sentinel:** Do not call real batch APIs with it. Use per-image `img.batch` and `img.folder` for image src, lightbox metadata, and lightbox moves.

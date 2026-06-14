@@ -6,10 +6,11 @@ before manual selection. Single-user, local-first, filesystem-backed.
 
 ## What it does
 
-- **Batch review UI** -- left sidebar with searchable batch list, center
-  thumbnail grid, folder tabs (inbox / shortlisted / finals / rejects).
-  Drag images between folders, multi-select for bulk moves, undo toast for
-  the last operation.
+- **Batch review UI** -- asset-manager style batch sidebar, compact workspace
+  toolbar, center thumbnail grid, folder tabs (inbox / shortlisted / finals /
+  rejects), sort/favorites/AI controls, and persistent thumbnail density modes.
+  Drag images between folders, multi-select or Select All for bulk moves, undo
+  toast for the last operation.
 - **Lightbox viewer** -- full-size image review with zoom, keyboard
   navigation, scored-image jumps, and PNG generation metadata (prompt,
   seed, sampler, CFG, LoRAs).
@@ -20,7 +21,8 @@ before manual selection. Single-user, local-first, filesystem-backed.
 - **Auto-import from ComfyUI** -- background watcher moves new outputs into
   the active batch inbox. One-click manual import also available.
 - **AI-assisted scoring (optional)** -- sends images to a local vision LLM
-  to check for prompt elements and quality baselines. Scores are advisory;
+  to check for prompt elements and quality baselines. The AI sidebar includes a
+  contextual image inspector for the selected/open image. Scores are advisory;
   manual curation is authoritative.
 - **Run history and comparison** -- scored runs are saved per-batch.
   Compare two runs to see which images gained or lost points.
@@ -115,6 +117,7 @@ baseline checks for anatomy and artifacts are appended automatically.
 | `Esc` | Contextual: clear search, close lightbox, close modal |
 | `Ctrl+Z` | Undo last move (while toast is active) |
 | `Ctrl+A` | Select all images in current folder |
+| `Select All` button | Toggle selection for all currently visible thumbnails |
 | `U` | Toggle batch sidebar |
 | `F` | Toggle favorites-only filter |
 | `B` | Toggle AI score badges |
@@ -141,8 +144,15 @@ baseline checks for anatomy and artifacts are appended automatically.
 
 - AI sidebar width, open state, and panel collapse persist across sessions.
 - Batch sidebar open state persists across sessions.
+- Thumbnail density mode persists across sessions.
+- The workspace toolbar keeps folder tabs, sorting, favorites, density, and
+  available AI badge/filter controls together above the grid.
+- The batch sidebar shows folder count breakdowns, AI-run indicators, and a
+  pinned All Favorites collection.
 - AI badges and score filtering reset when switching to a batch with no
   active run.
+- The AI review inspector follows clicked thumbnails and lightbox navigation,
+  showing active-run score details when available.
 - Favorite toggles update both the current batch and the universal favorites
   list; the All Favorites sidebar count refreshes during batch polling.
 - The All Favorites view is virtual: thumbnails show batch labels and

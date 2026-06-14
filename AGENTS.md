@@ -15,11 +15,11 @@
 ## What This Repo Provides
 
 - **Batch filesystem workflow:** inbox/shortlisted/finals/rejects folders under `IMAGE_CURATOR_BATCHES/<batch>/`. Counts, metadata, auto-import from ComfyUI outputs.
-- **Web review UI:** Left batch sidebar, center thumbnail grid, right AI sidebar. Drag/drop moves, multi-select, undo toast, keyboard shortcuts, background polling.
+- **Web review UI:** Asset-manager style batch sidebar, compact workspace toolbar, center thumbnail grid, right AI sidebar. Drag/drop moves, multi-select/Select All, undo toast, keyboard shortcuts, background polling.
 - **Lightbox viewer:** Full-image review with zoom, PNG generation metadata inspection (`M` toggle), scored-image navigation (`[`/`]`), keyboard folder moves (`S`/`F`/`R`).
 - **Favorites workflow:** One-click favorites update batch and universal scope, with a favorites-only filter and virtual All Favorites sidebar view.
 - **Prompt history:** Manual PNG metadata prompt indexes with searchable/copyable Prompt History modal and staleness warning.
-- **AI-assisted scoring:** Vision-LLM evaluation against element checklists via OpenAI-compatible `/v1/chat/completions`. Optional auto-move of top-N images. Run history with comparison.
+- **AI-assisted scoring:** Vision-LLM evaluation against element checklists via OpenAI-compatible `/v1/chat/completions`. Optional auto-move of top-N images. Run history with comparison and a contextual image inspector in the AI sidebar.
 - **CLI headless scoring:** Same pipeline available via `curate.py` (dry-run, score-only, or score-and-move).
 - **Core philosophy:** Manual curation is authoritative. AI is advisory. Filesystem is the operational truth.
 
@@ -85,7 +85,7 @@ Frontend (templates/index.html + ordered static/js/*.js + static/css/*.css)
 | | `static/css/base.css`, `sidebar.css`, `layout.css`, `grid.css`, `lightbox.css`, `modals.css`, `prompts.css`, `toast.css`, `ai.css`, `responsive.css` | Browser-loaded split styling in template order (dark theme, flexbox + CSS grid) |
 | | `static/css/app.css` | Temporary full compatibility stylesheet for raw-text tests; not browser-loaded by `templates/index.html` |
 | | `static/README.md` | Module-scoped agent startup guide (global state, function groups, API calls, gotchas) |
-| **Tests** | `tests/unit/` | Isolated logic (17 Python + 6 JS-scraping frontend-invariant tests) |
+| **Tests** | `tests/unit/` | Isolated logic plus source-scraping frontend-invariant tests |
 | | `tests/component/` | In-process multi-module (Flask route contracts, AI worker lifecycle) |
 | | `tests/integration/` | Full HTTP + filesystem workflow (Flask test client, real files) |
 | | `tests/README.md` | Module-scoped agent startup guide (layers, fixtures, markers, coverage gaps) |
@@ -138,7 +138,8 @@ Treat these as stability-sensitive:
 - Header Help modal content, keyboard shortcuts, and sidebar toggle labels
 - Lightbox PNG metadata route shape, toggle shortcut (`M`), and displayed field set
 - Batch and AI sidebar button labels as stateful operator-facing cues, not static text
-- AI run history labels and compare controls as operator-facing compatibility surfaces
+- Workspace toolbar control IDs/order, density controls, Select All behavior, and thumbnail state classes
+- AI run history labels, compare controls, and image inspector as operator-facing compatibility surfaces
 - Favorites API shapes, favorites filter button, All Favorites sidebar entry, and lightbox/thumb star behavior
 - Prompt History modal controls, prompt-history API shapes, and manual cache file semantics
 
@@ -159,7 +160,8 @@ Treat these as stability-sensitive:
 
 - Read `templates/index.html`, the relevant ordered `static/js/*.js` files, and the relevant `static/css/*.css` files
 - Preserve the center grid as the primary review surface
-- Preserve the right-sidebar AI Curate layout unless the task explicitly changes it
+- Preserve the compact workspace toolbar grouping unless the task explicitly changes it
+- Preserve the right-sidebar AI Curate layout and image inspector unless the task explicitly changes them
 - Preserve the header control cluster order and semantics unless the task explicitly changes them
 - Preserve the expected sidebar-toggle label behavior (`Show` / `Hide`) unless the task explicitly changes it
 - Preserve keyboard-first flow for search, selection, AI toggles, sorting, and lightbox review
@@ -171,8 +173,10 @@ Treat these as stability-sensitive:
 ### UI behavior that should stay consistent
 
 - AI overlay toggle and AI filter state are batch-scoped and must not leak across batch switches
+- The AI image inspector follows clicked thumbnails and lightbox navigation, and resets across batch switches
 - Undo must work for both drag moves and lightbox keyboard moves while the undo toast is active
 - Thumbnail updates should prefer incremental DOM updates over full grid rebuilds when possible
+- Density classes (`density-compact`, `density-comfortable`, `density-large`) should keep thumbnail sizing stable when sidebars open/close
 - The AI sidebar open state, collapsed state, and width persist in local storage
 - The batch sidebar open state persists in local storage
 - Batch-search shortcuts should reopen the batch sidebar before focusing the search input
@@ -208,7 +212,7 @@ Treat these as stability-sensitive:
 - **`--panel` flag is deprecated (curate.py):** Use `--prompt`. `--panel` still works but prints a warning. `--prompt` takes precedence if both are provided.
 - **AI worker threads are daemons:** They die with the process. Shutdown tries to join for 5 seconds, then exits.
 - **Auto-import watcher defaults to OFF:** Set `IMAGE_CURATOR_ENABLE_WATCHER=true` to enable polling from ComfyUI output.
-- **Frontend tests are Python source-scraping:** The 6 `test_frontend_*.py` files regex-scan ordered split JS sources through `tests/unit/frontend_source.py` for function names and invariants. No headless browser or JS test framework. Browser-only changes need manual verification.
+- **Frontend tests are Python source-scraping:** The `test_frontend_*.py` files regex-scan ordered split JS/CSS sources through `tests/unit/frontend_source.py` for function names and invariants. No headless browser or JS test framework. Browser-only changes need manual verification.
 - **Generated files (never edit):** `.thumbs/` (thumbnail cache), `.favorites.json`, `<batch>/prompt-history.json`, `<batch>/ai-curate/runs/` (run history), `<batch>/ai-curate/latest.json`, `__pycache__/`, `*.egg-info/`.
 - **Favorites one click updates both scopes:** `toggle_favorite()` writes batch and universal stores; universal view uses `__favorites__` as a frontend sentinel, never as a real batch.
 - **Prompt history is manual:** Build/rebuild is synchronous and operator-triggered. Staleness checks compare total image count only.
