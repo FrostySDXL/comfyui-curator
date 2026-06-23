@@ -51,6 +51,19 @@ def test_grid_empty_states_distinguish_filters_and_empty_folders() -> None:
     assert ".empty-detail" in css
 
 
+def test_public_views_have_specific_empty_states_and_followup_action() -> None:
+    js = read_frontend_js()
+    html = read_index_html()
+
+    assert "No public copies yet" in js
+    assert "No generated public copies" in js
+    assert "Select images from inbox, shortlisted, or finals" in js
+    assert "Public copies appear here after you prepare selected originals" in js
+    assert "function viewCreatedPublicCopies()" in js
+    assert 'id="publish-view-public-btn"' in html
+    assert "publish-view-public-btn" in js
+
+
 def test_initial_no_batch_grid_has_stable_empty_layout() -> None:
     html = read_index_html()
 
@@ -106,11 +119,93 @@ def test_public_actions_replace_review_moves_in_public_views() -> None:
     assert "const showReviewMove = !isVirtualCollectionView() && !isPublicView()" in js
 
 
+def test_public_action_bar_groups_review_and_public_actions() -> None:
+    html = read_index_html()
+    css = read_frontend_css()
+
+    assert 'class="action-group action-group-review"' in html
+    assert 'class="action-group action-group-public"' in html
+    assert ".action-group" in css
+    assert ".action-divider" in css
+
+
 def test_public_export_refreshes_batch_counts() -> None:
     js = read_frontend_js()
     body = extract_function_body(js, "async function submitPublicExport()")
 
     assert "await loadBatches();" in body
+
+
+def test_public_export_modal_guides_watermark_and_next_step() -> None:
+    html = read_index_html()
+    js = read_frontend_js()
+    css = read_frontend_css()
+
+    assert 'id="publish-source-summary"' in html
+    assert 'id="publish-watermark-options"' in html
+    assert 'id="publish-watermark-warning"' in html
+    assert 'id="publish-reset-watermark-btn"' in html
+    assert "function syncPublishWatermarkFields()" in js
+    assert "function resetPublishWatermarkDefaults()" in js
+    assert "function updatePublishSourceSummary()" in js
+    assert "publish-watermark-options.disabled" in css
+    assert "publish-result" in css
+
+
+def test_public_external_actions_use_destination_modal_not_browser_prompt() -> None:
+    html = read_index_html()
+    js = read_frontend_js()
+
+    assert 'id="public-destination-modal"' in html
+    assert 'id="public-destination-input"' in html
+    assert "function showPublicDestinationModal(" in js
+    assert "function submitPublicDestinationAction()" in js
+    assert "window.prompt('Copy public copies" not in js
+    assert "window.prompt('Move public copies" not in js
+
+
+def test_public_posting_help_section_documents_safety_contracts() -> None:
+    html = read_index_html()
+
+    assert "<h4>Public Posting</h4>" in html
+    assert "Prepare Public Copies" in html
+    assert "Original review images are never modified" in html
+    assert "All Public" in html
+    assert "IMAGE_CURATOR_PUBLIC_EXPORTS" in html
+
+
+def test_public_modal_escape_and_focus_release_paths_exist() -> None:
+    js = read_frontend_js()
+    publish_hide = extract_function_body(js, "function hidePublishModal()")
+    destination_hide = extract_function_body(js, "function hidePublicDestinationModal()")
+
+    assert "document.getElementById('publish-modal').classList.contains('active')" in js
+    assert "document.getElementById('public-destination-modal').classList.contains('active')" in js
+    assert "hidePublishModal();" in js
+    assert "hidePublicDestinationModal();" in js
+    assert "_releaseFocusTrap();" in publish_hide
+    assert "_releaseFocusTrap();" in destination_hide
+
+
+def test_public_helpers_load_before_grid_consumers() -> None:
+    state = Path("static/js/state.js").read_text(encoding="utf-8")
+    publish = Path("static/js/publish.js").read_text(encoding="utf-8")
+
+    assert "function isVirtualCollectionView()" in state
+    assert "function isPublicView()" in state
+    assert "function isVirtualCollectionView()" not in publish
+    assert "function isPublicView()" not in publish
+
+
+def test_lightbox_public_actions_and_copy_count_refresh_are_guarded() -> None:
+    js = read_frontend_js()
+    lightbox_body = extract_function_body(js, "function syncLightboxPublicActions()")
+    destination_body = extract_function_body(js, "async function submitPublicDestinationAction()")
+
+    assert "#lightbox-actions .btn-shortlist" in lightbox_body
+    assert "#lightbox-actions .btn-finals" in lightbox_body
+    assert "#lightbox-actions .btn-reject" in lightbox_body
+    assert "await updateAllPublicCount();" in destination_body
 
 
 def test_all_public_count_updates_batch_public_tab_counts() -> None:

@@ -164,6 +164,12 @@ function closeModalOnBackdropClick(event, hideFn) {
                 return;
             }
 
+            if (e.key === 'Escape' && document.getElementById('public-destination-modal').classList.contains('active')) {
+                e.preventDefault();
+                hidePublicDestinationModal();
+                return;
+            }
+
             if (isTypingTarget) return;
 
             if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
@@ -371,6 +377,28 @@ function _bindDelegatedEvents() {
             if (publishModal) publishModal.addEventListener('click', function(event) { closeModalOnBackdropClick(event, hidePublishModal); });
             const publishSubmitBtn = document.getElementById('publish-submit-btn');
             if (publishSubmitBtn) publishSubmitBtn.addEventListener('click', submitPublicExport);
+            const publishWatermarkToggle = document.getElementById('publish-watermark-enabled');
+            if (publishWatermarkToggle) publishWatermarkToggle.addEventListener('change', syncPublishWatermarkFields);
+            ['publish-watermark-text', 'publish-watermark-position', 'publish-watermark-opacity', 'publish-watermark-size', 'publish-watermark-margin'].forEach(id => {
+                const input = document.getElementById(id);
+                if (input) input.addEventListener('input', syncPublishWatermarkFields);
+            });
+            const publishResetWatermarkBtn = document.getElementById('publish-reset-watermark-btn');
+            if (publishResetWatermarkBtn) publishResetWatermarkBtn.addEventListener('click', resetPublishWatermarkDefaults);
+            const publishViewPublicBtn = document.getElementById('publish-view-public-btn');
+            if (publishViewPublicBtn) publishViewPublicBtn.addEventListener('click', viewCreatedPublicCopies);
+
+            document.querySelectorAll('#public-destination-modal .cancel').forEach(btn => {
+                btn.addEventListener('click', hidePublicDestinationModal);
+            });
+            const publicDestinationModal = document.getElementById('public-destination-modal');
+            if (publicDestinationModal) publicDestinationModal.addEventListener('click', function(event) { closeModalOnBackdropClick(event, hidePublicDestinationModal); });
+            const publicDestinationSubmit = document.getElementById('public-destination-submit-btn');
+            if (publicDestinationSubmit) publicDestinationSubmit.addEventListener('click', submitPublicDestinationAction);
+            const publicDestinationInput = document.getElementById('public-destination-input');
+            if (publicDestinationInput) publicDestinationInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') submitPublicDestinationAction();
+            });
 
             document.querySelectorAll('#help-modal .cancel').forEach(btn => {
                 btn.addEventListener('click', hideHelpModal);

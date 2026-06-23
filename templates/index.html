@@ -276,14 +276,21 @@
     <!-- Action bar for multi-select -->
     <div class="action-bar" id="action-bar">
         <span class="action-count" id="action-count">0 selected</span>
-        <button class="action-btn" data-dest="inbox">Inbox</button>
-        <button class="action-btn" data-dest="shortlisted">Shortlist</button>
-        <button class="action-btn" data-dest="finals">Finals</button>
-        <button class="action-btn" data-dest="rejects">Reject</button>
-        <button class="action-btn action-publish" id="publish-btn" type="button">Prepare Public Copies</button>
-        <button class="action-btn action-public" id="public-copy-btn" type="button">Copy Public Copies...</button>
-        <button class="action-btn action-public" id="public-move-btn" type="button">Move Public Copies...</button>
-        <button class="action-btn action-public action-public-danger" id="public-delete-btn" type="button">Delete Public Copies</button>
+        <div class="action-group action-group-review">
+            <span class="action-group-label">Move to</span>
+            <button class="action-btn" data-dest="inbox">Inbox</button>
+            <button class="action-btn" data-dest="shortlisted">Shortlist</button>
+            <button class="action-btn" data-dest="finals">Finals</button>
+            <button class="action-btn" data-dest="rejects">Reject</button>
+            <span class="action-divider" aria-hidden="true"></span>
+            <button class="action-btn action-publish" id="publish-btn" type="button">Prepare Public Copies</button>
+        </div>
+        <div class="action-group action-group-public">
+            <span class="action-group-label">Public copies</span>
+            <button class="action-btn action-public" id="public-copy-btn" type="button">Copy...</button>
+            <button class="action-btn action-public" id="public-move-btn" type="button">Move...</button>
+            <button class="action-btn action-public action-public-danger" id="public-delete-btn" type="button">Delete</button>
+        </div>
         <button class="action-btn action-clear">Clear</button>
     </div>
 
@@ -340,28 +347,52 @@
         <div class="modal-content publish-modal-content">
             <h3 id="publish-modal-title">Prepare Public Copies</h3>
             <div class="publish-scope">Selected images: <strong id="publish-selected-count">0</strong></div>
+            <div id="publish-source-summary" class="publish-summary">Output: this batch's public folder. Originals are not changed.</div>
             <label class="publish-check"><input type="checkbox" id="publish-strip-metadata" checked> Strip metadata</label>
             <label class="publish-check"><input type="checkbox" id="publish-watermark-enabled" checked> Add text watermark</label>
-            <label class="publish-field">Text <input id="publish-watermark-text" type="text" value="FrostySDXL"></label>
-            <label class="publish-field">Position
-                <select id="publish-watermark-position">
-                    <option value="bottom-right" selected>Bottom right</option>
-                    <option value="bottom-left">Bottom left</option>
-                    <option value="top-right">Top right</option>
-                    <option value="top-left">Top left</option>
-                    <option value="bottom-center">Bottom center</option>
-                    <option value="center">Center</option>
-                </select>
-            </label>
-            <div class="publish-grid-fields">
-                <label class="publish-field">Opacity % <input id="publish-watermark-opacity" type="number" min="0" max="100" value="55"></label>
-                <label class="publish-field">Size % <input id="publish-watermark-size" type="number" min="1" max="20" value="4"></label>
-                <label class="publish-field">Margin px <input id="publish-watermark-margin" type="number" min="0" value="32"></label>
+            <div id="publish-watermark-options" class="publish-watermark-options">
+                <label class="publish-field">Text <input id="publish-watermark-text" type="text" value="FrostySDXL"></label>
+                <div id="publish-watermark-warning" class="publish-warning hidden">Watermark is enabled but the text is empty.</div>
+                <label class="publish-field">Position
+                    <select id="publish-watermark-position">
+                        <option value="bottom-right" selected>Bottom right</option>
+                        <option value="bottom-left">Bottom left</option>
+                        <option value="top-right">Top right</option>
+                        <option value="top-left">Top left</option>
+                        <option value="bottom-center">Bottom center</option>
+                        <option value="center">Center</option>
+                    </select>
+                </label>
+                <div class="publish-grid-fields">
+                    <label class="publish-field">Opacity % <input id="publish-watermark-opacity" type="number" min="0" max="100" value="55"></label>
+                    <label class="publish-field">Size % <input id="publish-watermark-size" type="number" min="1" max="20" value="4"></label>
+                    <label class="publish-field">Margin px <input id="publish-watermark-margin" type="number" min="0" value="32"></label>
+                </div>
+                <button class="modal-link-btn" id="publish-reset-watermark-btn" type="button">Reset watermark defaults</button>
             </div>
             <p>Generated copies are written to this batch's public folder. Originals are not changed.</p>
+            <div id="publish-result" class="publish-result hidden">
+                <span id="publish-result-text"></span>
+                <button id="publish-view-public-btn" type="button">View Public Copies</button>
+            </div>
             <div class="modal-buttons">
                 <button class="cancel" type="button">Cancel</button>
                 <button class="create" id="publish-submit-btn" type="button">Create Public Copies</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="public-destination-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="public-destination-modal-title">
+        <div class="modal-content public-destination-modal-content">
+            <h3 id="public-destination-modal-title">Copy Public Copies</h3>
+            <p id="public-destination-detail">Choose a destination under IMAGE_CURATOR_PUBLIC_EXPORTS. Only generated public copies are affected.</p>
+            <label class="publish-field">Destination under export root
+                <input id="public-destination-input" type="text" placeholder="posts/batch-name" autocomplete="off">
+            </label>
+            <div class="publish-summary">External copy/move is available only when IMAGE_CURATOR_PUBLIC_EXPORTS is configured.</div>
+            <div class="modal-buttons">
+                <button class="cancel" type="button">Cancel</button>
+                <button class="create" id="public-destination-submit-btn" type="button">Copy Public Copies</button>
             </div>
         </div>
     </div>
@@ -405,6 +436,16 @@
                     <li><strong>Runs</strong> shows saved batch runs and can compare a run against the previous completed baseline.</li>
                     <li>AI badges, score sorting, and filters are batch-scoped and reset when no active run is available.</li>
                     <li>Manual moves remain authoritative; AI scores are advisory evidence only.</li>
+                </ul>
+            </div>
+            <div class="help-section">
+                <h4>Public Posting</h4>
+                <ul class="help-list">
+                    <li><strong>Prepare Public Copies</strong> creates metadata-stripped generated derivatives in the batch public folder.</li>
+                    <li>Original review images are never modified by public posting actions.</li>
+                    <li><strong>Public</strong> shows one batch's generated copies; <strong>All Public</strong> aggregates generated copies across batches.</li>
+                    <li>Copy, move, and delete actions in public views affect generated public copies only.</li>
+                    <li>External copy or move requires <strong>IMAGE_CURATOR_PUBLIC_EXPORTS</strong>.</li>
                 </ul>
             </div>
             <div class="modal-buttons">

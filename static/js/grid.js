@@ -193,6 +193,18 @@ function getGridEmptyStateMessage() {
                     detail: 'Change the AI filter or turn AI badges off to return to the full folder.',
                 };
             }
+            if (currentBatch === '__public__') {
+                return {
+                    title: 'No generated public copies',
+                    detail: 'Public copies appear here after you prepare selected originals from a batch.',
+                };
+            }
+            if (currentFolder === 'public') {
+                return {
+                    title: 'No public copies yet',
+                    detail: 'Select images from inbox, shortlisted, or finals, then choose Prepare Public Copies.',
+                };
+            }
             return {
                 title: 'No images in this folder',
                 detail: currentBatch ? 'Move or import images into this folder to continue reviewing.' : 'Select a batch from the sidebar.',

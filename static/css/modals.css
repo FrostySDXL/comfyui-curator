@@ -63,6 +63,9 @@
         .publish-modal-content {
             width: min(460px, calc(100vw - 40px));
         }
+        .public-destination-modal-content {
+            width: min(440px, calc(100vw - 40px));
+        }
         .publish-scope,
         .publish-check,
         .publish-field {
@@ -86,9 +89,62 @@
             color: #eee;
             border-radius: 4px;
         }
+        .publish-summary {
+            margin-bottom: 12px;
+            padding: 9px 10px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            background: #202020;
+            color: #999;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        .publish-watermark-options.disabled {
+            opacity: 0.48;
+        }
+        .publish-warning {
+            color: #e8a33d;
+            font-size: 12px;
+            margin: -4px 0 10px;
+        }
+        .modal-link-btn {
+            padding: 0;
+            margin: 0 0 12px;
+            border: none;
+            background: transparent;
+            color: #7fb6ff;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .modal-link-btn:hover { color: #b7d5ff; }
         .publish-grid-fields {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 10px;
         }
+        .publish-result {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 14px;
+            padding: 10px;
+            border: 1px solid #2f5134;
+            border-radius: 4px;
+            background: #1d2b20;
+            color: #bfe4c5;
+            font-size: 13px;
+        }
+        .publish-result.hidden { display: none; }
+        .publish-result button {
+            flex-shrink: 0;
+            padding: 6px 10px;
+            border: 1px solid #4c7b54;
+            border-radius: 4px;
+            background: #264c2d;
+            color: #e8f6ea;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .publish-result button:hover { background: #315f39; }
 

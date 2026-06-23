@@ -1,13 +1,8 @@
 /* Ordered classic script.
  * Defines: public derivative export modal, batch public view, All Public view, public-copy actions.
  */
-function isVirtualCollectionView() {
-            return currentBatch === '__favorites__' || currentBatch === '__public__';
-        }
-
-function isPublicView() {
-            return currentBatch === '__public__' || currentFolder === 'public';
-        }
+let lastPublishedPublicBatch = null;
+let pendingPublicDestinationAction = null;
 
 function showPublishModal() {
             if (!currentBatch || isVirtualCollectionView() || isPublicView() || selectedImages.size === 0) {
@@ -17,6 +12,10 @@ function showPublishModal() {
             const modal = document.getElementById('publish-modal');
             const count = document.getElementById('publish-selected-count');
             if (count) count.textContent = String(selectedImages.size);
+            updatePublishSourceSummary();
+            syncPublishWatermarkFields();
+            const result = document.getElementById('publish-result');
+            if (result) result.classList.add('hidden');
             modal.classList.add('active');
             _trapFocus(modal);
             const textInput = document.getElementById('publish-watermark-text');
@@ -32,7 +31,45 @@ function getSelectedSourceFilenames() {
             return images.filter(img => selectedImages.has(img.name)).map(img => img.name);
         }
 
+function updatePublishSourceSummary() {
+            const summary = document.getElementById('publish-source-summary');
+            if (!summary) return;
+            const selectedCount = selectedImages.size;
+            const folder = currentFolder || 'review folder';
+            const batch = currentBatch || 'current batch';
+            summary.textContent = `${selectedCount} selected from ${batch} / ${folder}. Output: ${batch} / public. Originals are not changed.`;
+        }
+
+function syncPublishWatermarkFields() {
+            const enabled = document.getElementById('publish-watermark-enabled')?.checked === true;
+            const options = document.getElementById('publish-watermark-options');
+            const warning = document.getElementById('publish-watermark-warning');
+            if (options) options.classList.toggle('disabled', !enabled);
+            ['publish-watermark-text', 'publish-watermark-position', 'publish-watermark-opacity', 'publish-watermark-size', 'publish-watermark-margin'].forEach(id => {
+                const input = document.getElementById(id);
+                if (input) input.disabled = !enabled;
+            });
+            const text = document.getElementById('publish-watermark-text')?.value.trim() || '';
+            if (warning) warning.classList.toggle('hidden', !enabled || text.length > 0);
+        }
+
+function resetPublishWatermarkDefaults() {
+            const values = {
+                'publish-watermark-text': 'FrostySDXL',
+                'publish-watermark-position': 'bottom-right',
+                'publish-watermark-opacity': '55',
+                'publish-watermark-size': '4',
+                'publish-watermark-margin': '32',
+            };
+            Object.entries(values).forEach(([id, value]) => {
+                const input = document.getElementById(id);
+                if (input) input.value = value;
+            });
+            syncPublishWatermarkFields();
+        }
+
 function buildPublishWatermarkOptions() {
+            syncPublishWatermarkFields();
             const enabled = document.getElementById('publish-watermark-enabled').checked;
             return {
                 enabled,
@@ -42,6 +79,23 @@ function buildPublishWatermarkOptions() {
                 size_percent: Number(document.getElementById('publish-watermark-size').value || 4),
                 margin: Number(document.getElementById('publish-watermark-margin').value || 32),
             };
+        }
+
+function showPublishResult(data) {
+            const result = document.getElementById('publish-result');
+            const text = document.getElementById('publish-result-text');
+            if (!result || !text) return;
+            const exported = data.exported || 0;
+            const failed = data.failed || 0;
+            text.textContent = failed > 0
+                ? `Created ${exported}; ${failed} failed.`
+                : `Created ${exported} public cop${exported === 1 ? 'y' : 'ies'}.`;
+            result.classList.remove('hidden');
+        }
+
+async function viewCreatedPublicCopies() {
+            hidePublishModal();
+            if (lastPublishedPublicBatch) await loadBatchPublic(lastPublishedPublicBatch);
         }
 
 async function submitPublicExport() {
@@ -65,9 +119,10 @@ async function submitPublicExport() {
                     showToast(data.error || 'Public export failed');
                     return;
                 }
-                hidePublishModal();
+                lastPublishedPublicBatch = currentBatch;
                 clearSelection();
                 showToast(`Created ${data.exported || 0} public cop${data.exported === 1 ? 'y' : 'ies'}`);
+                showPublishResult(data);
                 await loadBatches();
             } catch {
                 showToast('Public export failed');
@@ -167,6 +222,66 @@ function selectedPublicItems() {
                 .map(img => ({batch: img.batch || currentBatch, filename: img.name}));
         }
 
+function hidePublicDestinationModal() {
+            const modal = document.getElementById('public-destination-modal');
+            if (modal) modal.classList.remove('active');
+            pendingPublicDestinationAction = null;
+            _releaseFocusTrap();
+        }
+
+function showPublicDestinationModal(action) {
+            const items = selectedPublicItems();
+            if (!items.length) return;
+            pendingPublicDestinationAction = action;
+            const modal = document.getElementById('public-destination-modal');
+            const title = document.getElementById('public-destination-modal-title');
+            const detail = document.getElementById('public-destination-detail');
+            const input = document.getElementById('public-destination-input');
+            const submit = document.getElementById('public-destination-submit-btn');
+            const label = action === 'move' ? 'Move Public Copies' : 'Copy Public Copies';
+            if (title) title.textContent = label;
+            if (detail) detail.textContent = `${label} for ${items.length} generated cop${items.length === 1 ? 'y' : 'ies'}. Only generated public copies are affected.`;
+            if (submit) submit.textContent = label;
+            if (input) input.value = '';
+            modal.classList.add('active');
+            _trapFocus(modal);
+            if (input) input.focus();
+        }
+
+async function submitPublicDestinationAction() {
+            const action = pendingPublicDestinationAction;
+            const items = selectedPublicItems();
+            const destination = document.getElementById('public-destination-input')?.value.trim() || '';
+            if (!action || !items.length) return;
+            if (!destination) {
+                showToast('Enter a destination under IMAGE_CURATOR_PUBLIC_EXPORTS');
+                return;
+            }
+            if (action === 'move' && !window.confirm('Move selected public copies?\n\nThis only moves generated public copies. Original curated images will not be changed.')) return;
+            const submit = document.getElementById('public-destination-submit-btn');
+            if (submit) submit.disabled = true;
+            try {
+                const resp = action === 'move'
+                    ? await apiMovePublic(destination, items)
+                    : await apiCopyPublic(destination, items);
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) {
+                    showToast(data.error || `${action === 'move' ? 'Move' : 'Copy'} public copies failed`);
+                    return;
+                }
+                hidePublicDestinationModal();
+                if (action === 'move') {
+                    showToast(`Moved ${data.moved || 0} public cop${data.moved === 1 ? 'y' : 'ies'}`);
+                    await refreshPublicViewAfterAction();
+                } else {
+                    showToast(`Copied ${data.copied || 0} public cop${data.copied === 1 ? 'y' : 'ies'}`);
+                    await updateAllPublicCount();
+                }
+            } finally {
+                if (submit) submit.disabled = false;
+            }
+        }
+
 async function refreshPublicViewAfterAction() {
             selectedImages.clear();
             updateActionBar();
@@ -181,31 +296,13 @@ async function refreshPublicViewAfterAction() {
 async function copySelectedPublicCopies() {
             const items = selectedPublicItems();
             if (!items.length) return;
-            const destination = window.prompt('Copy public copies to destination under IMAGE_CURATOR_PUBLIC_EXPORTS:');
-            if (!destination) return;
-            const resp = await apiCopyPublic(destination, items);
-            const data = await resp.json().catch(() => ({}));
-            if (!resp.ok) {
-                showToast(data.error || 'Copy public copies failed');
-                return;
-            }
-            showToast(`Copied ${data.copied || 0} public cop${data.copied === 1 ? 'y' : 'ies'}`);
+            showPublicDestinationModal('copy');
         }
 
 async function moveSelectedPublicCopies() {
             const items = selectedPublicItems();
             if (!items.length) return;
-            if (!window.confirm('Move selected public copies?\n\nThis only moves generated public copies. Original curated images will not be changed.')) return;
-            const destination = window.prompt('Move public copies to destination under IMAGE_CURATOR_PUBLIC_EXPORTS:');
-            if (!destination) return;
-            const resp = await apiMovePublic(destination, items);
-            const data = await resp.json().catch(() => ({}));
-            if (!resp.ok) {
-                showToast(data.error || 'Move public copies failed');
-                return;
-            }
-            showToast(`Moved ${data.moved || 0} public cop${data.moved === 1 ? 'y' : 'ies'}`);
-            await refreshPublicViewAfterAction();
+            showPublicDestinationModal('move');
         }
 
 async function deleteSelectedPublicCopies() {

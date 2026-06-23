@@ -41,3 +41,11 @@
         let isSidebarResizing = false;
         let _sidebarResizePending = false;
         let _sidebarResizeLastEvent = null;
+
+function isVirtualCollectionView() {
+            return currentBatch === '__favorites__' || currentBatch === '__public__';
+        }
+
+function isPublicView() {
+            return currentBatch === '__public__' || currentFolder === 'public';
+        }

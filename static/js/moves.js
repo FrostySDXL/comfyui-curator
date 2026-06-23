@@ -64,12 +64,16 @@ function updateActionBar() {
             const bar = document.getElementById('action-bar');
             const grid = document.getElementById('grid');
             const showPublicActions = isPublicView();
-            const showReviewMove = !isVirtualCollectionView() && !isPublicView()
+            const showReviewMove = !isVirtualCollectionView() && !isPublicView();
             if (selectedImages.size > 0) {
                 bar.classList.add('visible');
                 grid.classList.add('selecting');
                 document.body.classList.add('has-active-selection');
                 document.getElementById('action-count').textContent = selectedImages.size + ' selected';
+                const reviewGroup = bar.querySelector('.action-group-review');
+                const publicGroup = bar.querySelector('.action-group-public');
+                if (reviewGroup) reviewGroup.style.display = showReviewMove ? '' : 'none';
+                if (publicGroup) publicGroup.style.display = showPublicActions ? '' : 'none';
                 bar.querySelectorAll('.action-btn[data-dest]').forEach(b =>
                     b.style.display = !showReviewMove || b.dataset.dest === currentFolder ? 'none' : '');
                 const publishBtn = document.getElementById('publish-btn');
