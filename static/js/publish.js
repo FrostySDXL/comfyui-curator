@@ -248,6 +248,24 @@ function showPublicDestinationModal(action) {
             if (input) input.focus();
         }
 
+function showPublicDeleteModal() {
+            const items = selectedPublicItems();
+            if (!items.length) return;
+            const modal = document.getElementById('public-delete-modal');
+            const count = document.getElementById('public-delete-count');
+            if (count) count.textContent = String(items.length);
+            modal.classList.add('active');
+            _trapFocus(modal);
+            const confirmBtn = document.getElementById('public-delete-confirm-btn');
+            if (confirmBtn) confirmBtn.focus();
+        }
+
+function hidePublicDeleteModal() {
+            const modal = document.getElementById('public-delete-modal');
+            if (modal) modal.classList.remove('active');
+            _releaseFocusTrap();
+        }
+
 async function submitPublicDestinationAction() {
             const action = pendingPublicDestinationAction;
             const items = selectedPublicItems();
@@ -308,15 +326,30 @@ async function moveSelectedPublicCopies() {
 async function deleteSelectedPublicCopies() {
             const items = selectedPublicItems();
             if (!items.length) return;
-            if (!window.confirm('Delete selected public copies?\n\nOriginal curated images will not be changed.')) return;
+            showPublicDeleteModal();
+        }
+
+async function confirmPublicDelete() {
+            const items = selectedPublicItems();
+            if (!items.length) {
+                hidePublicDeleteModal();
+                return;
+            }
+            const confirmBtn = document.getElementById('public-delete-confirm-btn');
+            if (confirmBtn) confirmBtn.disabled = true;
+            try {
             const resp = await apiDeletePublic(items);
             const data = await resp.json().catch(() => ({}));
             if (!resp.ok) {
                 showToast(data.error || 'Delete public copies failed');
                 return;
             }
+            hidePublicDeleteModal();
             showToast(`Deleted ${data.deleted || 0} public cop${data.deleted === 1 ? 'y' : 'ies'}`);
             await refreshPublicViewAfterAction();
+            } finally {
+                if (confirmBtn) confirmBtn.disabled = false;
+            }
         }
 
 function syncLightboxPublicActions() {

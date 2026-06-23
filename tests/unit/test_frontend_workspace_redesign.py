@@ -164,6 +164,19 @@ def test_public_external_actions_use_destination_modal_not_browser_prompt() -> N
     assert "window.prompt('Move public copies" not in js
 
 
+def test_public_delete_uses_confirmation_modal_not_browser_popup() -> None:
+    html = read_index_html()
+    js = read_frontend_js()
+
+    assert 'id="public-delete-modal"' in html
+    assert 'id="public-delete-count"' in html
+    assert 'id="public-delete-confirm-btn"' in html
+    assert "function showPublicDeleteModal()" in js
+    assert "function hidePublicDeleteModal()" in js
+    assert "async function confirmPublicDelete()" in js
+    assert "window.confirm('Delete selected public copies" not in js
+
+
 def test_public_posting_help_section_documents_safety_contracts() -> None:
     html = read_index_html()
 

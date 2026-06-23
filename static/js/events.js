@@ -170,6 +170,12 @@ function closeModalOnBackdropClick(event, hideFn) {
                 return;
             }
 
+            if (e.key === 'Escape' && document.getElementById('public-delete-modal').classList.contains('active')) {
+                e.preventDefault();
+                hidePublicDeleteModal();
+                return;
+            }
+
             if (isTypingTarget) return;
 
             if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
@@ -399,6 +405,14 @@ function _bindDelegatedEvents() {
             if (publicDestinationInput) publicDestinationInput.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter') submitPublicDestinationAction();
             });
+
+            document.querySelectorAll('#public-delete-modal .cancel').forEach(btn => {
+                btn.addEventListener('click', hidePublicDeleteModal);
+            });
+            const publicDeleteModal = document.getElementById('public-delete-modal');
+            if (publicDeleteModal) publicDeleteModal.addEventListener('click', function(event) { closeModalOnBackdropClick(event, hidePublicDeleteModal); });
+            const publicDeleteConfirm = document.getElementById('public-delete-confirm-btn');
+            if (publicDeleteConfirm) publicDeleteConfirm.addEventListener('click', confirmPublicDelete);
 
             document.querySelectorAll('#help-modal .cancel').forEach(btn => {
                 btn.addEventListener('click', hideHelpModal);
