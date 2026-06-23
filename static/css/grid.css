@@ -281,6 +281,9 @@
         .action-btn[data-dest="shortlisted"] { background: #28a745; }
         .action-btn[data-dest="finals"] { background: #0066cc; }
         .action-btn[data-dest="rejects"] { background: #dc3545; }
+        .action-btn.action-publish { background: #0066cc; }
+        .action-btn.action-public { background: #3a345f; }
+        .action-btn.action-public-danger { background: #8d2f3a; }
         .action-btn.action-clear {
             background: transparent; border: 1px solid #444;
             color: #888; margin-left: auto;

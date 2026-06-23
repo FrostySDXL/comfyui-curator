@@ -66,6 +66,7 @@ async function loadCurrentFolderImages() {
             const requestToken = ++folderRequestToken;
             const batch = currentBatch;
             const folder = currentFolder;
+            if (currentFolder === 'public') { await loadBatchPublic(batch); return; }
             const resp = await fetch(`/api/images/${batch}/${folder}?sort=${currentSort}&order=${currentOrder}`);
             if (!resp.ok) return;
             const nextImages = await resp.json();
@@ -79,14 +80,14 @@ function setSort(sort) {
             currentSort = sort;
             document.querySelectorAll('.sort-btn:not(.batch-sort-btn)').forEach(b => b.classList.toggle('active', b.dataset.sort === sort));
             document.getElementById('sort-dir-btn').classList.toggle('is-placeholder', sort === 'shuffle' || sort === 'score-desc');
-            if (currentBatch === '__favorites__') { updateGrid(); return; }
+            if (isVirtualCollectionView() || isPublicView()) { updateGrid(); return; }
             if (currentBatch && currentFolder) loadCurrentFolderImages();
         }
 
 function toggleOrder() {
             currentOrder = currentOrder === 'desc' ? 'asc' : 'desc';
             document.getElementById('sort-dir-btn').classList.toggle('asc', currentOrder === 'asc');
-            if (currentBatch === '__favorites__') { updateGrid(); return; }
+            if (isVirtualCollectionView() || isPublicView()) { updateGrid(); return; }
             if (currentBatch && currentFolder) loadCurrentFolderImages();
         }
 
@@ -160,7 +161,7 @@ function initializeGridDensity() {
 
 function sortImagesForDisplay(imgList) {
             if (aiActiveRun && currentSort === 'score-desc') return aiSortImages(imgList);
-            if (currentBatch !== '__favorites__') return imgList;
+            if (!isVirtualCollectionView() && !isPublicView()) return imgList;
             if (currentSort === 'shuffle') return [...imgList].sort(() => Math.random() - 0.5);
             const direction = currentOrder === 'asc' ? 1 : -1;
             if (currentSort === 'date') {
@@ -221,7 +222,7 @@ function updateImageCountLabel() {
         }
 
 function getImageBatchAndFolder(img) {
-            return currentBatch === '__favorites__'
+            return isVirtualCollectionView()
                 ? {batch: img.batch, folder: img.folder}
                 : {batch: currentBatch, folder: currentFolder};
         }
@@ -321,11 +322,11 @@ function updateThumbElement(thumb, img, index) {
                 setThumbnailImageSrc(imageEl, imageSrc, getThumbnailCacheKey(imageSrc, img));
             }
             if (metaName) metaName.textContent = img.name;
-            if (metaSize) metaSize.textContent = currentBatch === '__favorites__'
+            if (metaSize) metaSize.textContent = isVirtualCollectionView()
                 ? `${img.folder || 'folder'} · ${formatSize(img.size)}`
                 : formatSize(img.size);
             const metaBatch = thumb.querySelector('.meta-batch');
-            if (currentBatch === '__favorites__') {
+            if (isVirtualCollectionView()) {
                 if (metaBatch) {
                     metaBatch.textContent = img.batch || '';
                     metaBatch.classList.remove('hidden');

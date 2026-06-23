@@ -63,13 +63,21 @@ function updateSelectionVisuals() {
 function updateActionBar() {
             const bar = document.getElementById('action-bar');
             const grid = document.getElementById('grid');
+            const showPublicActions = isPublicView();
+            const showReviewMove = !isVirtualCollectionView() && !isPublicView()
             if (selectedImages.size > 0) {
                 bar.classList.add('visible');
                 grid.classList.add('selecting');
                 document.body.classList.add('has-active-selection');
                 document.getElementById('action-count').textContent = selectedImages.size + ' selected';
                 bar.querySelectorAll('.action-btn[data-dest]').forEach(b =>
-                    b.style.display = currentBatch === '__favorites__' || b.dataset.dest === currentFolder ? 'none' : '');
+                    b.style.display = !showReviewMove || b.dataset.dest === currentFolder ? 'none' : '');
+                const publishBtn = document.getElementById('publish-btn');
+                if (publishBtn) publishBtn.style.display = showReviewMove ? '' : 'none';
+                ['public-copy-btn', 'public-move-btn', 'public-delete-btn'].forEach(id => {
+                    const btn = document.getElementById(id);
+                    if (btn) btn.style.display = showPublicActions ? '' : 'none';
+                });
             } else {
                 bar.classList.remove('visible');
                 grid.classList.remove('selecting');
@@ -114,8 +122,8 @@ function onDragLeave(event) {
 function onDrop(event, folder) {
             event.preventDefault();
             event.currentTarget.classList.remove('drag-over');
-            if (currentBatch === '__favorites__') {
-                showToast('Drag/drop moves are not supported in All Favorites view. Use lightbox or individual moves.');
+            if (isVirtualCollectionView() || isPublicView()) {
+                showToast('Drag/drop moves are not supported in virtual or public views.');
                 draggedFiles = [];
                 return;
             }
@@ -200,6 +208,10 @@ async function moveSelected(destination) {
         }
 
 async function moveImage(destination) {
+            if (isPublicView()) {
+                showToast('Public copies cannot be moved to review folders');
+                return;
+            }
             const img = images[currentIndex];
             if (!img) return;
             const source = getImageBatchAndFolder(img);
@@ -261,6 +273,8 @@ async function undoLastMove() {
                     loadBatches();
                     if (currentBatch === '__favorites__') {
                         loadUniversalFavorites();
+                    } else if (currentBatch === '__public__') {
+                        loadAllPublic();
                     } else if (currentBatch === batch) {
                         loadCurrentFolderImages();
                     }
@@ -270,6 +284,8 @@ async function undoLastMove() {
                 loadBatches();
                 if (currentBatch === '__favorites__') {
                     loadUniversalFavorites();
+                } else if (currentBatch === '__public__') {
+                    loadAllPublic();
                 } else if (currentBatch === batch) {
                     loadCurrentFolderImages();
                 }

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from tests.unit.frontend_source import read_frontend_css, read_frontend_js
+from tests.unit.frontend_source import extract_function_body, read_frontend_css, read_frontend_js
 
 
 def read_index_html() -> str:
@@ -51,12 +51,26 @@ def test_grid_empty_states_distinguish_filters_and_empty_folders() -> None:
     assert ".empty-detail" in css
 
 
+def test_initial_no_batch_grid_has_stable_empty_layout() -> None:
+    html = read_index_html()
+
+    assert 'id="grid" class="grid is-empty"' in html
+    assert '<div class="empty-title">Select a batch</div>' in html
+    assert (
+        '<div class="empty-detail">Choose a batch from the sidebar to begin reviewing images.</div>'
+        in html
+    )
+
+
 def test_thumbnail_cards_expose_metadata_and_state_layers() -> None:
     js = read_frontend_js()
     css = read_frontend_css()
 
     assert "meta.className = 'thumb-meta';" in js
-    assert "meta.innerHTML = '<span class=\"meta-name\"></span><span class=\"meta-detail\"></span>';" in js
+    assert (
+        'meta.innerHTML = \'<span class="meta-name"></span><span class="meta-detail"></span>\';'
+        in js
+    )
     assert "if (metaSize) metaSize.textContent =" in js
     assert ".thumb::after" in css
     assert ".thumb.selected::before" in css
@@ -69,7 +83,42 @@ def test_all_favorites_sorts_without_folder_api_reload() -> None:
     assert "function sortImagesForDisplay(imgList)" in js
     assert "currentBatch === '__favorites__'" in js
     assert "return sortImagesForDisplay(filtered);" in js
-    assert "if (currentBatch === '__favorites__') { updateGrid(); return; }" in js
+    assert "if (isVirtualCollectionView() || isPublicView()) { updateGrid(); return; }" in js
+
+
+def test_public_views_sort_without_review_folder_api_reload() -> None:
+    js = read_frontend_js()
+
+    assert "function isPublicView()" in js
+    assert "currentBatch === '__public__'" in js
+    assert "if (isVirtualCollectionView() || isPublicView()) { updateGrid(); return; }" in js
+    assert "if (currentFolder === 'public') { await loadBatchPublic(batch); return; }" in js
+
+
+def test_public_actions_replace_review_moves_in_public_views() -> None:
+    html = read_index_html()
+    js = read_frontend_js()
+
+    assert 'id="public-copy-btn"' in html
+    assert 'id="public-move-btn"' in html
+    assert 'id="public-delete-btn"' in html
+    assert "const showPublicActions = isPublicView();" in js
+    assert "const showReviewMove = !isVirtualCollectionView() && !isPublicView()" in js
+
+
+def test_public_export_refreshes_batch_counts() -> None:
+    js = read_frontend_js()
+    body = extract_function_body(js, "async function submitPublicExport()")
+
+    assert "await loadBatches();" in body
+
+
+def test_all_public_count_updates_batch_public_tab_counts() -> None:
+    js = read_frontend_js()
+    body = extract_function_body(js, "async function updateAllPublicCount()")
+
+    assert "allCounts[item.batch].public = (allCounts[item.batch].public || 0) + 1;" in body
+    assert "if (currentBatch && !isVirtualCollectionView()) updateFolderTabs();" in body
 
 
 def test_sidebar_resize_disables_layout_transitions() -> None:
@@ -128,8 +177,14 @@ def test_help_and_prompts_modals_close_on_backdrop_click() -> None:
 
     assert "function closeModalOnBackdropClick(event, hideFn)" in js
     assert "if (event.target !== event.currentTarget) return;" in js
-    assert "helpModal.addEventListener('click', function(event) { closeModalOnBackdropClick(event, hideHelpModal); });" in js
-    assert "promptsModal.addEventListener('click', function(event) { closeModalOnBackdropClick(event, hidePromptsModal); });" in js
+    assert (
+        "helpModal.addEventListener('click', function(event) { closeModalOnBackdropClick(event, hideHelpModal); });"
+        in js
+    )
+    assert (
+        "promptsModal.addEventListener('click', function(event) { closeModalOnBackdropClick(event, hidePromptsModal); });"
+        in js
+    )
 
 
 def test_workspace_select_all_button_selects_displayed_images() -> None:
@@ -141,7 +196,10 @@ def test_workspace_select_all_button_selects_displayed_images() -> None:
     assert 'class="workspace-select-all-btn"' in html
     assert "function selectAllDisplayedImages()" in js
     assert "const displayedNames = getDisplayImages().map(img => img.name);" in js
-    assert "const allDisplayedSelected = displayedNames.length > 0 && displayedNames.every(name => selectedImages.has(name));" in js
+    assert (
+        "const allDisplayedSelected = displayedNames.length > 0 && displayedNames.every(name => selectedImages.has(name));"
+        in js
+    )
     assert "selectedImages = allDisplayedSelected ? new Set() : new Set(displayedNames);" in js
     assert "lastSelectIndex = images.length - 1;" in js
     assert "updateSelectionVisuals();" in js

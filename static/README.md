@@ -11,6 +11,7 @@
 - **Drag/drop curation:** HTML5 drag from grid to folder tabs for single or multi-select moves.
 - **Lightbox viewer:** Full-image review with zoom, scored-image navigation, PNG metadata inspection.
 - **AI score integration:** Overlay badges, score gradient coloring, filter/sort by score, Inspect / Score / Runs sidebar tabs, contextual image inspector, job submission/status/history UI.
+- **Public output workflow:** selected-image export modal, batch Public folder view, virtual All Public view, and derivative-only public copy/move/delete actions.
 - **Background polling:** 5-second interval for batches, images, and AI runs, with interaction-aware skip logic.
 - **Local storage persistence:** Sidebar widths, open states, last batch/folder, grid density, and batch sort.
 
@@ -50,6 +51,7 @@
 | `batches.js` | Batch list/search/sort, active-batch combobox, batch/folder selection, import/create batch |
 | `grid.js` | Thumbnail cache, image loading, sort controls, display filtering, grid rendering |
 | `favorites.js` | Favorites filter/toggle and All Favorites view/count |
+| `publish.js` | Public export modal, batch Public view, All Public view/count, public copy/move/delete actions |
 | `moves.js` | Multi-select, drag/drop, move, undo, Empty Rejects modal |
 | `lightbox.js` | Lightbox open/close, navigation, zoom, scored navigation, lightbox favorite UI |
 | `metadata.js` | PNG metadata loading/cache/rendering and prompt copy helpers |
@@ -94,6 +96,7 @@
 | `batchSort` | `string` | 'alpha' \| 'count' \| 'recent' \| 'ai' for batch list |
 | `batchFilterQuery` | `string` | Debounced filter for batch search |
 | `favoritesFilterOn` | `boolean` | Whether the grid shows only favorite images |
+| `universalPublicCount` | `number` | Sidebar count for the All Public virtual collection |
 | `promptsData` | `object\|null` | Current Prompt History modal payload |
 | `promptsCurrentBatch` | `string` | Batch selected in the Prompt History modal; empty means all batches |
 | `promptsCollapseAll` | `boolean` | Forces long prompt cards to collapsed text |
@@ -105,6 +108,7 @@
 | **Batch Management** | `loadBatches`, `selectBatch`, `setActiveBatch`, `createBatch`, `saveBatchState`, `restoreBatchState` | `#batch-list`, `#active-batch-custom` |
 | **Grid Rendering** | `loadCurrentFolderImages`, `updateGrid`, `createThumbElement`, `updateThumbElement`, `getDisplayImages`, `showGridLoadingPlaceholders` | `#grid` |
 | **Favorites** | `toggleFavorite`, `toggleFavoritesFilter`, `toggleLightboxFavorite`, `updateLightboxFavorite`, `loadUniversalFavorites` | `.favorite-star`, `#favorites-filter-btn`, `#batch-list` |
+| **Public output** | `showPublishModal`, `submitPublicExport`, `loadBatchPublic`, `loadAllPublic`, `copySelectedPublicCopies`, `moveSelectedPublicCopies`, `deleteSelectedPublicCopies` | `#publish-modal`, `#batch-list`, `#action-bar` |
 | **Thumbnail Caching** | `resolveThumbnailBlobUrl`, `setThumbnailImageSrc` | Thumb `<img>` elements (blob URLs) |
 | **Keyboard Shortcuts** | Single `keydown` handler (line ~1770) | `document` |
 | **Drag/Drop** | `onDragStart`, `onDragOver`, `onDrop`, `moveBatch` | `.thumb`, `.folder-tab` |
@@ -137,6 +141,12 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 | `POST /api/favorites` | `toggleFavorite()` | Favorite toggle from All Favorites view |
 | `GET /api/favorites/<batch>` | backend-fed `/api/images` favorite flags | Batch favorite state |
 | `POST /api/favorites/<batch>` | `toggleFavorite()` | Favorite toggle from real batch view |
+| `POST /api/publish/export` | `submitPublicExport()` | Prepare selected originals as public copies |
+| `GET /api/public/<batch>` | `loadBatchPublic()` | Batch Public generated-output view |
+| `GET /api/public` | `loadAllPublic()`, `updateAllPublicCount()` | All Public virtual view and sidebar count |
+| `POST /api/public/copy` | `copySelectedPublicCopies()` | Copy generated public copies under configured export root |
+| `POST /api/public/move` | `moveSelectedPublicCopies()` | Move generated public copies under configured export root |
+| `POST /api/public/delete` | `deleteSelectedPublicCopies()` | Delete generated public copies only |
 | `GET /api/prompt-history` | `loadPromptsData()` | Prompt modal all-batches view |
 | `GET /api/prompt-history/<batch>?check_stale=true` | `loadPromptsData()` | Prompt modal batch view |
 | `POST /api/prompt-history/<batch>/build` | `buildPromptIndex()` | Prompt index build/rebuild |
@@ -198,6 +208,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **CSS variables for layout only, not theming:** `--sidebar-width`, `--sidebar-effective-width`, `--ai-sidebar-width`, `--lightbox-zoom`. All colors are hardcoded.
 - **Single responsive breakpoint at 900px:** Rules live in `responsive.css`, which must load last. Below this, sidebars shrink, AI sidebar moves below grid, resizers hide.
 - **`__favorites__` is a virtual batch sentinel:** Do not call real batch APIs with it. Use per-image `img.batch` and `img.folder` for image src, lightbox metadata, and lightbox moves.
+- **`__public__` is a virtual batch sentinel:** Do not create a real batch with this name. Public actions operate on generated files in each item's real `<batch>/public/` folder.
 - **`getDisplayImages()` centralizes filtering:** Favorites filtering and AI score sorting compose there; update image counts through `updateImageCountLabel()`.
 - **Prompt history cache is manual:** The modal loads cached JSON until the operator clicks Build/Rebuild; staleness is count-based only.
 

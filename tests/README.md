@@ -65,6 +65,7 @@ The 6 `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping t
 | `tests/unit/test_models.py` | `ai_curate.models` -- `JobState`, `ImageResult`, `RunTotals`, `CurationRun` round-trips | Pure unittests, no fixtures |
 | `tests/unit/test_png_metadata.py` | `image_curator.png_metadata` -- parsing, missing metadata, malformed input | `PIL.Image.new` + `PngInfo` for test PNGs |
 | `tests/unit/test_favorites.py` | `image_curator.favorites` -- batch/universal favorite load/save/toggle/resolve | `tmp_path`, real files, JSON shape checks |
+| `tests/unit/test_publish.py` | `image_curator.publish` -- public derivative creation, metadata stripping, watermark, public listing, export-root-gated copy/move/delete | `tmp_path`, Pillow PNG fixtures, real file copies/moves/deletes |
 | `tests/unit/test_prompt_history.py` | `image_curator.prompt_history` -- normalization, hash, PNG prompt index build/cache | `tmp_path`, `PIL.Image.new` + `PngInfo` |
 | `tests/unit/test_web_validation.py` | `image_curator.web_validation` -- path traversal blocking and existing-batch validation | `tmp_path`, pure helper assertions |
 | `tests/unit/test_media.py` | `image_curator.media` -- thumbnail cache names, freshness checks, WebP generation | `tmp_path`, `PIL.Image.new` |
@@ -82,6 +83,7 @@ The 6 `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping t
 | `tests/integration/test_image_metadata_api.py` | `/api/image-metadata` route -- PNG metadata, non-PNG, missing files | `client` fixture, `PngInfo`-rich PNGs |
 | `tests/integration/test_import_all_pending.py` | `/api/import-all` -- moves files, resets watcher | `client` fixture, ComfyUI output dir |
 | `tests/integration/test_favorites_api.py` | Favorites API -- batch/universal toggles and image response favorite flag | `client` fixture, real temp files |
+| `tests/integration/test_publish_api.py` | Public publish API -- export, list, serve/thumbnail public images, copy/move/delete route contracts | `client` fixture, `PIL.Image` PNGs, monkeypatched export root |
 | `tests/integration/test_prompt_history_api.py` | Prompt-history API -- build/load/rebuild/staleness/missing cache | `client` fixture, `PngInfo`-rich PNGs |
 
 ## Known Coverage Gaps

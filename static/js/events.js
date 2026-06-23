@@ -158,6 +158,12 @@ function closeModalOnBackdropClick(event, hideFn) {
                 return;
             }
 
+            if (e.key === 'Escape' && document.getElementById('publish-modal').classList.contains('active')) {
+                e.preventDefault();
+                hidePublishModal();
+                return;
+            }
+
             if (isTypingTarget) return;
 
             if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
@@ -358,6 +364,14 @@ function _bindDelegatedEvents() {
                 btn.addEventListener('click', confirmDeleteRejects);
             });
 
+            document.querySelectorAll('#publish-modal .cancel').forEach(btn => {
+                btn.addEventListener('click', hidePublishModal);
+            });
+            const publishModal = document.getElementById('publish-modal');
+            if (publishModal) publishModal.addEventListener('click', function(event) { closeModalOnBackdropClick(event, hidePublishModal); });
+            const publishSubmitBtn = document.getElementById('publish-submit-btn');
+            if (publishSubmitBtn) publishSubmitBtn.addEventListener('click', submitPublicExport);
+
             document.querySelectorAll('#help-modal .cancel').forEach(btn => {
                 btn.addEventListener('click', hideHelpModal);
             });
@@ -520,6 +534,14 @@ function _bindDelegatedEvents() {
                     if (!btn) return;
                     if (btn.classList.contains('action-clear')) {
                         clearSelection();
+                    } else if (btn.id === 'publish-btn') {
+                        showPublishModal();
+                    } else if (btn.id === 'public-copy-btn') {
+                        copySelectedPublicCopies();
+                    } else if (btn.id === 'public-move-btn') {
+                        moveSelectedPublicCopies();
+                    } else if (btn.id === 'public-delete-btn') {
+                        deleteSelectedPublicCopies();
                     } else if (btn.dataset.dest) {
                         moveSelected(btn.dataset.dest);
                     }

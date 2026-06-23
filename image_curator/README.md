@@ -9,6 +9,7 @@
 - **Batch filesystem management** (`batch_store.py`): Creates batch folders, lists/enumerates images, moves files between workflow folders, imports from ComfyUI output, manages active-batch state file.
 - **PNG metadata extraction** (`png_metadata.py`): Reads ComfyUI/A1111 PNG text chunks with Pillow, parses generation parameters (prompt, seed, sampler, CFG, LoRAs, etc.).
 - **Favorites persistence** (`favorites.py`): Stores batch-scoped and universal favorite image records with atomic JSON writes.
+- **Public derivative workflow** (`publish.py`): Creates metadata-stripped optional-watermark copies under `<batch>/public/`, lists public images, and copy/move/delete generated public copies under a configured export root.
 - **Prompt history indexing** (`prompt_history.py`): Builds manual prompt indexes from PNG metadata, deduplicated by normalized prompt/negative prompt.
 - **Web validation** (`web_validation.py`): Path traversal guard and existing-batch validation helpers used by Flask route wrappers.
 - **Auto-import watcher** (`watcher.py`): Dependency-injected polling watcher for moving new ComfyUI outputs into the active batch inbox.
@@ -24,6 +25,7 @@ Modules are responsibility-scoped; keep AI-specific validation and worker orches
 app.py ──> batch_store (nearly all functions: create, list, move, counts, import, state)
        ──> png_metadata.extract_png_metadata (Flask route for metadata inspection)
        ──> favorites (favorite toggles, batch filter data, universal favorites)
+       ──> publish (public derivative export/list/copy/move/delete routes)
        ──> prompt_history (manual prompt index build/load routes)
        ──> web_validation (safe path and existing-batch route wrappers)
        ──> media (thumbnail cache/generation helpers)
@@ -47,6 +49,7 @@ Additional runtime directories (NOT managed by batch_store):
 - `ai-curate/` -- AI run history (managed by `ai_curate/storage.py`)
 - `.favorites.json` -- batch favorites; root-level `.favorites.json` stores universal favorites
 - `prompt-history.json` -- manual PNG prompt-history cache per batch
+- `public/` -- generated posting derivatives; originals remain in review folders
 
 ### Supported Image Extensions
 
@@ -78,6 +81,7 @@ Written atomically via `.tmp` + `os.replace()`.
 | `batch_store.py` | 280 | Batch filesystem ops: `create_batch`, `get_batches`, `get_batch_folder`, `get_images` (sortable by date/name/shuffle), `get_batch_counts`, `get_all_counts`, `get_batch_metadata`, `get_all_batch_metadata`, `get_pending_count`, `import_all_pending`, `move_image`, `move_images`, `load_state`/`save_state` (atomic JSON), `_validate_name` (path traversal guard), `_collision_safe_name` (dedup on import). |
 | `png_metadata.py` | 153 | `extract_png_metadata(path)` -- opens PNG with Pillow, reads `image.text` dictionary, parses generation parameters. Top-level keys: `has_metadata`, `source`, `parameters` (nested dict with `prompt`, `negative_prompt`, `seed`, `steps`, `sampler`, `cfg_scale`, `width`/`height`, `model`, `model_hash`, `version`, `clip_skip`), `loras` (list of `{name, weight, hash}`), `raw_keys` (list of chunk key names), `raw_parameters`, `workflow_available`, `workflow_size`. Also exports `parse_parameters()` (public but currently unused externally). |
 | `favorites.py` | varies | `load_favorites`, `save_favorites`, `toggle_favorite`, `get_batch_favorite_filenames`, `resolve_universal_favorites`; uses `_validate_name`, `RLock`, and atomic `.tmp` replacement. |
+| `publish.py` | varies | `create_public_copies`, `list_batch_public`, `list_all_public`, `copy_public_items`, `move_public_items`, `delete_public_items`; strips metadata by re-saving with Pillow, applies text watermarks, and confines external destinations to `IMAGE_CURATOR_PUBLIC_EXPORTS`. |
 | `prompt_history.py` | varies | `build_prompt_index`, `load_prompt_index`, `load_all_prompt_indices`; scans PNG metadata, strips LoRA tags with `png_metadata.LORA_RE`, hashes normalized prompt pairs, and writes `prompt-history.json` atomically. |
 | `web_validation.py` | varies | `safe_path(base, *parts)` blocks traversal/absolute path escape; `require_existing_batch()` validates app-provided batch lists while preserving Flask route response shape. |
 | `watcher.py` | varies | Dependency-injected `ImageWatcher` with start/stop/reset, file-size stability wait, seen-file diff/rescan behavior, and app-level wrapper compatibility in `app.py`. |

@@ -15,7 +15,7 @@ function buildImageSignature(list) {
 async function pollForChanges() {
             if (isInteractionBusy()) return;
             await loadBatches();
-            if (!currentBatch || currentBatch === '__favorites__' || !currentFolder || selectedImages.size > 0 || isInteractionBusy()) return;
+            if (!currentBatch || isVirtualCollectionView() || isPublicView() || !currentFolder || selectedImages.size > 0 || isInteractionBusy()) return;
             const [imageResp, runResp] = await Promise.all([
                 fetch(`/api/images/${currentBatch}/${currentFolder}?sort=${currentSort}&order=${currentOrder}`),
                 fetch(`/api/ai-curate/batches/${currentBatch}/runs`),

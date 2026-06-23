@@ -90,6 +90,7 @@ def test_javascript_checks_use_ordered_split_file_list():
         "batches.js",
         "grid.js",
         "favorites.js",
+        "publish.js",
         "moves.js",
         "lightbox.js",
         "metadata.js",

@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from flask import Flask, render_template, send_file, jsonify, request
-from image_curator import batch_store
+from image_curator import batch_store, publish
 from image_curator.favorites import (
     get_batch_favorite_filenames,
     resolve_universal_favorites,
@@ -73,6 +73,8 @@ THUMB_SIZE = (320, 320)
 IMAGE_EXTENSIONS = batch_store.IMAGE_EXTENSIONS
 POLL_INTERVAL = 2  # seconds
 ENABLE_WATCHER = os.environ.get("IMAGE_CURATOR_ENABLE_WATCHER", "").strip().lower() == "true"
+_PUBLIC_EXPORT_ROOT_RAW = os.environ.get("IMAGE_CURATOR_PUBLIC_EXPORTS", "").strip()
+PUBLIC_EXPORT_ROOT = Path(_PUBLIC_EXPORT_ROOT_RAW).expanduser() if _PUBLIC_EXPORT_ROOT_RAW else None
 
 # Warn on startup if critical defaults are unlikely to work
 if os.environ.get("IMAGE_CURATOR_LLM_URL", "").strip() == "":
@@ -107,6 +109,13 @@ def create_batch(name):
 def get_batch_folder(batch_name, folder):
     """Get path to a batch's subfolder."""
     return batch_store.get_batch_folder(BATCHES_DIR, batch_name, folder)
+
+
+def get_batch_content_folder(batch_name, folder):
+    """Get path to a review folder or generated public folder."""
+    if folder == publish.PUBLIC_FOLDER:
+        return publish.get_public_folder(BATCHES_DIR, batch_name)
+    return get_batch_folder(batch_name, folder)
 
 
 def get_images(directory, sort_by="date", order="desc"):
@@ -194,6 +203,10 @@ def _require_batch(batch_name: str) -> tuple[str | None, tuple | None]:
     return require_existing_batch(batch_name, get_batches)
 
 
+def _is_viewable_folder(folder: str) -> bool:
+    return folder in batch_store.BATCH_FOLDERS or folder == publish.PUBLIC_FOLDER
+
+
 @app.route("/api/batches", methods=["GET"])
 def api_get_batches():
     state = load_state()
@@ -276,10 +289,10 @@ def api_image_metadata(batch, folder, filename):
     batch_name, err = _require_batch(batch)
     if err:
         return jsonify(err[0]), err[1]
-    if folder not in batch_store.BATCH_FOLDERS:
+    if not _is_viewable_folder(folder):
         return jsonify({"error": "Invalid folder"}), 400
 
-    filepath, err = _safe_path(get_batch_folder(batch_name, folder), filename)
+    filepath, err = _safe_path(get_batch_content_folder(batch_name, folder), filename)
     if err:
         return jsonify({"error": err}), 400
     if not filepath.exists():
@@ -441,6 +454,119 @@ def api_toggle_batch_favorite(batch):
         return jsonify({"error": str(e)}), 400
 
 
+@app.route("/api/publish/export", methods=["POST"])
+def api_publish_export():
+    data = request.json or {}
+    batch = data.get("batch", "")
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
+    folder = data.get("folder", "")
+    filenames = data.get("filenames", [])
+    if not isinstance(filenames, list) or not filenames:
+        return jsonify({"error": "filenames required"}), 400
+    watermark_raw = data.get("watermark")
+    result = publish.create_public_copies(
+        BATCHES_DIR,
+        batch=batch_name,
+        folder=folder,
+        filenames=[str(name) for name in filenames],
+        strip_metadata=bool(data.get("strip_metadata", True)),
+        watermark=watermark_raw if isinstance(watermark_raw, dict) else None,
+    )
+    status = 200 if result.get("exported", 0) > 0 or result.get("failed", 0) == 0 else 400
+    return jsonify(result), status
+
+
+@app.route("/api/public", methods=["GET"])
+def api_get_all_public():
+    return jsonify({"public": publish.list_all_public(BATCHES_DIR)})
+
+
+@app.route("/api/public/<batch>", methods=["GET"])
+def api_get_batch_public(batch):
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
+    return jsonify(publish.list_batch_public(BATCHES_DIR, batch_name))
+
+
+def _public_items_payload() -> tuple[list[dict], tuple[dict, int] | None]:
+    data = request.json or {}
+    items = data.get("items", [])
+    if not isinstance(items, list) or not items:
+        return [], ({"error": "items required"}, 400)
+    if any(not isinstance(item, dict) for item in items):
+        return [], ({"error": "items must be objects"}, 400)
+    return items, None
+
+
+def _public_export_root_error_response(result: dict, action_key: str) -> tuple[dict, int] | None:
+    if result.get("failed") and not result.get(action_key):
+        files = result.get("files") or []
+        first_error = files[0].get("error") if files else None
+        if first_error == "Public export root is not configured":
+            return {"error": first_error, **result}, 400
+    return None
+
+
+def _public_transfer_status(result: dict, action_key: str) -> int:
+    if result.get(action_key, 0) == 0 and result.get("failed", 0):
+        return 400
+    return 200
+
+
+@app.route("/api/public/copy", methods=["POST"])
+def api_copy_public():
+    data = request.json or {}
+    items, err = _public_items_payload()
+    if err:
+        return jsonify(err[0]), err[1]
+    destination = data.get("destination", "")
+    if not destination:
+        return jsonify({"error": "destination required"}), 400
+    result = publish.copy_public_items(
+        BATCHES_DIR,
+        destination=destination,
+        items=items,
+        export_root=PUBLIC_EXPORT_ROOT,
+    )
+    export_root_error = _public_export_root_error_response(result, "copied")
+    if export_root_error:
+        return jsonify(export_root_error[0]), export_root_error[1]
+    return jsonify(result), _public_transfer_status(result, "copied")
+
+
+@app.route("/api/public/move", methods=["POST"])
+def api_move_public():
+    data = request.json or {}
+    items, err = _public_items_payload()
+    if err:
+        return jsonify(err[0]), err[1]
+    destination = data.get("destination", "")
+    if not destination:
+        return jsonify({"error": "destination required"}), 400
+    result = publish.move_public_items(
+        BATCHES_DIR,
+        destination=destination,
+        items=items,
+        export_root=PUBLIC_EXPORT_ROOT,
+    )
+    export_root_error = _public_export_root_error_response(result, "moved")
+    if export_root_error:
+        return jsonify(export_root_error[0]), export_root_error[1]
+    return jsonify(result), _public_transfer_status(result, "moved")
+
+
+@app.route("/api/public/delete", methods=["POST"])
+def api_delete_public():
+    items, err = _public_items_payload()
+    if err:
+        return jsonify(err[0]), err[1]
+    result = publish.delete_public_items(BATCHES_DIR, items=items)
+    return jsonify(result), _public_transfer_status(result, "deleted")
+
+
 @app.route("/api/prompt-history/<batch>/build", methods=["POST"])
 def api_build_prompt_history(batch):
     batch_name, err = _require_batch(batch)
@@ -480,9 +606,9 @@ def serve_thumbnail(batch, folder, filename):
     batch_name, err = _require_batch(batch)
     if err:
         return jsonify(err[0]), err[1]
-    if folder not in batch_store.BATCH_FOLDERS:
+    if not _is_viewable_folder(folder):
         return jsonify({"error": "Invalid folder"}), 400
-    filepath, err = _safe_path(get_batch_folder(batch_name, folder), filename)
+    filepath, err = _safe_path(get_batch_content_folder(batch_name, folder), filename)
     if err:
         return jsonify({"error": err}), 400
     if not filepath.exists():
@@ -510,9 +636,9 @@ def serve_image(batch, folder, filename):
     batch_name, err = _require_batch(batch)
     if err:
         return jsonify(err[0]), err[1]
-    if folder not in batch_store.BATCH_FOLDERS:
+    if not _is_viewable_folder(folder):
         return jsonify({"error": "Invalid folder"}), 400
-    filepath, err = _safe_path(get_batch_folder(batch_name, folder), filename)
+    filepath, err = _safe_path(get_batch_content_folder(batch_name, folder), filename)
     if err:
         return jsonify({"error": err}), 400
     if not filepath.exists():

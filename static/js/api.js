@@ -55,6 +55,34 @@ async function apiGetUniversalFavorites() {
     return resp.json();
 }
 
+async function apiPublishExport(body) {
+    return apiPostJson('/api/publish/export', body);
+}
+
+async function apiGetBatchPublic(batch) {
+    const resp = await fetch(`/api/public/${encodeURIComponent(batch)}`);
+    if (!resp.ok) throw new Error('batch public request failed');
+    return resp.json();
+}
+
+async function apiGetAllPublic() {
+    const resp = await fetch('/api/public');
+    if (!resp.ok) throw new Error('public request failed');
+    return resp.json();
+}
+
+async function apiCopyPublic(destination, items) {
+    return apiPostJson('/api/public/copy', {destination, items});
+}
+
+async function apiMovePublic(destination, items) {
+    return apiPostJson('/api/public/move', {destination, items});
+}
+
+async function apiDeletePublic(items) {
+    return apiPostJson('/api/public/delete', {items});
+}
+
 async function apiToggleUniversalFavorite(batch, filename) {
     return apiPostJson('/api/favorites', {batch, filename});
 }

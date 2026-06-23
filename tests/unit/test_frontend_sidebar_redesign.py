@@ -44,6 +44,18 @@ def test_all_favorites_entry_reads_as_pinned_collection() -> None:
     assert ".batch-favorites-title" in css
 
 
+def test_all_public_entry_reads_as_pinned_generated_collection() -> None:
+    js = read_frontend_js()
+    css = read_frontend_css()
+
+    assert "publicDiv.dataset.batch = '__public__';" in js
+    assert "publicTitle.textContent = 'All Public';" in js
+    assert "publicSubtitle.textContent = 'Generated posting copies';" in js
+    assert "id = 'all-public-count'" in js
+    assert ".batch-item-public .batch-name" in css
+    assert ".batch-public-title" in css
+
+
 def test_selected_and_ai_status_have_clear_sidebar_states() -> None:
     css = read_frontend_css()
 

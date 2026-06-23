@@ -18,6 +18,7 @@ def app_module(monkeypatch, tmp_path):
     monkeypatch.setattr(module, "BATCHES_DIR", batches_dir)
     monkeypatch.setattr(module, "COMFYUI_OUTPUT", comfyui_output)
     monkeypatch.setattr(module, "STATE_FILE", state_file)
+    monkeypatch.setattr(module, "PUBLIC_EXPORT_ROOT", None)
     module.watcher.seen_files = set()
     module.app.config.update(TESTING=True)
 

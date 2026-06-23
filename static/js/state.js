@@ -25,6 +25,7 @@
         let batchFilterTimer = null;
         let favoritesFilterOn = false;
         let universalFavoritesCount = 0;
+        let universalPublicCount = 0;
         let isDraggingImages = false;
         let folderRequestToken = 0;
         let gridThumbMap = new Map();

@@ -42,6 +42,7 @@ JS_FILES = [
     "batches.js",
     "grid.js",
     "favorites.js",
+    "publish.js",
     "moves.js",
     "lightbox.js",
     "metadata.js",

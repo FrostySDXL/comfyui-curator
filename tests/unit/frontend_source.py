@@ -10,6 +10,7 @@ JS_FILES = [
     Path("static/js/batches.js"),
     Path("static/js/grid.js"),
     Path("static/js/favorites.js"),
+    Path("static/js/publish.js"),
     Path("static/js/moves.js"),
     Path("static/js/lightbox.js"),
     Path("static/js/metadata.js"),

@@ -16,6 +16,9 @@ before manual selection. Single-user, local-first, filesystem-backed.
   seed, sampler, CFG, LoRAs).
 - **Favorites** -- one-click stars persist favorites at both batch and
   universal scope, with a favorites-only filter and All Favorites sidebar view.
+- **Public posting prep** -- selected originals can be exported as
+  metadata-stripped, optionally watermarked copies under each batch's `public/`
+  folder, with batch Public and virtual All Public views for generated copies.
 - **Prompt history** -- manually build per-batch prompt indexes from PNG
   metadata, then search, copy, and inspect prompt groups from a header modal.
 - **Auto-import from ComfyUI** -- background watcher moves new outputs into
@@ -82,7 +85,8 @@ Core path:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `IMAGE_CURATOR_BATCHES` | `~/image-curator/batches` | Main library containing batch folders and their `inbox/`, `shortlisted/`, `finals/`, and `rejects/` folders |
+| `IMAGE_CURATOR_BATCHES` | `~/image-curator/batches` | Main library containing batch folders and their `inbox/`, `shortlisted/`, `finals/`, `rejects/`, and generated `public/` folders |
+| `IMAGE_CURATOR_PUBLIC_EXPORTS` | (unset) | Optional safe root for copying/moving generated public copies to another filesystem location; when unset, external public copy/move actions are disabled |
 
 Optional import source:
 
@@ -149,7 +153,7 @@ baseline checks for anatomy and artifacts are appended automatically.
 - The workspace toolbar keeps folder tabs, sorting, favorites, density, and
   available AI badge/filter controls together above the grid.
 - The batch sidebar shows folder count breakdowns, AI-run indicators, and a
-  pinned All Favorites collection.
+  pinned All Favorites collection plus All Public generated-output collection.
 - AI badges and score filtering reset when switching to a batch with no
   active run.
 - The AI review inspector shows selected-image details, multi-select summaries,
@@ -159,6 +163,9 @@ baseline checks for anatomy and artifacts are appended automatically.
   list; the All Favorites sidebar count refreshes during batch polling.
 - The All Favorites view is virtual: thumbnails show batch labels and
   lightbox moves use each image's source batch and folder.
+- Public copies are generated derivatives only. Originals stay in review
+  folders, batch Public shows `<batch>/public/`, and All Public is virtual.
+  Public copy/move/delete actions affect generated public copies only.
 - Prompt history indexes are manual caches. Rebuild after significant curation
   sessions or when the modal reports a stale image count.
 - Background polling pauses during lightbox, drag, or resize so your

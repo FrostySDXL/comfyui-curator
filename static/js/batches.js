@@ -1,6 +1,6 @@
 /* Ordered classic script.
  * Defines: batch list, active-batch combobox, batch/folder selection, imports, batch creation.
- * Later-file globals called at runtime: resetAiBatchState, showGridLoadingPlaceholders, loadCurrentFolderImages, loadUniversalFavorites, showAiCuratePanel.
+ * Later-file globals called at runtime: resetAiBatchState, showGridLoadingPlaceholders, loadCurrentFolderImages, loadUniversalFavorites, loadAllPublic, showAiCuratePanel.
  */
 let _customSelectPrevValue = '';
 let _customSelectBlurTimer = null;
@@ -168,6 +168,7 @@ async function loadBatches() {
 
             renderBatchList(filteredBatches);
             updateAllFavoritesCount();
+            await updateAllPublicCount();
 
             updateBatchSearchClearButton();
 
@@ -238,6 +239,32 @@ function renderBatchList(filteredBatches) {
             favDiv.appendChild(favMeta);
             favLi.appendChild(favDiv);
             fragment.appendChild(favLi);
+            const publicLi = document.createElement('li');
+            publicLi.className = 'batch-item batch-item-public';
+            const publicDiv = document.createElement('div');
+            publicDiv.className = 'batch-name' + (currentBatch === '__public__' ? ' selected' : '');
+            publicDiv.dataset.batch = '__public__';
+            const publicLabel = document.createElement('span');
+            publicLabel.className = 'batch-label';
+            const publicTitle = document.createElement('span');
+            publicTitle.className = 'batch-title batch-public-title';
+            publicTitle.textContent = 'All Public';
+            const publicSubtitle = document.createElement('span');
+            publicSubtitle.className = 'batch-breakdown batch-public-subtitle';
+            publicSubtitle.textContent = 'Generated posting copies';
+            publicLabel.appendChild(publicTitle);
+            publicLabel.appendChild(publicSubtitle);
+            publicDiv.appendChild(publicLabel);
+            const publicMeta = document.createElement('span');
+            publicMeta.className = 'batch-meta';
+            const publicCount = document.createElement('span');
+            publicCount.className = 'batch-count batch-count-pill';
+            publicCount.id = 'all-public-count';
+            publicCount.textContent = String(universalPublicCount);
+            publicMeta.appendChild(publicCount);
+            publicDiv.appendChild(publicMeta);
+            publicLi.appendChild(publicDiv);
+            fragment.appendChild(publicLi);
             if (filteredBatches.length === 0) {
                 const empty = document.createElement('li');
                 empty.className = 'batch-empty';
@@ -420,10 +447,10 @@ function _customSelectMoveFocus(delta) {
 function updateFolderTabs() {
             if (!currentBatch) return;
             const c = allCounts[currentBatch] || {};
-            ['inbox','shortlisted','finals','rejects'].forEach(f => {
+            ['inbox','shortlisted','finals','rejects','public'].forEach(f => {
                 const el = document.getElementById('tc-' + f);
                 if (!el) return;
-                const nextValue = c[f] || 0;
+                const nextValue = f === 'public' && currentFolder === 'public' ? images.length : (c[f] || 0);
                 if (folderCountSnapshot[f] !== undefined && folderCountSnapshot[f] !== nextValue) {
                     el.classList.remove('changed');
                     void el.offsetWidth;
@@ -439,6 +466,10 @@ function updateFolderTabs() {
 function selectBatch(batch) {
             if (batch === '__favorites__') {
                 loadUniversalFavorites();
+                return;
+            }
+            if (batch === '__public__') {
+                loadAllPublic();
                 return;
             }
             const batchChanged = currentBatch !== batch;
@@ -488,6 +519,10 @@ async function selectFolder(batch, folder) {
             updateAutoImportQuickAction(document.getElementById('active-batch-select').value || null);
             updateFolderTabs();
 
+            if (folder === 'public') {
+                await loadBatchPublic(batch);
+                return;
+            }
             await loadCurrentFolderImages();
         }
 

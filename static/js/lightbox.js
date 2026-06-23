@@ -120,6 +120,7 @@ function showCurrentImage() {
             }
             loadLightboxMetadata(img, metadataToken);
             renderLightboxAiPanel();
+            if (typeof syncLightboxPublicActions === 'function') syncLightboxPublicActions();
         }
 
 function toggleLightboxAiPanel() {

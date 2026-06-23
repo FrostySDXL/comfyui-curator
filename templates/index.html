@@ -79,6 +79,7 @@
 
         <div class="workspace-toolbar" id="workspace-toolbar">
             <div class="folder-tabs" id="folder-tabs">
+                <span class="folder-tab-label">Review</span>
                 <div class="folder-tab" data-folder="inbox" role="button" tabindex="0">
                     inbox <span class="tab-count" id="tc-inbox">0</span>
                 </div>
@@ -90,6 +91,10 @@
                 </div>
                 <div class="folder-tab" data-folder="rejects" role="button" tabindex="0">
                     rejects <span class="tab-count" id="tc-rejects">0</span>
+                </div>
+                <span class="folder-tab-label folder-tab-label-output">Output</span>
+                <div class="folder-tab" data-folder="public" role="button" tabindex="0">
+                    public <span class="tab-count" id="tc-public">0</span>
                 </div>
                 <div class="folder-tabs-spacer"></div>
                 <button class="delete-rejects-btn" id="delete-rejects-btn">Empty Rejects</button>
@@ -132,8 +137,11 @@
         <div class="workspace">
             <div class="content">
                 <div class="grid-shell" id="grid-shell">
-                    <div id="grid" class="grid">
-                        <div class="empty">Select a batch from the sidebar</div>
+                    <div id="grid" class="grid is-empty">
+                        <div class="empty">
+                            <div class="empty-title">Select a batch</div>
+                            <div class="empty-detail">Choose a batch from the sidebar to begin reviewing images.</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -272,6 +280,10 @@
         <button class="action-btn" data-dest="shortlisted">Shortlist</button>
         <button class="action-btn" data-dest="finals">Finals</button>
         <button class="action-btn" data-dest="rejects">Reject</button>
+        <button class="action-btn action-publish" id="publish-btn" type="button">Prepare Public Copies</button>
+        <button class="action-btn action-public" id="public-copy-btn" type="button">Copy Public Copies...</button>
+        <button class="action-btn action-public" id="public-move-btn" type="button">Move Public Copies...</button>
+        <button class="action-btn action-public action-public-danger" id="public-delete-btn" type="button">Delete Public Copies</button>
         <button class="action-btn action-clear">Clear</button>
     </div>
 
@@ -320,6 +332,36 @@
             <div class="modal-buttons">
                 <button class="cancel">Cancel</button>
                 <button class="delete-confirm">Delete All</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="publish-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="publish-modal-title">
+        <div class="modal-content publish-modal-content">
+            <h3 id="publish-modal-title">Prepare Public Copies</h3>
+            <div class="publish-scope">Selected images: <strong id="publish-selected-count">0</strong></div>
+            <label class="publish-check"><input type="checkbox" id="publish-strip-metadata" checked> Strip metadata</label>
+            <label class="publish-check"><input type="checkbox" id="publish-watermark-enabled" checked> Add text watermark</label>
+            <label class="publish-field">Text <input id="publish-watermark-text" type="text" value="FrostySDXL"></label>
+            <label class="publish-field">Position
+                <select id="publish-watermark-position">
+                    <option value="bottom-right" selected>Bottom right</option>
+                    <option value="bottom-left">Bottom left</option>
+                    <option value="top-right">Top right</option>
+                    <option value="top-left">Top left</option>
+                    <option value="bottom-center">Bottom center</option>
+                    <option value="center">Center</option>
+                </select>
+            </label>
+            <div class="publish-grid-fields">
+                <label class="publish-field">Opacity % <input id="publish-watermark-opacity" type="number" min="0" max="100" value="55"></label>
+                <label class="publish-field">Size % <input id="publish-watermark-size" type="number" min="1" max="20" value="4"></label>
+                <label class="publish-field">Margin px <input id="publish-watermark-margin" type="number" min="0" value="32"></label>
+            </div>
+            <p>Generated copies are written to this batch's public folder. Originals are not changed.</p>
+            <div class="modal-buttons">
+                <button class="cancel" type="button">Cancel</button>
+                <button class="create" id="publish-submit-btn" type="button">Create Public Copies</button>
             </div>
         </div>
     </div>
@@ -410,6 +452,7 @@
     <script src="/static/js/batches.js"></script>
     <script src="/static/js/grid.js"></script>
     <script src="/static/js/favorites.js"></script>
+    <script src="/static/js/publish.js"></script>
     <script src="/static/js/moves.js"></script>
     <script src="/static/js/lightbox.js"></script>
     <script src="/static/js/metadata.js"></script>

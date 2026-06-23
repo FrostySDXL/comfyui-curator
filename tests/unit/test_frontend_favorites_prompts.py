@@ -18,6 +18,25 @@ def test_favorites_frontend_functions_and_virtual_batch_handling_exist():
     assert "/api/favorites" in source
 
 
+def test_public_frontend_functions_and_virtual_batch_handling_exist():
+    source = read_frontend_js()
+    for name in (
+        "showPublishModal",
+        "hidePublishModal",
+        "submitPublicExport",
+        "loadBatchPublic",
+        "loadAllPublic",
+        "updateAllPublicCount",
+        "copySelectedPublicCopies",
+        "moveSelectedPublicCopies",
+        "deleteSelectedPublicCopies",
+    ):
+        assert f"function {name}(" in source
+    assert "__public__" in source
+    assert "/api/publish/export" in source
+    assert "/api/public" in source
+
+
 def test_prompt_history_frontend_functions_exist():
     source = read_frontend_js()
     for name in (
@@ -37,3 +56,6 @@ def test_favorites_and_prompts_controls_are_rendered():
     assert 'id="favorites-filter-btn"' in html
     assert 'id="prompts-btn"' in html
     assert 'id="prompts-modal"' in html
+    assert 'id="publish-btn"' in html
+    assert 'id="publish-modal"' in html
+    assert 'data-folder="public"' in html

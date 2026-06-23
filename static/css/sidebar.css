@@ -355,6 +355,25 @@
         .batch-favorites-subtitle {
             color: #8e7b38;
         }
+        .batch-item-public {
+            border-bottom: 1px solid #2a2a2a;
+            margin-bottom: 4px;
+            padding-bottom: 6px;
+        }
+        .batch-item-public .batch-name {
+            background: rgba(124,108,255,0.04);
+            border-color: rgba(124,108,255,0.14);
+        }
+        .batch-item-public .batch-name:hover {
+            background: rgba(124,108,255,0.08);
+            border-color: rgba(124,108,255,0.24);
+        }
+        .batch-public-title {
+            color: #a9a1ff;
+        }
+        .batch-public-subtitle {
+            color: #7068ad;
+        }
         .sidebar-action-row {
             margin-top: 10px;
         }
