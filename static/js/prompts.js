@@ -127,6 +127,10 @@
         function updateBuildBtn() {
             const btn = document.getElementById('prompts-build-btn');
             if (!btn) return;
+            if (!promptsCurrentBatch) {
+                btn.textContent = 'Build All Indexes';
+                return;
+            }
             const hasIndex = !!promptsData && !!promptsData.built_at;
             btn.textContent = hasIndex ? 'Rebuild Index' : 'Build Index';
         }
@@ -436,9 +440,11 @@
         function _buildNegativeDisclosure(negText) {
             if (!negText) return { el: null, btn: null };
             const el = createTextElement('div', 'prompts-negative hidden', '');
+            el.hidden = true;
             el.appendChild(_highlightMatchNode(negText, _currentSearchQuery()));
             const btn = _buildActionChip('show negative', 'prompts-toggle-neg', () => {
                 const hidden = el.classList.toggle('hidden');
+                el.hidden = hidden;
                 btn.textContent = hidden ? 'show negative' : 'hide negative';
                 btn.setAttribute('aria-expanded', hidden ? 'false' : 'true');
             });
@@ -456,6 +462,7 @@
             const label = truncated ? `show images (${shown} of ${total})` : `show images (${total})`;
             const btn = _buildActionChip(label, 'prompts-toggle-images', () => {
                 const hidden = list.classList.toggle('hidden');
+                list.hidden = hidden;
                 if (hidden) {
                     btn.textContent = truncated ? `show images (${shown} of ${total})` : `show images (${total})`;
                 } else {
@@ -464,6 +471,7 @@
                 btn.setAttribute('aria-expanded', hidden ? 'false' : 'true');
             });
             btn.setAttribute('aria-expanded', 'false');
+            list.hidden = true;
             return { el: list, btn };
         }
 
@@ -506,25 +514,16 @@
             const textWrap = document.createElement('div');
             textWrap.className = 'prompts-entry-text';
             const promptText = String(entry.normalized || entry.prompt || '');
+            const copyPromptText = String(entry.prompt || promptText);
             const full = _buildFullDisclosure(promptText);
-            if (full.el) {
-                textWrap.appendChild(full.el);
-            } else {
-                const plain = document.createElement('div');
-                plain.className = 'prompts-prompt-text';
-                plain.appendChild(_highlightMatchNode(promptText, query));
-                textWrap.appendChild(plain);
-            }
-
             const neg = _buildNegativeDisclosure(entry.negative_prompt || '');
-            if (neg.el) textWrap.appendChild(neg.el);
-
             const imgs = _buildImageDisclosure(entry.images || []);
 
             const actions = document.createElement('div');
             actions.className = 'prompts-entry-actions';
 
-            const copyPairText = _formatCopyPair(promptText, entry.negative_prompt || '');
+            actions.appendChild(_buildActionChip('copy prompt', 'prompts-copy-prompt', () => copyMetadataText(copyPromptText, 'prompt')));
+            const copyPairText = _formatCopyPair(copyPromptText, entry.negative_prompt || '');
             actions.appendChild(_buildActionChip('copy pair', 'prompts-copy-pair', () => copyMetadataText(copyPairText, 'prompt pair')));
             if (full.btn) actions.appendChild(full.btn);
             if (entry.negative_prompt) {
@@ -534,6 +533,17 @@
             if (imgs.btn) actions.appendChild(imgs.btn);
 
             textWrap.appendChild(actions);
+            if (full.el) {
+                textWrap.appendChild(full.el);
+            } else {
+                const plain = document.createElement('div');
+                plain.className = 'prompts-prompt-text';
+                plain.appendChild(_highlightMatchNode(promptText, query));
+                textWrap.appendChild(plain);
+            }
+
+            if (neg.el) textWrap.appendChild(neg.el);
+
             card.appendChild(header);
             card.appendChild(textWrap);
             if (imgs.el) card.appendChild(imgs.el);
@@ -716,9 +726,34 @@
 
         async function buildPromptIndex() {
             if (!promptsCurrentBatch) {
-                showToast('Select a batch before building a prompt index');
+                if (!window.confirm('Build prompt indexes for all batches? This can take a while on large libraries.')) {
+                    return;
+                }
+                await buildAllPromptIndexes();
                 return;
             }
+            await buildSinglePromptIndex(promptsCurrentBatch);
+        }
+
+        async function buildAllPromptIndexes() {
+            const batches = promptsBatchList.slice();
+            if (batches.length === 0) {
+                showToast('No batches available to build');
+                return;
+            }
+            for (const batch of batches) {
+                promptsCurrentBatch = batch;
+                _syncPromptDisplay();
+                updateBuildBtn();
+                await buildSinglePromptIndex(batch, {quietSuccess: true});
+            }
+            promptsCurrentBatch = '';
+            _syncPromptDisplay();
+            showToast(`Built prompt indexes for ${batches.length} batches`);
+            await loadPromptsData();
+        }
+
+        async function buildSinglePromptIndex(batch, options = {}) {
             const buildBtn = document.getElementById('prompts-build-btn');
             const rebuildBtn = document.getElementById('prompts-rebuild-btn');
             const buildLabel = buildBtn ? buildBtn.textContent : '';
@@ -729,10 +764,10 @@
             if (rebuildBtn) { rebuildBtn.disabled = true; rebuildBtn.textContent = 'Building...'; }
             const token = ++promptsRequestToken;
             try {
-                const resp = await fetch(`/api/prompt-history/${encodeURIComponent(promptsCurrentBatch)}/build`, {method: 'POST'});
+                const resp = await fetch(`/api/prompt-history/${encodeURIComponent(batch)}/build`, {method: 'POST'});
                 if (token !== promptsRequestToken) return;
                 if (!resp.ok) throw new Error('build failed');
-                showToast('Prompt index built');
+                if (!options.quietSuccess) showToast('Prompt index built');
                 // Clean up build state before reloading data so loadPromptsData's
                 // token increment does not invalidate the token guarding this block.
                 promptsBuilding = false;
@@ -740,7 +775,7 @@
                 if (rebuildBtn) { rebuildBtn.disabled = false; rebuildBtn.textContent = rebuildLabel; }
                 updateBuildBtn();
                 renderPromptsList();
-                await loadPromptsData();
+                if (!options.quietSuccess) await loadPromptsData();
             } catch {
                 if (token !== promptsRequestToken) return;
                 showToast('Prompt index build failed');

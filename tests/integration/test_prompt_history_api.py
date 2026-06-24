@@ -59,6 +59,22 @@ def test_staleness_check_false_when_counts_match(client, app_module):
     assert payload["current_image_count"] == 1
 
 
+def test_staleness_check_ignores_non_png_review_images(client, app_module):
+    app_module.create_batch("alpha")
+    write_png(app_module.BATCHES_DIR / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")
+    Image.new("RGB", (1, 1), color="red").save(
+        app_module.BATCHES_DIR / "alpha" / "inbox" / "sidecar.jpg"
+    )
+    client.post("/api/prompt-history/alpha/build")
+
+    response = client.get("/api/prompt-history/alpha?check_stale=true")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["stale"] is False
+    assert payload["current_image_count"] == 1
+
+
 def test_get_missing_prompt_index_returns_404(client, app_module):
     app_module.create_batch("alpha")
 

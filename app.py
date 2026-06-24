@@ -27,6 +27,7 @@ from image_curator.png_metadata import extract_png_metadata
 from image_curator.media import generate_thumbnail, thumbnail_cache_path, thumbnail_is_fresh
 from image_curator.prompt_history import (
     build_prompt_index,
+    count_prompt_index_images,
     load_all_prompt_indices,
     load_prompt_index,
 )
@@ -588,8 +589,7 @@ def api_get_prompt_history(batch):
     if index is None:
         return jsonify({"error": "prompt history not built"}), 404
     if request.args.get("check_stale", "").lower() == "true":
-        counts = batch_store.get_batch_counts(BATCHES_DIR, batch_name)
-        current_count = sum(counts.get(folder, 0) for folder in batch_store.BATCH_FOLDERS)
+        current_count = count_prompt_index_images(BATCHES_DIR, batch_name)
         index = dict(index)
         index["stale"] = current_count != index.get("image_count")
         index["current_image_count"] = current_count

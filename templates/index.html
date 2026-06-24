@@ -465,11 +465,11 @@
                 <h4>Prompt History</h4>
                 <ul class="help-list">
                     <li><strong>Scope chip</strong> at the top shows the current batch or <em>All Batches</em>. Pick a batch via the search-as-you-type combobox, or click <strong>All Batches</strong> to clear it.</li>
-                    <li><strong>Build Index</strong> scans PNG generation metadata for the selected batch and caches the result locally. The button label flips to <strong>Rebuild Index</strong> once an index exists.</li>
+                    <li><strong>Build Index</strong> scans PNG generation metadata for the selected batch and caches the result locally. In All Batches scope it becomes <strong>Build All Indexes</strong> and asks for confirmation before the heavier batch-wide run.</li>
                     <li><strong>Stale badge</strong> appears in the footer when the cached image count no longer matches the batch; click <strong>Rebuild Index</strong> to refresh.</li>
                     <li>Search is debounced and highlights matches in the prompt, negative prompt, and batch label. Results are capped at 200 to keep rendering fast; refine the search to narrow further.</li>
                     <li>Sort by <strong>Most used</strong> (default), <strong>A-Z</strong>, or <strong>Longest</strong>. Toggle <strong>Group by batch</strong> in aggregate scope to see per-batch sections.</li>
-                    <li>Each entry exposes <strong>copy pair</strong> (prompt plus negative), <strong>show full</strong> / <strong>collapse</strong>, <strong>show negative</strong>, <strong>copy negative</strong>, and <strong>show images</strong> (grouped by review folder).</li>
+                    <li>Each entry exposes <strong>copy prompt</strong>, <strong>copy pair</strong> (prompt plus negative), <strong>show full</strong> / <strong>collapse</strong>, <strong>show negative</strong>, <strong>copy negative</strong>, and <strong>show images</strong> (grouped by review folder).</li>
                     <li>Collapse-all preference and sort/group selection persist across sessions in local storage.</li>
                 </ul>
             </div>

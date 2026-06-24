@@ -38,6 +38,21 @@ def _save_cache(batches_dir: Path, batch: str, data: dict[str, Any]) -> None:
         tmp_path.replace(path)
 
 
+def count_prompt_index_images(batches_dir: Path, batch: str) -> int:
+    """Return the current count of PNG files eligible for prompt indexing."""
+    _validate_name(batch, "batch name")
+    batch_dir = Path(batches_dir) / batch
+    count = 0
+    for folder in BATCH_FOLDERS:
+        folder_dir = batch_dir / folder
+        if not folder_dir.is_dir():
+            continue
+        for path in folder_dir.iterdir():
+            if path.suffix.lower() == ".png":
+                count += 1
+    return count
+
+
 def build_prompt_index(batches_dir: Path, batch: str) -> dict[str, Any]:
     """Build and cache a prompt index for one batch."""
     _validate_name(batch, "batch name")

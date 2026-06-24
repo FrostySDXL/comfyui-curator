@@ -126,12 +126,20 @@
         }
 
         .prompts-group-header {
-            font-size: 10px;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 1px;
-            color: #888;
-            padding: 8px 0 4px;
-            border-top: 1px solid #2a2a2a;
+            color: #d8e6ff;
+            padding: 8px 10px;
+            margin: 14px 0 8px;
+            border: 1px solid #3a4a66;
+            border-left: 4px solid #5ba3f5;
+            border-radius: 6px;
+            background: #1c2635;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.25);
         }
 
         .prompts-entry { border: 1px solid #333; background: #202020; border-radius: 7px; padding: 10px 12px; margin-bottom: 8px; }
@@ -210,8 +218,9 @@
         }
         .prompts-action-chip:hover { border-color: #555; color: #eee; }
         .prompts-action-chip[aria-expanded="true"] { background: rgba(91, 163, 245, 0.12); border-color: #0066cc; color: #cfe1ff; }
-        .prompts-copy-pair { font-weight: 600; }
+        .prompts-copy-prompt { font-weight: 600; }
         .prompts-copy-pair:hover { background: #333; }
+        .prompts-copy-prompt:hover { background: #333; }
 
         .prompts-match {
             background: rgba(232, 163, 61, 0.28);
@@ -232,6 +241,7 @@
             flex-direction: column;
             gap: 6px;
         }
+        .prompts-image-groups.hidden { display: none; }
         .prompts-image-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
         .prompts-image-folder {
             font-size: 10px;
@@ -255,6 +265,7 @@
             text-overflow: ellipsis;
             white-space: nowrap;
         }
+        .prompts-image-chip-more { color: #aaa; border-style: dashed; }
 
         .prompts-empty-cta {
             border: 1px dashed #3a3a3a;
