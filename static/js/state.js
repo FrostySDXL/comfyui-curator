@@ -7,6 +7,9 @@
         const FOLDER_STATE_KEY = 'imageCurator.lastFolder';
         const BATCH_SORT_KEY = 'imageCurator.batchSort';
         const GRID_DENSITY_KEY = 'imageCurator.gridDensity';
+        const PROMPTS_COLLAPSE_KEY = 'imageCurator.promptsCollapseAll';
+        const PROMPTS_SORT_KEY = 'imageCurator.promptsSort';
+        const PROMPTS_GROUP_KEY = 'imageCurator.promptsGroupByBatch';
         let currentBatch = null;
         let currentFolder = null;
         let images = [];

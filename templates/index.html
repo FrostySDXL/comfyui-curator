@@ -417,6 +417,7 @@
                 <ul class="help-list">
                     <li><strong>/</strong> open batch sidebar if closed, then focus batch search</li>
                     <li><strong>Ctrl/Cmd+K</strong> open batch sidebar if closed, then focus and select batch search</li>
+                    <li><strong>P</strong> open the Prompt History modal and focus the search field</li>
                     <li><strong>Ctrl/Cmd+A</strong> select all images in current folder (not in lightbox)</li>
                     <li><strong>Ctrl/Cmd+Z</strong> undo last move while undo is available</li>
                     <li><strong>U</strong> toggle the batch sidebar</li>
@@ -460,6 +461,18 @@
                     <li>External copy or move requires <strong>IMAGE_CURATOR_PUBLIC_EXPORTS</strong>.</li>
                 </ul>
             </div>
+            <div class="help-section">
+                <h4>Prompt History</h4>
+                <ul class="help-list">
+                    <li><strong>Scope chip</strong> at the top shows the current batch or <em>All Batches</em>. Pick a batch via the search-as-you-type combobox, or click <strong>All Batches</strong> to clear it.</li>
+                    <li><strong>Build Index</strong> scans PNG generation metadata for the selected batch and caches the result locally. The button label flips to <strong>Rebuild Index</strong> once an index exists.</li>
+                    <li><strong>Stale badge</strong> appears in the footer when the cached image count no longer matches the batch; click <strong>Rebuild</strong> to refresh.</li>
+                    <li>Search is debounced and highlights matches in the prompt, negative prompt, and batch label. Results are capped at 200 to keep rendering fast; refine the search to narrow further.</li>
+                    <li>Sort by <strong>Most used</strong> (default), <strong>A-Z</strong>, or <strong>Longest</strong>. Toggle <strong>Group by batch</strong> in aggregate scope to see per-batch sections.</li>
+                    <li>Each entry exposes <strong>copy pair</strong> (prompt plus negative), <strong>show full</strong> / <strong>collapse</strong>, <strong>show negative</strong>, <strong>copy negative</strong>, and <strong>show images</strong> (grouped by review folder).</li>
+                    <li>Collapse-all preference and sort/group selection persist across sessions in local storage.</li>
+                </ul>
+            </div>
             <div class="modal-buttons">
                 <button class="cancel">Close</button>
             </div>
@@ -469,22 +482,31 @@
     <div id="prompts-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="prompts-modal-title">
         <div class="modal-content prompts-modal-content">
             <h3 id="prompts-modal-title">Prompt History</h3>
-            <div id="prompts-batch-wrap" class="prompts-batch-wrap">
-                <div class="prompts-batch-select">
-                    <input id="prompts-batch-filter" type="text" placeholder="All Batches" autocomplete="off" spellcheck="false" aria-haspopup="listbox" aria-expanded="false" aria-autocomplete="list" tabindex="-1">
-                    <ul id="prompts-batch-list" class="prompts-batch-list" role="listbox" tabindex="-1"></ul>
-                </div>
-                <button id="prompts-all-batches-btn" class="prompts-all-batches-btn">All Batches</button>
+            <div class="prompts-modal-top">
+                <span id="prompts-scope-chip" class="prompts-scope-chip is-all" aria-live="polite">Scope: All Batches</span>
             </div>
             <div class="prompts-controls">
-                <input id="prompts-search" type="text" placeholder="Search prompts..." autocomplete="off">
+                <div id="prompts-batch-wrap" class="prompts-batch-wrap">
+                    <div class="prompts-batch-select">
+                        <input id="prompts-batch-filter" type="text" placeholder="All Batches" autocomplete="off" spellcheck="false" aria-haspopup="listbox" aria-expanded="false" aria-autocomplete="list">
+                        <ul id="prompts-batch-list" class="prompts-batch-list" role="listbox" tabindex="-1"></ul>
+                    </div>
+                    <button id="prompts-all-batches-btn" class="prompts-all-batches-btn" aria-pressed="true" aria-label="Show all batches">All Batches</button>
+                </div>
+                <input id="prompts-search" type="text" placeholder="Search prompts..." autocomplete="off" aria-label="Search prompts">
+                <select id="prompts-sort" class="prompts-sort" aria-label="Sort prompts">
+                    <option value="count">Most used</option>
+                    <option value="alpha">A-Z</option>
+                    <option value="length">Longest</option>
+                </select>
+                <button id="prompts-group-toggle" type="button" class="prompts-toggle-btn" aria-pressed="false">Group by batch</button>
                 <button id="prompts-collapse-all" type="button">Collapse all</button>
             </div>
             <div id="prompts-list" class="prompts-list">Select a batch and build an index.</div>
             <div id="prompts-footer" class="prompts-footer">
                 <span id="prompts-total"></span>
-                <span id="prompts-built-at"></span>
-                <span id="prompts-stale-warning" class="prompts-stale hidden">Prompt index may be stale. <button id="prompts-rebuild-btn" type="button">Rebuild</button></span>
+                <span id="prompts-stale-warning" class="prompts-stale hidden" aria-live="polite">Index may be stale. <button id="prompts-rebuild-btn" type="button" aria-label="Rebuild prompt index">Rebuild Index</button></span>
+                <span id="prompts-built-at" aria-live="polite"></span>
             </div>
             <div class="modal-buttons">
                 <button id="prompts-build-btn" class="create" type="button">Build Index</button>

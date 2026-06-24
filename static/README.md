@@ -119,7 +119,7 @@
 | **AI Grid Overlay** | `aiToggleOverlays`, `aiScoreGradient`, `aiShouldShowImage`, `aiSortImages`, `aiShowHeaderControls` | `.ai-score-badge`, `#ai-display-controls` |
 | **Polling** | `pollForChanges` (5s interval), `isInteractionBusy`, `aiPollJobStatus` (2s interval) | `setInterval` |
 | **Batch Search** | `setBatchFilter`, `filterBatches`, `clearBatchSearch` | `#batch-search` |
-| **Modals** | `showHelpModal`, `hideHelpModal`, `showPromptsModal`, `hidePromptsModal`, `loadPromptsData`, `renderPromptsList`, `updatePromptsFooter`, `buildPromptIndex`, `_trapFocus`, `_releaseFocusTrap` | `#help-modal`, `#prompts-modal`, `#new-batch-modal`, `#delete-modal` |
+| **Modals** | `showHelpModal`, `hideHelpModal`, `showPromptsModal`, `hidePromptsModal`, `loadPromptsData`, `renderPromptsList`, `updatePromptsFooter`, `updateBuildBtn`, `updateScopeChip`, `updateAllBatchesBtn`, `buildPromptIndex`, `_setPromptsCollapse`, `_setPromptsSort`, `_setPromptsGroupByBatch`, `_schedulePromptsRender`, `_trapFocus`, `_releaseFocusTrap` | `#help-modal`, `#prompts-modal`, `#new-batch-modal`, `#delete-modal` |
 | **Custom Combobox** | `_openCustomDropdown`, `_populateCustomDropdown`, `_commitCustomSelectSelection` | `#active-batch-custom` |
 
 ### Frontend API Calls
@@ -172,6 +172,9 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 | `imageCurator.gridDensity` | Thumbnail density mode (`compact`, `comfortable`, `large`) |
 | `imageCurator.aiSidebarWidth` | AI sidebar width (px) |
 | `imageCurator.aiSidebarOpen` | AI sidebar visibility ('true'/'false') |
+| `imageCurator.promptsCollapseAll` | Prompt History collapse-all preference |
+| `imageCurator.promptsSort` | Prompt History sort mode (`count`, `alpha`, `length`) |
+| `imageCurator.promptsGroupByBatch` | Prompt History "Group by batch" toggle |
 
 ## Constraints & Hard Rules
 
@@ -211,6 +214,10 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **`__public__` is a virtual batch sentinel:** Do not create a real batch with this name. Public actions operate on generated files in each item's real `<batch>/public/` folder.
 - **`getDisplayImages()` centralizes filtering:** Favorites filtering and AI score sorting compose there; update image counts through `updateImageCountLabel()`.
 - **Prompt history cache is manual:** The modal loads cached JSON until the operator clicks Build/Rebuild; staleness is count-based only.
+- **Prompt History request token (`promptsRequestToken`):** Mirrors the `folderRequestToken` pattern. `loadPromptsData` and `buildPromptIndex` increment it before each fetch and check it before assigning the response, so superseded requests (e.g. rapid batch switches) cannot overwrite newer state.
+- **Prompt History is keyboard-first:** `P` opens the modal and focuses the search field. Search input is debounced (~180ms) and capped at 200 rendered cards to keep large aggregate views responsive. Matches in prompt, negative prompt, and batch label are highlighted with `mark.prompts-match`.
+- **Prompt History entry actions are chip rows:** Each card exposes `copy pair`, `show full`/`collapse`, `show negative`/`hide negative`, `copy negative` (when a negative prompt exists), and `show images`/`hide images` (grouped by folder). Image chips are display-only -- grid-jump click wiring is intentionally deferred so it can land with the lightbox/grid state work.
+- **Prompt History scope chip:** The `Scope:` chip at the top of the modal reflects the current `promptsCurrentBatch` and updates on every batch change. The batch filter input is normally tabbable; the listbox uses `aria-selected` and `aria-activedescendant` for active-option state.
 
 **Completion Standard:** For any task in this directory, include files changed, manual browser verification performed (state the browser and interactions tested), and any updates to the Help modal, README keyboard shortcuts, or `test_frontend_*.py` invariants.
 

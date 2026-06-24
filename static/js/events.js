@@ -227,6 +227,10 @@ function closeModalOnBackdropClick(event, hideFn) {
                         e.preventDefault();
                         toggleBatchSidebar();
                         return;
+                    case 'p':
+                        e.preventDefault();
+                        showPromptsModal();
+                        return;
                 }
                 return;
             }
@@ -459,6 +463,22 @@ function _bindDelegatedEvents() {
                             e.preventDefault();
                             _promptMoveFocus(-1);
                             break;
+                        case 'PageDown':
+                            e.preventDefault();
+                            _promptJumpFocus((_promptVisibleOptions().length || 1) - 1);
+                            break;
+                        case 'PageUp':
+                            e.preventDefault();
+                            _promptJumpFocus(0);
+                            break;
+                        case 'Home':
+                            e.preventDefault();
+                            _promptJumpFocus(0);
+                            break;
+                        case 'End':
+                            e.preventDefault();
+                            _promptJumpFocus((_promptVisibleOptions().length || 1) - 1);
+                            break;
                         case 'Enter':
                             e.preventDefault();
                             const focused = document.querySelector('#prompts-batch-list .prompts-batch-option.focus');
@@ -479,13 +499,33 @@ function _bindDelegatedEvents() {
             const promptsAllBatchesBtn = document.getElementById('prompts-all-batches-btn');
             if (promptsAllBatchesBtn) promptsAllBatchesBtn.addEventListener('click', () => _commitPromptSelection(''));
             const promptsSearch = document.getElementById('prompts-search');
-            if (promptsSearch) promptsSearch.addEventListener('input', renderPromptsList);
+            if (promptsSearch) promptsSearch.addEventListener('input', _schedulePromptsRender);
+            const promptsSortSelect = document.getElementById('prompts-sort');
+            if (promptsSortSelect) {
+                promptsSortSelect.value = (typeof promptsSort === 'string' && PROMPTS_SORT_OPTIONS.includes(promptsSort)) ? promptsSort : 'count';
+                promptsSortSelect.addEventListener('change', function() {
+                    _setPromptsSort(this.value);
+                    renderPromptsList();
+                });
+            }
+            const promptsGroupToggle = document.getElementById('prompts-group-toggle');
+            if (promptsGroupToggle) {
+                promptsGroupToggle.setAttribute('aria-pressed', promptsGroupByBatch ? 'true' : 'false');
+                promptsGroupToggle.addEventListener('click', function() {
+                    _setPromptsGroupByBatch(!promptsGroupByBatch);
+                    this.setAttribute('aria-pressed', promptsGroupByBatch ? 'true' : 'false');
+                    renderPromptsList();
+                });
+            }
             const promptsCollapseBtn = document.getElementById('prompts-collapse-all');
-            if (promptsCollapseBtn) promptsCollapseBtn.addEventListener('click', function() {
-                promptsCollapseAll = !promptsCollapseAll;
-                this.textContent = promptsCollapseAll ? 'Expand all' : 'Collapse all';
-                renderPromptsList();
-            });
+            if (promptsCollapseBtn) {
+                promptsCollapseBtn.textContent = promptsCollapseAll ? 'Expand all' : 'Collapse all';
+                promptsCollapseBtn.addEventListener('click', function() {
+                    _setPromptsCollapse(!promptsCollapseAll);
+                    this.textContent = promptsCollapseAll ? 'Expand all' : 'Collapse all';
+                    renderPromptsList();
+                });
+            }
 
             // Close prompt batch dropdown when clicking outside
             document.addEventListener('mousedown', (e) => {

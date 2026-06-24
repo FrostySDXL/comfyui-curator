@@ -191,6 +191,9 @@ Treat these as stability-sensitive:
 - Lightbox supports zoom and scored-image navigation shortcuts
 - Lightbox supports a separate AI review panel toggled with `I`
 - Lightbox metadata supports the `M` toggle and should keep full prompt/negative prompt inspection available without disrupting image review
+- Prompt History modal stays keyboard-first: `P` opens the modal and focuses the search field; the batch filter input is normally tabbable; the custom combobox supports Arrow/Home/End/PageUp/PageDown/Enter/Escape
+- Prompt History "Copy pair" copies `prompt\n\nNegative: <negative>` (prompt only when no negative exists); the existing single-prompt copy is preserved as `copy negative` when a negative prompt is present
+- Prompt History image references render as folder-grouped chips and are display-only; "Show in grid" / "Open first image" actions are deferred so they can land with the grid/lightbox state work in a separate phase
 
 ### API or backend change
 
