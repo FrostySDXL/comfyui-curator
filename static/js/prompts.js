@@ -397,27 +397,39 @@
             if (!images || images.length === 0) return null;
             const wrap = document.createElement('div');
             wrap.className = 'prompts-image-groups hidden';
+            const total = images.length;
+            let remaining = PROMPTS_IMAGES_CAP;
             const byFolder = new Map();
             images.forEach(img => {
                 if (!byFolder.has(img.folder)) byFolder.set(img.folder, []);
                 byFolder.get(img.folder).push(img.filename);
             });
             byFolder.forEach((files, folder) => {
+                if (remaining <= 0) return;
                 const group = document.createElement('div');
                 group.className = 'prompts-image-group';
                 const label = document.createElement('span');
                 label.className = 'prompts-image-folder';
                 label.textContent = folder;
                 group.appendChild(label);
-                files.forEach(name => {
+                files.slice(0, remaining).forEach(name => {
                     const chip = document.createElement('span');
                     chip.className = 'prompts-image-chip';
                     chip.textContent = name;
                     chip.title = name;
                     group.appendChild(chip);
                 });
+                remaining -= Math.min(files.length, remaining);
                 wrap.appendChild(group);
             });
+            const over = total - PROMPTS_IMAGES_CAP;
+            if (over > 0) {
+                const more = document.createElement('span');
+                more.className = 'prompts-image-chip prompts-image-chip-more';
+                more.textContent = `+${over} more`;
+                more.title = `${over} more images not shown`;
+                wrap.appendChild(more);
+            }
             return wrap;
         }
 
@@ -637,7 +649,9 @@
             const wrap = document.createElement('div');
             wrap.className = 'prompts-empty-cta';
             const title = createTextElement('div', 'prompts-empty-title', `No prompts match "${query}"`);
+            wrap.appendChild(title);
             const body = createTextElement('p', 'prompts-empty-body', `${totalCount} prompt${totalCount === 1 ? '' : 's'} available across the current scope.`);
+            wrap.appendChild(body);
             return wrap;
         }
 
@@ -719,6 +733,13 @@
                 if (token !== promptsRequestToken) return;
                 if (!resp.ok) throw new Error('build failed');
                 showToast('Prompt index built');
+                // Clean up build state before reloading data so loadPromptsData's
+                // token increment does not invalidate the token guarding this block.
+                promptsBuilding = false;
+                if (buildBtn) { buildBtn.disabled = false; buildBtn.textContent = buildLabel; }
+                if (rebuildBtn) { rebuildBtn.disabled = false; rebuildBtn.textContent = rebuildLabel; }
+                updateBuildBtn();
+                renderPromptsList();
                 await loadPromptsData();
             } catch {
                 if (token !== promptsRequestToken) return;
