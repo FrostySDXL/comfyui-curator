@@ -63,8 +63,9 @@ def test_prompt_history_frontend_functions_exist():
     # Search-match highlight + image chip rendering.
     assert "prompts-match" in source
     assert "prompts-image-chip" in source
-    assert "copy prompt" in source
+    assert "copy positive" in source
     assert "buildAllPromptIndexes" in source
+    assert "showBuildAllConfirm" in source
     assert "Build All Indexes" in source
     assert "PROMPTS_IMAGES_CAP" in source
 
@@ -127,7 +128,8 @@ def test_prompt_history_help_section_documented():
     assert ">Prompt History</h4>" in html
     # Shortcut entry for opening the modal is documented in Help.
     assert "<strong>P</strong>" in html
-    assert "<strong>copy prompt</strong>" in html
+    assert "<strong>copy positive</strong>" in html
+    assert 'id="prompts-build-all-confirm"' in html
 
 
 def test_favorites_and_prompts_controls_are_rendered():

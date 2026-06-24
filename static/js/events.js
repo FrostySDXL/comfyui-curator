@@ -431,6 +431,10 @@ function _bindDelegatedEvents() {
             if (promptsModal) promptsModal.addEventListener('click', function(event) { closeModalOnBackdropClick(event, hidePromptsModal); });
             const promptsBuildBtn = document.getElementById('prompts-build-btn');
             if (promptsBuildBtn) promptsBuildBtn.addEventListener('click', buildPromptIndex);
+            const promptsBuildAllConfirmBtn = document.getElementById('prompts-build-all-confirm-btn');
+            if (promptsBuildAllConfirmBtn) promptsBuildAllConfirmBtn.addEventListener('click', buildAllPromptIndexes);
+            const promptsBuildAllCancelBtn = document.getElementById('prompts-build-all-cancel-btn');
+            if (promptsBuildAllCancelBtn) promptsBuildAllCancelBtn.addEventListener('click', hideBuildAllConfirm);
             const promptsRebuildBtn = document.getElementById('prompts-rebuild-btn');
             if (promptsRebuildBtn) promptsRebuildBtn.addEventListener('click', buildPromptIndex);
             const promptsBatchFilter = document.getElementById('prompts-batch-filter');

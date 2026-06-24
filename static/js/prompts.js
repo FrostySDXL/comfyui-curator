@@ -88,6 +88,7 @@
                 _promptsRenderTimer = null;
             }
             _promptCloseDropdown();
+            hideBuildAllConfirm();
             document.getElementById('prompts-modal').classList.remove('active');
             _releaseFocusTrap();
         }
@@ -122,6 +123,7 @@
             const label = promptsCurrentBatch ? `Scope: ${promptsCurrentBatch}` : 'Scope: All Batches';
             chip.textContent = label;
             chip.classList.toggle('is-all', promptsCurrentBatch === '');
+            hideBuildAllConfirm();
         }
 
         function updateBuildBtn() {
@@ -514,7 +516,6 @@
             const textWrap = document.createElement('div');
             textWrap.className = 'prompts-entry-text';
             const promptText = String(entry.normalized || entry.prompt || '');
-            const copyPromptText = String(entry.prompt || promptText);
             const full = _buildFullDisclosure(promptText);
             const neg = _buildNegativeDisclosure(entry.negative_prompt || '');
             const imgs = _buildImageDisclosure(entry.images || []);
@@ -522,15 +523,15 @@
             const actions = document.createElement('div');
             actions.className = 'prompts-entry-actions';
 
-            actions.appendChild(_buildActionChip('copy prompt', 'prompts-copy-prompt', () => copyMetadataText(copyPromptText, 'prompt')));
-            const copyPairText = _formatCopyPair(copyPromptText, entry.negative_prompt || '');
+            actions.appendChild(_buildActionChip('copy positive', 'prompts-copy-prompt', () => copyMetadataText(promptText, 'positive prompt')));
+            if (neg.btn) actions.appendChild(neg.btn);
+            const copyPairText = _formatCopyPair(promptText, entry.negative_prompt || '');
             actions.appendChild(_buildActionChip('copy pair', 'prompts-copy-pair', () => copyMetadataText(copyPairText, 'prompt pair')));
             if (full.btn) actions.appendChild(full.btn);
+            if (imgs.btn) actions.appendChild(imgs.btn);
             if (entry.negative_prompt) {
                 actions.appendChild(_buildActionChip('copy negative', 'prompts-copy-neg', () => copyMetadataText(entry.negative_prompt, 'negative prompt')));
             }
-            if (neg.btn) actions.appendChild(neg.btn);
-            if (imgs.btn) actions.appendChild(imgs.btn);
 
             textWrap.appendChild(actions);
             if (full.el) {
@@ -726,16 +727,28 @@
 
         async function buildPromptIndex() {
             if (!promptsCurrentBatch) {
-                if (!window.confirm('Build prompt indexes for all batches? This can take a while on large libraries.')) {
-                    return;
-                }
-                await buildAllPromptIndexes();
+                showBuildAllConfirm();
                 return;
             }
             await buildSinglePromptIndex(promptsCurrentBatch);
         }
 
+        function showBuildAllConfirm() {
+            const confirm = document.getElementById('prompts-build-all-confirm');
+            if (!confirm) return;
+            confirm.classList.remove('hidden');
+            confirm.hidden = false;
+        }
+
+        function hideBuildAllConfirm() {
+            const confirm = document.getElementById('prompts-build-all-confirm');
+            if (!confirm) return;
+            confirm.classList.add('hidden');
+            confirm.hidden = true;
+        }
+
         async function buildAllPromptIndexes() {
+            hideBuildAllConfirm();
             const batches = promptsBatchList.slice();
             if (batches.length === 0) {
                 showToast('No batches available to build');

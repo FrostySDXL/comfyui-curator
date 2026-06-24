@@ -324,6 +324,7 @@
             border: 1px solid rgba(232, 163, 61, 0.4);
             color: #f0c987;
         }
+        .prompts-stale.hidden { display: none; }
         .prompts-stale button {
             padding: 3px 8px;
             border-radius: 999px;
@@ -334,3 +335,24 @@
         }
         .prompts-stale button:hover { background: rgba(232, 163, 61, 0.2); }
         .prompts-stale button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #prompts-total { margin-left: 0; }
+        #prompts-built-at { margin-left: auto; }
+
+        .prompts-build-all-confirm {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 8px 0 0;
+            padding: 8px 10px;
+            border: 1px solid rgba(232, 163, 61, 0.45);
+            border-radius: 6px;
+            background: rgba(232, 163, 61, 0.1);
+            color: #f0c987;
+            font-size: 11px;
+            flex-wrap: wrap;
+        }
+        .prompts-build-all-confirm.hidden { display: none; }
+        .prompts-build-all-confirm span { flex: 1 1 260px; }
+        .prompts-build-all-confirm button { padding: 5px 9px; font-size: 11px; border-radius: 4px; cursor: pointer; }
+        #prompts-build-all-confirm-btn { background: #0066cc; border: 1px solid #1573d8; color: white; }
+        #prompts-build-all-cancel-btn { background: #333; border: 1px solid #555; color: #ccc; }
