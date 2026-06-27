@@ -45,7 +45,6 @@ The browser loads split CSS files directly from `templates/index.html`. Edit the
 | `static/css/toast.css` | Undo toast styling |
 | `static/css/ai.css` | AI sidebar, AI form/history/run comparison, AI thumb badges and filtering |
 | `static/css/responsive.css` | `900px` responsive breakpoint rules; loads last |
-| `static/css/app.css` | Temporary raw-text compatibility stylesheet for tests; not browser-loaded |
 
 ## Verification before claiming completion
 

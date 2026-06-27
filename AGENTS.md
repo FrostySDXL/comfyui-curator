@@ -39,6 +39,7 @@ app.py (Flask routes)
   ├── ai_curate/config.py           ← env-backed constants, paths, caps
   ├── ai_curate/elements.py         ← prompt parsing + element extraction + quality checklists
   ├── ai_curate/job_validation.py   ← AI curation submit payload validation
+  ├── ai_curate/routes.py           ← AI curation Flask Blueprint routes
   ├── ai_curate/client.py           ← VisionClient (raw urllib -> /v1/chat/completions)
   ├── ai_curate/scoring.py          ← image enumeration + scoring loop
   ├── ai_curate/worker.py           ← scoring worker orchestration core
@@ -76,6 +77,7 @@ Frontend (templates/index.html + ordered static/js/*.js + static/css/*.css)
 | **AI Backend** | `ai_curate/config.py` | Env-backed constants: `BATCHES_DIR`, `COMFYUI_OUTPUT`, `DEFAULT_BASE_URL`, `DEFAULT_TOP_N` (15), `TOP_N_CAP` (100), `ELEMENT_CAP` (12) |
 | | `ai_curate/README.md` | Module-scoped agent startup guide (pipeline, internal contracts, gotchas) |
 | | `ai_curate/elements.py` | Prompt auto-extraction, explicit element building, quality baseline checks |
+| | `ai_curate/routes.py` | Flask Blueprint for `/api/ai-curate/*` routes with app-injected queue/storage/lifecycle dependencies |
 | | `ai_curate/job_validation.py` | Web AI job payload validation with app-injected dependencies |
 | | `ai_curate/models.py` | `JobState` enum, `ImageResult` (per-image score), `CurationRun`, `RunTotals` |
 | | `ai_curate/client.py` | `VisionClient`: base64 encode + POST to `/v1/chat/completions` (raw urllib) |
@@ -84,10 +86,9 @@ Frontend (templates/index.html + ordered static/js/*.js + static/css/*.css)
 | | `ai_curate/queue.py` | `QueueManager`: FIFO single-worker job queue with cancel support |
 | | `ai_curate/storage.py` | `RunStorage`: atomic JSON persistence for run history |
 | **Frontend** | `templates/index.html` | Single-page Flask template (Jinja2, server-injected model list) |
-| | `static/js/state.js`, `dom-utils.js`, `api.js`, `sidebar.js`, `batches.js`, `grid.js`, `favorites.js`, `publish.js`, `moves.js`, `lightbox.js`, `metadata.js`, `prompts.js`, `ai.js`, `polling.js`, `events.js`, `bootstrap.js` | Ordered classic browser scripts; vanilla JS, imperative, no framework/build step |
+| | `static/js/state.js`, `dom-utils.js`, `api.js`, `sidebar.js`, `batches.js`, `grid.js`, `favorites.js`, `publish.js`, `moves.js`, `lightbox.js`, `metadata.js`, `prompts.js`, `ai-*.js`, `ai.js`, `polling.js`, `modals.js`, `combobox.js`, `keyboard.js`, `events.js`, `bootstrap.js` | Ordered classic browser scripts; vanilla JS, imperative, no framework/build step |
 | | `static/js/app.js` | Compatibility stub pointing to the split files |
 | | `static/css/base.css`, `sidebar.css`, `layout.css`, `grid.css`, `lightbox.css`, `modals.css`, `prompts.css`, `toast.css`, `ai.css`, `responsive.css` | Browser-loaded split styling in template order (dark theme, flexbox + CSS grid) |
-| | `static/css/app.css` | Temporary full compatibility stylesheet for raw-text tests; not browser-loaded by `templates/index.html` |
 | | `static/README.md` | Module-scoped agent startup guide (global state, function groups, API calls, gotchas) |
 | **Tests** | `tests/unit/` | Isolated logic plus source-scraping frontend-invariant tests |
 | | `tests/component/` | In-process multi-module (Flask route contracts, AI worker lifecycle) |

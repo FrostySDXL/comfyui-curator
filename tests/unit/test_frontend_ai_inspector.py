@@ -124,6 +124,19 @@ def test_ai_job_status_uses_running_indicator_not_progress_bar() -> None:
     assert ".ai-progress-bar" not in css
 
 
+def test_ai_quality_flags_preserve_empty_web_selection() -> None:
+    """Unchecked optional AI elements must send [] instead of null.
+
+    The backend keeps ``quality_flags=None`` as a compatibility signal for
+    appending all default quality checks, so the web UI must send an explicit
+    empty list when no optional checkboxes are selected.
+    """
+    js = read_frontend_js()
+
+    assert "quality_flags: qualityFlags.length > 0 ? qualityFlags : null" not in js
+    assert js.count("quality_flags: qualityFlags") >= 2
+
+
 def test_ai_score_form_resists_narrow_panel_overflow() -> None:
     css = read_frontend_css()
 

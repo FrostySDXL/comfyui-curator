@@ -8,6 +8,25 @@ pytestmark = pytest.mark.integration
 from ai_curate.models import JobState, CurationRun, RunTotals
 
 
+def test_ai_curate_routes_are_registered_on_blueprint(app_module):
+    """AI curation API URLs are provided by the focused Blueprint module."""
+    expected_rules = {
+        "/api/ai-curate/preview-elements",
+        "/api/ai-curate/jobs",
+        "/api/ai-curate/jobs/<run_id>",
+        "/api/ai-curate/jobs/<run_id>/cancel",
+        "/api/ai-curate/batches/<batch>/runs",
+        "/api/ai-curate/batches/<batch>/runs/latest",
+        "/api/ai-curate/batches/<batch>/runs/<run_id>",
+        "/api/ai-curate/batches/<batch>/element-history",
+    }
+
+    endpoints_by_rule = {rule.rule: rule.endpoint for rule in app_module.app.url_map.iter_rules()}
+
+    for rule in expected_rules:
+        assert endpoints_by_rule[rule].startswith("ai_curate.")
+
+
 @pytest.fixture
 def client(app_module, monkeypatch, tmp_path):
     """Create a Flask test client with temp directories."""

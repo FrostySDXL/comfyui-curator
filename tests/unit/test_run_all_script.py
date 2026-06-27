@@ -95,8 +95,18 @@ def test_javascript_checks_use_ordered_split_file_list():
         "lightbox.js",
         "metadata.js",
         "prompts.js",
+        "ai-state.js",
+        "ai-sidebar.js",
+        "ai-panel.js",
+        "ai-history.js",
+        "ai-job.js",
+        "ai-inspector.js",
+        "ai-overlays.js",
         "ai.js",
         "polling.js",
+        "modals.js",
+        "combobox.js",
+        "keyboard.js",
         "events.js",
         "bootstrap.js",
         "app.js",
@@ -107,7 +117,18 @@ def test_frontend_source_file_lists_match_runner_order():
     run_all = load_run_all_module()
 
     assert [path.name for path in FRONTEND_JS_FILES] == run_all.JS_FILES
-    assert [path.name for path in FRONTEND_CSS_FILES if path.name != "app.css"] == run_all.CSS_FILES
+    assert [path.name for path in FRONTEND_CSS_FILES] == run_all.CSS_FILES
+
+
+def test_template_script_tags_match_ordered_split_file_list():
+    template = Path("templates/index.html").read_text(encoding="utf-8")
+    script_srcs = [
+        line.split('src="', 1)[1].split('"', 1)[0]
+        for line in template.splitlines()
+        if "<script" in line and 'src="' in line
+    ]
+
+    assert script_srcs == [f"/static/js/{path.name}" for path in FRONTEND_JS_FILES]
 
 
 def test_format_plan_mutates_only_when_requested():

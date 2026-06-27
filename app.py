@@ -55,6 +55,7 @@ from ai_curate.client import VisionClient
 from ai_curate.scoring import score_images, find_images
 from ai_curate.storage import RunStorage
 from ai_curate.queue import QueueManager
+from ai_curate.routes import AiCurateRouteContext, create_ai_curate_blueprint
 from ai_curate.worker import run_scoring_worker_inner
 
 app = Flask(__name__)
@@ -794,207 +795,19 @@ def _run_scoring_worker_inner(run_id, run):
     )
 
 
-@app.route("/api/ai-curate/preview-elements", methods=["POST"])
-def api_ai_curate_preview_elements():
-    """Preview the combined element list before scoring.
-
-    Request body:
-        {"elements": ["elem1", "elem2"], "quality_flags": ["anatomy"]}
-
-    Returns:
-        {"elements": ["elem1", "elem2", "Clean anatomy ..."], "count": N}
-    """
-    data = request.json or {}
-    explicit = data.get("elements")
-    if not explicit or not isinstance(explicit, list):
-        return jsonify({"error": "elements is required (list of strings)"}), 400
-    explicit = [str(e).strip() for e in explicit if str(e).strip()]
-    if not explicit:
-        return jsonify({"error": "elements must contain at least one non-empty entry"}), 400
-
-    quality_flags = data.get("quality_flags")
-    if quality_flags is not None and not isinstance(quality_flags, list):
-        return jsonify({"error": "quality_flags must be a list of strings"}), 400
-    elements = build_element_list(explicit, quality_flags)
-
-    return jsonify({"elements": elements, "count": len(elements)})
-
-
-@app.route("/api/ai-curate/jobs", methods=["POST"])
-def api_ai_curate_submit_job():
-    """Submit a new AI curation job.
-
-    Request body:
-        {
-            "batch": "batch-name",
-            "prompt": "description",
-            "source_folder": "inbox",
-            "elements": null,
-            "top_n": 15,
-            "model": "your-model-name",
-            "move_enabled": false,
-            "destination_folder": null
-        }
-
-    Returns:
-        {"run_id": "...", "status": "running"|"queued", ...}
-    """
-    data = request.json or {}
-    params, error = _validate_ai_curate_request(data)
-    if error:
-        return jsonify(error[0]), error[1]
-
-    run = _ai_queue.submit(params)
-
-    # If the job is running, start the scoring worker via the shared helper
-    if run.status == JobState.RUNNING:
-        _start_scoring_worker(run.run_id)
-
-    return jsonify(run.to_dict()), 201
-
-
-@app.route("/api/ai-curate/jobs", methods=["GET"])
-def api_ai_curate_list_jobs():
-    """List all current AI curation jobs.
-
-    Returns:
-        {"jobs": [...]}
-    """
-    jobs = _ai_queue.list_jobs()
-    return jsonify({"jobs": [j.to_dict() for j in jobs]})
-
-
-@app.route("/api/ai-curate/jobs/<run_id>", methods=["GET"])
-def api_ai_curate_get_job(run_id):
-    """Get status of a specific AI curation job.
-
-    Returns:
-        Full CurationRun dict or 404.
-    """
-    run = _ai_queue.get_job(run_id)
-    if run is None:
-        return jsonify({"error": "job not found"}), 404
-    return jsonify(run.to_dict())
-
-
-@app.route("/api/ai-curate/jobs/<run_id>/cancel", methods=["POST"])
-def api_ai_curate_cancel_job(run_id):
-    """Cancel a queued or running AI curation job.
-
-    Cancellation during scoring discards all results.
-    Cancellation during move phase is not allowed in v1.
-
-    Returns:
-        {"success": true} or error.
-    """
-    run = _ai_queue.get_job(run_id)
-    if run is None:
-        return jsonify({"error": "job not found"}), 404
-
-    result = _ai_queue.cancel(run_id)
-    if result:
-        # If the job was running and is now in CANCELLING state,
-        # the scoring worker will detect it and finalize.
-        # If it was queued, it's immediately CANCELLED.
-        return jsonify({"success": True})
-    else:
-        return jsonify({"error": "cannot cancel job in current state"}), 400
-
-
-@app.route("/api/ai-curate/batches/<batch>/runs", methods=["GET"])
-def api_ai_curate_batch_runs(batch):
-    """List historical AI curation runs for a batch.
-
-    Returns:
-        {"runs": ["run001", "run002", ...]}
-    """
-    batch_name, err = _require_batch(batch)
-    if err:
-        return jsonify(err[0]), err[1]
-    run_ids = _ai_storage.list_runs(batch_name)
-    return jsonify({"runs": run_ids})
-
-
-@app.route("/api/ai-curate/batches/<batch>/runs/latest", methods=["GET"])
-def api_ai_curate_get_latest_run(batch):
-    """Retrieve the most recent historical run for a batch.
-
-    Returns:
-        Full CurationRun dict or 404.
-    """
-    batch_name, err = _require_batch(batch)
-    if err:
-        return jsonify(err[0]), err[1]
-    run = _ai_storage.load_latest(batch_name)
-    if run is None:
-        return jsonify({"error": "no runs found"}), 404
-    return jsonify(run.to_dict())
-
-
-@app.route("/api/ai-curate/batches/<batch>/runs/<run_id>", methods=["GET"])
-def api_ai_curate_get_run(batch, run_id):
-    """Retrieve a specific historical run for a batch.
-
-    Returns:
-        Full CurationRun dict or 404.
-    """
-    batch_name, err = _require_batch(batch)
-    if err:
-        return jsonify(err[0]), err[1]
-    run = _ai_storage.load_run(batch_name, run_id)
-    if run is None:
-        return jsonify({"error": "run not found"}), 404
-    return jsonify(run.to_dict())
-
-
-@app.route("/api/ai-curate/batches/<batch>/element-history", methods=["GET"])
-def api_ai_curate_element_history(batch):
-    """Return recent unique element sets for a batch (deduped by content).
-
-    Query params:
-        limit: max entries to return (default 10)
-
-    Returns:
-        {"history": [{"run_id": "...", "timestamp": "...", "elements": [...]}, ...]}
-    """
-    batch_name, err = _require_batch(batch)
-    if err:
-        return jsonify(err[0]), err[1]
-    try:
-        limit = int(request.args.get("limit", "10"))
-    except (ValueError, TypeError):
-        limit = 10
-    limit = max(1, min(limit, 50))
-
-    run_ids = _ai_storage.list_runs(batch_name)
-    history = []
-    seen = set()
-    for run_id in reversed(run_ids):
-        if len(history) >= limit:
-            break
-        run = _ai_storage.load_run(batch_name, run_id)
-        if run is None or not run.elements:
-            continue
-        # Only include user-provided elements (exclude quality defaults)
-        user_elements = [
-            e
-            for e in run.elements
-            if e not in extract_elements("")  # quality-only extraction yields the defaults
-        ]
-        if not user_elements:
-            continue
-        key = "\n".join(sorted(user_elements))
-        if key in seen:
-            continue
-        seen.add(key)
-        history.append(
-            {
-                "run_id": run.run_id,
-                "timestamp": run.created_at or "",
-                "elements": user_elements,
-            }
+app.register_blueprint(
+    create_ai_curate_blueprint(
+        AiCurateRouteContext(
+            get_queue=lambda: _ai_queue,
+            get_storage=lambda: _ai_storage,
+            start_scoring_worker=_start_scoring_worker,
+            validate_request=_validate_ai_curate_request,
+            require_batch=_require_batch,
+            build_element_list=build_element_list,
+            extract_elements=extract_elements,
         )
-    return jsonify({"history": history})
+    )
+)
 
 
 # ---------------------------------------------------------------------------

@@ -15,8 +15,18 @@ JS_FILES = [
     Path("static/js/lightbox.js"),
     Path("static/js/metadata.js"),
     Path("static/js/prompts.js"),
+    Path("static/js/ai-state.js"),
+    Path("static/js/ai-sidebar.js"),
+    Path("static/js/ai-panel.js"),
+    Path("static/js/ai-history.js"),
+    Path("static/js/ai-job.js"),
+    Path("static/js/ai-inspector.js"),
+    Path("static/js/ai-overlays.js"),
     Path("static/js/ai.js"),
     Path("static/js/polling.js"),
+    Path("static/js/modals.js"),
+    Path("static/js/combobox.js"),
+    Path("static/js/keyboard.js"),
     Path("static/js/events.js"),
     Path("static/js/bootstrap.js"),
     Path("static/js/app.js"),
@@ -33,9 +43,6 @@ CSS_FILES = [
     Path("static/css/toast.css"),
     Path("static/css/ai.css"),
     Path("static/css/responsive.css"),
-    # Transitional raw-text compatibility stylesheet. This is intentionally not
-    # browser-loaded; remove it when app.css is reduced to a stub.
-    Path("static/css/app.css"),
 ]
 
 

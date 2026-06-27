@@ -38,7 +38,6 @@
 | `toast.css` | Undo toast styling |
 | `ai.css` | AI sidebar, image inspector, AI form/history/run comparison, AI thumb badges and filtering |
 | `responsive.css` | `900px` responsive breakpoint rules; loads last |
-| `app.css` | Temporary full compatibility stylesheet for raw-text tests; not browser-loaded by `index.html` |
 
 ### JavaScript File Map
 
@@ -56,9 +55,19 @@
 | `lightbox.js` | Lightbox open/close, navigation, zoom, scored navigation, lightbox favorite UI |
 | `metadata.js` | PNG metadata loading/cache/rendering and prompt copy helpers |
 | `prompts.js` | Prompt History modal state, selector, rendering, build/rebuild controls |
-| `ai.js` | AI sidebar, image inspector, optional elements, jobs, run history, overlays, score helpers |
+| `ai-state.js` | Shared AI globals, storage keys, and sidebar constants |
+| `ai-sidebar.js` | AI sidebar open/width state and resize behavior |
+| `ai-panel.js` | AI sidebar tabs, optional elements, quality flags, element history |
+| `ai-history.js` | AI run history loading, run labels/selectors, summaries, diff comparison, batch reset |
+| `ai-job.js` | AI element preview, job submission, status polling, cancellation, move mode |
+| `ai-inspector.js` | AI image inspector and multi-selection score breakdowns |
+| `ai-overlays.js` | AI score badges, score filtering/sorting, score color helpers, batch run counts |
+| `ai.js` | Compatibility stub for the split AI files |
 | `polling.js` | Interaction-aware background polling helpers |
-| `events.js` | Keyboard shortcuts, modal helpers, delegated browser event binding |
+| `modals.js` | Generic modal helpers plus new-batch and Help modal controls |
+| `combobox.js` | Active-batch custom combobox keyboard and outside-click binding |
+| `keyboard.js` | Document keyboard shortcuts and lightbox wheel zoom binding |
+| `events.js` | Delegated browser event binding |
 | `bootstrap.js` | Startup initialization and poll interval registration |
 | `app.js` | Compatibility stub pointing to split files |
 
@@ -110,7 +119,7 @@
 | **Favorites** | `toggleFavorite`, `toggleFavoritesFilter`, `toggleLightboxFavorite`, `updateLightboxFavorite`, `loadUniversalFavorites` | `.favorite-star`, `#favorites-filter-btn`, `#batch-list` |
 | **Public output** | `showPublishModal`, `submitPublicExport`, `loadBatchPublic`, `loadAllPublic`, `copySelectedPublicCopies`, `moveSelectedPublicCopies`, `deleteSelectedPublicCopies` | `#publish-modal`, `#batch-list`, `#action-bar` |
 | **Thumbnail Caching** | `resolveThumbnailBlobUrl`, `setThumbnailImageSrc` | Thumb `<img>` elements (blob URLs) |
-| **Keyboard Shortcuts** | Single `keydown` handler (line ~1770) | `document` |
+| **Keyboard Shortcuts** | `keyboard.js` document `keydown` handler | `document` |
 | **Drag/Drop** | `onDragStart`, `onDragOver`, `onDrop`, `moveBatch` | `.thumb`, `.folder-tab` |
 | **Multi-Select** | `toggleSelect`, `clearSelection`, `updateActionBar` | `#action-bar`, `.thumb-select` |
 | **Undo** | `recordLastAction`, `showToast`, `undoLastMove` | `#toast` |
