@@ -28,7 +28,14 @@ def create_ai_curate_blueprint(context: AiCurateRouteContext) -> Blueprint:
 
     @bp.route("/preview-elements", methods=["POST"])
     def api_ai_curate_preview_elements():
-        """Preview the combined element list before scoring."""
+        """Preview scoring elements without starting a job.
+
+        Request JSON: ``{"elements": [str, ...], "quality_flags": [str, ...]}``.
+        ``quality_flags`` is optional; ``None`` preserves legacy all-quality
+        behavior, while an explicit empty list means no optional quality checks.
+
+        Response JSON: ``{"elements": [str, ...], "count": int}``.
+        """
         data = request.json or {}
         explicit = data.get("elements")
         if not explicit or not isinstance(explicit, list):
@@ -46,7 +53,13 @@ def create_ai_curate_blueprint(context: AiCurateRouteContext) -> Blueprint:
 
     @bp.route("/jobs", methods=["POST"])
     def api_ai_curate_submit_job():
-        """Submit a new AI curation job."""
+        """Submit a new AI curation job.
+
+        Request JSON is validated by ``context.validate_request`` and includes
+        batch, elements, source folder, top-N, model, move mode, destination,
+        and optional ``quality_flags``. Response JSON is ``CurationRun.to_dict()``
+        with status ``201``; validation failures preserve existing error shapes.
+        """
         data = request.json or {}
         params, error = context.validate_request(data)
         if error:
@@ -62,13 +75,20 @@ def create_ai_curate_blueprint(context: AiCurateRouteContext) -> Blueprint:
 
     @bp.route("/jobs", methods=["GET"])
     def api_ai_curate_list_jobs():
-        """List all current AI curation jobs."""
+        """List current queued/running/completed in-memory jobs.
+
+        Response JSON: ``{"jobs": [CurationRun.to_dict(), ...]}``.
+        """
         jobs = context.get_queue().list_jobs()
         return jsonify({"jobs": [j.to_dict() for j in jobs]})
 
     @bp.route("/jobs/<run_id>", methods=["GET"])
     def api_ai_curate_get_job(run_id):
-        """Get status of a specific AI curation job."""
+        """Get status for one in-memory job.
+
+        Response JSON is ``CurationRun.to_dict()`` or ``{"error": "job not found"}``
+        with status ``404``.
+        """
         run = context.get_queue().get_job(run_id)
         if run is None:
             return jsonify({"error": "job not found"}), 404
@@ -76,7 +96,11 @@ def create_ai_curate_blueprint(context: AiCurateRouteContext) -> Blueprint:
 
     @bp.route("/jobs/<run_id>/cancel", methods=["POST"])
     def api_ai_curate_cancel_job(run_id):
-        """Cancel a queued or running AI curation job."""
+        """Request cancellation for a queued or running AI curation job.
+
+        Response JSON: ``{"success": true}``, ``{"error": "job not found"}``,
+        or ``{"error": "cannot cancel job in current state"}``.
+        """
         queue = context.get_queue()
         run = queue.get_job(run_id)
         if run is None:
@@ -89,7 +113,10 @@ def create_ai_curate_blueprint(context: AiCurateRouteContext) -> Blueprint:
 
     @bp.route("/batches/<batch>/runs", methods=["GET"])
     def api_ai_curate_batch_runs(batch):
-        """List historical AI curation runs for a batch."""
+        """List persisted run IDs for an existing batch.
+
+        Response JSON: ``{"runs": [run_id, ...]}`` after batch validation.
+        """
         batch_name, err = context.require_batch(batch)
         if err:
             return jsonify(err[0]), err[1]
@@ -98,7 +125,11 @@ def create_ai_curate_blueprint(context: AiCurateRouteContext) -> Blueprint:
 
     @bp.route("/batches/<batch>/runs/latest", methods=["GET"])
     def api_ai_curate_get_latest_run(batch):
-        """Retrieve the most recent historical run for a batch."""
+        """Retrieve the latest persisted run for an existing batch.
+
+        Response JSON is ``CurationRun.to_dict()`` or ``{"error": "no runs found"}``
+        with status ``404``.
+        """
         batch_name, err = context.require_batch(batch)
         if err:
             return jsonify(err[0]), err[1]
@@ -109,7 +140,11 @@ def create_ai_curate_blueprint(context: AiCurateRouteContext) -> Blueprint:
 
     @bp.route("/batches/<batch>/runs/<run_id>", methods=["GET"])
     def api_ai_curate_get_run(batch, run_id):
-        """Retrieve a specific historical run for a batch."""
+        """Retrieve a specific persisted run for an existing batch.
+
+        Response JSON is ``CurationRun.to_dict()`` or ``{"error": "run not found"}``
+        with status ``404``.
+        """
         batch_name, err = context.require_batch(batch)
         if err:
             return jsonify(err[0]), err[1]
@@ -120,7 +155,11 @@ def create_ai_curate_blueprint(context: AiCurateRouteContext) -> Blueprint:
 
     @bp.route("/batches/<batch>/element-history", methods=["GET"])
     def api_ai_curate_element_history(batch):
-        """Return recent unique element sets for a batch, deduped by content."""
+        """Return recent unique user element sets for a batch.
+
+        Query parameter: ``limit`` clamped to 1..50, default 10. Response JSON:
+        ``{"history": [{"run_id": str, "timestamp": str, "elements": [str, ...]}]}``.
+        """
         batch_name, err = context.require_batch(batch)
         if err:
             return jsonify(err[0]), err[1]

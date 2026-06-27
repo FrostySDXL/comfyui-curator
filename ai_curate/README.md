@@ -31,7 +31,7 @@ config.py ──(constants)──> job_validation.py ──(web payload validati
               (app orchestration) (job lifecycle)
                     │                │
                     └──── storage.py ┘
-                        (JSON persistence)
+                    (JSON persistence)
 
 routes.py ──(Flask Blueprint)──> app.py-injected queue/storage/lifecycle helpers
 ```
