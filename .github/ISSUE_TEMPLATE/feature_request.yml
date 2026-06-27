@@ -1,0 +1,63 @@
+name: Feature request
+description: Suggest an enhancement or workflow improvement.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for proposed behavior changes, workflow improvements, or new capabilities.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or workflow gap
+      description: What operator problem would this solve?
+      placeholder: I often need to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior you want.
+      placeholder: Add a control that...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Primary surface
+      options:
+        - Web UI
+        - Flask API
+        - Batch filesystem workflow
+        - AI scoring / queue / run history
+        - CLI curate.py
+        - Prompt history
+        - Favorites
+        - Public export
+        - Documentation
+        - Other / unsure
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workaround or alternate design have you considered?
+
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility notes
+      description: Any API, keyboard shortcut, batch layout, or operator workflow that must stay stable?
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, sketches, examples, or related issues.
