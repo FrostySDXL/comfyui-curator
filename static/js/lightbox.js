@@ -13,6 +13,10 @@ function openLightbox(index) {
             showCurrentImage();
         }
 
+function getLightboxImages() {
+            return getCurrentDisplayImages();
+        }
+
 function closeLightbox() {
             document.getElementById('lightbox').classList.remove('active');
             resetLightboxZoom();
@@ -48,7 +52,7 @@ function resetLightboxZoom() {
 
 function getScoredImageIndices() {
             if (!aiActiveRun || !aiActiveRun.results) return [];
-            return images
+            return getLightboxImages()
                 .map((img, index) => ({img, index, score: aiGetImageScore(img.name)}))
                 .filter(entry => entry.score && !entry.score.failed)
                 .sort((a, b) => {
@@ -73,7 +77,8 @@ function navigateScored(delta) {
         }
 
 function showCurrentImage() {
-            const img = images[currentIndex];
+            const lightboxImages = getLightboxImages();
+            const img = lightboxImages[currentIndex];
             if (!img) return;
             if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(img);
             const imageToken = ++lightboxImageToken;
@@ -136,7 +141,7 @@ function renderLightboxAiPanel() {
             if (btn) btn.textContent = lightboxAiOpen ? 'Hide AI' : 'AI';
             panel.replaceChildren();
             if (!lightboxAiOpen) return;
-            const img = images[currentIndex];
+            const img = getLightboxImages()[currentIndex];
             const header = document.createElement('div');
             header.className = 'metadata-header';
             const titleWrap = document.createElement('div');
@@ -157,7 +162,7 @@ function renderLightboxAiPanel() {
 function updateLightboxInfo(img, w, h) {
             const infoEl = document.getElementById('lightbox-info');
             infoEl.replaceChildren();
-            let line1 = `${currentIndex+1} / ${images.length}  -  ${img.name}`;
+            let line1 = `${currentIndex+1} / ${getLightboxImages().length}  -  ${img.name}`;
             if (w && h) line1 += `  (${w}x${h})`;
             const lineEl = document.createElement('div');
             lineEl.className = 'lightbox-info-line';
@@ -206,7 +211,7 @@ function updateLightboxInfo(img, w, h) {
         }
 
 async function toggleLightboxFavorite() {
-            const img = images[currentIndex];
+            const img = getLightboxImages()[currentIndex];
             if (!img) return;
             await toggleFavorite(currentIndex);
         }
@@ -220,7 +225,8 @@ function updateLightboxFavorite(img) {
         }
 
 function navigate(delta) {
-            if (images.length === 0) return;
-            currentIndex = (currentIndex + delta + images.length) % images.length;
+            const lightboxImages = getLightboxImages();
+            if (lightboxImages.length === 0) return;
+            currentIndex = (currentIndex + delta + lightboxImages.length) % lightboxImages.length;
             showCurrentImage();
         }

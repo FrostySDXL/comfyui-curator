@@ -2,8 +2,9 @@
  * Defines: selection, drag/drop, move/undo, delete rejects modal.
  */
 function onThumbClick(index, event) {
-            if (!images[index]) return;
-            if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(images[index]);
+            const displayImages = getCurrentDisplayImages();
+            if (!displayImages[index]) return;
+            if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(displayImages[index]);
             if (selectedImages.size > 0) {
                 toggleSelect(index, event);
             } else {
@@ -12,13 +13,14 @@ function onThumbClick(index, event) {
         }
 
 function toggleSelect(index, event) {
-            if (!images[index]) return;
-            if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(images[index]);
-            const name = images[index].name;
+            const displayImages = getCurrentDisplayImages();
+            if (!displayImages[index]) return;
+            if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(displayImages[index]);
+            const name = displayImages[index].name;
             if (event.shiftKey && lastSelectIndex >= 0) {
                 const lo = Math.min(lastSelectIndex, index);
                 const hi = Math.max(lastSelectIndex, index);
-                for (let i = lo; i <= hi; i++) selectedImages.add(images[i].name);
+                for (let i = lo; i <= hi; i++) selectedImages.add(displayImages[i].name);
             } else {
                 if (selectedImages.has(name)) selectedImages.delete(name);
                 else selectedImages.add(name);
@@ -90,7 +92,7 @@ function updateActionBar() {
         }
 
 function onDragStart(event, index) {
-            const img = images[index];
+            const img = getCurrentDisplayImages()[index];
             if (!img) return;
             isDraggingImages = true;
             if (selectedImages.has(img.name) && selectedImages.size > 0) {
@@ -216,7 +218,7 @@ async function moveImage(destination) {
                 showToast('Public copies cannot be moved to review folders');
                 return;
             }
-            const img = images[currentIndex];
+            const img = getLightboxImages()[currentIndex];
             if (!img) return;
             const source = getImageBatchAndFolder(img);
             const resp = await fetch('/api/move', {
@@ -240,11 +242,12 @@ async function moveImage(destination) {
                 showToast(`Moved to ${destination}`, true);
                 removeImagesFromCurrentView([img.name]);
                 loadBatches();
-                if (images.length === 0) {
+                const remainingLightboxImages = getDisplayImages();
+                if (remainingLightboxImages.length === 0) {
                     closeLightbox();
                     updateGrid();
                 } else {
-                    currentIndex = Math.min(currentIndex, images.length - 1);
+                    currentIndex = Math.min(currentIndex, remainingLightboxImages.length - 1);
                     updateGrid();
                     showCurrentImage();
                 }

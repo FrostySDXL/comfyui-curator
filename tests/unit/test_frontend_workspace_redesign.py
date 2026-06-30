@@ -99,6 +99,27 @@ def test_all_favorites_sorts_without_folder_api_reload() -> None:
     assert "if (isVirtualCollectionView() || isPublicView()) { updateGrid(); return; }" in js
 
 
+def test_lightbox_navigation_uses_display_order_for_virtual_collections() -> None:
+    js = read_frontend_js()
+    update_grid_body = extract_function_body(js, "function updateGrid()")
+    lightbox_body = extract_function_body(js, "function showCurrentImage()")
+    navigation_body = extract_function_body(js, "function navigate(delta)")
+    info_body = extract_function_body(js, "function updateLightboxInfo(img, w, h)")
+
+    assert "function getLightboxImages()" in js
+    assert "function getImageDisplayIndexByName(name)" in js
+    assert "const displayIndex = getImageDisplayIndexByName(img.name);" in update_grid_body
+    assert "updateThumbElement(thumb, img, displayIndex);" in update_grid_body
+    assert "const lightboxImages = getLightboxImages();" in lightbox_body
+    assert "const img = lightboxImages[currentIndex];" in lightbox_body
+    assert "const lightboxImages = getLightboxImages();" in navigation_body
+    assert (
+        "currentIndex = (currentIndex + delta + lightboxImages.length) % lightboxImages.length;"
+        in navigation_body
+    )
+    assert "${currentIndex+1} / ${getLightboxImages().length}" in info_body
+
+
 def test_public_views_sort_without_review_folder_api_reload() -> None:
     js = read_frontend_js()
 

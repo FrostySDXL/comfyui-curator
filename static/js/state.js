@@ -13,6 +13,7 @@
         let currentBatch = null;
         let currentFolder = null;
         let images = [];
+        let currentDisplayImages = [];
         let currentIndex = 0;
         let allCounts = {};
         let currentSort = 'date';

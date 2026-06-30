@@ -31,7 +31,7 @@ async function postFavoriteToggle(img) {
         }
 
 async function toggleFavorite(index) {
-            const img = images[index];
+            const img = getCurrentDisplayImages()[index];
             if (!img) return;
             try {
                 const result = await postFavoriteToggle(img);

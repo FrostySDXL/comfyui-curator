@@ -180,6 +180,14 @@ function getDisplayImages() {
             return sortImagesForDisplay(filtered);
         }
 
+function getCurrentDisplayImages() {
+            return currentDisplayImages.length > 0 ? currentDisplayImages : getDisplayImages();
+        }
+
+function getImageDisplayIndexByName(name) {
+            return getCurrentDisplayImages().findIndex(img => img.name === name);
+        }
+
 function getGridEmptyStateMessage() {
             if (favoritesFilterOn && images.length > 0) {
                 return {
@@ -374,6 +382,7 @@ function showGridLoadingPlaceholders(batch, folder) {
 function updateGrid() {
             const grid = document.getElementById('grid');
             const displayImages = getDisplayImages();
+            currentDisplayImages = displayImages;
 
             if (images.length === 0 || displayImages.length === 0) {
                 grid.classList.add('is-empty');
@@ -394,13 +403,13 @@ function updateGrid() {
 
             const fragment = document.createDocumentFragment();
             displayImages.forEach((img) => {
-                const originalIndex = getImageIndexByName(img.name);
+                const displayIndex = getImageDisplayIndexByName(img.name);
                 let thumb = gridThumbMap.get(img.name);
                 if (!thumb) {
                     thumb = createThumbElement();
                     gridThumbMap.set(img.name, thumb);
                 }
-                updateThumbElement(thumb, img, originalIndex);
+                updateThumbElement(thumb, img, displayIndex);
                 fragment.appendChild(thumb);
             });
 

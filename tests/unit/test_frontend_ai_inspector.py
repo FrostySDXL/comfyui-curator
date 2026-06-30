@@ -54,8 +54,10 @@ def test_grid_and_lightbox_update_ai_inspected_image() -> None:
     js = read_frontend_js()
     css = read_frontend_css()
 
+    assert "const displayImages = getCurrentDisplayImages();" in js
     assert (
-        "if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(images[index]);" in js
+        "if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(displayImages[index]);"
+        in js
     )
     assert "if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(img);" in js
     assert (
