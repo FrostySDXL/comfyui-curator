@@ -16,6 +16,17 @@ from image_curator.batch_store import BATCH_FOLDERS, IMAGE_EXTENSIONS, _validate
 from image_curator.media import thumbnail_cache_path
 
 PUBLIC_FOLDER = "public"
+MIN_WATERMARK_SIZE_PERCENT = 1.0
+MAX_WATERMARK_SIZE_PERCENT = 20.0
+WATERMARK_FONT_CANDIDATES = (
+    "arial.ttf",
+    "DejaVuSans.ttf",
+    "LiberationSans-Regular.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+)
 WATERMARK_POSITIONS = {
     "top-left",
     "top-right",
@@ -62,10 +73,19 @@ def _collision_safe_dest_name(dest_dir: Path, filename: str) -> str:
 
 
 def _load_font(image_width: int, size_percent: float) -> ImageFont.ImageFont:
-    size = max(8, int(image_width * max(size_percent, 1) / 100))
+    clamped_percent = min(
+        MAX_WATERMARK_SIZE_PERCENT,
+        max(MIN_WATERMARK_SIZE_PERCENT, size_percent),
+    )
+    size = max(8, int(image_width * clamped_percent / 100))
+    for font_path in WATERMARK_FONT_CANDIDATES:
+        try:
+            return ImageFont.truetype(font_path, size=size)
+        except OSError:
+            continue
     try:
-        return ImageFont.truetype("arial.ttf", size=size)
-    except OSError:
+        return ImageFont.load_default(size=size)
+    except TypeError:
         return ImageFont.load_default()
 
 
