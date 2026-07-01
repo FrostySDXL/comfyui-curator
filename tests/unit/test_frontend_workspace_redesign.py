@@ -367,6 +367,23 @@ def test_lightbox_navigation_sits_below_metadata_panels() -> None:
     assert ".lightbox-nav.next { right: 20px; }" in css
 
 
+def test_lightbox_zoom_has_anchor_pan_and_status_affordances() -> None:
+    html = read_index_html()
+    js = read_frontend_js()
+    css = read_frontend_css()
+
+    assert 'id="lightbox-zoom-indicator"' in html
+    assert "function zoomLightbox(delta, anchorEvent = null)" in js
+    assert "zoomLightbox(event.deltaY < 0 ? 0.2 : -0.2, event);" in js
+    assert "function startLightboxPan(event)" in js
+    assert "function moveLightboxPan(event)" in js
+    assert "function endLightboxPan(event)" in js
+    assert ".lightbox-zoom-indicator" in css
+    assert ".lightbox-image-wrap.panning" in css
+    assert ".lightbox-image-wrap.zoomed img" in css
+    assert "Drag zoomed images to pan" in html
+
+
 def test_select_all_matches_compact_toolbar_button_style() -> None:
     css = read_frontend_css()
 

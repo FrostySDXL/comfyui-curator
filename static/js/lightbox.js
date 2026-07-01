@@ -5,6 +5,9 @@
 let lightboxZoom = 1;
 let lightboxImageToken = 0;
 let lightboxAiOpen = false;
+let lightboxBaseWidth = 0;
+let lightboxBaseHeight = 0;
+let lightboxPanState = null;
 
 function openLightbox(index) {
             currentIndex = index;
@@ -28,19 +31,99 @@ function closeLightbox() {
 
 function applyLightboxZoom() {
             const wrap = document.getElementById('lightbox-image-wrap');
-            document.documentElement.style.setProperty('--lightbox-zoom', String(lightboxZoom));
-            if (wrap) wrap.classList.toggle('zoomed', lightboxZoom > 1.001);
+            const img = document.getElementById('lightbox-img');
+            const indicator = document.getElementById('lightbox-zoom-indicator');
+            if (img && lightboxBaseWidth > 0 && lightboxBaseHeight > 0) {
+                img.style.width = `${Math.round(lightboxBaseWidth * lightboxZoom)}px`;
+                img.style.height = `${Math.round(lightboxBaseHeight * lightboxZoom)}px`;
+            } else if (img) {
+                img.style.width = '';
+                img.style.height = '';
+            }
+            if (indicator) indicator.textContent = `${Math.round(lightboxZoom * 100)}%`;
+            if (wrap) {
+                wrap.classList.toggle('zoomed', lightboxZoom > 1.001);
+                wrap.classList.toggle('pannable', lightboxZoom > 1.001);
+            }
         }
 
-function zoomLightbox(delta) {
-            const currentScale = lightboxZoom;
-            const nextScale = Math.min(3, Math.max(0.6, +(currentScale + delta).toFixed(2)));
-            if (nextScale === currentScale) return;
-            lightboxZoom = nextScale;
+function captureLightboxBaseSize() {
+            const img = document.getElementById('lightbox-img');
+            if (!img) return;
+            img.style.width = '';
+            img.style.height = '';
+            const rect = img.getBoundingClientRect();
+            lightboxBaseWidth = rect.width || img.naturalWidth || 0;
+            lightboxBaseHeight = rect.height || img.naturalHeight || 0;
             applyLightboxZoom();
         }
 
+function zoomLightbox(delta, anchorEvent = null) {
+            const wrap = document.getElementById('lightbox-image-wrap');
+            const img = document.getElementById('lightbox-img');
+            if (!wrap || !img) return;
+            if (lightboxBaseWidth <= 0 || lightboxBaseHeight <= 0) captureLightboxBaseSize();
+            const currentScale = lightboxZoom;
+            const nextScale = Math.min(3, Math.max(0.6, +(currentScale + delta).toFixed(2)));
+            if (nextScale === currentScale) return;
+            const wrapRect = wrap.getBoundingClientRect();
+            const imgRect = img.getBoundingClientRect();
+            const anchorClientX = anchorEvent ? anchorEvent.clientX : wrapRect.left + (wrap.clientWidth / 2);
+            const anchorClientY = anchorEvent ? anchorEvent.clientY : wrapRect.top + (wrap.clientHeight / 2);
+            const ratioX = imgRect.width > 0 ? Math.min(1, Math.max(0, (anchorClientX - imgRect.left) / imgRect.width)) : 0.5;
+            const ratioY = imgRect.height > 0 ? Math.min(1, Math.max(0, (anchorClientY - imgRect.top) / imgRect.height)) : 0.5;
+            const viewportX = anchorClientX - wrapRect.left;
+            const viewportY = anchorClientY - wrapRect.top;
+            const zoomToken = lightboxImageToken;
+            lightboxZoom = nextScale;
+            applyLightboxZoom();
+            requestAnimationFrame(() => {
+                if (zoomToken !== lightboxImageToken || lightboxZoom !== nextScale) return;
+                wrap.scrollLeft = Math.max(0, (ratioX * img.offsetWidth) - viewportX);
+                wrap.scrollTop = Math.max(0, (ratioY * img.offsetHeight) - viewportY);
+            });
+        }
+
+function clearLightboxPanState() {
+            const wrap = document.getElementById('lightbox-image-wrap');
+            if (wrap) wrap.classList.remove('panning');
+            lightboxPanState = null;
+        }
+
+function startLightboxPan(event) {
+            if (lightboxZoom <= 1.001 || event.button !== 0) return;
+            const wrap = document.getElementById('lightbox-image-wrap');
+            if (!wrap) return;
+            lightboxPanState = {
+                pointerId: event.pointerId,
+                startX: event.clientX,
+                startY: event.clientY,
+                scrollLeft: wrap.scrollLeft,
+                scrollTop: wrap.scrollTop,
+            };
+            wrap.classList.add('panning');
+            wrap.setPointerCapture(event.pointerId);
+            event.preventDefault();
+        }
+
+function moveLightboxPan(event) {
+            if (!lightboxPanState || event.pointerId !== lightboxPanState.pointerId) return;
+            const wrap = document.getElementById('lightbox-image-wrap');
+            if (!wrap) return;
+            wrap.scrollLeft = lightboxPanState.scrollLeft - (event.clientX - lightboxPanState.startX);
+            wrap.scrollTop = lightboxPanState.scrollTop - (event.clientY - lightboxPanState.startY);
+            event.preventDefault();
+        }
+
+function endLightboxPan(event) {
+            if (!lightboxPanState || event.pointerId !== lightboxPanState.pointerId) return;
+            const wrap = document.getElementById('lightbox-image-wrap');
+            if (wrap && wrap.hasPointerCapture(event.pointerId)) wrap.releasePointerCapture(event.pointerId);
+            clearLightboxPanState();
+        }
+
 function resetLightboxZoom() {
+            clearLightboxPanState();
             lightboxZoom = 1;
             applyLightboxZoom();
             const wrap = document.getElementById('lightbox-image-wrap');
@@ -87,9 +170,12 @@ function showCurrentImage() {
             currentLightboxMetadataError = null;
             currentLightboxMetadataLoading = false;
             currentLightboxDimensions = {w: null, h: null};
+            lightboxBaseWidth = 0;
+            lightboxBaseHeight = 0;
             renderLightboxMetadataPanel();
             resetLightboxZoom();
             const el = document.getElementById('lightbox-img');
+            el.draggable = false;
             // Immediately hide (no transition) to prevent flash of previous image.
             // Do NOT removeAttribute('src') -- it collapses the <img> layout to 0x0
             // and causes a visual jump.  Inline opacity:0 already hides the old image.
@@ -100,6 +186,7 @@ function showCurrentImage() {
                 el.classList.remove('loading');
                 el.style.opacity = '';
                 currentLightboxDimensions = {w: this.naturalWidth, h: this.naturalHeight};
+                captureLightboxBaseSize();
                 updateLightboxInfo(img, this.naturalWidth, this.naturalHeight);
             };
             el.onerror = function() {

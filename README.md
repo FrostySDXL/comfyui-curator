@@ -142,7 +142,7 @@ baseline checks for anatomy and artifacts are appended automatically.
 | `R` | Move to rejects |
 | `+` `-` | Zoom in / out |
 | `0` | Reset zoom |
-| `Ctrl+wheel` | Zoom |
+| `Ctrl+wheel` | Zoom around cursor |
 | `Esc` | Close lightbox |
 
 ## UI behavior
@@ -170,6 +170,7 @@ baseline checks for anatomy and artifacts are appended automatically.
   sessions or when the modal reports a stale image count.
 - Background polling pauses during lightbox, drag, or resize so your
   review isn't interrupted.
+- Zoomed lightbox images can be dragged to pan around details.
 - The header Help button shows keybindings and workflow notes.
 
 ## Security

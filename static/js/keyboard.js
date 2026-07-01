@@ -141,5 +141,5 @@ document.getElementById('lightbox-image-wrap').addEventListener('wheel', (event)
             if (!document.getElementById('lightbox').classList.contains('active')) return;
             if (!event.ctrlKey) return;
             event.preventDefault();
-            zoomLightbox(event.deltaY < 0 ? 0.2 : -0.2);
+            zoomLightbox(event.deltaY < 0 ? 0.2 : -0.2, event);
         }, {passive: false});

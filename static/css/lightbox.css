@@ -32,20 +32,46 @@
         .lightbox-image-wrap.zoomed {
             overflow: auto;
         }
+        .lightbox-image-wrap.pannable {
+            cursor: grab;
+        }
+        .lightbox-image-wrap.panning {
+            cursor: grabbing;
+            user-select: none;
+        }
         .lightbox img {
             max-width: min(calc(100vw - 140px), 1800px);
             max-height: calc(100vh - 170px);
             width: auto;
             height: auto;
             object-fit: contain;
-            transform: scale(var(--lightbox-zoom));
-            transform-origin: center center;
-            transition: transform 0.14s ease, opacity 0.12s ease;
+            transition: width 0.14s ease, height 0.14s ease, opacity 0.12s ease;
             display: block;
             margin: 0 auto;
+            user-select: none;
+        }
+        .lightbox-image-wrap.zoomed img {
+            max-width: none;
+            max-height: none;
         }
         .lightbox img.loading {
             opacity: 0;
+        }
+        .lightbox-zoom-indicator {
+            position: fixed;
+            right: 76px;
+            top: 24px;
+            z-index: 1002;
+            min-width: 52px;
+            padding: 5px 9px;
+            border-radius: 999px;
+            background: rgba(18, 22, 26, 0.78);
+            border: 1px solid rgba(255,255,255,0.12);
+            color: #b8c2cc;
+            font-size: 12px;
+            font-weight: 700;
+            text-align: center;
+            pointer-events: none;
         }
         /* Prevent metadata toggle button from resizing on text changes */
         #metadata-toggle-btn {

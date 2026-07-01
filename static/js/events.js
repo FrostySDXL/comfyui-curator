@@ -412,6 +412,14 @@ function _bindDelegatedEvents() {
                 });
             });
 
+            const lightboxImageWrap = document.getElementById('lightbox-image-wrap');
+            if (lightboxImageWrap) {
+                lightboxImageWrap.addEventListener('pointerdown', startLightboxPan);
+                lightboxImageWrap.addEventListener('pointermove', moveLightboxPan);
+                lightboxImageWrap.addEventListener('pointerup', endLightboxPan);
+                lightboxImageWrap.addEventListener('pointercancel', endLightboxPan);
+            }
+
             // Lightbox toolbar buttons - delegate on #lightbox-actions
             const lightboxActions = document.getElementById('lightbox-actions');
             if (lightboxActions) {

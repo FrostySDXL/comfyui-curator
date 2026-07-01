@@ -2,7 +2,6 @@
             --sidebar-width: 240px;
             --sidebar-effective-width: 240px;
             --ai-sidebar-width: 360px;
-            --lightbox-zoom: 1;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         .hidden { display: none; }

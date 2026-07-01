@@ -94,6 +94,7 @@
 | `draggedFiles` | `array\<filename\>` | Files being dragged |
 | `lastAction` | `object\|null` | Last move for undo (batch, filenames, source, dest, expiry) |
 | `lightboxZoom` | `number` | Current lightbox zoom level (0.6--3) |
+| `lightboxPanState` | `object\|null` | Active pointer-drag pan state for zoomed lightbox images |
 | `aiActiveRun` | `object\|null` | Currently selected AI run data |
 | `aiShowOverlays` | `boolean` | Score badge visibility on thumbs |
 | `aiFilterMode` | `string` | 'all' \| 'scored' \| 'failed' \| 'top-n' |
@@ -217,7 +218,8 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **Selection overlay clearance:** `body.has-active-selection` adds bottom scroll clearance to the AI sidebar so long Inspect content is not covered by the fixed action bar.
 - **Empty grid centering:** `grid.is-empty` switches the grid to a stable empty-state layout so density classes and sidebar widths do not move the placeholder around.
 - **Lightbox arrows sit low:** `.lightbox-nav` is positioned near the lower left/right so the metadata and AI panels do not cover navigation controls.
-- **CSS variables for layout only, not theming:** `--sidebar-width`, `--sidebar-effective-width`, `--ai-sidebar-width`, `--lightbox-zoom`. All colors are hardcoded.
+- **Lightbox zoom is image-anchored:** `Ctrl+wheel` zooms around the cursor on `#lightbox-image-wrap`; zoomed images use layout-sized dimensions plus pointer-drag panning instead of transform-only scaling.
+- **CSS variables for layout only, not theming:** `--sidebar-width`, `--sidebar-effective-width`, `--ai-sidebar-width`. All colors are hardcoded.
 - **Single responsive breakpoint at 900px:** Rules live in `responsive.css`, which must load last. Below this, sidebars shrink, AI sidebar moves below grid, resizers hide.
 - **`__favorites__` is a virtual batch sentinel:** Do not call real batch APIs with it. Use per-image `img.batch` and `img.folder` for image src, lightbox metadata, and lightbox moves.
 - **`__public__` is a virtual batch sentinel:** Do not create a real batch with this name. Public actions operate on generated files in each item's real `<batch>/public/` folder.
