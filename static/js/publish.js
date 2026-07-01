@@ -242,8 +242,11 @@ function showPublicDestinationModal(action) {
             const input = document.getElementById('public-destination-input');
             const submit = document.getElementById('public-destination-submit-btn');
             const label = action === 'move' ? 'Move Public Copies' : 'Copy Public Copies';
+            const detailText = action === 'move'
+                ? `${label} for ${items.length} generated cop${items.length === 1 ? 'y' : 'ies'}. Moved public copies leave this batch's public folder. Original curated images are not changed.`
+                : `${label} for ${items.length} generated cop${items.length === 1 ? 'y' : 'ies'}. Only generated public copies are affected.`;
             if (title) title.textContent = label;
-            if (detail) detail.textContent = `${label} for ${items.length} generated cop${items.length === 1 ? 'y' : 'ies'}. Only generated public copies are affected.`;
+            if (detail) detail.textContent = detailText;
             if (submit) submit.textContent = label;
             if (input) input.value = '';
             modal.classList.add('active');
@@ -278,7 +281,6 @@ async function submitPublicDestinationAction() {
                 showToast('Enter a destination under IMAGE_CURATOR_PUBLIC_EXPORTS');
                 return;
             }
-            if (action === 'move' && !window.confirm('Move selected public copies?\n\nThis only moves generated public copies. Original curated images will not be changed.')) return;
             const submit = document.getElementById('public-destination-submit-btn');
             if (submit) submit.disabled = true;
             try {

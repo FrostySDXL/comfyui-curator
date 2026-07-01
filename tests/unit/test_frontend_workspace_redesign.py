@@ -188,6 +188,7 @@ def test_public_external_actions_use_destination_modal_not_browser_prompt() -> N
     assert "function submitPublicDestinationAction()" in js
     assert "window.prompt('Copy public copies" not in js
     assert "window.prompt('Move public copies" not in js
+    assert "window.confirm(" not in js
 
 
 def test_public_delete_uses_confirmation_modal_not_browser_popup() -> None:
