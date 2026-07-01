@@ -110,6 +110,35 @@ def test_create_public_copies_applies_text_watermark(tmp_path):
     assert list(source.getdata()) != list(exported.getdata())
 
 
+def test_create_public_copies_can_apply_black_text_watermark(tmp_path):
+    batches_dir = tmp_path / "batches"
+    _make_batch(batches_dir)
+    source = batches_dir / "alpha" / "finals" / "portrait.png"
+    Image.new("RGB", (300, 180), (128, 128, 128)).save(source)
+
+    publish.create_public_copies(
+        batches_dir,
+        batch="alpha",
+        folder="finals",
+        filenames=["portrait.png"],
+        watermark={
+            "enabled": True,
+            "text": "FrostySDXL",
+            "position": "center",
+            "margin": 0,
+            "opacity": 1.0,
+            "size_percent": 20,
+            "color": "black",
+        },
+    )
+
+    exported = Image.open(batches_dir / "alpha" / "public" / "portrait-public.png").convert("RGB")
+    changed_pixels = [pixel for pixel in exported.getdata() if pixel != (128, 128, 128)]
+    assert changed_pixels
+    assert min(pixel[0] for pixel in changed_pixels) < 128
+    assert max(pixel[0] for pixel in changed_pixels) <= 128
+
+
 def test_list_batch_and_all_public_images(tmp_path):
     batches_dir = tmp_path / "batches"
     _make_batch(batches_dir, "alpha")

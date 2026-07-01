@@ -27,6 +27,10 @@ WATERMARK_FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
     "/System/Library/Fonts/Supplemental/Arial.ttf",
 )
+WATERMARK_COLORS = {
+    "white": (255, 255, 255),
+    "black": (0, 0, 0),
+}
 WATERMARK_POSITIONS = {
     "top-left",
     "top-right",
@@ -126,6 +130,7 @@ def _apply_text_watermark(image: Image.Image, options: dict[str, Any] | None) ->
     margin = max(0, int(options.get("margin") or 32))
     opacity = min(1.0, max(0.0, float(options.get("opacity") or 0.55)))
     size_percent = float(options.get("size_percent") or 4)
+    color = WATERMARK_COLORS.get(str(options.get("color") or "white"), WATERMARK_COLORS["white"])
 
     base = image.convert("RGBA")
     overlay = Image.new("RGBA", base.size, (255, 255, 255, 0))
@@ -134,7 +139,7 @@ def _apply_text_watermark(image: Image.Image, options: dict[str, Any] | None) ->
     bbox = draw.textbbox((0, 0), text, font=font)
     text_size = (bbox[2] - bbox[0], bbox[3] - bbox[1])
     xy = _watermark_xy(base.size, text_size, position, margin)
-    draw.text(xy, text, fill=(255, 255, 255, int(255 * opacity)), font=font)
+    draw.text(xy, text, fill=(*color, int(255 * opacity)), font=font)
     return Image.alpha_composite(base, overlay)
 
 

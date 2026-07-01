@@ -45,7 +45,7 @@ function syncPublishWatermarkFields() {
             const options = document.getElementById('publish-watermark-options');
             const warning = document.getElementById('publish-watermark-warning');
             if (options) options.classList.toggle('disabled', !enabled);
-            ['publish-watermark-text', 'publish-watermark-position', 'publish-watermark-opacity', 'publish-watermark-size', 'publish-watermark-margin'].forEach(id => {
+            ['publish-watermark-text', 'publish-watermark-position', 'publish-watermark-opacity', 'publish-watermark-size', 'publish-watermark-margin', 'publish-watermark-black'].forEach(id => {
                 const input = document.getElementById(id);
                 if (input) input.disabled = !enabled;
             });
@@ -65,6 +65,8 @@ function resetPublishWatermarkDefaults() {
                 const input = document.getElementById(id);
                 if (input) input.value = value;
             });
+            const blackText = document.getElementById('publish-watermark-black');
+            if (blackText) blackText.checked = false;
             syncPublishWatermarkFields();
         }
 
@@ -78,6 +80,7 @@ function buildPublishWatermarkOptions() {
                 opacity: Number(document.getElementById('publish-watermark-opacity').value || 55) / 100,
                 size_percent: Number(document.getElementById('publish-watermark-size').value || 4),
                 margin: Number(document.getElementById('publish-watermark-margin').value || 32),
+                color: document.getElementById('publish-watermark-black').checked ? 'black' : 'white',
             };
         }
 

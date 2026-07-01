@@ -165,10 +165,15 @@ def test_public_export_modal_guides_watermark_and_next_step() -> None:
     assert 'id="publish-source-summary"' in html
     assert 'id="publish-watermark-options"' in html
     assert 'id="publish-watermark-warning"' in html
+    assert 'id="publish-watermark-black"' in html
     assert 'id="publish-reset-watermark-btn"' in html
     assert "function syncPublishWatermarkFields()" in js
     assert "function resetPublishWatermarkDefaults()" in js
     assert "function updatePublishSourceSummary()" in js
+    assert (
+        "color: document.getElementById('publish-watermark-black').checked ? 'black' : 'white'"
+        in js
+    )
     assert "publish-watermark-options.disabled" in css
     assert "publish-result" in css
 
