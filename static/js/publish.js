@@ -3,6 +3,7 @@
  */
 let lastPublishedPublicBatch = null;
 let pendingPublicDestinationAction = null;
+let pendingPublicMoveConfirmDestination = null;
 
 function showPublishModal() {
             if (!currentBatch || isVirtualCollectionView() || isPublicView() || selectedImages.size === 0) {
@@ -229,25 +230,37 @@ function hidePublicDestinationModal() {
             const modal = document.getElementById('public-destination-modal');
             if (modal) modal.classList.remove('active');
             pendingPublicDestinationAction = null;
+            pendingPublicMoveConfirmDestination = null;
             _releaseFocusTrap();
+        }
+
+function setPublicDestinationModalState(action, itemCount, confirmMove) {
+            const detail = document.getElementById('public-destination-detail');
+            const submit = document.getElementById('public-destination-submit-btn');
+            const label = action === 'move' ? 'Move Public Copies' : 'Copy Public Copies';
+            const copiesLabel = `generated cop${itemCount === 1 ? 'y' : 'ies'}`;
+            const detailText = action === 'move'
+                ? `${label} for ${itemCount} ${copiesLabel}. Moved public copies leave this batch's public folder. Original curated images are not changed.`
+                : `${label} for ${itemCount} ${copiesLabel}. Only generated public copies are affected.`;
+            if (detail) {
+                detail.textContent = confirmMove
+                    ? `Confirm move to this destination. ${detailText}`
+                    : detailText;
+            }
+            if (submit) submit.textContent = confirmMove ? 'Confirm Move' : label;
         }
 
 function showPublicDestinationModal(action) {
             const items = selectedPublicItems();
             if (!items.length) return;
             pendingPublicDestinationAction = action;
+            pendingPublicMoveConfirmDestination = null;
             const modal = document.getElementById('public-destination-modal');
             const title = document.getElementById('public-destination-modal-title');
-            const detail = document.getElementById('public-destination-detail');
             const input = document.getElementById('public-destination-input');
-            const submit = document.getElementById('public-destination-submit-btn');
             const label = action === 'move' ? 'Move Public Copies' : 'Copy Public Copies';
-            const detailText = action === 'move'
-                ? `${label} for ${items.length} generated cop${items.length === 1 ? 'y' : 'ies'}. Moved public copies leave this batch's public folder. Original curated images are not changed.`
-                : `${label} for ${items.length} generated cop${items.length === 1 ? 'y' : 'ies'}. Only generated public copies are affected.`;
             if (title) title.textContent = label;
-            if (detail) detail.textContent = detailText;
-            if (submit) submit.textContent = label;
+            setPublicDestinationModalState(action, items.length, false);
             if (input) input.value = '';
             modal.classList.add('active');
             _trapFocus(modal);
@@ -279,6 +292,11 @@ async function submitPublicDestinationAction() {
             if (!action || !items.length) return;
             if (!destination) {
                 showToast('Enter a destination under IMAGE_CURATOR_PUBLIC_EXPORTS');
+                return;
+            }
+            if (action === 'move' && pendingPublicMoveConfirmDestination !== destination) {
+                pendingPublicMoveConfirmDestination = destination;
+                setPublicDestinationModalState(action, items.length, true);
                 return;
             }
             const submit = document.getElementById('public-destination-submit-btn');

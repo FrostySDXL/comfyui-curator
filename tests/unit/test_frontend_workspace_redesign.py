@@ -186,6 +186,9 @@ def test_public_external_actions_use_destination_modal_not_browser_prompt() -> N
     assert 'id="public-destination-input"' in html
     assert "function showPublicDestinationModal(" in js
     assert "function submitPublicDestinationAction()" in js
+    assert "let pendingPublicMoveConfirmDestination = null;" in js
+    assert "pendingPublicMoveConfirmDestination = destination;" in js
+    assert "Confirm Move" in js
     assert "window.prompt('Copy public copies" not in js
     assert "window.prompt('Move public copies" not in js
     assert "window.confirm(" not in js
