@@ -242,12 +242,22 @@ def test_public_helpers_load_before_grid_consumers() -> None:
 
 def test_lightbox_public_actions_and_copy_count_refresh_are_guarded() -> None:
     js = read_frontend_js()
+    html = read_index_html()
     lightbox_body = extract_function_body(js, "function syncLightboxPublicActions()")
+    lightbox_publish_body = extract_function_body(js, "function showLightboxPublishModal()")
     destination_body = extract_function_body(js, "async function submitPublicDestinationAction()")
 
+    assert 'id="lightbox-publish-btn"' in html
+    assert '<div class="key-hint">P</div>' in html
+    assert "function showLightboxPublishModal()" in js
+    assert "showLightboxPublishModal();" in js
+    assert "case 'p': e.preventDefault(); showLightboxPublishModal(); break;" in js
+    assert "isVirtualCollectionView() || isPublicView()" in lightbox_publish_body
     assert "#lightbox-actions .btn-shortlist" in lightbox_body
     assert "#lightbox-actions .btn-finals" in lightbox_body
     assert "#lightbox-actions .btn-reject" in lightbox_body
+    assert "#lightbox-publish-btn" in lightbox_body
+    assert "isVirtualCollectionView() || isPublicView()" in lightbox_body
     assert "await updateAllPublicCount();" in destination_body
 
 

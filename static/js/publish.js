@@ -23,6 +23,19 @@ function showPublishModal() {
             if (textInput) textInput.focus();
         }
 
+function showLightboxPublishModal() {
+            const img = getLightboxImages()[currentIndex];
+            if (!img || isVirtualCollectionView() || isPublicView()) {
+                showToast('Select a source image in a review folder first');
+                return;
+            }
+            selectedImages = new Set([img.name]);
+            lastSelectIndex = currentIndex;
+            updateSelectionVisuals();
+            updateActionBar();
+            showPublishModal();
+        }
+
 function hidePublishModal() {
             document.getElementById('publish-modal').classList.remove('active');
             _releaseFocusTrap();
@@ -376,8 +389,8 @@ async function confirmPublicDelete() {
         }
 
 function syncLightboxPublicActions() {
-            const activePublicView = isPublicView();
-            document.querySelectorAll('#lightbox-actions .btn-shortlist, #lightbox-actions .btn-finals, #lightbox-actions .btn-reject').forEach(btn => {
+            const activePublicView = isVirtualCollectionView() || isPublicView();
+            document.querySelectorAll('#lightbox-actions .btn-shortlist, #lightbox-actions .btn-finals, #lightbox-actions .btn-reject, #lightbox-publish-btn').forEach(btn => {
                 btn.closest('div').style.display = activePublicView ? 'none' : '';
             });
         }

@@ -129,6 +129,7 @@ document.addEventListener('keydown', (e) => {
                 case ']': e.preventDefault(); navigateScored(1); break;
                 case 'm': e.preventDefault(); toggleLightboxMetadata(); break;
                 case 'i': e.preventDefault(); toggleLightboxAiPanel(); break;
+                case 'p': e.preventDefault(); showLightboxPublishModal(); break;
                 case '+':
                 case '=': e.preventDefault(); zoomLightbox(0.2); break;
                 case '-': e.preventDefault(); zoomLightbox(-0.2); break;

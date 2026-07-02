@@ -431,6 +431,7 @@ function _bindDelegatedEvents() {
                     else if (btn.classList.contains('btn-reject')) moveImage('rejects');
                     else if (btn.id === 'metadata-toggle-btn') toggleLightboxMetadata();
                     else if (btn.id === 'lightbox-ai-toggle-btn') toggleLightboxAiPanel();
+                    else if (btn.id === 'lightbox-publish-btn') showLightboxPublishModal();
                 });
                 // Map button text to handlers for generic buttons
                 lightboxActions.querySelectorAll('button').forEach(btn => {

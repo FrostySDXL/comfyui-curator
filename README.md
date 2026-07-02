@@ -124,6 +124,7 @@ baseline checks for anatomy and artifacts are appended automatically.
 | `Select All` button | Toggle selection for all currently visible thumbnails |
 | `U` | Toggle batch sidebar |
 | `F` | Toggle favorites-only filter |
+| `P` | Open Prompt History |
 | `B` | Toggle AI score badges |
 | `V` | Toggle score-based sort |
 | `I` | Toggle AI sidebar |
@@ -136,6 +137,7 @@ baseline checks for anatomy and artifacts are appended automatically.
 | `[` `]` | Previous / next scored image |
 | `M` | Toggle PNG metadata panel |
 | `I` | Toggle lightbox AI review panel |
+| `P` | Prepare a public copy for the current image |
 | `S` | Move to shortlisted |
 | `F` | Move to finals |
 | `Shift+F` | Toggle favorite for current image |
