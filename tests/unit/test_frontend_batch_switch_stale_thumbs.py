@@ -15,3 +15,19 @@ def test_batch_switch_does_not_repaint_grid_with_stale_images():
         "showGridLoadingPlaceholders(batch, 'inbox');"
     )
     assert "resetAiBatchState();" not in select_batch_body
+
+
+def test_folder_switch_clears_images_before_async_reload():
+    """Folder changes must not redraw stale names under the new folder URL."""
+
+    source = read_frontend_js()
+
+    select_folder_body = extract_function_body(source, "async function selectFolder(batch, folder)")
+    assert "images = [];" in select_folder_body
+    assert "showGridLoadingPlaceholders(batch, folder);" in select_folder_body
+    assert select_folder_body.index("images = [];") < select_folder_body.index(
+        "showGridLoadingPlaceholders(batch, folder);"
+    )
+    assert select_folder_body.index(
+        "showGridLoadingPlaceholders(batch, folder);"
+    ) < select_folder_body.index("await loadCurrentFolderImages();")

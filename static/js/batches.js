@@ -517,12 +517,15 @@ async function selectFolder(batch, folder) {
             pathEl.appendChild(pathSpan);
             pathEl.appendChild(document.createTextNode(' / ' + folder));
             updateAutoImportQuickAction(document.getElementById('active-batch-select').value || null);
-            updateFolderTabs();
 
             if (folder === 'public') {
+                updateFolderTabs();
                 await loadBatchPublic(batch);
                 return;
             }
+            images = [];
+            showGridLoadingPlaceholders(batch, folder);
+            updateFolderTabs();
             await loadCurrentFolderImages();
         }
 
