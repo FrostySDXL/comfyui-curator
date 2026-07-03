@@ -49,7 +49,7 @@ Applied via `@pytest.mark.component`, `@pytest.mark.integration`, or `pytestmark
 
 ### Frontend Test Pattern (Special)
 
-The 6 `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tests** -- they read ordered split JS sources through `tests/unit/frontend_source.py` and assert on regex matches for function names, code patterns, or the absence of undefined references. There is no headless browser, DOM testing, or JS test framework. These tests catch regressions in function naming and structural invariants but do NOT test interactive behavior.
+The `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tests** -- they read ordered split JS/CSS sources through `tests/unit/frontend_source.py` and assert on regex matches for function names, code patterns, or the absence of undefined references. There is no headless browser, DOM testing, or JS test framework. These tests catch regressions in function naming and structural invariants but do NOT test interactive behavior.
 
 ## Key Files & Responsibilities
 
@@ -75,7 +75,7 @@ The 6 `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping t
 | `tests/unit/test_storage.py` | `ai_curate.storage.RunStorage` -- save, load, list, latest, corrupt data, path traversal | `tmp_path`-based `tmp_batches` + `storage` fixtures |
 | `tests/unit/test_run_all_script.py` | `scripts/run_all.py` -- build checks, format display, parse args | `importlib.util` dynamic import |
 | `tests/unit/test_setup_local_browser_fixture.py` | `scripts/setup_local_browser_fixture.py` -- disposable manual-browser fixture creation and launch env output | `tmp_path`, `importlib.util` dynamic import |
-| `tests/unit/test_frontend_*.py` (6 files) | Ordered `static/js/*.js` sources -- source scanning for function names, invariants, undefined references | `tests/unit/frontend_source.py` helpers + regex assertions |
+| `tests/unit/test_frontend_*.py` | Ordered `static/js/*.js` and `static/css/*.css` sources -- source scanning for function names, invariants, undefined references | `tests/unit/frontend_source.py` helpers + regex assertions |
 | `tests/component/test_batch_api.py` | Flask route contracts: batches, images, move, delete-rejects, thumbnails | `client` fixture, PIL image generation |
 | `tests/component/test_ai_curate_worker.py` | `app._run_scoring_worker_inner` -- cancel timing (scoring vs move vs race) | Real `QueueManager` + `RunStorage`, patched `score_images` |
 | `tests/component/test_workflow_constraints.py` | AI workflow invariants: move-after-scoring, cancel-no-history, failed-never-move | `RunStorage` + `QueueManager` integration |
@@ -90,7 +90,7 @@ The 6 `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping t
 
 | Gap | Risk | Notes |
 |-----|------|-------|
-| No browser-level frontend tests | **Medium** | All 6 frontend tests are source-scraping. No DOM, interaction, or visual regression testing. |
+| No browser-level frontend tests | **Medium** | Frontend tests are source-scraping. No DOM, interaction, or visual regression testing. |
 | No real AI client integration test | **Medium** | Worker is always patched/stubbed. No end-to-end test against even a mock LLM endpoint. |
 | No concurrent/multi-user stress tests | **Low** | QueueManager is single-threaded tested. Intended for single-user operation. |
 | No drag-and-drop tests | **Low** | UI has drag-to-move but it's untested. |

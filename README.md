@@ -34,9 +34,11 @@ before manual selection. Single-user, local-first, filesystem-backed.
 
 ## Quickstart
 
+Requires Python 3.10 or newer.
+
 ```bash
 git clone https://github.com/FrostySDXL/comfyui-curator.git
-cd image-curator
+cd comfyui-curator
 python -m venv .venv
 
 # Windows
@@ -55,27 +57,11 @@ Opens at `http://127.0.0.1:5000`. Most users only need
 `IMAGE_CURATOR_BATCHES/<batch>/inbox/`. If ComfyUI writes somewhere else,
 configure `IMAGE_CURATOR_COMFYUI` as an optional import source.
 
-## Local browser testing
+`requirements.txt` is the convenience install file. Use
+`requirements-lock.txt` when you need the pinned dependency set.
 
-Use the disposable fixture script when you want to test the UI locally without
-pointing at your real image library or another machine:
-
-```powershell
-.venv\Scripts\python.exe scripts\setup_local_browser_fixture.py
-
-$env:IMAGE_CURATOR_BATCHES="tmp\local-browser-fixture\batches"
-$env:IMAGE_CURATOR_COMFYUI="tmp\local-browser-fixture\comfyui-outputs"
-$env:IMAGE_CURATOR_STATE="tmp\local-browser-fixture\state.json"
-$env:IMAGE_CURATOR_ENABLE_WATCHER="false"
-$env:IMAGE_CURATOR_HOST="127.0.0.1"
-$env:IMAGE_CURATOR_PORT="5000"
-.venv\Scripts\python.exe app.py
-```
-
-Then open `http://127.0.0.1:5000`. The fixture creates two batches, sample
-PNG files with prompt metadata, one pending fake ComfyUI import, and an active
-`manual-test` batch. It lives under ignored `tmp/`, so delete the fixture folder
-whenever you want a clean manual-testing reset.
+The repository is named `comfyui-curator`; the Python package, service
+template, and default local paths use `image-curator`.
 
 ## Configuration
 
@@ -87,6 +73,7 @@ Core path:
 |----------|---------|---------|
 | `IMAGE_CURATOR_BATCHES` | `~/image-curator/batches` | Main library containing batch folders and their `inbox/`, `shortlisted/`, `finals/`, `rejects/`, and generated `public/` folders |
 | `IMAGE_CURATOR_PUBLIC_EXPORTS` | (unset) | Optional safe root for copying/moving generated public copies to another filesystem location; when unset, external public copy/move actions are disabled |
+| `IMAGE_CURATOR_STATE` | `~/.config/image-curator/state.json` | Runtime state file that remembers the active batch |
 
 Optional import source:
 
@@ -102,31 +89,44 @@ Other settings:
 | `IMAGE_CURATOR_LLM_URL` | `http://localhost:8080` | Vision LLM endpoint |
 | `IMAGE_CURATOR_MODEL` | (empty) | Model name (comma-separated for dropdown) |
 | `IMAGE_CURATOR_API_KEY` | (empty) | Bearer token if your LLM requires auth |
+| `IMAGE_CURATOR_TIMEOUT` | `120` | Vision LLM request timeout in seconds |
 | `IMAGE_CURATOR_HOST` | `127.0.0.1` | Bind address |
 | `IMAGE_CURATOR_PORT` | `5000` | Port |
 
-Use **Import All** for manual imports from `IMAGE_CURATOR_COMFYUI`. Set
-`IMAGE_CURATOR_ENABLE_WATCHER=true` only if you want that import to happen
-automatically.
+See `.env.example` for the full commented reference.
 
-Scoring defaults: top-N = 15 (cap 100), max elements = 12. Quality
-baseline checks for anatomy and artifacts are appended automatically.
+## Basic workflow
+
+1. Create or select a batch.
+2. Add generated images to `<batch>/inbox/`, or use **Import All** to pull from
+   `IMAGE_CURATOR_COMFYUI`.
+3. Review images in the grid or lightbox, then move keepers to `shortlisted` or
+   `finals` and rejects to `rejects`.
+4. Mark favorites and build Prompt History when you want searchable prompt
+   groups.
+5. Prepare public copies when you need metadata-stripped, optionally watermarked
+   posting files. Originals remain in the review folders.
+6. Optionally run AI scoring against a local OpenAI-compatible vision model;
+   scores are advisory.
+
+Set `IMAGE_CURATOR_ENABLE_WATCHER=true` only when you want new files in
+`IMAGE_CURATOR_COMFYUI` imported automatically into the active batch.
 
 ## Keyboard shortcuts
 
 | Key | Action |
 |-----|--------|
-| `/` | Focus batch search |
-| `Ctrl+K` | Focus and select batch search |
+| `/` | Open batch sidebar if closed, then focus batch search |
+| `Ctrl+K` | Open batch sidebar if closed, then focus and select batch search |
 | `Esc` | Contextual: clear search, close lightbox, close modal |
 | `Ctrl+Z` | Undo last move (while toast is active) |
-| `Ctrl+A` | Select all images in current folder |
+| `Ctrl+A` | Select all images in current folder (not in lightbox) |
 | `Select All` button | Toggle selection for all currently visible thumbnails |
 | `U` | Toggle batch sidebar |
 | `F` | Toggle favorites-only filter |
 | `P` | Open Prompt History |
-| `B` | Toggle AI score badges |
-| `V` | Toggle score-based sort |
+| `B` | Toggle AI score badges when an AI run is available |
+| `V` | Toggle score-based sort when an AI run is available |
 | `I` | Toggle AI sidebar |
 
 ### Lightbox
@@ -149,42 +149,18 @@ baseline checks for anatomy and artifacts are appended automatically.
 | `Esc` | Close lightbox |
 
 When exactly two review-folder images are selected, **Compare in Lightbox**
-opens a side-by-side comparison. Click a pane to make it active; zoom,
-metadata, AI review, favorite, public prep, and move shortcuts apply to that
-active image. Metadata and AI panels overlay the inactive pane while compare
-mode is open. `C` pins the active image and lets Left/Right replace the other
-comparison image.
+opens a side-by-side comparison. Click a pane to make it active, or press `C`
+to pin the active image and compare it against other images with Left/Right.
 
 ## UI behavior
 
-- AI sidebar width and open state persist across sessions.
-- Batch sidebar open state persists across sessions.
-- Thumbnail density mode persists across sessions.
-- The workspace toolbar keeps folder tabs, sorting, favorites, density, and
-  available AI badge/filter controls together above the grid.
-- The batch sidebar shows folder count breakdowns, AI-run indicators, and a
-  pinned All Favorites collection plus All Public generated-output collection.
-- AI badges and score filtering reset when switching to a batch with no
-  active run.
-- The AI review inspector shows selected-image details, multi-select summaries,
-  and active-run score evidence when available; the lightbox has its own AI
-  review panel.
-- Favorite toggles update both the current batch and the universal favorites
-  list; the All Favorites sidebar count refreshes during batch polling.
-- The All Favorites view is virtual: thumbnails show batch labels and
-  lightbox moves use each image's source batch and folder.
-- Public copies are generated derivatives only. Originals stay in review
-  folders, batch Public shows `<batch>/public/`, and All Public is virtual.
-  Public copy/move/delete actions affect generated public copies only.
-  The public copy/move destination modal can browse existing folders under
-  `IMAGE_CURATOR_PUBLIC_EXPORTS` and reuses recent destinations for both actions.
+- Sidebar state and thumbnail density persist across sessions.
+- Background polling avoids interrupting lightbox review, drag/drop, and resize
+  interactions.
+- Public copies are generated derivatives only; originals stay in their review
+  folders.
 - Prompt history indexes are manual caches. Rebuild after significant curation
   sessions or when the modal reports a stale image count.
-- Background polling pauses during lightbox, drag, or resize so your
-  review isn't interrupted.
-- Zoomed lightbox images can be dragged to pan around details.
-- Compare mode gives each side its own zoom and pan state; curation actions
-  and metadata/AI panels apply to the active side only.
 - The header Help button shows keybindings and workflow notes.
 
 ## Security
@@ -198,17 +174,12 @@ with auth (nginx, Caddy, etc.). Read `SECURITY.md` for related guidance.
 AI scoring runs in a single background thread. One job at a time; others
 queue FIFO. Designed for single-user operation, not concurrent scoring.
 
-## Development verification
-
-Use `python scripts/run_all.py` before sharing changes. The runner checks
-Python formatting/linting/tests, ordered split JavaScript syntax plus duplicate
-top-level declarations, git diff whitespace, and the split CSS file list/order
-loaded by `templates/index.html`.
-
 ## More
 
 - **Contributing:** `CONTRIBUTING.md` -- verification, dependency
   management, change playbooks, repo structure.
+- **Development scripts:** `scripts/README.md` -- verification runner modes and
+  disposable local browser fixture setup.
 - **Agent guidance:** `AGENTS.md` -- startup instructions for AI agents
   working in this repo, plus per-directory READMEs in `ai_curate/`,
   `image_curator/`, `static/`, `tests/`, and `scripts/`.

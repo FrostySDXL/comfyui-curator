@@ -34,7 +34,29 @@ PNG files for manual UI testing without touching real curation data:
 python scripts/setup_local_browser_fixture.py
 ```
 
+The fixture creates two batches, sample PNG files with prompt metadata, one
+pending fake ComfyUI import, and an active `manual-test` batch. By default it
+writes under ignored `tmp/local-browser-fixture/`.
+
 The script prints shell-specific environment variables and an `app.py` launch
-command. By default it writes under ignored `tmp/local-browser-fixture/`.
+command. On PowerShell, the launch sequence is:
+
+```powershell
+.venv\Scripts\python.exe scripts\setup_local_browser_fixture.py
+
+$env:IMAGE_CURATOR_BATCHES="tmp\local-browser-fixture\batches"
+$env:IMAGE_CURATOR_COMFYUI="tmp\local-browser-fixture\comfyui-outputs"
+$env:IMAGE_CURATOR_STATE="tmp\local-browser-fixture\state.json"
+$env:IMAGE_CURATOR_ENABLE_WATCHER="false"
+$env:IMAGE_CURATOR_HOST="127.0.0.1"
+$env:IMAGE_CURATOR_PORT="5000"
+.venv\Scripts\python.exe app.py
+```
+
+Then open `http://127.0.0.1:5000`. Delete `tmp/local-browser-fixture/` when you
+want a clean manual-testing reset.
+
+After launching, see `CONTRIBUTING.md` for the manual UI/API verification
+checklist.
 
 See root `AGENTS.md` for project-wide rules, verification standards, and overall philosophy.

@@ -175,6 +175,7 @@ Treat these as stability-sensitive:
 - Prefer human-readable AI run labels over raw internal run IDs in operator-facing selectors when possible
 - Be careful with polling, drag state, and lightbox interactions so background refresh does not interrupt the operator
 - Verify the browser flow manually
+- For a disposable test batch with sample images, see `scripts/README.md`.
 - Update tests if behavior meaningfully changed
 
 ### UI behavior that should stay consistent

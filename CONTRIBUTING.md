@@ -31,20 +31,9 @@ Avoid adding new production modules at repo root unless they are explicit entryp
 
 ### CSS file map
 
-The browser loads split CSS files directly from `templates/index.html`. Edit the focused file for the affected surface:
-
-| File | Responsibility |
-|------|----------------|
-| `static/css/base.css` | Root variables, reset, body, focus-visible, reduced-motion rules |
-| `static/css/sidebar.css` | Left batch sidebar, auto-import dropdown, batch list/search controls |
-| `static/css/layout.css` | Main content, header buttons, folder tabs, sort controls, count pulse animation |
-| `static/css/grid.css` | Workspace/grid/thumb styling, favorite stars, thumb metadata, multi-select action bar |
-| `static/css/lightbox.css` | Lightbox viewer, metadata panel, controls, key hints |
-| `static/css/modals.css` | Base modal styles, Help modal, new-batch/delete modal buttons |
-| `static/css/prompts.css` | Prompt History modal controls, batch picker, entries, footer, stale warning |
-| `static/css/toast.css` | Undo toast styling |
-| `static/css/ai.css` | AI sidebar, AI form/history/run comparison, AI thumb badges and filtering |
-| `static/css/responsive.css` | `900px` responsive breakpoint rules; loads last |
+The browser loads split CSS files directly from `templates/index.html`. Edit the
+focused file for the affected surface. See `static/README.md` for the
+authoritative CSS file map and frontend asset guidance.
 
 ## Verification before claiming completion
 
@@ -101,7 +90,7 @@ pip-compile --output-file=requirements-dev-lock.txt requirements-dev.in
 ```
 
 The `-lock.txt` files are the reproducible pinned builds; `requirements.txt` and
-`requirements-dev.txt` are convenience installable copies.
+`requirements-dev.txt` are hand-maintained convenience install files.
 
 ### Fast local checks
 
@@ -132,11 +121,17 @@ Also update the runner tests in `tests/unit/test_run_all_script.py` so the expec
 
 ### Manual checks for UI/API work
 
+- For a disposable local browser fixture, see `scripts/README.md`. It creates
+  ignored sample batches and prints shell-specific environment variables plus
+  an `app.py` launch command.
 - Start the app locally
 - Load at least one test batch
 - Verify changed UI controls render and behave correctly
 - Verify any changed API route returns expected JSON
 - For CSS-only changes, also confirm browser developer tools show no missing CSS file 404s and resize below `900px` to check responsive layout.
+- Frontend source-scraping invariants are auto-verified by
+  `python scripts/run_all.py --quick`; see `tests/README.md` for the test
+  pattern.
 
 ## Change playbooks
 

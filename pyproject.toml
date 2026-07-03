@@ -17,9 +17,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/FrostySDXL/image-curator"
-Repository = "https://github.com/FrostySDXL/image-curator"
-Issues = "https://github.com/FrostySDXL/image-curator/issues"
+Homepage = "https://github.com/FrostySDXL/comfyui-curator"
+Repository = "https://github.com/FrostySDXL/comfyui-curator"
+Issues = "https://github.com/FrostySDXL/comfyui-curator/issues"
 
 [tool.setuptools.packages.find]
 include = ["image_curator*", "ai_curate*"]

@@ -1,9 +1,4 @@
-# Convenience install file — mirrors requirements.in for pip install -r.
-# This file is hand-mirrored from requirements.in; it is NOT generated
-# by pip-compile. For pip-compile output (transitive deps with == pins)
-# use requirements-lock.txt. To update this file after editing
-# requirements.in, copy the changed constraints here.
+# Convenience install file for pip install -r.
+# Runtime constraints live in requirements.in; this file includes them directly.
+# For pip-compile output (transitive deps with == pins), use requirements-lock.txt.
 -r requirements.in
-Flask>=3.1,<4.0
-Pillow>=10.0,<12.0
-python-dotenv>=1.0,<2.0

@@ -67,18 +67,18 @@ routes.py ──(Flask Blueprint)──> app.py-injected queue/storage/lifecycle
 
 ## Key Files & Responsibilities
 
-| File | Lines | Role |
-|------|-------|------|
-| `config.py` | 69 | Env-backed constants (`BATCHES_DIR`, `COMFYUI_OUTPUT`, `DEFAULT_BASE_URL`, `API_KEY`, `DEFAULT_TOP_N`=15, `TOP_N_CAP`=100, `ELEMENT_CAP`=12, `REQUEST_TIMEOUT`=120). Re-exports `IMAGE_EXTENSIONS` from `image_curator.batch_store`. |
-| `models.py` | 217 | `JobState(str, Enum)`, `ImageResult` (with `__slots__`, `normalized_score` property, `to_dict`/`from_dict`), `RunTotals`, `CurationRun` (16-field run metadata + results). |
-| `elements.py` | 145 | `extract_elements()` (auto-extraction from prompt text), `build_element_list()` (combine explicit + quality), `get_quality_elements()`, shot-type detection regexes. |
-| `client.py` | 240 | `VisionClient` class: `encode_image()` (base64, 50 MB limit) + `score_image()` (full call cycle). Module-level: `build_score_payload()` (JSON payload builder), `parse_score_response()` (regex YES/NO parser). |
-| `scoring.py` | 119 | `find_images()` (enumerate by extension), `build_scoring_prompt()` (fill template), `score_images()` (main loop with cancel check and progress callback). |
-| `queue.py` | 371 | `QueueManager`: `submit`, `cancel`, `complete_job`, `fail_job`, `finalize_cancelled`, `prune`, `is_cancel_requested`, `_promote_next`. FIFO deque, single running job, thread-safe. |
-| `storage.py` | 199 | `RunStorage`: `save_run`, `load_run`, `list_runs`, `load_latest`. Atomic writes (`.tmp` + `os.replace`), thread-safe via `RLock`, path-traversal validation. |
-| `routes.py` | varies | `create_ai_curate_blueprint()` and `AiCurateRouteContext`; owns `/api/ai-curate/*` Flask routes while app lifecycle globals stay in `app.py`. |
-| `job_validation.py` | varies | `validate_ai_curate_request()` validates Flask AI job payloads with injected app dependencies and preserves API error shapes. |
-| `worker.py` | varies | `run_scoring_worker_inner()` orchestrates element expansion, image enumeration, scoring, cancellation, optional top-N moves, and queue completion with injected dependencies. |
+| File | Role |
+|------|------|
+| `config.py` | Env-backed constants (`BATCHES_DIR`, `COMFYUI_OUTPUT`, `DEFAULT_BASE_URL`, `API_KEY`, `DEFAULT_TOP_N`=15, `TOP_N_CAP`=100, `ELEMENT_CAP`=12, `REQUEST_TIMEOUT`=120). Re-exports `IMAGE_EXTENSIONS` from `image_curator.batch_store`. |
+| `models.py` | `JobState(str, Enum)`, `ImageResult` (with `__slots__`, `normalized_score` property, `to_dict`/`from_dict`), `RunTotals`, `CurationRun` (16-field run metadata + results). |
+| `elements.py` | `extract_elements()` (auto-extraction from prompt text), `build_element_list()` (combine explicit + quality), `get_quality_elements()`, shot-type detection regexes. |
+| `client.py` | `VisionClient` class: `encode_image()` (base64, 50 MB limit) + `score_image()` (full call cycle). Module-level: `build_score_payload()` (JSON payload builder), `parse_score_response()` (regex YES/NO parser). |
+| `scoring.py` | `find_images()` (enumerate by extension), `build_scoring_prompt()` (fill template), `score_images()` (main loop with cancel check and progress callback). |
+| `queue.py` | `QueueManager`: `submit`, `cancel`, `complete_job`, `fail_job`, `finalize_cancelled`, `prune`, `is_cancel_requested`, `_promote_next`. FIFO deque, single running job, thread-safe. |
+| `storage.py` | `RunStorage`: `save_run`, `load_run`, `list_runs`, `load_latest`. Atomic writes (`.tmp` + `os.replace`), thread-safe via `RLock`, path-traversal validation. |
+| `routes.py` | `create_ai_curate_blueprint()` and `AiCurateRouteContext`; owns `/api/ai-curate/*` Flask routes while app lifecycle globals stay in `app.py`. |
+| `job_validation.py` | `validate_ai_curate_request()` validates Flask AI job payloads with injected app dependencies and preserves API error shapes. |
+| `worker.py` | `run_scoring_worker_inner()` orchestrates element expansion, image enumeration, scoring, cancellation, optional top-N moves, and queue completion with injected dependencies. |
 
 ## Agent Instructions
 

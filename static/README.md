@@ -196,6 +196,38 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 | `imageCurator.promptsGroupByBatch` | Prompt History "Group by batch" toggle |
 | `imageCurator.publicDestinationHistory` | Recent public copy/move destinations under the configured export root |
 
+### Operator-Facing UI Behavior
+
+- AI sidebar width and open state, batch sidebar open state, thumbnail density,
+  last batch/folder, and batch sort persist across sessions.
+- The workspace toolbar keeps folder tabs, sorting, favorites, density, and
+  available AI badge/filter controls together above the grid.
+- The batch sidebar shows folder count breakdowns, AI-run indicators, a pinned
+  All Favorites collection, and an All Public generated-output collection.
+- AI badges and score filtering reset when switching to a batch with no active
+  run.
+- The AI review inspector shows selected-image details, multi-select summaries,
+  and active-run score evidence when available; the lightbox has its own AI
+  review panel.
+- Favorite toggles update both the current batch and the universal favorites
+  list; the All Favorites sidebar count refreshes during batch polling.
+- The All Favorites view is virtual: thumbnails show batch labels and lightbox
+  moves use each image's source batch and folder.
+- Public copies are generated derivatives only. Originals stay in review
+  folders, batch Public shows `<batch>/public/`, and All Public is virtual.
+  Public copy/move/delete actions affect generated public copies only.
+- The public copy/move destination modal can browse existing folders under
+  `IMAGE_CURATOR_PUBLIC_EXPORTS` and reuses recent destinations for both
+  actions.
+- Prompt history indexes are manual caches. Rebuild after significant curation
+  sessions or when the modal reports a stale image count.
+- Background polling pauses during lightbox, drag, or resize so review is not
+  interrupted.
+- Zoomed lightbox images can be dragged to pan around details.
+- Compare mode gives each side its own zoom and pan state; curation actions and
+  metadata/AI panels apply to the active side only.
+- The header Help button shows keybindings and workflow notes.
+
 ## Constraints & Hard Rules
 
 - **Never:** Change keyboard shortcut keybindings without updating the Help modal in `templates/index.html`.
