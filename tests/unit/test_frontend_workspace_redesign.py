@@ -479,6 +479,7 @@ def test_lightbox_sticky_compare_pins_active_and_replaces_inactive() -> None:
     assert "lightboxCompareItems[lightboxStickyCandidatePane] = lightboxImages[nextIndex];" in js
     assert "setLightboxCompareActivePane(lightboxStickyPinnedPane);" in pin_body
     assert "setLightboxCompareActivePane(lightboxStickyCandidatePane);" not in pin_body
+    assert "case '[':\n                    case ']': e.preventDefault(); break;" in js
     assert "case 'c': e.preventDefault(); enableStickyCompareFromCurrentPanes(); break;" in js
     assert "case 'arrowleft': e.preventDefault(); navigateStickyCompare(-1); break;" in js
     assert "case 'arrowright': e.preventDefault(); navigateStickyCompare(1); break;" in js

@@ -134,7 +134,7 @@ document.addEventListener('keydown', (e) => {
                     case 'arrowleft': e.preventDefault(); navigateStickyCompare(-1); break;
                     case 'arrowright': e.preventDefault(); navigateStickyCompare(1); break;
                     case '[':
-                    case ']':
+                    case ']': e.preventDefault(); break;
                     case 'c': e.preventDefault(); enableStickyCompareFromCurrentPanes(); break;
                     case 'escape': e.preventDefault(); closeLightbox(); break;
                 }
