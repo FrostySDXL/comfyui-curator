@@ -56,7 +56,7 @@
         }
         .lightbox-compare {
             width: min(96vw, 1900px);
-            height: calc(100vh - 150px);
+            height: calc(100vh - 190px);
             max-height: 860px;
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -237,6 +237,21 @@
             color: #b8c2cc;
         }
         .lightbox-ai-panel.open { display: block; }
+        .lightbox.compare-mode .lightbox-metadata-panel,
+        .lightbox.compare-mode .lightbox-ai-panel {
+            z-index: 1003;
+            width: min(520px, calc(50vw - 120px));
+            max-height: calc(100vh - 190px);
+            background: rgba(18, 22, 26, 0.9);
+        }
+        .lightbox.compare-mode.compare-panel-overlay-left .lightbox-metadata-panel,
+        .lightbox.compare-mode.compare-panel-overlay-left .lightbox-ai-panel {
+            border-color: rgba(232, 163, 61, 0.32);
+        }
+        .lightbox.compare-mode.compare-panel-overlay-right .lightbox-metadata-panel,
+        .lightbox.compare-mode.compare-panel-overlay-right .lightbox-ai-panel {
+            border-color: rgba(91, 163, 245, 0.32);
+        }
         .metadata-header {
             display: flex;
             align-items: flex-start;

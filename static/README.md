@@ -96,6 +96,11 @@
 | `lightboxZoom` | `number` | Current lightbox zoom level (0.6--3) |
 | `lightboxPanState` | `object\|null` | Active pointer-drag pan state for zoomed lightbox images |
 | `lightboxCompareMode` | `boolean` | Whether the lightbox is showing selected images side-by-side |
+| `lightboxStickyCompareMode` | `boolean` | Whether compare mode has a pinned left image and arrow-replaced right image |
+| `lightboxComparePinnedIndex` | `number` | Source index pinned in sticky compare |
+| `lightboxCompareCandidateIndex` | `number` | Source index shown in the replaceable pane in sticky compare |
+| `lightboxStickyPinnedPane` | `number` | Compare pane pinned in sticky compare |
+| `lightboxStickyCandidatePane` | `number` | Compare pane replaced by Left/Right in sticky compare |
 | `lightboxCompareActivePane` | `number` | Active compare pane for zoom, favorite, public prep, and move actions |
 | `lightboxCompareViewState` | `array` | Per-pane zoom/base-size state for independent compare zoom |
 | `aiActiveRun` | `object\|null` | Currently selected AI run data |
@@ -127,7 +132,7 @@
 | **Drag/Drop** | `onDragStart`, `onDragOver`, `onDrop`, `moveBatch` | `.thumb`, `.folder-tab` |
 | **Multi-Select** | `toggleSelect`, `clearSelection`, `updateActionBar` | `#action-bar`, `.thumb-select` |
 | **Undo** | `recordLastAction`, `showToast`, `undoLastMove` | `#toast` |
-| **Lightbox** | `openLightbox`, `openCompareLightbox`, `closeLightbox`, `navigate`, `navigateScored`, `zoomLightbox`, `zoomComparePane`, `toggleLightboxMetadata`, `toggleLightboxAiPanel`, `loadLightboxMetadata` | `#lightbox` |
+| **Lightbox** | `openLightbox`, `openCompareLightbox`, `openStickyCompareLightbox`, `navigateStickyCompare`, `closeLightbox`, `navigate`, `navigateScored`, `zoomLightbox`, `zoomComparePane`, `toggleLightboxMetadata`, `toggleLightboxAiPanel`, `loadLightboxMetadata` | `#lightbox` |
 | **AI Sidebar** | `toggleAiSidebar`, `syncAiSidebarUi`, `aiSetPanelTab`, `aiSubmitJob`, `aiPollJobStatus`, `aiRefreshRunData`, `aiLoadElementHistory`, `aiRenderImageInspector` | `#ai-sidebar-shell`, `#ai-curate-panel`, `#ai-image-inspector` |
 | **AI Grid Overlay** | `aiToggleOverlays`, `aiScoreGradient`, `aiShouldShowImage`, `aiSortImages`, `aiShowHeaderControls` | `.ai-score-badge`, `#ai-display-controls` |
 | **Polling** | `pollForChanges` (5s interval), `isInteractionBusy`, `aiPollJobStatus` (2s interval) | `setInterval` |
@@ -222,7 +227,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **Empty grid centering:** `grid.is-empty` switches the grid to a stable empty-state layout so density classes and sidebar widths do not move the placeholder around.
 - **Lightbox arrows sit low:** `.lightbox-nav` is positioned near the lower left/right so the metadata and AI panels do not cover navigation controls.
 - **Lightbox zoom is image-anchored:** `Ctrl+wheel` zooms around the cursor on `#lightbox-image-wrap`; zoomed images use layout-sized dimensions plus pointer-drag panning instead of transform-only scaling.
-- **Compare mode is active-pane based:** `Compare in Lightbox` is enabled for exactly two selected review-folder images. Metadata, AI, previous/next, and scored navigation are unavailable while comparing. Click a pane to make it active; zoom, favorite, public prep, and move actions apply to the active pane, with independent zoom/pan state per side.
+- **Compare mode is active-pane based:** `Compare in Lightbox` is enabled for exactly two selected review-folder images. Click a pane to make it active; zoom, metadata, AI, favorite, public prep, and move actions apply to the active pane, with independent zoom/pan state per side. Metadata and AI overlays are positioned over the inactive pane. `C` pins the active image; Left/Right replace the other pane.
 - **CSS variables for layout only, not theming:** `--sidebar-width`, `--sidebar-effective-width`, `--ai-sidebar-width`. All colors are hardcoded.
 - **Single responsive breakpoint at 900px:** Rules live in `responsive.css`, which must load last. Below this, sidebars shrink, AI sidebar moves below grid, resizers hide.
 - **`__favorites__` is a virtual batch sentinel:** Do not call real batch APIs with it. Use per-image `img.batch` and `img.folder` for image src, lightbox metadata, and lightbox moves.

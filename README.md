@@ -145,13 +145,15 @@ baseline checks for anatomy and artifacts are appended automatically.
 | `+` `-` | Zoom in / out |
 | `0` | Reset zoom |
 | `Ctrl+wheel` | Zoom around cursor |
+| `C` | Pin active image for sticky compare |
 | `Esc` | Close lightbox |
 
 When exactly two review-folder images are selected, **Compare in Lightbox**
 opens a side-by-side comparison. Click a pane to make it active; zoom,
-favorite, public prep, and move shortcuts apply to that active image. Metadata,
-AI review, previous/next, and scored-image navigation are unavailable while
-compare mode is open.
+metadata, AI review, favorite, public prep, and move shortcuts apply to that
+active image. Metadata and AI panels overlay the inactive pane while compare
+mode is open. `C` pins the active image and lets Left/Right replace the other
+comparison image.
 
 ## UI behavior
 
@@ -180,7 +182,7 @@ compare mode is open.
   review isn't interrupted.
 - Zoomed lightbox images can be dragged to pan around details.
 - Compare mode gives each side its own zoom and pan state; curation actions
-  apply to the active side only.
+  and metadata/AI panels apply to the active side only.
 - The header Help button shows keybindings and workflow notes.
 
 ## Security

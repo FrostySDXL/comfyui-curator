@@ -63,7 +63,7 @@
             }
             .lightbox-compare {
                 grid-template-columns: 1fr;
-                height: calc(100vh - 150px);
+                height: calc(100vh - 190px);
                 padding: 0 18px;
                 overflow-y: auto;
             }

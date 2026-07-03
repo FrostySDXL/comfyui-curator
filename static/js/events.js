@@ -434,6 +434,7 @@ function _bindDelegatedEvents() {
                 lightboxCompare.addEventListener('focusin', function(event) {
                     setLightboxCompareActivePane(getActiveComparePaneIndexFromEvent(event));
                 });
+                window.addEventListener('resize', positionCompareOverlayPanels);
             }
 
             // Lightbox toolbar buttons - delegate on #lightbox-actions
@@ -448,6 +449,7 @@ function _bindDelegatedEvents() {
                     else if (btn.id === 'metadata-toggle-btn') toggleLightboxMetadata();
                     else if (btn.id === 'lightbox-ai-toggle-btn') toggleLightboxAiPanel();
                     else if (btn.id === 'lightbox-publish-btn') showLightboxPublishModal();
+                    else if (btn.id === 'lightbox-pin-compare-btn') openStickyCompareLightbox();
                 });
                 // Map button text to handlers for generic buttons
                 lightboxActions.querySelectorAll('button').forEach(btn => {

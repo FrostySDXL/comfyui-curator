@@ -416,18 +416,14 @@ def test_lightbox_compare_mode_has_two_panes_and_action_bar_entry() -> None:
     assert ".lightbox-compare-pane.active" in css
 
 
-def test_lightbox_compare_mode_guards_single_image_panels_and_navigation() -> None:
+def test_lightbox_compare_mode_guards_single_image_navigation() -> None:
     js = read_frontend_js()
-    metadata_body = extract_function_body(js, "function toggleLightboxMetadata()")
-    ai_body = extract_function_body(js, "function toggleLightboxAiPanel()")
     navigation_body = extract_function_body(js, "function navigate(delta)")
     scored_body = extract_function_body(js, "function navigateScored(delta)")
 
     assert "let lightboxCompareMode = false;" in js
     assert "function isLightboxCompareMode()" in js
     assert "function getActiveLightboxImage()" in js
-    assert "lightboxCompareMode" in metadata_body
-    assert "lightboxCompareMode" in ai_body
     assert "lightboxCompareMode" in navigation_body
     assert "lightboxCompareMode" in scored_body
 
@@ -446,7 +442,7 @@ def test_lightbox_compare_mode_has_independent_active_pane_zoom() -> None:
     assert ".lightbox-compare-wrap.zoomed" in css
     assert ".lightbox-compare-pane {" in css
     assert "overflow: hidden;" in css
-    assert "height: calc(100vh - 150px);" in css
+    assert "height: calc(100vh - 190px);" in css
 
 
 def test_lightbox_compare_active_pane_is_click_sticky_not_hover_driven() -> None:
@@ -456,6 +452,83 @@ def test_lightbox_compare_active_pane_is_click_sticky_not_hover_driven() -> None
     assert "lightboxCompare.addEventListener('click'" in events_body
     assert "lightboxCompare.addEventListener('focusin'" in events_body
     assert "lightboxCompare.addEventListener('pointerenter'" not in events_body
+
+
+def test_lightbox_sticky_compare_pins_active_and_replaces_inactive() -> None:
+    html = read_index_html()
+    js = read_frontend_js()
+    events_body = extract_function_body(js, "function _bindDelegatedEvents()")
+    pin_body = extract_function_body(js, "function enableStickyCompareFromCurrentPanes()")
+
+    assert 'id="lightbox-pin-compare-btn"' in html
+    assert "Pin active" in html
+    assert "let lightboxStickyCompareMode = false;" in js
+    assert "let lightboxComparePinnedIndex = -1;" in js
+    assert "let lightboxCompareCandidateIndex = -1;" in js
+    assert "let lightboxStickyPinnedPane = 0;" in js
+    assert "let lightboxStickyCandidatePane = 1;" in js
+    assert "function openStickyCompareLightbox()" in js
+    assert "function navigateStickyCompare(delta)" in js
+    assert "function enableStickyCompareFromCurrentPanes()" in js
+    assert (
+        "lightboxCompareItems = [lightboxImages[pinnedIndex], lightboxImages[candidateIndex]];"
+        in js
+    )
+    assert "lightboxStickyPinnedPane = lightboxCompareActivePane;" in js
+    assert "lightboxStickyCandidatePane = getInactiveComparePaneIndex();" in js
+    assert "lightboxCompareItems[lightboxStickyCandidatePane] = lightboxImages[nextIndex];" in js
+    assert "setLightboxCompareActivePane(lightboxStickyPinnedPane);" in pin_body
+    assert "setLightboxCompareActivePane(lightboxStickyCandidatePane);" not in pin_body
+    assert "case 'c': e.preventDefault(); enableStickyCompareFromCurrentPanes(); break;" in js
+    assert "case 'arrowleft': e.preventDefault(); navigateStickyCompare(-1); break;" in js
+    assert "case 'arrowright': e.preventDefault(); navigateStickyCompare(1); break;" in js
+    assert "btn.id === 'lightbox-pin-compare-btn'" in events_body
+
+
+def test_compare_mode_panels_overlay_inactive_pane_for_active_image() -> None:
+    js = read_frontend_js()
+    css = read_frontend_css()
+    metadata_body = extract_function_body(js, "function toggleLightboxMetadata()")
+    ai_body = extract_function_body(js, "function toggleLightboxAiPanel()")
+
+    assert "function getInactiveComparePaneIndex()" in js
+    assert "function positionCompareOverlayPanels()" in js
+    assert "function refreshCompareActiveImagePanels()" in js
+    assert "function resetLightboxPanelScroll()" in js
+    assert "resetLightboxPanelScroll();" in js
+    assert "loadLightboxMetadata(img, metadataToken).finally(() => {" in js
+    assert "renderLightboxMetadataPanel();" in js
+    assert "const bothPanelsOpen" in js
+    assert "const bothPanelsOpen = lightboxMetadataOpen && lightboxAiOpen;" in js
+    assert "classList.contains('open')" not in extract_function_body(
+        js, "function positionCompareOverlayPanels()"
+    )
+    assert "const splitHeight" in js
+    assert metadata_body.index("positionCompareOverlayPanels();") < metadata_body.index(
+        "renderLightboxMetadataPanel();"
+    )
+    assert "positionCompareOverlayPanels();" in metadata_body
+    assert "positionCompareOverlayPanels();" in ai_body
+    assert "const img = getActiveLightboxImage();" in js
+    assert ".lightbox.compare-mode .lightbox-metadata-panel" in css
+    assert ".lightbox.compare-mode .lightbox-ai-panel" in css
+    assert ".lightbox.compare-mode.compare-panel-overlay-left" in css
+    assert ".lightbox.compare-mode.compare-panel-overlay-right" in css
+
+
+def test_compare_mode_keeps_metadata_ai_visible_and_pin_compare_scoped() -> None:
+    js = read_frontend_js()
+    sync_body = extract_function_body(js, "function syncLightboxPublicActions()")
+    mode_body = extract_function_body(js, "function syncLightboxModeUi()")
+
+    assert "btn.id === 'metadata-toggle-btn'" not in sync_body
+    assert "btn.id === 'lightbox-ai-toggle-btn'" not in sync_body
+    assert "const pinCompareBtn = document.getElementById('lightbox-pin-compare-btn');" in mode_body
+    assert (
+        "if (pinCompareBtn) pinCompareBtn.closest('div').style.display = lightboxCompareMode ? '' : 'none';"
+        in mode_body
+    )
+    assert "const singleOnly = label === 'Prev scored' || label === 'Next scored';" in mode_body
 
 
 def test_select_all_matches_compact_toolbar_button_style() -> None:

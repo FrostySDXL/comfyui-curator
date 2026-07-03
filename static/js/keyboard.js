@@ -125,16 +125,17 @@ document.addEventListener('keydown', (e) => {
                     case 'f': e.preventDefault(); if (e.shiftKey) toggleLightboxFavorite(); else moveImage('finals'); break;
                     case 'r': e.preventDefault(); moveImage('rejects'); break;
                     case 'p': e.preventDefault(); showLightboxPublishModal(); break;
+                    case 'm': e.preventDefault(); toggleLightboxMetadata(); break;
+                    case 'i': e.preventDefault(); toggleLightboxAiPanel(); break;
                     case '+':
                     case '=': e.preventDefault(); zoomLightbox(0.2); break;
                     case '-': e.preventDefault(); zoomLightbox(-0.2); break;
                     case '0': e.preventDefault(); resetLightboxZoom(); break;
-                    case 'arrowleft':
-                    case 'arrowright':
+                    case 'arrowleft': e.preventDefault(); navigateStickyCompare(-1); break;
+                    case 'arrowright': e.preventDefault(); navigateStickyCompare(1); break;
                     case '[':
                     case ']':
-                    case 'm':
-                    case 'i': e.preventDefault(); break;
+                    case 'c': e.preventDefault(); enableStickyCompareFromCurrentPanes(); break;
                     case 'escape': e.preventDefault(); closeLightbox(); break;
                 }
                 return;
@@ -150,6 +151,7 @@ document.addEventListener('keydown', (e) => {
                 case ']': e.preventDefault(); navigateScored(1); break;
                 case 'm': e.preventDefault(); toggleLightboxMetadata(); break;
                 case 'i': e.preventDefault(); toggleLightboxAiPanel(); break;
+                case 'c': e.preventDefault(); openStickyCompareLightbox(); break;
                 case 'p': e.preventDefault(); showLightboxPublishModal(); break;
                 case '+':
                 case '=': e.preventDefault(); zoomLightbox(0.2); break;

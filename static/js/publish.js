@@ -400,7 +400,7 @@ function syncLightboxPublicActions() {
             });
             document.querySelectorAll('#lightbox-actions .btn-secondary').forEach(btn => {
                 const label = btn.textContent.trim();
-                const singleOnly = label === 'Prev scored' || label === 'Next scored' || btn.id === 'metadata-toggle-btn' || btn.id === 'lightbox-ai-toggle-btn';
+                const singleOnly = label === 'Prev scored' || label === 'Next scored';
                 if (singleOnly) btn.closest('div').style.display = compareActive ? 'none' : '';
             });
         }
