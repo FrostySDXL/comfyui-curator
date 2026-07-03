@@ -61,4 +61,13 @@
                 left: 10px;
                 width: auto;
             }
+            .lightbox-compare {
+                grid-template-columns: 1fr;
+                height: calc(100vh - 150px);
+                padding: 0 18px;
+                overflow-y: auto;
+            }
+            .lightbox-compare-wrap img {
+                max-height: 34vh;
+            }
         }

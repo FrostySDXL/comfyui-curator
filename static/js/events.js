@@ -375,6 +375,8 @@ function _bindDelegatedEvents() {
                     if (!btn) return;
                     if (btn.classList.contains('action-clear')) {
                         clearSelection();
+                    } else if (btn.id === 'compare-lightbox-btn') {
+                        openCompareLightbox();
                     } else if (btn.id === 'publish-btn') {
                         showPublishModal();
                     } else if (btn.id === 'public-copy-btn') {
@@ -418,6 +420,20 @@ function _bindDelegatedEvents() {
                 lightboxImageWrap.addEventListener('pointermove', moveLightboxPan);
                 lightboxImageWrap.addEventListener('pointerup', endLightboxPan);
                 lightboxImageWrap.addEventListener('pointercancel', endLightboxPan);
+            }
+
+            const lightboxCompare = document.getElementById('lightbox-compare');
+            if (lightboxCompare) {
+                lightboxCompare.addEventListener('pointerdown', startLightboxPan);
+                lightboxCompare.addEventListener('pointermove', moveLightboxPan);
+                lightboxCompare.addEventListener('pointerup', endLightboxPan);
+                lightboxCompare.addEventListener('pointercancel', endLightboxPan);
+                lightboxCompare.addEventListener('click', function(event) {
+                    setLightboxCompareActivePane(getActiveComparePaneIndexFromEvent(event));
+                });
+                lightboxCompare.addEventListener('focusin', function(event) {
+                    setLightboxCompareActivePane(getActiveComparePaneIndexFromEvent(event));
+                });
             }
 
             // Lightbox toolbar buttons - delegate on #lightbox-actions

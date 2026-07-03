@@ -12,8 +12,8 @@ before manual selection. Single-user, local-first, filesystem-backed.
   Drag images between folders, multi-select or Select All for bulk moves, undo
   toast for the last operation.
 - **Lightbox viewer** -- full-size image review with zoom, keyboard
-  navigation, scored-image jumps, and PNG generation metadata (prompt,
-  seed, sampler, CFG, LoRAs).
+  navigation, scored-image jumps, PNG generation metadata (prompt,
+  seed, sampler, CFG, LoRAs), and two-image comparison from selected images.
 - **Favorites** -- one-click stars persist favorites at both batch and
   universal scope, with a favorites-only filter and All Favorites sidebar view.
 - **Public posting prep** -- selected originals can be exported as
@@ -147,6 +147,12 @@ baseline checks for anatomy and artifacts are appended automatically.
 | `Ctrl+wheel` | Zoom around cursor |
 | `Esc` | Close lightbox |
 
+When exactly two review-folder images are selected, **Compare in Lightbox**
+opens a side-by-side comparison. Click a pane to make it active; zoom,
+favorite, public prep, and move shortcuts apply to that active image. Metadata,
+AI review, previous/next, and scored-image navigation are unavailable while
+compare mode is open.
+
 ## UI behavior
 
 - AI sidebar width and open state persist across sessions.
@@ -173,6 +179,8 @@ baseline checks for anatomy and artifacts are appended automatically.
 - Background polling pauses during lightbox, drag, or resize so your
   review isn't interrupted.
 - Zoomed lightbox images can be dragged to pan around details.
+- Compare mode gives each side its own zoom and pan state; curation actions
+  apply to the active side only.
 - The header Help button shows keybindings and workflow notes.
 
 ## Security

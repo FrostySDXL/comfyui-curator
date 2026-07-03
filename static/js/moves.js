@@ -80,6 +80,11 @@ function updateActionBar() {
                     b.style.display = !showReviewMove || b.dataset.dest === currentFolder ? 'none' : '');
                 const publishBtn = document.getElementById('publish-btn');
                 if (publishBtn) publishBtn.style.display = showReviewMove ? '' : 'none';
+                const compareBtn = document.getElementById('compare-lightbox-btn');
+                if (compareBtn) {
+                    compareBtn.style.display = showReviewMove ? '' : 'none';
+                    compareBtn.disabled = !(showReviewMove && selectedImages.size === 2);
+                }
                 ['public-copy-btn', 'public-move-btn', 'public-delete-btn'].forEach(id => {
                     const btn = document.getElementById(id);
                     if (btn) btn.style.display = showPublicActions ? '' : 'none';
@@ -218,7 +223,10 @@ async function moveImage(destination) {
                 showToast('Public copies cannot be moved to review folders');
                 return;
             }
-            const img = getLightboxImages()[currentIndex];
+            const compareWasActive = typeof isLightboxCompareMode === 'function' && isLightboxCompareMode();
+            const img = typeof getActiveLightboxImage === 'function'
+                ? getActiveLightboxImage()
+                : getLightboxImages()[currentIndex];
             if (!img) return;
             const source = getImageBatchAndFolder(img);
             const resp = await fetch('/api/move', {
@@ -242,6 +250,12 @@ async function moveImage(destination) {
                 showToast(`Moved to ${destination}`, true);
                 removeImagesFromCurrentView([img.name]);
                 loadBatches();
+                if (compareWasActive) {
+                    closeLightbox();
+                    clearSelection();
+                    updateGrid();
+                    return;
+                }
                 const remainingLightboxImages = getDisplayImages();
                 if (remainingLightboxImages.length === 0) {
                     closeLightbox();

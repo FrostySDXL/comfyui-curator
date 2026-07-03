@@ -394,6 +394,70 @@ def test_lightbox_zoom_has_anchor_pan_and_status_affordances() -> None:
     assert "Drag zoomed images to pan" in html
 
 
+def test_lightbox_compare_mode_has_two_panes_and_action_bar_entry() -> None:
+    html = read_index_html()
+    js = read_frontend_js()
+    css = read_frontend_css()
+
+    assert 'id="compare-lightbox-btn"' in html
+    assert "Compare in Lightbox" in html
+    assert 'id="lightbox-compare"' in html
+    assert 'data-compare-pane="0"' in html
+    assert 'data-compare-pane="1"' in html
+    assert "selectedImages.size === 2" in js
+    assert "compareBtn.disabled = !(showReviewMove && selectedImages.size === 2);" in js
+    assert "compareBtn.style.display = showReviewMove ? '' : 'none';" in js
+    assert ".action-btn.action-compare" in css
+    assert ".action-btn.action-compare:disabled" in css
+    assert "function getSelectedImagesInDisplayOrder()" in js
+    assert "function openCompareLightbox()" in js
+    assert "function setLightboxCompareActivePane(paneIndex)" in js
+    assert ".lightbox.compare-mode" in css
+    assert ".lightbox-compare-pane.active" in css
+
+
+def test_lightbox_compare_mode_guards_single_image_panels_and_navigation() -> None:
+    js = read_frontend_js()
+    metadata_body = extract_function_body(js, "function toggleLightboxMetadata()")
+    ai_body = extract_function_body(js, "function toggleLightboxAiPanel()")
+    navigation_body = extract_function_body(js, "function navigate(delta)")
+    scored_body = extract_function_body(js, "function navigateScored(delta)")
+
+    assert "let lightboxCompareMode = false;" in js
+    assert "function isLightboxCompareMode()" in js
+    assert "function getActiveLightboxImage()" in js
+    assert "lightboxCompareMode" in metadata_body
+    assert "lightboxCompareMode" in ai_body
+    assert "lightboxCompareMode" in navigation_body
+    assert "lightboxCompareMode" in scored_body
+
+
+def test_lightbox_compare_mode_has_independent_active_pane_zoom() -> None:
+    js = read_frontend_js()
+    css = read_frontend_css()
+
+    assert "let lightboxCompareViewState" in js
+    assert "function zoomComparePane(paneIndex, delta, anchorEvent = null)" in js
+    assert "function resetComparePaneZoom(paneIndex)" in js
+    assert "function getActiveComparePaneIndexFromEvent(event)" in js
+    assert "zoomComparePane(lightboxCompareActivePane" in js
+    assert "updateCompareZoomIndicator(paneIndex);" in js
+    assert "singleIndicator.hidden = false;" in js
+    assert ".lightbox-compare-wrap.zoomed" in css
+    assert ".lightbox-compare-pane {" in css
+    assert "overflow: hidden;" in css
+    assert "height: calc(100vh - 150px);" in css
+
+
+def test_lightbox_compare_active_pane_is_click_sticky_not_hover_driven() -> None:
+    js = read_frontend_js()
+    events_body = extract_function_body(js, "function _bindDelegatedEvents()")
+
+    assert "lightboxCompare.addEventListener('click'" in events_body
+    assert "lightboxCompare.addEventListener('focusin'" in events_body
+    assert "lightboxCompare.addEventListener('pointerenter'" not in events_body
+
+
 def test_select_all_matches_compact_toolbar_button_style() -> None:
     css = read_frontend_css()
 

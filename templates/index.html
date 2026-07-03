@@ -284,6 +284,7 @@
             <button class="action-btn" data-dest="rejects">Reject</button>
             <span class="action-divider" aria-hidden="true"></span>
             <button class="action-btn action-publish" id="publish-btn" type="button">Prepare Public Copies</button>
+            <button class="action-btn action-compare" id="compare-lightbox-btn" type="button">Compare in Lightbox</button>
         </div>
         <div class="action-group action-group-public">
             <span class="action-group-label">Public copies</span>
@@ -303,6 +304,22 @@
         <span class="lightbox-nav prev" role="button" aria-label="Previous image" tabindex="0">&#8249;</span>
         <div class="lightbox-image-wrap" id="lightbox-image-wrap">
             <img id="lightbox-img" src="">
+        </div>
+        <div class="lightbox-compare" id="lightbox-compare" hidden>
+            <div class="lightbox-compare-pane active" data-compare-pane="0" tabindex="0">
+                <div class="lightbox-compare-label" id="lightbox-compare-label-0"></div>
+                <div class="lightbox-image-wrap lightbox-compare-wrap" id="lightbox-compare-wrap-0">
+                    <img id="lightbox-compare-img-0" src="">
+                </div>
+                <div class="lightbox-zoom-indicator lightbox-compare-zoom" id="lightbox-compare-zoom-0" aria-live="polite">100%</div>
+            </div>
+            <div class="lightbox-compare-pane" data-compare-pane="1" tabindex="0">
+                <div class="lightbox-compare-label" id="lightbox-compare-label-1"></div>
+                <div class="lightbox-image-wrap lightbox-compare-wrap" id="lightbox-compare-wrap-1">
+                    <img id="lightbox-compare-img-1" src="">
+                </div>
+                <div class="lightbox-zoom-indicator lightbox-compare-zoom" id="lightbox-compare-zoom-1" aria-live="polite">100%</div>
+            </div>
         </div>
         <div class="lightbox-zoom-indicator" id="lightbox-zoom-indicator" aria-live="polite">100%</div>
         <span class="lightbox-nav next" role="button" aria-label="Next image" tabindex="0">&#8250;</span>
@@ -444,6 +461,7 @@
                     <li><strong>+ / - / 0</strong> zoom in, zoom out, reset zoom</li>
                     <li><strong>Ctrl+wheel</strong> zoom in/out around the cursor</li>
                     <li>Drag zoomed images to pan around details</li>
+                    <li><strong>Compare in Lightbox</strong> is available when exactly two review-folder images are selected. Click a pane to make it active; zoom, favorite, public prep, and move shortcuts apply to that active image. Metadata, AI, and image navigation stay unavailable in compare mode.</li>
                 </ul>
             </div>
             <div class="help-section">

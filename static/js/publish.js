@@ -24,15 +24,19 @@ function showPublishModal() {
         }
 
 function showLightboxPublishModal() {
-            const img = getLightboxImages()[currentIndex];
+            const compareWasActive = typeof isLightboxCompareMode === 'function' && isLightboxCompareMode();
+            const img = typeof getActiveLightboxImage === 'function'
+                ? getActiveLightboxImage()
+                : getLightboxImages()[currentIndex];
             if (!img || isVirtualCollectionView() || isPublicView()) {
                 showToast('Select a source image in a review folder first');
                 return;
             }
             selectedImages = new Set([img.name]);
-            lastSelectIndex = currentIndex;
+            lastSelectIndex = getImageDisplayIndexByName(img.name);
             updateSelectionVisuals();
             updateActionBar();
+            if (compareWasActive) closeLightbox();
             showPublishModal();
         }
 
@@ -390,7 +394,13 @@ async function confirmPublicDelete() {
 
 function syncLightboxPublicActions() {
             const activePublicView = isVirtualCollectionView() || isPublicView();
+            const compareActive = typeof isLightboxCompareMode === 'function' && isLightboxCompareMode();
             document.querySelectorAll('#lightbox-actions .btn-shortlist, #lightbox-actions .btn-finals, #lightbox-actions .btn-reject, #lightbox-publish-btn').forEach(btn => {
                 btn.closest('div').style.display = activePublicView ? 'none' : '';
+            });
+            document.querySelectorAll('#lightbox-actions .btn-secondary').forEach(btn => {
+                const label = btn.textContent.trim();
+                const singleOnly = label === 'Prev scored' || label === 'Next scored' || btn.id === 'metadata-toggle-btn' || btn.id === 'lightbox-ai-toggle-btn';
+                if (singleOnly) btn.closest('div').style.display = compareActive ? 'none' : '';
             });
         }

@@ -119,6 +119,27 @@ document.addEventListener('keydown', (e) => {
                 return;
             }
 
+            if (typeof isLightboxCompareMode === 'function' && isLightboxCompareMode()) {
+                switch(e.key.toLowerCase()) {
+                    case 's': e.preventDefault(); moveImage('shortlisted'); break;
+                    case 'f': e.preventDefault(); if (e.shiftKey) toggleLightboxFavorite(); else moveImage('finals'); break;
+                    case 'r': e.preventDefault(); moveImage('rejects'); break;
+                    case 'p': e.preventDefault(); showLightboxPublishModal(); break;
+                    case '+':
+                    case '=': e.preventDefault(); zoomLightbox(0.2); break;
+                    case '-': e.preventDefault(); zoomLightbox(-0.2); break;
+                    case '0': e.preventDefault(); resetLightboxZoom(); break;
+                    case 'arrowleft':
+                    case 'arrowright':
+                    case '[':
+                    case ']':
+                    case 'm':
+                    case 'i': e.preventDefault(); break;
+                    case 'escape': e.preventDefault(); closeLightbox(); break;
+                }
+                return;
+            }
+
             switch(e.key.toLowerCase()) {
                 case 's': e.preventDefault(); moveImage('shortlisted'); break;
                 case 'f': e.preventDefault(); if (e.shiftKey) toggleLightboxFavorite(); else moveImage('finals'); break;
@@ -143,4 +164,13 @@ document.getElementById('lightbox-image-wrap').addEventListener('wheel', (event)
             if (!event.ctrlKey) return;
             event.preventDefault();
             zoomLightbox(event.deltaY < 0 ? 0.2 : -0.2, event);
+        }, {passive: false});
+
+document.getElementById('lightbox-compare').addEventListener('wheel', (event) => {
+            if (!document.getElementById('lightbox').classList.contains('active')) return;
+            if (typeof isLightboxCompareMode !== 'function' || !isLightboxCompareMode()) return;
+            if (!event.ctrlKey) return;
+            event.preventDefault();
+            const paneIndex = getActiveComparePaneIndexFromEvent(event);
+            zoomComparePane(paneIndex, event.deltaY < 0 ? 0.2 : -0.2, event);
         }, {passive: false});

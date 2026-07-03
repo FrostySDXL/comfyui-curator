@@ -17,6 +17,7 @@ function getLightboxMetadataCacheKey(img) {
         }
 
 async function loadLightboxMetadata(img, token) {
+            if (typeof lightboxCompareMode !== 'undefined' && lightboxCompareMode) return;
             const cacheKey = getLightboxMetadataCacheKey(img);
             if (lightboxMetadataCache.has(cacheKey)) {
                 currentLightboxMetadata = lightboxMetadataCache.get(cacheKey);
@@ -57,6 +58,11 @@ async function loadLightboxMetadata(img, token) {
 function syncMetadataToggleButton() {
             const btn = document.getElementById('metadata-toggle-btn');
             if (!btn) return;
+            if (typeof lightboxCompareMode !== 'undefined' && lightboxCompareMode) {
+                btn.disabled = true;
+                btn.textContent = 'Metadata';
+                return;
+            }
             const hasMetadata = currentLightboxMetadata && currentLightboxMetadata.has_metadata;
             btn.disabled = !lightboxMetadataOpen && !currentLightboxMetadataLoading && !hasMetadata && !currentLightboxMetadataError;
             if (currentLightboxMetadataLoading) btn.textContent = 'Metadata...';
@@ -66,6 +72,7 @@ function syncMetadataToggleButton() {
         }
 
 function toggleLightboxMetadata() {
+            if (typeof lightboxCompareMode !== 'undefined' && lightboxCompareMode) return;
             if (!lightboxMetadataOpen && !currentLightboxMetadataLoading && !currentLightboxMetadataError && !(currentLightboxMetadata && currentLightboxMetadata.has_metadata)) return;
             lightboxMetadataOpen = !lightboxMetadataOpen;
             syncMetadataToggleButton();
@@ -148,6 +155,7 @@ function copyPromptAsElements(promptText) {
 function renderLightboxMetadataPanel() {
             const panel = document.getElementById('lightbox-metadata-panel');
             if (!panel) return;
+            if (typeof lightboxCompareMode !== 'undefined' && lightboxCompareMode) lightboxMetadataOpen = false;
             panel.classList.toggle('open', lightboxMetadataOpen);
             panel.replaceChildren();
             if (!lightboxMetadataOpen) return;

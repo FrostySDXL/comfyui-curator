@@ -54,6 +54,82 @@
             max-width: none;
             max-height: none;
         }
+        .lightbox-compare {
+            width: min(96vw, 1900px);
+            height: calc(100vh - 150px);
+            max-height: 860px;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+            padding: 0 64px;
+            box-sizing: border-box;
+            overflow: hidden;
+            align-items: stretch;
+        }
+        .lightbox-compare[hidden] { display: none; }
+        .lightbox.compare-mode {
+            align-items: center;
+        }
+        .lightbox.compare-mode .lightbox-controls {
+            max-width: calc(100vw - 40px);
+        }
+        .lightbox-compare-pane {
+            position: relative;
+            min-width: 0;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 8px;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            background: rgba(255,255,255,0.025);
+            box-sizing: border-box;
+            overflow: hidden;
+            outline: none;
+        }
+        .lightbox-compare-pane.active {
+            border-color: rgba(91, 163, 245, 0.85);
+            box-shadow: 0 0 0 2px rgba(91, 163, 245, 0.22), 0 18px 48px rgba(0,0,0,0.38);
+        }
+        .lightbox-compare-label {
+            min-height: 18px;
+            color: #9aa8b5;
+            font-size: 12px;
+            font-weight: 700;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .lightbox-compare-wrap {
+            flex: 1;
+            max-width: none;
+            max-height: none;
+            min-height: 0;
+            height: 100%;
+            box-sizing: border-box;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .lightbox-compare-wrap.zoomed {
+            display: block;
+            overflow: auto;
+        }
+        .lightbox-compare-wrap img {
+            max-width: 100%;
+            max-height: calc(82vh - 140px);
+        }
+        .lightbox-compare-wrap.zoomed img {
+            max-width: none;
+            max-height: none;
+        }
+        .lightbox-compare-zoom {
+            position: absolute;
+            right: 16px;
+            top: 38px;
+        }
         .lightbox img.loading {
             opacity: 0;
         }
