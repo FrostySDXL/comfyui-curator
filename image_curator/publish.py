@@ -269,6 +269,52 @@ def _resolve_export_destination(destination: Path | str, export_root: Path | str
     return resolved
 
 
+def _relative_export_path(path: Path, root: Path) -> str:
+    relative = path.relative_to(root)
+    if str(relative) == ".":
+        return ""
+    return relative.as_posix()
+
+
+def _resolve_export_browser_path(path: str, export_root: Path | str | None) -> tuple[Path, Path]:
+    if export_root is None:
+        raise ValueError("Public export root is not configured")
+    root = Path(export_root).resolve()
+    requested = str(path or "").replace("\\", "/").strip("/")
+    requested_path = Path(requested)
+    if requested_path.is_absolute() or requested_path.drive:
+        raise ValueError(f"Destination must stay inside {root}")
+    if "\x00" in requested or any(part in {".", ".."} for part in requested.split("/")):
+        raise ValueError(f"Destination must stay inside {root}")
+    resolved = (root / requested).resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"Destination must stay inside {root}") from exc
+    return root, resolved
+
+
+def list_export_directories(export_root: Path | str | None, *, path: str = "") -> dict[str, Any]:
+    """List existing directories below the configured public export root."""
+    root, current = _resolve_export_browser_path(path, export_root)
+    current_rel = _relative_export_path(current, root)
+    parent_rel = _relative_export_path(current.parent, root) if current != root else ""
+    directories: list[dict[str, str]] = []
+    if current.is_dir():
+        for child in sorted(current.iterdir(), key=lambda item: item.name.lower()):
+            if not child.is_dir():
+                continue
+            try:
+                child_resolved = child.resolve()
+                child_resolved.relative_to(root)
+            except (OSError, ValueError):
+                continue
+            directories.append(
+                {"name": child.name, "path": _relative_export_path(child_resolved, root)}
+            )
+    return {"path": current_rel, "parent": parent_rel, "directories": directories}
+
+
 def _resolve_public_file(batches_dir: Path, item: dict[str, Any]) -> Path:
     batch = str(item.get("batch") or "")
     filename = str(item.get("filename") or item.get("name") or "")

@@ -162,6 +162,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 | `POST /api/publish/export` | `submitPublicExport()` | Prepare selected originals as public copies |
 | `GET /api/public/<batch>` | `loadBatchPublic()` | Batch Public generated-output view |
 | `GET /api/public` | `loadAllPublic()`, `updateAllPublicCount()` | All Public virtual view and sidebar count |
+| `GET /api/public/destinations?path=` | `loadPublicDestinationBrowser()` | Public copy/move destination folder browser |
 | `POST /api/public/copy` | `copySelectedPublicCopies()` | Copy generated public copies under configured export root |
 | `POST /api/public/move` | `moveSelectedPublicCopies()` | Move generated public copies under configured export root |
 | `POST /api/public/delete` | `deleteSelectedPublicCopies()` | Delete generated public copies only |
@@ -193,6 +194,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 | `imageCurator.promptsCollapseAll` | Prompt History collapse-all preference |
 | `imageCurator.promptsSort` | Prompt History sort mode (`count`, `alpha`, `length`) |
 | `imageCurator.promptsGroupByBatch` | Prompt History "Group by batch" toggle |
+| `imageCurator.publicDestinationHistory` | Recent public copy/move destinations under the configured export root |
 
 ## Constraints & Hard Rules
 

@@ -194,6 +194,29 @@ def test_public_external_actions_use_destination_modal_not_browser_prompt() -> N
     assert "window.confirm(" not in js
 
 
+def test_public_destination_modal_has_folder_browser_and_shared_history() -> None:
+    html = read_index_html()
+    js = read_frontend_js()
+    css = read_frontend_css()
+
+    assert 'id="public-destination-history"' in html
+    assert 'id="public-destination-browser-list"' in html
+    assert 'id="public-destination-up-btn"' in html
+    assert 'id="public-destination-refresh-btn"' in html
+    assert 'id="public-destination-current-path"' in html
+    assert "const PUBLIC_DESTINATION_HISTORY_KEY = 'imageCurator.publicDestinationHistory';" in js
+    assert "function getPublicDestinationHistory()" in js
+    assert "function savePublicDestinationHistory(destination)" in js
+    assert "async function loadPublicDestinationBrowser(path = '')" in js
+    assert "function renderPublicDestinationBrowser(data)" in js
+    assert "function setPublicDestinationInput(destination)" in js
+    assert "apiGetPublicDestinations" in js
+    assert "showPublicDestinationModal('copy')" in js
+    assert "showPublicDestinationModal('move')" in js
+    assert "public-destination-browser" in css
+    assert "public-destination-history" in css
+
+
 def test_public_delete_uses_confirmation_modal_not_browser_popup() -> None:
     html = read_index_html()
     js = read_frontend_js()

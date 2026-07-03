@@ -4,6 +4,9 @@
 let lastPublishedPublicBatch = null;
 let pendingPublicDestinationAction = null;
 let pendingPublicMoveConfirmDestination = null;
+let publicDestinationBrowserPath = '';
+const PUBLIC_DESTINATION_HISTORY_KEY = 'imageCurator.publicDestinationHistory';
+const PUBLIC_DESTINATION_HISTORY_LIMIT = 10;
 
 function showPublishModal() {
             if (!currentBatch || isVirtualCollectionView() || isPublicView() || selectedImages.size === 0) {
@@ -243,6 +246,139 @@ function selectedPublicItems() {
                 .map(img => ({batch: img.batch || currentBatch, filename: img.name}));
         }
 
+function normalizePublicDestinationPath(value) {
+            return String(value || '').trim().replace(/\\+/g, '/').replace(/^\/+|\/+$/g, '');
+        }
+
+function getPublicDestinationHistory() {
+            try {
+                const raw = localStorage.getItem(PUBLIC_DESTINATION_HISTORY_KEY);
+                const parsed = raw ? JSON.parse(raw) : [];
+                return Array.isArray(parsed)
+                    ? parsed.map(normalizePublicDestinationPath).filter(Boolean).slice(0, PUBLIC_DESTINATION_HISTORY_LIMIT)
+                    : [];
+            } catch {
+                return [];
+            }
+        }
+
+function savePublicDestinationHistory(destination) {
+            const normalized = normalizePublicDestinationPath(destination);
+            if (!normalized) return;
+            const next = [
+                normalized,
+                ...getPublicDestinationHistory().filter(item => item !== normalized),
+            ].slice(0, PUBLIC_DESTINATION_HISTORY_LIMIT);
+            try {
+                localStorage.setItem(PUBLIC_DESTINATION_HISTORY_KEY, JSON.stringify(next));
+            } catch { /* localStorage may be unavailable */ }
+            renderPublicDestinationHistory();
+        }
+
+function resetPublicMoveConfirmation() {
+            if (!pendingPublicDestinationAction) return;
+            pendingPublicMoveConfirmDestination = null;
+            setPublicDestinationModalState(
+                pendingPublicDestinationAction,
+                selectedPublicItems().length,
+                false,
+            );
+        }
+
+function setPublicDestinationInput(destination) {
+            const input = document.getElementById('public-destination-input');
+            if (!input) return;
+            input.value = normalizePublicDestinationPath(destination);
+            resetPublicMoveConfirmation();
+            input.focus();
+        }
+
+function renderPublicDestinationHistory() {
+            const container = document.getElementById('public-destination-history');
+            if (!container) return;
+            const history = getPublicDestinationHistory();
+            container.replaceChildren();
+            container.classList.toggle('hidden', history.length === 0);
+            if (!history.length) return;
+            const label = document.createElement('div');
+            label.className = 'public-destination-section-label';
+            label.textContent = 'Recent destinations';
+            container.append(label);
+            const list = document.createElement('div');
+            list.className = 'public-destination-history-list';
+            history.forEach(destination => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.textContent = destination;
+                btn.addEventListener('click', () => setPublicDestinationInput(destination));
+                list.append(btn);
+            });
+            container.append(list);
+        }
+
+function renderPublicDestinationBrowser(data) {
+            const currentPath = normalizePublicDestinationPath(data?.path || '');
+            const currentEl = document.getElementById('public-destination-current-path');
+            const list = document.getElementById('public-destination-browser-list');
+            const upBtn = document.getElementById('public-destination-up-btn');
+            if (currentEl) currentEl.textContent = currentPath ? `/${currentPath}` : '/';
+            if (upBtn) {
+                upBtn.disabled = !currentPath;
+                upBtn.dataset.path = normalizePublicDestinationPath(data?.parent || '');
+            }
+            if (!list) return;
+            list.replaceChildren();
+            const directories = Array.isArray(data?.directories) ? data.directories : [];
+            if (!directories.length) {
+                const empty = document.createElement('div');
+                empty.className = 'public-destination-empty';
+                empty.textContent = 'No subfolders found here.';
+                list.append(empty);
+                return;
+            }
+            directories.forEach(directory => {
+                const path = normalizePublicDestinationPath(directory.path);
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'public-destination-folder-btn';
+                btn.dataset.path = path;
+                btn.textContent = `${directory.name}/`;
+                btn.addEventListener('click', () => {
+                    setPublicDestinationInput(path);
+                    loadPublicDestinationBrowser(path);
+                });
+                list.append(btn);
+            });
+        }
+
+async function loadPublicDestinationBrowser(path = '') {
+            publicDestinationBrowserPath = normalizePublicDestinationPath(path);
+            const list = document.getElementById('public-destination-browser-list');
+            if (list) list.textContent = 'Loading folders...';
+            try {
+                const data = await apiGetPublicDestinations(publicDestinationBrowserPath);
+                publicDestinationBrowserPath = normalizePublicDestinationPath(data.path || '');
+                renderPublicDestinationBrowser(data);
+            } catch {
+                const currentEl = document.getElementById('public-destination-current-path');
+                if (currentEl) currentEl.textContent = publicDestinationBrowserPath ? `/${publicDestinationBrowserPath}` : '/';
+                if (list) list.textContent = 'Folder browser unavailable. You can still type a destination.';
+            }
+        }
+
+function browsePublicDestinationUp() {
+            const upBtn = document.getElementById('public-destination-up-btn');
+            loadPublicDestinationBrowser(upBtn?.dataset.path || '');
+        }
+
+function refreshPublicDestinationBrowser() {
+            loadPublicDestinationBrowser(publicDestinationBrowserPath);
+        }
+
+function handlePublicDestinationInputChanged() {
+            resetPublicMoveConfirmation();
+        }
+
 function hidePublicDestinationModal() {
             const modal = document.getElementById('public-destination-modal');
             if (modal) modal.classList.remove('active');
@@ -279,6 +415,8 @@ function showPublicDestinationModal(action) {
             if (title) title.textContent = label;
             setPublicDestinationModalState(action, items.length, false);
             if (input) input.value = '';
+            renderPublicDestinationHistory();
+            loadPublicDestinationBrowser('');
             modal.classList.add('active');
             _trapFocus(modal);
             if (input) input.focus();
@@ -327,6 +465,8 @@ async function submitPublicDestinationAction() {
                     showToast(data.error || `${action === 'move' ? 'Move' : 'Copy'} public copies failed`);
                     return;
                 }
+                const completed = action === 'move' ? (data.moved || 0) : (data.copied || 0);
+                if (completed > 0) savePublicDestinationHistory(destination);
                 hidePublicDestinationModal();
                 if (action === 'move') {
                     showToast(`Moved ${data.moved || 0} public cop${data.moved === 1 ? 'y' : 'ies'}`);

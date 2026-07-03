@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from PIL import Image, PngImagePlugin
 
 from image_curator import batch_store, publish
@@ -348,3 +349,34 @@ def test_public_destination_must_stay_under_export_root(tmp_path):
     assert result["copied"] == 0
     assert result["failed"] == 1
     assert "Destination must stay inside" in result["files"][0]["error"]
+
+
+def test_list_export_directories_requires_configured_root():
+    with pytest.raises(ValueError, match="Public export root is not configured"):
+        publish.list_export_directories(None)
+
+
+def test_list_export_directories_returns_safe_relative_directories(tmp_path):
+    export_root = tmp_path / "exports"
+    (export_root / "posts" / "batch-b").mkdir(parents=True)
+    (export_root / "posts" / "batch-a").mkdir(parents=True)
+    (export_root / "posts" / "notes.txt").write_text("skip")
+
+    result = publish.list_export_directories(export_root, path="posts")
+
+    assert result == {
+        "path": "posts",
+        "parent": "",
+        "directories": [
+            {"name": "batch-a", "path": "posts/batch-a"},
+            {"name": "batch-b", "path": "posts/batch-b"},
+        ],
+    }
+
+
+def test_list_export_directories_blocks_traversal(tmp_path):
+    export_root = tmp_path / "exports"
+    export_root.mkdir()
+
+    with pytest.raises(ValueError, match="Destination must stay inside"):
+        publish.list_export_directories(export_root, path="../outside")

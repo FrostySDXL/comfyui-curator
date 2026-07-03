@@ -485,6 +485,18 @@ def api_get_all_public():
     return jsonify({"public": publish.list_all_public(BATCHES_DIR)})
 
 
+@app.route("/api/public/destinations", methods=["GET"])
+def api_public_destinations():
+    try:
+        result = publish.list_export_directories(
+            PUBLIC_EXPORT_ROOT,
+            path=request.args.get("path", ""),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc), "directories": []}), 400
+    return jsonify(result)
+
+
 @app.route("/api/public/<batch>", methods=["GET"])
 def api_get_batch_public(batch):
     batch_name, err = _require_batch(batch)

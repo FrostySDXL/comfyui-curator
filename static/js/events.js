@@ -164,6 +164,11 @@ function _bindDelegatedEvents() {
             if (publicDestinationInput) publicDestinationInput.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter') submitPublicDestinationAction();
             });
+            if (publicDestinationInput) publicDestinationInput.addEventListener('input', handlePublicDestinationInputChanged);
+            const publicDestinationUp = document.getElementById('public-destination-up-btn');
+            if (publicDestinationUp) publicDestinationUp.addEventListener('click', browsePublicDestinationUp);
+            const publicDestinationRefresh = document.getElementById('public-destination-refresh-btn');
+            if (publicDestinationRefresh) publicDestinationRefresh.addEventListener('click', refreshPublicDestinationBrowser);
 
             document.querySelectorAll('#public-delete-modal .cancel').forEach(btn => {
                 btn.addEventListener('click', hidePublicDeleteModal);

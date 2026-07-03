@@ -176,6 +176,8 @@ comparison image.
 - Public copies are generated derivatives only. Originals stay in review
   folders, batch Public shows `<batch>/public/`, and All Public is virtual.
   Public copy/move/delete actions affect generated public copies only.
+  The public copy/move destination modal can browse existing folders under
+  `IMAGE_CURATOR_PUBLIC_EXPORTS` and reuses recent destinations for both actions.
 - Prompt history indexes are manual caches. Rebuild after significant curation
   sessions or when the modal reports a stale image count.
 - Background polling pauses during lightbox, drag, or resize so your

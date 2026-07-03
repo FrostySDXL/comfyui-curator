@@ -18,7 +18,7 @@
 - **Web review UI:** Asset-manager style batch sidebar, compact workspace toolbar, center thumbnail grid, right AI sidebar. Drag/drop moves, multi-select/Select All, undo toast, keyboard shortcuts, background polling.
 - **Lightbox viewer:** Full-image review with zoom, PNG generation metadata inspection (`M` toggle), scored-image navigation (`[`/`]`), keyboard folder moves (`S`/`F`/`R`).
 - **Favorites workflow:** One-click favorites update batch and universal scope, with a favorites-only filter and virtual All Favorites sidebar view.
-- **Public posting prep:** Selected originals export to metadata-stripped, optionally watermarked generated copies in `<batch>/public/`, with batch Public and virtual All Public views plus derivative-only copy/move/delete actions.
+- **Public posting prep:** Selected originals export to metadata-stripped, optionally watermarked generated copies in `<batch>/public/`, with batch Public and virtual All Public views plus derivative-only copy/move/delete actions and export-root destination browsing/history.
 - **Prompt history:** Manual PNG metadata prompt indexes with searchable/copyable Prompt History modal and staleness warning.
 - **AI-assisted scoring:** Vision-LLM evaluation against element checklists via OpenAI-compatible `/v1/chat/completions`. Optional auto-move of top-N images. The AI sidebar has Inspect / Score / Runs tabs, run comparison, and contextual image inspection.
 - **CLI headless scoring:** Same pipeline available via `curate.py` (dry-run, score-only, or score-and-move).
@@ -147,7 +147,7 @@ Treat these as stability-sensitive:
 - Workspace toolbar control IDs/order, density controls, Select All behavior, and thumbnail state classes
 - AI run history labels, compare controls, and image inspector as operator-facing compatibility surfaces
 - Favorites API shapes, favorites filter button, All Favorites sidebar entry, and lightbox/thumb star behavior
-- Public API shapes, batch `public/` generated-output view, All Public sidebar entry, public action labels, and derivative-only safety copy
+- Public API shapes, batch `public/` generated-output view, All Public sidebar entry, public action labels, public export-root destination browser/history, and derivative-only safety copy
 - Prompt History modal controls, prompt-history API shapes, and manual cache file semantics
 
 ## Structure Rules
@@ -226,7 +226,7 @@ Treat these as stability-sensitive:
 - **Frontend tests are Python source-scraping:** The `test_frontend_*.py` files regex-scan ordered split JS/CSS sources through `tests/unit/frontend_source.py` for function names and invariants. No headless browser or JS test framework. Browser-only changes need manual verification.
 - **Generated files (never edit):** `.thumbs/` (thumbnail cache), `.favorites.json`, `<batch>/prompt-history.json`, `<batch>/ai-curate/runs/` (run history), `<batch>/ai-curate/latest.json`, `__pycache__/`, `*.egg-info/`.
 - **Favorites one click updates both scopes:** `toggle_favorite()` writes batch and universal stores; universal view uses `__favorites__` as a frontend sentinel, never as a real batch.
-- **Public copies are generated derivatives:** `public/` is not a normal curation stage. Do not move originals when preparing, copying, moving, or deleting public copies. External copy/move requires `IMAGE_CURATOR_PUBLIC_EXPORTS`.
+- **Public copies are generated derivatives:** `public/` is not a normal curation stage. Do not move originals when preparing, copying, moving, or deleting public copies. External copy/move requires `IMAGE_CURATOR_PUBLIC_EXPORTS`; the destination browser lists directories only under that configured export root.
 - **Prompt history is manual:** Build/rebuild is synchronous and operator-triggered. Staleness checks compare total image count only.
 - **Score < 0 means failed:** `ImageResult.score` defaults to -1 for unscored/failed images. `normalized_score` also returns -1. Frontend checks `score >= 0` to distinguish scored from failed.
 - **No CORS headers:** The app binds to `127.0.0.1` by default. For remote access, use a reverse proxy with auth (nginx, Caddy).

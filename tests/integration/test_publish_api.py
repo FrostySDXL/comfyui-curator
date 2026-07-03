@@ -190,3 +190,43 @@ def test_public_item_payload_rejects_non_object_items(client, app_module, tmp_pa
 
     assert response.status_code == 400
     assert response.get_json()["error"] == "items must be objects"
+
+
+def test_public_destinations_route_lists_export_root_directories(
+    client, app_module, monkeypatch, tmp_path
+):
+    export_root = tmp_path / "exports"
+    (export_root / "posts" / "batch-b").mkdir(parents=True)
+    (export_root / "posts" / "batch-a").mkdir(parents=True)
+    (export_root / "posts" / "notes.txt").write_text("skip")
+    monkeypatch.setattr(app_module, "PUBLIC_EXPORT_ROOT", export_root)
+
+    response = client.get("/api/public/destinations?path=posts")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "path": "posts",
+        "parent": "",
+        "directories": [
+            {"name": "batch-a", "path": "posts/batch-a"},
+            {"name": "batch-b", "path": "posts/batch-b"},
+        ],
+    }
+
+
+def test_public_destinations_route_requires_export_root(client):
+    response = client.get("/api/public/destinations")
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "Public export root is not configured"
+
+
+def test_public_destinations_route_blocks_traversal(client, app_module, monkeypatch, tmp_path):
+    export_root = tmp_path / "exports"
+    export_root.mkdir()
+    monkeypatch.setattr(app_module, "PUBLIC_EXPORT_ROOT", export_root)
+
+    response = client.get("/api/public/destinations?path=../outside")
+
+    assert response.status_code == 400
+    assert "Destination must stay inside" in response.get_json()["error"]

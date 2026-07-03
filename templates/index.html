@@ -410,6 +410,16 @@
             <label class="publish-field">Destination under export root
                 <input id="public-destination-input" type="text" placeholder="posts/batch-name" autocomplete="off">
             </label>
+            <div id="public-destination-history" class="public-destination-history hidden"></div>
+            <div class="public-destination-browser" aria-label="Existing folders under export root">
+                <div class="public-destination-browser-heading">Existing folders under IMAGE_CURATOR_PUBLIC_EXPORTS</div>
+                <div class="public-destination-browser-toolbar">
+                    <button id="public-destination-up-btn" type="button">Up</button>
+                    <button id="public-destination-refresh-btn" type="button">Refresh</button>
+                    <span id="public-destination-current-path">/</span>
+                </div>
+                <div id="public-destination-browser-list" class="public-destination-browser-list" aria-live="polite">Loading folders...</div>
+            </div>
             <div class="publish-summary">External copy/move is available only when IMAGE_CURATOR_PUBLIC_EXPORTS is configured.</div>
             <div class="modal-buttons">
                 <button class="cancel" type="button">Cancel</button>

@@ -71,6 +71,12 @@ async function apiGetAllPublic() {
     return resp.json();
 }
 
+async function apiGetPublicDestinations(path = '') {
+    const resp = await fetch(`/api/public/destinations?path=${encodeURIComponent(path)}`);
+    if (!resp.ok) throw new Error('public destinations request failed');
+    return resp.json();
+}
+
 async function apiCopyPublic(destination, items) {
     return apiPostJson('/api/public/copy', {destination, items});
 }
