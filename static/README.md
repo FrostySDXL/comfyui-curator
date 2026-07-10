@@ -7,6 +7,7 @@
 ## What This Module Does
 
 - **Single-page review UI:** Asset-manager style batch sidebar, compact workspace toolbar, center thumbnail grid (CSS Grid), right AI Curate sidebar.
+- **Dual-mode serving:** The same `static/js/*.js` and `static/css/*.css` files serve both the standalone Flask page (`templates/index.html`, `/static/` paths) and the native ComfyUI extension page (`templates/curator.html`, `/curator_static/` paths). Mode detection uses `window.CURATOR_NATIVE` in `state.js`.
 - **Keyboard-first navigation:** 15+ shortcuts for search, selection, AI toggles, lightbox, undo.
 - **Drag/drop curation:** HTML5 drag from grid to folder tabs for single or multi-select moves.
 - **Lightbox viewer:** Full-image review with zoom, scored-image navigation, PNG metadata inspection, and two-image compare mode.
@@ -21,8 +22,13 @@
 
 - **Ordered vanilla JS files** under `static/js/`. No framework, ES modules, bundler, transpiler, or build step.
 - **Imperative, event-driven.** Classic scripts share top-level globals intentionally. DOM manipulation is direct.
-- **Scripts load at bottom of `<body>`** in `index.html` in deterministic order. Initialization lives in `bootstrap.js`.
-- **Split plain CSS files** under `static/css/`, loaded directly by `index.html` in deterministic order. No CSS framework, preprocessor, bundler, or build step.
+- **Scripts load at bottom of `<body>`** in both `index.html` (standalone Flask) and `curator.html` (native ComfyUI extension) in deterministic order. Initialization lives in `bootstrap.js`.
+- **Split plain CSS files** under `static/css/`, loaded directly by both templates in deterministic order. No CSS framework, preprocessor, bundler, or build step.
+- **Dual-mode URL construction:** Three helpers in `state.js` (`ccApiPath`, `ccThumbUrl`, `ccImageUrl`) select the correct URL prefix for each mode:
+  - Standalone (`window.CURATOR_NATIVE` absent): `/api/...`, `/thumb/...`, `/image/...`
+  - Native (`window.CURATOR_NATIVE = true`): `/api/curator/...`, `/curator/thumb/...`, `/curator/image/...`
+  - All API calls and media URL construction must use these helpers; raw `/api/`, `/thumb/`, or `/image/` strings in `fetch()` are validated by test invariants.
+- **`curator.html` synchronization:** The native template must stay synchronized with `index.html`. The transform is: replace `/static/` with `/curator_static/` and insert `window.CURATOR_NATIVE = true` before the first `<script src="...">`. Tested by `test_comfyui_static_ui.py`.
 
 ### CSS File Map
 
@@ -230,8 +236,10 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 
 ## Constraints & Hard Rules
 
-- **Never:** Change keyboard shortcut keybindings without updating the Help modal in `templates/index.html`.
+- **Never:** Change keyboard shortcut keybindings without updating the Help modal in both `templates/index.html` and `templates/curator.html`.
 - **Never:** Add a frontend framework or build step -- the project is intentionally vanilla JS.
+- **Never:** Use raw `/api/`, `/thumb/`, or `/image/` URL strings in `fetch()` calls -- always route through `ccApiPath`, `ccThumbUrl`, or `ccImageUrl` helpers.
+- **Always:** When changing `templates/index.html`, mirror the same change to `templates/curator.html` using the two-transform rule (`/static/` → `/curator_static/` plus native-mode script block).
 - **Always:** Use `folderRequestToken` pattern (increment + check) when making async fetch calls that may be superseded by a newer request.
 - **Always:** Check `isInteractionBusy()` before executing polling-triggered DOM updates to avoid interrupting drag, lightbox, or resize interactions.
 - **Verification:** No automated browser tests exist. All frontend changes require manual browser smoke testing. For JS syntax:
@@ -242,8 +250,9 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 ## Agent Instructions
 
 - Start with `templates/index.html` to understand the DOM structure (IDs, CSS classes), then trace behavior in the focused `static/js/*.js` file from the JavaScript File Map above.
+- When changing `index.html`, mirror the change to `templates/curator.html` using the two-transform rule: replace `/static/` with `/curator_static/` and ensure `window.CURATOR_NATIVE = true` appears before the first `<script src="...">`.
 - Changes to styling go in the focused `static/css/*.css` file for the affected surface. Keep selector names stable unless all HTML/JS/test references are updated. The dark theme is fixed -- no light mode.
-- When adding a new API call, add it to the API Call Inventory table above.
+- When adding a new API call, route it through `ccApiPath()` and add it to the API Call Inventory table above.
 - The `test_frontend_*.py` files in `tests/unit/` regex-scan the ordered split JS/CSS sources via `tests/unit/frontend_source.py` for function names and invariants. They are NOT browser tests. After JS changes, run them to avoid regressions on the invariants they check, but always also test manually in a browser.
 - `gridThumbMap` is the key optimization -- it preserves DOM elements across re-renders. `_gridChildrenMatchDesiredOrder()` avoids `replaceChildren()` when order is already correct.
 - Thumbnail blob URLs must be revoked on `beforeunload` to prevent memory leaks -- the `thumbnailBlobUrlCache` FIFO eviction and the `beforeunload` handler manage this.

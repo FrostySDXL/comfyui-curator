@@ -6,19 +6,19 @@
  * only after verifying each wrapper preserves the caller's response semantics.
  */
 async function apiGetBatches() {
-    const resp = await fetch('/api/batches');
+    const resp = await fetch(ccApiPath('/api/batches'));
     if (!resp.ok) throw new Error('batch request failed');
     return resp.json();
 }
 
 async function apiGetImages(batch, folder, sort, order) {
-    const resp = await fetch(`/api/images/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}?sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}`);
+    const resp = await fetch(ccApiPath(`/api/images/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}?sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}`));
     if (!resp.ok) throw new Error('images request failed');
     return resp.json();
 }
 
 async function apiPostJson(url, body) {
-    return fetch(url, {
+    return fetch(ccApiPath(url), {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(body),
@@ -46,11 +46,11 @@ async function apiMoveImage(batch, filename, source, destination) {
 }
 
 async function apiDeleteRejects(batch) {
-    return fetch(`/api/delete-rejects/${encodeURIComponent(batch)}`, {method: 'POST'});
+    return fetch(ccApiPath(`/api/delete-rejects/${encodeURIComponent(batch)}`), {method: 'POST'});
 }
 
 async function apiGetUniversalFavorites() {
-    const resp = await fetch('/api/favorites');
+    const resp = await fetch(ccApiPath('/api/favorites'));
     if (!resp.ok) throw new Error('favorites request failed');
     return resp.json();
 }
@@ -60,19 +60,19 @@ async function apiPublishExport(body) {
 }
 
 async function apiGetBatchPublic(batch) {
-    const resp = await fetch(`/api/public/${encodeURIComponent(batch)}`);
+    const resp = await fetch(ccApiPath(`/api/public/${encodeURIComponent(batch)}`));
     if (!resp.ok) throw new Error('batch public request failed');
     return resp.json();
 }
 
 async function apiGetAllPublic() {
-    const resp = await fetch('/api/public');
+    const resp = await fetch(ccApiPath('/api/public'));
     if (!resp.ok) throw new Error('public request failed');
     return resp.json();
 }
 
 async function apiGetPublicDestinations(path = '') {
-    const resp = await fetch(`/api/public/destinations?path=${encodeURIComponent(path)}`);
+    const resp = await fetch(ccApiPath(`/api/public/destinations?path=${encodeURIComponent(path)}`));
     if (!resp.ok) throw new Error('public destinations request failed');
     return resp.json();
 }
@@ -99,17 +99,17 @@ async function apiToggleBatchFavorite(batch, filename) {
 
 async function apiGetPromptHistory(batch) {
     const url = batch
-        ? `/api/prompt-history/${encodeURIComponent(batch)}?check_stale=true`
-        : '/api/prompt-history';
+        ? ccApiPath(`/api/prompt-history/${encodeURIComponent(batch)}?check_stale=true`)
+        : ccApiPath('/api/prompt-history');
     return fetch(url);
 }
 
 async function apiBuildPromptIndex(batch) {
-    return fetch(`/api/prompt-history/${encodeURIComponent(batch)}/build`, {method: 'POST'});
+    return fetch(ccApiPath(`/api/prompt-history/${encodeURIComponent(batch)}/build`), {method: 'POST'});
 }
 
 async function apiGetImageMetadata(batch, folder, name) {
-    const resp = await fetch(`/api/image-metadata/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}/${encodeURIComponent(name)}`);
+    const resp = await fetch(ccApiPath(`/api/image-metadata/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}/${encodeURIComponent(name)}`));
     if (!resp.ok) throw new Error(`metadata request failed (${resp.status})`);
     return resp.json();
 }
@@ -123,21 +123,21 @@ async function apiSubmitAiJob(body) {
 }
 
 async function apiGetAiJob(jobId) {
-    return fetch(`/api/ai-curate/jobs/${encodeURIComponent(jobId)}`);
+    return fetch(ccApiPath(`/api/ai-curate/jobs/${encodeURIComponent(jobId)}`));
 }
 
 async function apiCancelAiJob(jobId) {
-    return fetch(`/api/ai-curate/jobs/${encodeURIComponent(jobId)}/cancel`, {method: 'POST'});
+    return fetch(ccApiPath(`/api/ai-curate/jobs/${encodeURIComponent(jobId)}/cancel`), {method: 'POST'});
 }
 
 async function apiGetAiRuns(batch) {
-    return fetch(`/api/ai-curate/batches/${encodeURIComponent(batch)}/runs`);
+    return fetch(ccApiPath(`/api/ai-curate/batches/${encodeURIComponent(batch)}/runs`));
 }
 
 async function apiGetAiRun(batch, runId) {
-    return fetch(`/api/ai-curate/batches/${encodeURIComponent(batch)}/runs/${encodeURIComponent(runId)}`);
+    return fetch(ccApiPath(`/api/ai-curate/batches/${encodeURIComponent(batch)}/runs/${encodeURIComponent(runId)}`));
 }
 
 async function apiGetAiElementHistory(batch, limit = 10) {
-    return fetch(`/api/ai-curate/batches/${encodeURIComponent(batch)}/element-history?limit=${encodeURIComponent(limit)}`);
+    return fetch(ccApiPath(`/api/ai-curate/batches/${encodeURIComponent(batch)}/element-history?limit=${encodeURIComponent(limit)}`));
 }

@@ -67,7 +67,7 @@ async function loadCurrentFolderImages() {
             const batch = currentBatch;
             const folder = currentFolder;
             if (currentFolder === 'public') { await loadBatchPublic(batch); return; }
-            const resp = await fetch(`/api/images/${batch}/${folder}?sort=${currentSort}&order=${currentOrder}`);
+            const resp = await fetch(ccApiPath(`/api/images/${batch}/${folder}?sort=${currentSort}&order=${currentOrder}`));
             if (!resp.ok) return;
             const nextImages = await resp.json();
             if (requestToken !== folderRequestToken) return;
@@ -308,7 +308,7 @@ function updateThumbElement(thumb, img, index) {
             const metaSize = thumb.querySelector('.meta-detail');
             const favStar = thumb.querySelector('.favorite-star');
             const source = getImageBatchAndFolder(img);
-            const imageSrc = `/thumb/${encodeURIComponent(source.batch)}/${encodeURIComponent(source.folder)}/${encodeURIComponent(img.name)}`;
+            const imageSrc = ccThumbUrl(source.batch, source.folder, img.name);
             const thumbnailCacheKey = getThumbnailCacheKey(imageSrc, img);
 
             thumb.dataset.name = img.name;

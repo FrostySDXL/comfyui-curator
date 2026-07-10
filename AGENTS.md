@@ -27,7 +27,7 @@
 ## Key Concepts & Data Flows
 
 ```
-app.py (Flask routes)
+app.py (Flask routes) ← standalone, fully supported
   ├── image_curator/batch_store.py  ← filesystem ops (create, list, move, counts, import)
   ├── image_curator/png_metadata.py ← PNG text-chunk extraction (Pillow)
   ├── image_curator/favorites.py    ← batch + universal favorites JSON storage
@@ -50,8 +50,16 @@ app.py (Flask routes)
 curate.py (CLI)
   └── ai_curate/  (same pipeline, no queue — synchronous scoring in-process)
 
-Frontend (templates/index.html + ordered static/js/*.js + static/css/*.css)
-  └── app.py API routes (fetch-based, vanilla JS, no framework)
+ComfyUI native extension
+  ├── __init__.py                     ← ComfyUI custom-node entrypoint, WEB_DIRECTORY
+  ├── py/curator_manager.py           ← registers /curator, /curator_static, /api/curator/health
+  ├── web/comfyui/top_menu_extension.js ← action-bar button opening /curator
+  └── templates/curator.html          ← native page template (derived from index.html)
+  (Namespaced curation APIs, settings, watcher, and AI lifecycle remain owned by app.py)
+
+Frontend (shared static/js/*.js + static/css/*.css)
+  ├── templates/index.html  ← standalone page (Flask, /static/ paths)
+  └── templates/curator.html ← native page (ComfyUI, /curator_static/ paths, CURATOR_NATIVE flag)
 ```
 
 - **Single source of truth:** Filesystem under `IMAGE_CURATOR_BATCHES/<batch>/`.
@@ -74,6 +82,10 @@ Frontend (templates/index.html + ordered static/js/*.js + static/css/*.css)
 | | `image_curator/watcher.py` | Dependency-injected ComfyUI output watcher used by app-level `ImageWatcher` wrapper |
 | | `image_curator/media.py` | Thumbnail cache key/freshness helpers and WebP generation |
 | | `image_curator/README.md` | Module-scoped agent startup guide (layout, contracts, gotchas) |
+| **Native Extension** | `__init__.py` | ComfyUI custom-node entrypoint; exposes `NODE_CLASS_MAPPINGS`, `WEB_DIRECTORY`, `NODE_DISPLAY_NAME_MAPPINGS`; loads `CuratorManager` via importlib (tolerates missing `server` module for standalone compatibility) |
+| | `py/curator_manager.py` | Registers `/curator` (Jinja2 page), `/curator_static` (shared static mount), `/api/curator/health` on `PromptServer`; idempotent `_registered` guard |
+| | `web/comfyui/top_menu_extension.js` | ComfyUI action-bar button that opens `/curator` in a new tab |
+| | `templates/curator.html` | Native page template derived from `index.html`; `/curator_static/` paths, `window.CURATOR_NATIVE = true`; must stay synchronized with `index.html` |
 | **AI Backend** | `ai_curate/config.py` | Env-backed constants: `BATCHES_DIR`, `COMFYUI_OUTPUT`, `DEFAULT_BASE_URL`, `DEFAULT_TOP_N` (15), `TOP_N_CAP` (100), `ELEMENT_CAP` (12) |
 | | `ai_curate/README.md` | Module-scoped agent startup guide (pipeline, internal contracts, gotchas) |
 | | `ai_curate/elements.py` | Prompt auto-extraction, explicit element building, quality baseline checks |
@@ -86,7 +98,8 @@ Frontend (templates/index.html + ordered static/js/*.js + static/css/*.css)
 | | `ai_curate/queue.py` | `QueueManager`: FIFO single-worker job queue with cancel support |
 | | `ai_curate/storage.py` | `RunStorage`: atomic JSON persistence for run history |
 | **Frontend** | `templates/index.html` | Single-page Flask template (Jinja2, server-injected model list) |
-| | `static/js/state.js`, `dom-utils.js`, `api.js`, `sidebar.js`, `batches.js`, `grid.js`, `favorites.js`, `publish.js`, `moves.js`, `lightbox.js`, `metadata.js`, `prompts.js`, `ai-*.js`, `ai.js`, `polling.js`, `modals.js`, `combobox.js`, `keyboard.js`, `events.js`, `bootstrap.js` | Ordered classic browser scripts; vanilla JS, imperative, no framework/build step |
+| | `templates/curator.html` | Native ComfyUI template derived from `index.html` with `/curator_static/` paths and `CURATOR_NATIVE` flag; must stay synchronized with `index.html` |
+| | `static/js/state.js`, `dom-utils.js`, `api.js`, `sidebar.js`, `batches.js`, `grid.js`, `favorites.js`, `publish.js`, `moves.js`, `lightbox.js`, `metadata.js`, `prompts.js`, `ai-*.js`, `ai.js`, `polling.js`, `modals.js`, `combobox.js`, `keyboard.js`, `events.js`, `bootstrap.js` | Ordered classic browser scripts; vanilla JS, imperative, no framework/build step; `state.js` includes `ccApiPath`/`ccThumbUrl`/`ccImageUrl` helpers for dual-mode (standalone Flask vs native ComfyUI) URL construction |
 | | `static/js/app.js` | Compatibility stub pointing to the split files |
 | | `static/css/base.css`, `sidebar.css`, `layout.css`, `grid.css`, `lightbox.css`, `modals.css`, `prompts.css`, `toast.css`, `ai.css`, `responsive.css` | Browser-loaded split styling in template order (dark theme, flexbox + CSS grid) |
 | | `static/README.md` | Module-scoped agent startup guide (global state, function groups, API calls, gotchas) |
@@ -149,6 +162,9 @@ Treat these as stability-sensitive:
 - Favorites API shapes, favorites filter button, All Favorites sidebar entry, and lightbox/thumb star behavior
 - Public API shapes, batch `public/` generated-output view, All Public sidebar entry, public action labels, public export-root destination browser/history, and derivative-only safety copy
 - Prompt History modal controls, prompt-history API shapes, and manual cache file semantics
+- Native extension entrypoint (`__init__.py` exports), `WEB_DIRECTORY`, `/curator` page route, `/curator_static` static mount, and `/api/curator/health` route
+- `templates/curator.html` two-transform parity with `index.html` (`/static/` → `/curator_static/` plus `window.CURATOR_NATIVE = true` before ordered scripts)
+- Shared frontend `ccApiPath`/`ccThumbUrl`/`ccImageUrl` URL helper behavior and mode-detection through `window.CURATOR_NATIVE`
 
 ## Structure Rules
 
@@ -233,6 +249,9 @@ Treat these as stability-sensitive:
 - **No CORS headers:** The app binds to `127.0.0.1` by default. For remote access, use a reverse proxy with auth (nginx, Caddy).
 - **Thumbnail cache key includes folder name:** `<folder>__<stem>.webp` format prevents same-filename collisions across inbox/shortlisted/finals/rejects.
 - **`ELEMENT_CAP` (12) truncation is silent:** `scoring.py` caps elements without logging a warning.
+- **Native extension scope:** The native route surface is `/curator`, `/curator_static`, and `/api/curator/health`. Namespaced curation APIs, settings, watcher, and AI lifecycle remain owned by the standalone application. See `COMFYUI_EXTENSION_PORT_SPEC.md`.
+- **curator.html must stay synchronized with index.html:** The native template is derived from `index.html` by two transforms: `/static/` → `/curator_static/` and inserting `window.CURATOR_NATIVE = true` before the first `<script src="...">`. Any change to `index.html` must be mirrored in `curator.html`.
+- **Shared frontend mode detection:** `static/js/state.js` checks `window.CURATOR_NATIVE === true` to select API paths, thumb URLs, and image URLs. Do not remove or rename `CURATOR_NATIVE` without updating both templates and all URL helpers.
 
 ## Verification Standard
 

@@ -1,6 +1,38 @@
 /* Ordered classic script.
  * Defines: shared localStorage keys and mutable cross-feature state.
  */
+        /* ---- URL construction helpers (loaded first so all later scripts can use) ---- */
+        const CURATOR_NATIVE = (window.CURATOR_NATIVE === true);
+
+        function ccApiPath(path) {
+            /* Deterministic API path prefix for the current runtime mode.
+               Replaces the leading "/api/" section only.
+               Standalone: /api/batches    -> /api/batches (unchanged)
+               Native:     /api/batches    -> /api/curator/batches
+               Native:     /api/ai-curate/ -> /api/curator/ai-curate/
+               Native:     /api/curator/x  -> /api/curator/x (no double prefix). */
+            if (CURATOR_NATIVE) {
+                if (path.indexOf("/api/curator/") === 0) {
+                    return path;
+                }
+                if (path.indexOf("/api/") === 0) {
+                    return "/api/curator" + path.slice(4);
+                }
+                return path;
+            }
+            return path;
+        }
+
+        function ccThumbUrl(batch, folder, name) {
+            var prefix = CURATOR_NATIVE ? "/curator/thumb" : "/thumb";
+            return prefix + "/" + encodeURIComponent(batch) + "/" + encodeURIComponent(folder) + "/" + encodeURIComponent(name);
+        }
+
+        function ccImageUrl(batch, folder, name) {
+            var prefix = CURATOR_NATIVE ? "/curator/image" : "/image";
+            return prefix + "/" + encodeURIComponent(batch) + "/" + encodeURIComponent(folder) + "/" + encodeURIComponent(name);
+        }
+
         const SIDEBAR_WIDTH_KEY = 'imageCurator.sidebarWidth';
         const SIDEBAR_OPEN_KEY = 'imageCurator.sidebarOpen';
         const BATCH_STATE_KEY = 'imageCurator.lastBatch';

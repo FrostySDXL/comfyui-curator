@@ -169,6 +169,27 @@ Binds to `127.0.0.1` by default. No built-in authentication -- sufficient
 for single-user local use. For remote access, place behind a reverse proxy
 with auth (nginx, Caddy, etc.). Read `SECURITY.md` for related guidance.
 
+## ComfyUI extension
+
+The repository includes a ComfyUI integration shell described in
+`COMFYUI_EXTENSION_PORT_SPEC.md`:
+
+- `__init__.py` -- ComfyUI custom-node entrypoint with `WEB_DIRECTORY`,
+  `NODE_CLASS_MAPPINGS`, `NODE_DISPLAY_NAME_MAPPINGS`.
+- `py/curator_manager.py` -- registers `/curator` (Jinja2-rendered page),
+  `/curator_static` (shared static asset mount), and `/api/curator/health`.
+- `web/comfyui/top_menu_extension.js` -- ComfyUI action-bar button that
+  opens `/curator`.
+- `templates/curator.html` -- native page template derived from `index.html`
+  with `/curator_static/` paths and `window.CURATOR_NATIVE = true`.
+- Shared frontend URL helpers (`ccApiPath`, `ccThumbUrl`, `ccImageUrl` in
+  `static/js/state.js`) switch between `/api`/`/thumb`/`/image` and
+  `/api/curator`/`/curator/thumb`/`/curator/image` based on the native flag.
+
+The native route surface is limited to `/curator`, `/curator_static`, and
+`/api/curator/health`. Curation APIs, settings, watcher control, and AI
+lifecycle are provided by the standalone Flask application (`app.py`).
+
 ## Limitations
 
 AI scoring runs in a single background thread. One job at a time; others

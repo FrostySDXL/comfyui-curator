@@ -87,7 +87,7 @@ async function aiLoadBatchRunCounts(batches) {
             if (targetBatches.length === 0) return;
             const promises = targetBatches.map(async batch => {
                 try {
-                    const resp = await fetch(`/api/ai-curate/batches/${batch}/runs`);
+                    const resp = await fetch(ccApiPath(`/api/ai-curate/batches/${batch}/runs`));
                     const data = await resp.json();
                     aiBatchRunCounts[batch] = data.runs ? data.runs.length : 0;
                 } catch { console.warn(`aiLoadBatchRunCounts failed for ${batch}`); aiBatchRunCounts[batch] = 0; }

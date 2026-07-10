@@ -28,7 +28,7 @@ function formatAiRunLabel(run, includeStatus = false) {
 async function aiFetchRun(runId) {
             if (!runId) return null;
             if (aiRunDetails[runId]) return aiRunDetails[runId];
-            const resp = await fetch(`/api/ai-curate/batches/${currentBatch}/runs/${runId}`);
+            const resp = await fetch(ccApiPath(`/api/ai-curate/batches/${currentBatch}/runs/${runId}`));
             if (!resp.ok) return null;
             const run = await resp.json();
             aiRunDetails[runId] = run;
@@ -121,7 +121,7 @@ async function aiRenderCurrentRunUi() {
 async function aiRefreshRunData(existingRuns = null) {
             if (!currentBatch) return;
             try {
-                const runs = existingRuns || (await fetch(`/api/ai-curate/batches/${currentBatch}/runs`).then(resp => resp.json()).then(data => data.runs || []));
+                const runs = existingRuns || (await fetch(ccApiPath(`/api/ai-curate/batches/${currentBatch}/runs`)).then(resp => resp.json()).then(data => data.runs || []));
                 aiRunIds = runs;
                 if (runs.length > 0) {
                     await Promise.all(runs.map(aiFetchRun));

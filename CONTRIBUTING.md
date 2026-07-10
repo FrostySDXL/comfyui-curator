@@ -22,8 +22,9 @@ This repository is operator-maintained. Keep changes minimal, explicit, and easy
 - Flask routes / web entrypoint: `app.py`
 - Shared non-AI backend logic: `image_curator/`
 - Shared AI curation logic: `ai_curate/`
-- HTML templates: `templates/`
+- HTML templates: `templates/` (`index.html` for standalone Flask; `curator.html` for native ComfyUI extension)
 - Frontend behavior and styling: `static/js/`, `static/css/`
+- Native ComfyUI extension: `__init__.py` (entrypoint), `py/curator_manager.py` (routes), `web/comfyui/` (frontend button)
 - Tests: `tests/unit/`, `tests/component/`, `tests/integration/`
 - Internal repo guidance: `README.md`, `AGENTS.md`, `CONTRIBUTING.md`
 
@@ -45,7 +46,7 @@ Use the shared runner when possible so local verification matches repo expectati
 python scripts/run_all.py
 ```
 
-The shared runner includes a CSS asset check that verifies split CSS files exist and match the stylesheet order in `templates/index.html`.
+The shared runner includes a CSS asset check that verifies split CSS files exist and match the stylesheet order in `templates/index.html` (and by extension `templates/curator.html`, which must stay synchronized).
 
 During edit loops, use:
 
@@ -107,6 +108,17 @@ python -m pytest tests/component
 python -m pytest tests/integration
 ```
 
+### Native extension tests
+
+```bash
+python -m pytest tests/unit/test_comfyui_extension.py tests/unit/test_comfyui_static_ui.py -v
+```
+
+A manual ComfyUI smoke test is required to claim native extension readiness:
+install the package into `ComfyUI/custom_nodes`, start ComfyUI, confirm the
+action-bar button appears and `/curator` loads. The native route surface is
+limited to `/curator`, `/curator_static`, and `/api/curator/health`.
+
 ### Updating `scripts/run_all.py`
 
 Update `scripts/run_all.py` in the same change when adding or changing verification surfaces, including:
@@ -159,6 +171,7 @@ Also update the runner tests in `tests/unit/test_run_all_script.py` so the expec
 - Update `README.md` when operator-visible behavior, compatibility surfaces, ownership boundaries, or cleanup guidance changes
 - Check `AGENTS.md`, this file, and the in-app Help modal for duplicated commands, paths, shortcuts, or compatibility surfaces
 - If verification expectations change, update `scripts/run_all.py`, `tests/unit/test_run_all_script.py`, README verification notes, and this file together
+- If `templates/index.html` changes, mirror the two-transform update to `templates/curator.html` (`/static/` → `/curator_static/` plus native-mode script block)
 
 ## Completion standard
 

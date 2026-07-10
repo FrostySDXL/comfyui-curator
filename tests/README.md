@@ -16,9 +16,10 @@
 
 | Layer | Directory | What It Exercises | Run Command |
 |-------|-----------|-------------------|-------------|
-| Unit | `tests/unit/` | Isolated functions, models, constants, parsing. No Flask, no files beyond `tmp_path`. | `python -m pytest tests/unit -v` |
+| Unit | `tests/unit/` | Isolated functions, models, constants, parsing. No Flask, no files beyond `tmp_path`. Includes native extension entrypoint and static UI compatibility tests. | `python -m pytest tests/unit -v` |
 | Component | `tests/component/` | Flask route contracts (status codes, JSON shapes), AI worker lifecycle (cancel timing), queue+storage integration. | `python -m pytest tests/component -m component -v` |
 | Integration | `tests/integration/` | Full API submission/status/cancel/history flows, metadata API, import-all API. Flask test client + real file I/O. | `python -m pytest tests/integration -m integration -v` |
+| Native extension (focused) | `tests/unit/test_comfyui_extension.py` + `test_comfyui_static_ui.py` | Entrypoint exports, route registration, template parity, URL helper behavior (node eval). Mock ComfyUI modules; no real ComfyUI server. | `python -m pytest tests/unit/test_comfyui_extension.py tests/unit/test_comfyui_static_ui.py -v` |
 
 ### Pytest Markers
 
@@ -75,6 +76,8 @@ The `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tes
 | `tests/unit/test_storage.py` | `ai_curate.storage.RunStorage` -- save, load, list, latest, corrupt data, path traversal | `tmp_path`-based `tmp_batches` + `storage` fixtures |
 | `tests/unit/test_run_all_script.py` | `scripts/run_all.py` -- build checks, format display, parse args | `importlib.util` dynamic import |
 | `tests/unit/test_setup_local_browser_fixture.py` | `scripts/setup_local_browser_fixture.py` -- disposable manual-browser fixture creation and launch env output | `tmp_path`, `importlib.util` dynamic import |
+| `tests/unit/test_comfyui_extension.py` | Native `__init__.py` entrypoint, `py/curator_manager.py`, `web/comfyui/top_menu_extension.js` | `importlib`, `MagicMock`, mock modules for `server`, `aiohttp`, `jinja2` |
+| `tests/unit/test_comfyui_static_ui.py` | Native template parity, URL centralization, error propagation, page handler context | `frontend_source.read_frontend_js`, `subprocess` (node), `tmp_path`, `MagicMock` |
 | `tests/unit/test_frontend_*.py` | Ordered `static/js/*.js` and `static/css/*.css` sources -- source scanning for function names, invariants, undefined references | `tests/unit/frontend_source.py` helpers + regex assertions |
 | `tests/component/test_batch_api.py` | Flask route contracts: batches, images, move, delete-rejects, thumbnails | `client` fixture, PIL image generation |
 | `tests/component/test_ai_curate_worker.py` | `app._run_scoring_worker_inner` -- cancel timing (scoring vs move vs race) | Real `QueueManager` + `RunStorage`, patched `score_images` |
@@ -92,6 +95,7 @@ The `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tes
 |-----|------|-------|
 | No browser-level frontend tests | **Medium** | Frontend tests are source-scraping. No DOM, interaction, or visual regression testing. |
 | No real AI client integration test | **Medium** | Worker is always patched/stubbed. No end-to-end test against even a mock LLM endpoint. |
+| No native ComfyUI integration test | **Medium** | `test_comfyui_extension.py` uses mock ComfyUI modules. Manual smoke test required: install extension into ComfyUI `custom_nodes`, confirm the action-bar button appears and `/curator` loads. |
 | No concurrent/multi-user stress tests | **Low** | QueueManager is single-threaded tested. Intended for single-user operation. |
 | No drag-and-drop tests | **Low** | UI has drag-to-move but it's untested. |
 | Thumbnail generation logic not deeply tested | **Low** | Route returns 200/404 tested, but WebP conversion correctness and cache eviction are not. |
@@ -106,6 +110,7 @@ The `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tes
 - Frontend tests must regex-scan the ordered split JS sources -- do not convert them to a JS framework without explicit approval (the project intentionally avoids one).
 - When adding a new verification surface, update `scripts/run_all.py`, `tests/unit/test_run_all_script.py`, and this README together.
 - For parametrized validation tests, follow `test_storage.py`'s `bad_batch` pattern (matrix of bad inputs x methods = many assertions in one test).
+- **Native extension tests are mock-based:** `test_comfyui_extension.py` and `test_comfyui_static_ui.py` validate entrypoint structure, route registration, template parity, and URL helper behavior using mock ComfyUI modules. A manual ComfyUI smoke test is required for any claim of native extension readiness.
 
 ## Gotchas & Common Pitfalls
 

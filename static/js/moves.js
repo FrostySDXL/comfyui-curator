@@ -175,7 +175,7 @@ function removeImagesFromCurrentView(names) {
         }
 
 async function moveBatch(filenames, destination) {
-            const resp = await fetch('/api/move-batch', {
+            const resp = await fetch(ccApiPath('/api/move-batch'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
@@ -229,7 +229,7 @@ async function moveImage(destination) {
                 : getLightboxImages()[currentIndex];
             if (!img) return;
             const source = getImageBatchAndFolder(img);
-            const resp = await fetch('/api/move', {
+            const resp = await fetch(ccApiPath('/api/move'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
@@ -278,7 +278,7 @@ async function undoLastMove() {
                 return;
             }
             const {batch, filenames, source, destination} = lastAction;
-            const resp = await fetch('/api/move-batch', {
+            const resp = await fetch(ccApiPath('/api/move-batch'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
@@ -327,7 +327,7 @@ function hideDeleteModal() {
         }
 
 async function confirmDeleteRejects() {
-            const resp = await fetch(`/api/delete-rejects/${currentBatch}`, {method:'POST'});
+            const resp = await fetch(ccApiPath(`/api/delete-rejects/${currentBatch}`), {method:'POST'});
             if (resp.ok) {
                 const data = await resp.json();
                 hideDeleteModal();

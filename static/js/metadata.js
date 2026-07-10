@@ -29,7 +29,7 @@ async function loadLightboxMetadata(img, token) {
             syncMetadataToggleButton();
             try {
                 const source = getImageBatchAndFolder(img);
-                const resp = await fetch(`/api/image-metadata/${encodeURIComponent(source.batch)}/${encodeURIComponent(source.folder)}/${encodeURIComponent(img.name)}`);
+                const resp = await fetch(ccApiPath(`/api/image-metadata/${encodeURIComponent(source.batch)}/${encodeURIComponent(source.folder)}/${encodeURIComponent(img.name)}`));
                 if (!resp.ok) throw new Error(`metadata request failed (${resp.status})`);
                 const data = await resp.json();
                 if (token !== lightboxMetadataRequestToken) return;

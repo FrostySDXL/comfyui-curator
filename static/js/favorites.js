@@ -19,7 +19,7 @@ function toggleFavoritesFilter() {
 async function postFavoriteToggle(img) {
             if (!img) return null;
             const isUniversal = currentBatch === '__favorites__';
-            const url = isUniversal ? '/api/favorites' : `/api/favorites/${encodeURIComponent(currentBatch)}`;
+            const url = isUniversal ? ccApiPath('/api/favorites') : ccApiPath(`/api/favorites/${encodeURIComponent(currentBatch)}`);
             const body = isUniversal ? {batch: img.batch, filename: img.name} : {filename: img.name};
             const resp = await fetch(url, {
                 method: 'POST',
@@ -60,7 +60,7 @@ async function toggleFavorite(index) {
 
 async function updateAllFavoritesCount() {
             try {
-                const resp = await fetch('/api/favorites');
+                const resp = await fetch(ccApiPath('/api/favorites'));
                 if (!resp.ok) return;
                 const data = await resp.json();
                 universalFavoritesCount = (data.favorites || []).length;
@@ -87,7 +87,7 @@ async function loadUniversalFavorites() {
             const pathEl = document.getElementById('current-path');
             pathEl.replaceChildren(createTextElement('span', 'path', '★ All Favorites'));
             updateAutoImportQuickAction(document.getElementById('active-batch-select').value || null);
-            const resp = await fetch('/api/favorites');
+            const resp = await fetch(ccApiPath('/api/favorites'));
             if (!resp.ok) {
                 showToast('Failed to load favorites');
                 return;

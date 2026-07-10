@@ -461,7 +461,7 @@ function updateComparePaneImage(paneIndex, img, preserveZoom = false) {
                 imgEl.style.opacity = '';
             };
             const source = getImageBatchAndFolder(img);
-            imgEl.src = `/image/${encodeURIComponent(source.batch)}/${encodeURIComponent(source.folder)}/${encodeURIComponent(img.name)}`;
+            imgEl.src = ccImageUrl(source.batch, source.folder, img.name);
         }
 
 function enableStickyCompareFromCurrentPanes() {
@@ -656,7 +656,7 @@ function showCurrentImage() {
             };
             // Use decode() when available to avoid flash of partially-decoded image
             const source = getImageBatchAndFolder(img);
-            const newSrc = `/image/${encodeURIComponent(source.batch)}/${encodeURIComponent(source.folder)}/${encodeURIComponent(img.name)}`;
+            const newSrc = ccImageUrl(source.batch, source.folder, img.name);
             if (el.decode) {
                 el.src = newSrc;
                 el.decode().then(() => {
