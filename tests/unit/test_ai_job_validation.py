@@ -21,6 +21,23 @@ def test_missing_batch_rejected():
     assert err == ({"error": "batch is required"}, 400)
 
 
+def test_non_string_scalar_fields_are_rejected():
+    for field, value in (
+        ("batch", 7),
+        ("prompt", []),
+        ("source_folder", {}),
+        ("destination_folder", 7),
+        ("model", []),
+    ):
+        data = {"batch": "alpha", "elements": ["x"], "model": "vl-scorer"}
+        data[field] = value
+        params, err = _validate(data)
+
+        assert params is None
+        assert err is not None
+        assert err[1] == 400
+
+
 def test_nonexistent_batch_rejected():
     params, err = _validate({"batch": "missing", "elements": ["x"]})
 

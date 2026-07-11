@@ -8,10 +8,14 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 if __package__ and "." in __package__:
     from ..image_curator.native_routes import NativeCuratorService, register_native_routes
+    from ..image_curator.native_ai_routes import register_native_ai_routes
     from ..image_curator.native_settings import NativeCuratorSettings
+    from ..ai_curate.native_lifecycle import NativeAiLifecycle
 else:
     from image_curator.native_routes import NativeCuratorService, register_native_routes
+    from image_curator.native_ai_routes import register_native_ai_routes
     from image_curator.native_settings import NativeCuratorSettings
+    from ai_curate.native_lifecycle import NativeAiLifecycle
 
 
 class CuratorManager:
@@ -65,5 +69,14 @@ class CuratorManager:
 
         app.router.add_get("/api/curator/health", health_handler)
         register_native_routes(app, service)
+
+        # ---- AI curation lifecycle and routes ----
+        # Idempotent: the lifecycle is created once per add_routes call (which is
+        # itself idempotent), so we never get duplicate on_startup/on_shutdown
+        # callbacks. The caller (__init__.py) invokes add_routes() exactly once.
+        ai_lifecycle = NativeAiLifecycle(settings)
+        app.on_startup.append(ai_lifecycle.startup)
+        app.on_shutdown.append(ai_lifecycle.shutdown)
+        register_native_ai_routes(app, service, ai_lifecycle)
 
         cls._registered = True

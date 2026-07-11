@@ -89,6 +89,7 @@ Written atomically via `.tmp` + `os.replace()`.
 | `media.py` | `thumbnail_cache_path()`, `thumbnail_is_fresh()`, and `generate_thumbnail()` for WebP thumbnail cache semantics. |
 | `native_settings.py` | Resolves native batch/import/state paths from injected ComfyUI `folder_paths` callables and exposes only non-secret model/UI settings. |
 | `native_routes.py` | Registers the native settings, batch/state/import, image-list, metadata, thumbnail, original-image, move, delete-rejects, favorites, public, and prompt-history aiohttp contracts while reusing this package's filesystem helpers. |
+| `native_ai_routes.py` | Registers namespaced native AI preview, submit, status, cancellation, run-history, latest-run, and element-history aiohttp contracts using `ai_curate.native_lifecycle.NativeAiLifecycle`. |
 
 ## Agent Instructions
 

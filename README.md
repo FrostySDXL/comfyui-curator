@@ -185,6 +185,9 @@ The repository includes a ComfyUI integration shell described in
   single-image moves, multi-image moves, reject deletion, favorites
   (batch/universal toggles and All Favorites resolution), and public
   publish/export, listing, destination browsing, and copy/move/delete.
+- `image_curator/native_ai_routes.py` and `ai_curate/native_lifecycle.py` --
+  namespaced AI job, cancellation, and run-history routes with a lifecycle-owned
+  single-worker queue and bounded shutdown.
 - `web/comfyui/top_menu_extension.js` -- ComfyUI action-bar button that
   opens `/curator`.
 - `templates/curator.html` -- native page template derived from `index.html`
@@ -197,9 +200,9 @@ Native foundation routes use `/api/curator/*` and media uses
 `/curator/thumb/*` and `/curator/image/*`. Single-image moves, multi-image
 moves (undo-compatible reverse calls), reject deletion, favorites
 (batch/universal toggles, All Favorites), and public publish/export, listing,
-destination browsing, and copy/move/delete are now native.
-Prompt history, watcher control, and AI lifecycle remain provided only by
-the standalone Flask application (`app.py`).
+destination browsing, copy/move/delete, prompt history, and AI scoring lifecycle
+are now native. Watcher control remains provided only by the standalone Flask
+application (`app.py`). Native AI runtime smoke verification remains pending.
 
 ## Limitations
 

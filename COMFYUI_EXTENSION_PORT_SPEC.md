@@ -1396,17 +1396,25 @@ Verification:
 
 Deliverables:
 
-- port AI routes.
-- lifecycle-managed queue/worker.
-- run history persistence under batch root.
-- optional websocket notifications.
+- port AI routes. **[done]**
+- lifecycle-managed queue/worker. **[done -- NativeAiLifecycle with submission gate, worker thread tracking, idempotent startup, permanent-shutdown state machine, public submit_job() entry point. See ai_curate/native_lifecycle.py, image_curator/native_ai_routes.py]**
+- run history persistence under batch root. **[done -- RunStorage with filesystem containment validation: symlink rejection, resolved-escaping batch/run/tmp paths, non-regular file rejection, no-mutation-on-rejection guarantees. See ai_curate/storage.py]**
+- optional websocket notifications. **[deferred]**
 
 Verification:
 
-- submit/cancel job.
-- scoring run persists.
-- history/compare UI works.
-- shutdown does not leave unmanaged daemon threads.
+- submit/cancel job. **[done -- automated component tests covering submit, list, get, cancel, preview-elements, batch runs, latest run, element history routes]**
+- scoring run persists. **[done -- automated unit/component/integration tests for RunStorage save/load/list/latest]**
+- history/compare UI works. **[pending manual real-ComfyUI smoke]**
+- shutdown does not leave unmanaged daemon threads. **[done -- automated lifecycle tests: shutdown cancels running+queued, post-shutdown submit returns 503, no worker promotion after shutdown, worker threads joined with bounded timeout, repeated shutdown idempotent. Manual real-ComfyUI AI scoring/history/shutdown smoke remains pending.]**
+
+Automated scope implemented (2026-07-11):
+- Native AI route adapters under `/api/curator/ai-curate/*` matching Flask Blueprint contracts.
+- `NativeAiLifecycle`: idempotent startup, permanent shutdown, submission gate, worker thread tracking, public `submit_job()`.
+- `RunStorage`: filesystem containment for all read/write paths, symlink rejection, no-mutation-on-rejection.
+- Comprehensive lifecycle, storage containment, and route contract tests (58 tests in `tests/component/test_native_ai_curate_api.py`).
+
+Manual real-ComfyUI AI scoring/history/shutdown smoke remains explicitly pending.
 
 ### Phase 6: Watcher
 

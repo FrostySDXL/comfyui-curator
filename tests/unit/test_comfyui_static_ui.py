@@ -195,7 +195,7 @@ class TestCuratorManagerPageHandlerContext:
 
     def test_does_not_import_env_config(self):
         source = (REPO_ROOT / "py" / "curator_manager.py").read_text(encoding="utf-8")
-        assert "ai_curate" not in source
+        assert "ai_curate.config" not in source
         assert "load_dotenv" not in source
 
 
