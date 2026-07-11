@@ -132,7 +132,7 @@ class TestStandaloneIndexHtmlUnchanged:
 
 class TestCuratorManagerPageHandlerContext:
     def _setup_mocks(self):
-        for mod in ("server", "aiohttp", "aiohttp.web", "jinja2"):
+        for mod in ("server", "aiohttp", "aiohttp.web", "jinja2", "folder_paths"):
             sys.modules.pop(mod, None)
 
         mock_web = MagicMock()
@@ -152,6 +152,11 @@ class TestCuratorManagerPageHandlerContext:
 
         mock_jinja2 = MagicMock()
         sys.modules["jinja2"] = mock_jinja2
+
+        mock_folder_paths = MagicMock()
+        mock_folder_paths.get_system_user_directory.return_value = "C:/comfy/user/__curator"
+        mock_folder_paths.get_output_directory.return_value = "C:/comfy/output"
+        sys.modules["folder_paths"] = mock_folder_paths
 
         import importlib.util
 

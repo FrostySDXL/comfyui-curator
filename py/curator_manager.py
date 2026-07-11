@@ -6,6 +6,9 @@ from server import PromptServer
 from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from image_curator.native_routes import NativeCuratorService, register_native_routes
+from image_curator.native_settings import NativeCuratorSettings
+
 
 class CuratorManager:
     """Registers Curator page, API, and static routes on the ComfyUI PromptServer."""
@@ -26,6 +29,13 @@ class CuratorManager:
 
         root = Path(__file__).resolve().parents[1]
         static_path = root / "static"
+        import folder_paths
+
+        settings = NativeCuratorSettings.from_host_paths(
+            get_system_user_directory=folder_paths.get_system_user_directory,
+            get_output_directory=folder_paths.get_output_directory,
+        )
+        service = NativeCuratorService(settings)
 
         app.router.add_static("/curator_static", str(static_path))
 
@@ -38,8 +48,8 @@ class CuratorManager:
             )
             template = env.get_template("curator.html")
             html = template.render(
-                available_models=[],
-                default_model="",
+                available_models=list(settings.available_models),
+                default_model=settings.default_model,
             )
             return web.Response(text=html, content_type="text/html")
 
@@ -50,5 +60,6 @@ class CuratorManager:
             return web.json_response({"ok": True})
 
         app.router.add_get("/api/curator/health", health_handler)
+        register_native_routes(app, service)
 
         cls._registered = True

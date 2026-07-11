@@ -14,6 +14,7 @@
 - **Web validation** (`web_validation.py`): Path traversal guard and existing-batch validation helpers used by Flask route wrappers.
 - **Auto-import watcher** (`watcher.py`): Dependency-injected polling watcher for moving new ComfyUI outputs into the active batch inbox.
 - **Media cache helpers** (`media.py`): Thumbnail cache path/freshness checks and WebP thumbnail generation.
+- **Native ComfyUI foundation** (`native_settings.py`, `native_routes.py`): Host-owned path resolution plus namespaced aiohttp adapters for batch/image reads, state, import, metadata, and media serving.
 
 Modules are responsibility-scoped; keep AI-specific validation and worker orchestration in `ai_curate/`.
 
@@ -86,6 +87,8 @@ Written atomically via `.tmp` + `os.replace()`.
 | `web_validation.py` | `safe_path(base, *parts)` blocks traversal/absolute path escape; `require_existing_batch()` validates app-provided batch lists while preserving Flask route response shape. |
 | `watcher.py` | Dependency-injected `ImageWatcher` with start/stop/reset, file-size stability wait, seen-file diff/rescan behavior, and app-level wrapper compatibility in `app.py`. |
 | `media.py` | `thumbnail_cache_path()`, `thumbnail_is_fresh()`, and `generate_thumbnail()` for WebP thumbnail cache semantics. |
+| `native_settings.py` | Resolves native batch/import/state paths from injected ComfyUI `folder_paths` callables and exposes only non-secret model/UI settings. |
+| `native_routes.py` | Registers the native settings, batch/state/import, image-list, metadata, thumbnail, and original-image aiohttp contracts while reusing this package's filesystem helpers. |
 
 ## Agent Instructions
 

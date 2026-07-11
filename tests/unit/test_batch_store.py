@@ -60,6 +60,27 @@ def test_batch_store_import_all_pending_continues_after_move_failure(tmp_path, m
     assert (batches_dir / "alpha" / "inbox" / "moves.jpg").exists()
 
 
+def test_import_all_pending_skips_symlink_source_entries(tmp_path, monkeypatch):
+    batches_dir = tmp_path / "batches"
+    output_dir = tmp_path / "comfyui-outputs"
+    output_dir.mkdir()
+    batch_store.create_batch(batches_dir, "alpha")
+    pending = output_dir / "linked.png"
+    pending.write_bytes(b"outside")
+    real_is_symlink = batch_store.Path.is_symlink
+    monkeypatch.setattr(
+        batch_store.Path,
+        "is_symlink",
+        lambda path: True if path == pending else real_is_symlink(path),
+    )
+
+    count = batch_store.import_all_pending(output_dir, batches_dir, "alpha")
+
+    assert count == 0
+    assert pending.read_bytes() == b"outside"
+    assert not (batches_dir / "alpha" / "inbox" / "linked.png").exists()
+
+
 # ---------------------------------------------------------------------------
 # _validate_name tests
 # ---------------------------------------------------------------------------

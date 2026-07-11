@@ -24,7 +24,7 @@ This repository is operator-maintained. Keep changes minimal, explicit, and easy
 - Shared AI curation logic: `ai_curate/`
 - HTML templates: `templates/` (`index.html` for standalone Flask; `curator.html` for native ComfyUI extension)
 - Frontend behavior and styling: `static/js/`, `static/css/`
-- Native ComfyUI extension: `__init__.py` (entrypoint), `py/curator_manager.py` (routes), `web/comfyui/` (frontend button)
+- Native ComfyUI extension: `__init__.py` (entrypoint), `py/curator_manager.py` (registration), `image_curator/native_settings.py` and `image_curator/native_routes.py` (foundation services/routes), `web/comfyui/` (frontend button)
 - Tests: `tests/unit/`, `tests/component/`, `tests/integration/`
 - Internal repo guidance: `README.md`, `AGENTS.md`, `CONTRIBUTING.md`
 
@@ -111,13 +111,13 @@ python -m pytest tests/integration
 ### Native extension tests
 
 ```bash
-python -m pytest tests/unit/test_comfyui_extension.py tests/unit/test_comfyui_static_ui.py -v
+python -m pytest tests/unit/test_native_curator_settings.py tests/component/test_native_curator_api.py tests/unit/test_comfyui_extension.py tests/unit/test_comfyui_static_ui.py -v
 ```
 
 A manual ComfyUI smoke test is required to claim native extension readiness:
 install the package into `ComfyUI/custom_nodes`, start ComfyUI, confirm the
-action-bar button appears and `/curator` loads. The native route surface is
-limited to `/curator`, `/curator_static`, and `/api/curator/health`.
+action-bar button appears and `/curator` loads. Native batch/image foundation
+routes are namespaced under `/api/curator/*` and `/curator/{thumb,image}/*`.
 
 ### Updating `scripts/run_all.py`
 

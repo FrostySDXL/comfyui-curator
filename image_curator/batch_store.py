@@ -270,7 +270,11 @@ def import_all_pending(comfyui_output: Path, batches_dir: Path, batch_name: str)
 
     count = 0
     for path in comfyui_output.iterdir():
-        if _is_supported_image(path):
+        try:
+            is_symlink = path.is_symlink()
+        except OSError:
+            continue
+        if not is_symlink and _is_supported_image(path):
             safe_name = _collision_safe_name(dest_inbox, path.name)
             dst = dest_inbox / safe_name
             if move_image(path, dst):

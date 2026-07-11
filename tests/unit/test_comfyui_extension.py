@@ -64,18 +64,22 @@ def _setup_comfyui_mocks():
     mock_aiohttp.web = mock_web
 
     mock_jinja2 = MagicMock()
+    mock_folder_paths = MagicMock()
+    mock_folder_paths.get_system_user_directory.return_value = "C:/comfy/user/__curator"
+    mock_folder_paths.get_output_directory.return_value = "C:/comfy/output"
 
     sys.modules["server"] = mock_server
     sys.modules["aiohttp"] = mock_aiohttp
     sys.modules["aiohttp.web"] = mock_web
     sys.modules["jinja2"] = mock_jinja2
+    sys.modules["folder_paths"] = mock_folder_paths
 
     return mock_app, mock_router
 
 
 def _teardown_comfyui_mocks():
     """Remove injected mock modules."""
-    for mod in ["server", "aiohttp", "aiohttp.web", "jinja2"]:
+    for mod in ["server", "aiohttp", "aiohttp.web", "jinja2", "folder_paths"]:
         sys.modules.pop(mod, None)
 
 
@@ -206,6 +210,26 @@ class TestCuratorManagerRoutes:
         calls = self.mock_router.add_get.call_args_list
         health_calls = [c for c in calls if len(c[0]) >= 1 and c[0][0] == "/api/curator/health"]
         assert len(health_calls) >= 1, f"Expected /api/curator/health route, got calls: {calls}"
+
+    def test_add_routes_registers_native_foundation_endpoints(self):
+        self.cm.CuratorManager._registered = False
+        self.cm.CuratorManager.add_routes()
+
+        get_paths = {call[0][0] for call in self.mock_router.add_get.call_args_list}
+        post_paths = {call[0][0] for call in self.mock_router.add_post.call_args_list}
+        assert {
+            "/api/curator/settings",
+            "/api/curator/batches",
+            "/api/curator/images/{batch}/{folder}",
+            "/api/curator/image-metadata/{batch}/{folder}/{name}",
+            "/curator/thumb/{batch}/{folder}/{name}",
+            "/curator/image/{batch}/{folder}/{name}",
+        } <= get_paths
+        assert {
+            "/api/curator/batches",
+            "/api/curator/active-batch",
+            "/api/curator/import-all",
+        } <= post_paths
 
     def test_add_routes_registers_static_mount(self):
         self.cm.CuratorManager._registered = False
