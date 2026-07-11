@@ -335,12 +335,11 @@ class TestErrorPropagation:
         py_dir = pkg / "py"
         py_dir.mkdir()
         (py_dir / "curator_manager.py").write_text(curator_manager_content, encoding="utf-8")
+        image_curator_dir = pkg / "image_curator"
+        image_curator_dir.mkdir()
+        (image_curator_dir / "__init__.py").write_text("", encoding="utf-8")
 
         init_src = (REPO_ROOT / "__init__.py").read_text(encoding="utf-8")
-        init_src = init_src.replace(
-            'Path(__file__).parent / "py" / "curator_manager.py"',
-            f'Path(r"{pkg.as_posix()}") / "py" / "curator_manager.py"',
-        )
         (pkg / "__init__.py").write_text(init_src, encoding="utf-8")
         return pkg
 
@@ -364,7 +363,7 @@ class TestErrorPropagation:
 
         init_path = pkg / "__init__.py"
         spec = importlib.util.spec_from_file_location(
-            "test_pkg_e.__init__",
+            "test_pkg_e",
             str(init_path),
             submodule_search_locations=[str(pkg)],
         )
@@ -375,8 +374,9 @@ class TestErrorPropagation:
                 spec.loader.exec_module(mod)
             assert exc_info.value.name == import_name
         finally:
-            sys.modules.pop("test_pkg_e", None)
-            sys.modules.pop("py.curator_manager", None)
+            for name in tuple(sys.modules):
+                if name == "test_pkg_e" or name.startswith("test_pkg_e."):
+                    sys.modules.pop(name, None)
 
     def test_arbitrary_non_server_error_propagates(self, tmp_path):
         self._assert_propagates(tmp_path, "nonexistent_module_xyz")

@@ -6,8 +6,12 @@ from server import PromptServer
 from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from image_curator.native_routes import NativeCuratorService, register_native_routes
-from image_curator.native_settings import NativeCuratorSettings
+if __package__ and "." in __package__:
+    from ..image_curator.native_routes import NativeCuratorService, register_native_routes
+    from ..image_curator.native_settings import NativeCuratorSettings
+else:
+    from image_curator.native_routes import NativeCuratorService, register_native_routes
+    from image_curator.native_settings import NativeCuratorSettings
 
 
 class CuratorManager:

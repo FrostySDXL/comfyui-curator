@@ -14,7 +14,7 @@ def _load_root_init_standalone():
     """Load root __init__.py as a virtual package, standalone mode (no ComfyUI)."""
     init_path = REPO_ROOT / "__init__.py"
     spec = importlib.util.spec_from_file_location(
-        "comfyui_curator.__init__",
+        "comfyui_curator",
         init_path,
         submodule_search_locations=[str(REPO_ROOT)],
     )
@@ -23,7 +23,9 @@ def _load_root_init_standalone():
     try:
         spec.loader.exec_module(mod)
     finally:
-        sys.modules.pop("comfyui_curator", None)
+        for name in tuple(sys.modules):
+            if name == "comfyui_curator" or name.startswith("comfyui_curator."):
+                sys.modules.pop(name, None)
     return mod
 
 
@@ -118,7 +120,7 @@ class TestRootInitExports:
 
         init_path = REPO_ROOT / "__init__.py"
         spec = importlib.util.spec_from_file_location(
-            "comfyui_curator.__init__",
+            "comfyui_curator",
             init_path,
             submodule_search_locations=[str(REPO_ROOT)],
         )
@@ -138,41 +140,40 @@ class TestRootInitExports:
             ]
             assert len(health_routes) == 1
         finally:
-            sys.modules.pop("comfyui_curator", None)
+            for name in tuple(sys.modules):
+                if name == "comfyui_curator" or name.startswith("comfyui_curator."):
+                    sys.modules.pop(name, None)
             _teardown_comfyui_mocks()
 
-    def test_non_server_import_failure_propagates(self):
-        """ModuleNotFoundError for non-ComfyUI modules propagates (not swallowed)."""
-        from unittest.mock import patch
-
+    def test_imports_as_isolated_custom_node_package(self, monkeypatch):
+        """Sibling backend modules resolve without adding the extension root to sys.path."""
         _setup_comfyui_mocks()
-
-        # Create a mock spec whose loader raises a non-tolerated error.
-        class _FailingLoader:
-            def exec_module(self, mod):
-                raise ModuleNotFoundError(name="not_a_comfyui_module")
-
-        fake_spec = MagicMock()
-        fake_spec.loader = _FailingLoader()
+        root = REPO_ROOT.resolve()
+        monkeypatch.setattr(
+            sys,
+            "path",
+            [entry for entry in sys.path if Path(entry or ".").resolve() != root],
+        )
+        for name in tuple(sys.modules):
+            if name == "image_curator" or name.startswith("image_curator."):
+                monkeypatch.delitem(sys.modules, name)
 
         init_path = REPO_ROOT / "__init__.py"
+        spec = importlib.util.spec_from_file_location(
+            "isolated_curator",
+            init_path,
+            submodule_search_locations=[str(REPO_ROOT)],
+        )
+        mod = importlib.util.module_from_spec(spec)
+        monkeypatch.setitem(sys.modules, "isolated_curator", mod)
+        try:
+            spec.loader.exec_module(mod)
+        finally:
+            _teardown_comfyui_mocks()
 
-        with patch("importlib.util.spec_from_file_location", return_value=fake_spec):
-            with patch("importlib.util.module_from_spec", return_value=MagicMock()):
-                spec = importlib.util.spec_from_file_location(
-                    "comfyui_curator.__init__",
-                    init_path,
-                    submodule_search_locations=[str(REPO_ROOT)],
-                )
-                mod = importlib.util.module_from_spec(spec)
-                sys.modules["comfyui_curator"] = mod
-                try:
-                    with pytest.raises(ModuleNotFoundError) as exc_info:
-                        spec.loader.exec_module(mod)
-                    assert exc_info.value.name == "not_a_comfyui_module"
-                finally:
-                    sys.modules.pop("comfyui_curator", None)
-                    _teardown_comfyui_mocks()
+        assert mod.CuratorManager is not None
+        assert mod.CuratorManager.__module__ == "isolated_curator.py.curator_manager"
+        assert sys.modules["image_curator"] is sys.modules["isolated_curator.image_curator"]
 
 
 class TestCuratorManagerRoutes:

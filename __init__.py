@@ -1,32 +1,19 @@
-"""ComfyUI Curator -- Native ComfyUI extension for image curation workspace.
+"""ComfyUI Curator native extension for the image curation workspace."""
 
-py/ is kept as a namespace directory (no __init__.py) to avoid shadowing the
-installed `py` library that tools such as pytest depend on.  curator_manager
-is loaded explicitly through importlib below.
-"""
-
-import importlib.util
-from pathlib import Path
+import sys
 
 CuratorManager = None
 
-_CM_PATH = Path(__file__).parent / "py" / "curator_manager.py"
+if __package__:
+    try:
+        from . import image_curator as _packaged_image_curator
 
-if _CM_PATH.exists():
-    _cm_spec = importlib.util.spec_from_file_location("py.curator_manager", str(_CM_PATH))
-    _cm_mod = importlib.util.module_from_spec(_cm_spec)
-    if _cm_spec.loader is not None:
-        try:
-            _cm_spec.loader.exec_module(_cm_mod)
-            CuratorManager = _cm_mod.CuratorManager
-        except ModuleNotFoundError as e:
-            # Only "server" is legitimately absent in standalone mode.
-            # Missing aiohttp, jinja2, or any other dependency must propagate
-            # as an actionable extension failure.
-            if e.name == "server":
-                CuratorManager = None
-            else:
-                raise
+        sys.modules.setdefault("image_curator", _packaged_image_curator)
+        from .py.curator_manager import CuratorManager
+    except ModuleNotFoundError as exc:
+        # ComfyUI's server module is intentionally absent in standalone tests.
+        if exc.name != "server":
+            raise
 
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
