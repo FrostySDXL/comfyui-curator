@@ -95,7 +95,6 @@ def test_native_settings_and_batch_state_contracts(tmp_path, monkeypatch):
         assert payload == {
             "available_models": ["vision"],
             "default_model": "vision",
-            "watcher_enabled": False,
             "public_enabled": False,
         }
 

@@ -26,7 +26,7 @@ Recommended first proof of concept:
 3. /curator renders the Curator shell.
 4. /api/curator/health returns JSON.
 5. /api/curator/batches and basic image/thumb routes work.
-6. No watcher or AI worker starts by default.
+6. No AI worker starts before a scoring job is submitted.
 ```
 
 ## 2. Evidence Sources and Confidence
@@ -72,7 +72,7 @@ Current Curator is a local-first, single-operator Flask app for reviewing genera
 
 | File | Role |
 |---|---|
-| `app.py` | Flask web UI, API routes, watcher setup, AI worker thread lifecycle. |
+| `app.py` | Flask web UI, API routes, and AI worker thread lifecycle. |
 | `curate.py` | CLI/headless AI scoring entrypoint. |
 
 ### 3.2 Backend modules
@@ -86,7 +86,6 @@ Current Curator is a local-first, single-operator Flask app for reviewing genera
 | `image_curator/favorites.py` | Batch and universal favorites stores. | Keep. |
 | `image_curator/publish.py` | Metadata-stripped/watermarked public derivatives and external export root operations. | Keep. Preserve derivative-only safety. |
 | `image_curator/prompt_history.py` | Manual prompt-history cache build/load/staleness. | Keep. |
-| `image_curator/watcher.py` | Polling auto-import watcher for ComfyUI output. | Keep logic, change lifecycle. Default disabled. |
 | `ai_curate/*` | AI scoring client, queue, worker, storage, models, validation. | Keep core. Port HTTP layer. |
 
 ### 3.3 Frontend modules
@@ -132,7 +131,7 @@ StarChart's extension-point guidance separates ComfyUI extension work across the
 | JavaScript extension hooks | Yes | Add menu/action-bar button, settings, optional UI notifications. |
 | Custom routes | Yes | Main API surface replacing Flask. |
 | Server callback hooks | Maybe later | Useful only if importing outputs from prompt submissions directly. Not needed for initial port. |
-| Runtime messages / WebSocket events | Optional | Use for best-effort AI/watcher progress notifications. HTTP remains source of truth. |
+| Runtime messages / WebSocket events | Optional | Use for best-effort AI progress notifications. HTTP remains source of truth. |
 | Custom nodes | Optional/later | Useful for workflow integration, not required for curation UI. |
 
 Evidence:
@@ -262,7 +261,6 @@ ComfyUI-Curator/
     png_metadata.py
     prompt_history.py
     publish.py
-    watcher.py
     web_validation.py
 
   ai_curate/
@@ -462,7 +460,7 @@ Use two settings layers:
 1. **Backend operational config** owned by Curator.
 2. **ComfyUI frontend settings** for UI-only preferences.
 
-Do not rely on ComfyUI frontend settings for server-owned secrets or watcher startup.
+Do not rely on ComfyUI frontend settings for server-owned secrets.
 
 ### 10.2 Backend config path
 
@@ -490,7 +488,6 @@ Recommended initial schema:
   "version": 1,
   "batch_root": "",
   "import_source": "",
-  "watcher_enabled": false,
   "ai": {
     "endpoint": "http://127.0.0.1:8080/v1",
     "model": "",
@@ -507,7 +504,6 @@ Recommended defaults:
 |---|---|
 | `batch_root` | `<folder_paths.get_system_user_directory("curator")>/batches` |
 | `import_source` | `folder_paths.get_output_directory()` |
-| `watcher_enabled` | `false` |
 | `ai.endpoint` | Current Curator default if applicable, otherwise local OpenAI-compatible endpoint. |
 | `ai.model` | blank until configured or migrated. |
 | `ai.api_key` | blank; mask on GET. |
@@ -536,7 +532,6 @@ Map current standalone `.env` variables into native config during first startup 
 |---|---|
 | `IMAGE_CURATOR_BATCHES` | `batch_root` |
 | `IMAGE_CURATOR_COMFYUI` / ComfyUI output path equivalent | `import_source` |
-| `IMAGE_CURATOR_ENABLE_WATCHER` | `watcher_enabled` |
 | LLM base URL variable | `ai.endpoint` |
 | LLM model variable | `ai.model` |
 | LLM API key variable | `ai.api_key` |
@@ -574,7 +569,7 @@ app.registerExtension({
 });
 ```
 
-Operational settings such as `batch_root`, `watcher_enabled`, and AI credentials should be managed through the Curator page using `/api/curator/settings`, not through ComfyUI's generic frontend settings store.
+Operational settings such as `batch_root` and AI credentials should be managed through the Curator page using `/api/curator/settings`, not through ComfyUI's generic frontend settings store.
 
 ## 11. Filesystem and Batch Strategy
 
@@ -692,14 +687,13 @@ Current routes:
 | `GET /api/batches` | Returns batches, active batch, counts, metadata, pending count. |
 | `POST /api/batches` | Creates batch from JSON `{name}`. |
 | `POST /api/active-batch` | Sets active batch from JSON `{batch}`. |
-| `POST /api/import-all` | Imports pending images into target batch and resets watcher seen state. |
+| `POST /api/import-all` | Imports available images into the selected batch. |
 
 Implementation notes:
 
 - Replace Flask `request.json` with `await request.json()`.
 - Preserve batch name validation.
 - Preserve pending count behavior.
-- `import-all` should still call watcher reset if watcher exists.
 
 ### 12.4 Image/thumb/metadata routes
 
@@ -917,19 +911,10 @@ Evidence:
 
 Current `app.py`:
 
-- watcher opt-in through env flag.
-- watcher is a daemon polling thread.
 - AI workers are daemon threads.
 - shutdown uses `atexit` and signal handlers.
 - running/queued AI jobs are cancelled on shutdown.
 - worker join timeout is bounded.
-
-Current `image_curator/watcher.py`:
-
-- tracks seen files.
-- polls output directory.
-- waits for file size stability.
-- moves new image files into active batch inbox.
 
 Current `ai_curate/queue.py`:
 
@@ -968,30 +953,7 @@ Evidence:
 - Lora-Manager registers startup/shutdown on `PromptServer.instance.app`.
 - ComfyUI server uses aiohttp `web.Application`, so `on_startup` / `on_shutdown` are the appropriate lifecycle surfaces.
 
-### 14.3 Watcher recommendation
-
-Default:
-
-```text
-watcher_enabled = false
-```
-
-Preferred native behavior:
-
-- Start watcher only if config enables it and import source exists.
-- Keep active batch requirement.
-- Keep size-stability check.
-- Store task/thread handle.
-- Stop on shutdown.
-- Avoid daemon thread if possible.
-
-Implementation options:
-
-1. Keep current watcher thread initially, but make it non-daemon and lifecycle-managed.
-2. Later convert to an async polling task with `asyncio.create_task`.
-3. Longer-term improvement: import known completed outputs from ComfyUI execution events rather than polling/moving arbitrary output files.
-
-### 14.4 AI worker recommendation
+### 14.3 AI worker recommendation
 
 Initial native design:
 
@@ -1014,7 +976,6 @@ Progress/notifications:
 ```text
 curator_ai_job_update
 curator_ai_progress
-curator_watcher_status
 curator_imported_image
 ```
 
@@ -1374,10 +1335,9 @@ Verification:
 
 ### Phase 4: Move/favorites/publish/prompt history
 
-Status: Move, favorites, public, and prompt history routes are implemented with automated
-tests (2026-07-11). Prompt-history safety tests cover symlink rejection, resolved containment
-escapes, non-regular cache entries, and no-mutation rejection paths. Manual curation-flow
-verification inside ComfyUI has not been performed and remains explicitly pending.
+Move, favorites, public, and prompt history routes are implemented with automated tests.
+Prompt-history safety tests cover symlink rejection, resolved containment escapes,
+non-regular cache entries, and no-mutation rejection paths.
 
 Deliverables:
 
@@ -1390,7 +1350,7 @@ Deliverables:
 Verification:
 
 - existing Flask/API tests adapted to aiohttp route tests where possible.
-- manual curation flow works inside ComfyUI. **[pending manual runtime verification]**
+- manual curation flow works inside ComfyUI.
 
 ### Phase 5: AI scoring
 
@@ -1399,14 +1359,14 @@ Deliverables:
 - port AI routes. **[done]**
 - lifecycle-managed queue/worker. **[done -- NativeAiLifecycle with submission gate, worker thread tracking, idempotent startup, permanent-shutdown state machine, public submit_job() entry point. See ai_curate/native_lifecycle.py, image_curator/native_ai_routes.py]**
 - run history persistence under batch root. **[done -- RunStorage with filesystem containment validation: symlink rejection, resolved-escaping batch/run/tmp paths, non-regular file rejection, no-mutation-on-rejection guarantees. See ai_curate/storage.py]**
-- optional websocket notifications. **[deferred]**
+- websocket notifications are not included.
 
 Verification:
 
 - submit/cancel job. **[done -- automated component tests covering submit, list, get, cancel, preview-elements, batch runs, latest run, element history routes]**
 - scoring run persists. **[done -- automated unit/component/integration tests for RunStorage save/load/list/latest]**
-- history/compare UI works. **[pending manual real-ComfyUI smoke]**
-- shutdown does not leave unmanaged daemon threads. **[done -- automated lifecycle tests: shutdown cancels running+queued, post-shutdown submit returns 503, no worker promotion after shutdown, worker threads joined with bounded timeout, repeated shutdown idempotent. Manual real-ComfyUI AI scoring/history/shutdown smoke remains pending.]**
+- history/compare UI works.
+- shutdown does not leave unmanaged daemon threads. **[done -- automated lifecycle tests cover running and queued cancellation, post-shutdown submission rejection, promotion blocking, bounded worker joins, and repeated shutdown.]**
 
 Automated scope implemented (2026-07-11):
 - Native AI route adapters under `/api/curator/ai-curate/*` matching Flask Blueprint contracts.
@@ -1414,22 +1374,20 @@ Automated scope implemented (2026-07-11):
 - `RunStorage`: filesystem containment for all read/write paths, symlink rejection, no-mutation-on-rejection.
 - Comprehensive lifecycle, storage containment, and route contract tests (58 tests in `tests/component/test_native_ai_curate_api.py`).
 
-Manual real-ComfyUI AI scoring/history/shutdown smoke remains explicitly pending.
+### Native import workflow
 
-### Phase 6: Watcher
+Native mode uses explicit imports:
 
-Deliverables:
-
-- default disabled watcher setting.
-- ComfyUI output folder auto-detection.
-- lifecycle-managed watcher.
-- status endpoint or UI warning.
+- ComfyUI output folder auto-detection supplies the available image count.
+- **Import All** moves available images into the selected real batch.
+- **Import All** is the only output-import action.
+- Outputs move only when the operator invokes the action for a selected batch.
 
 Verification:
 
-- manual import works before watcher.
-- watcher imports only when enabled and active batch is set.
-- no file is moved before size-stability check.
+- available image counts update without moving files.
+- **Import All** requires a selected real batch.
+- imported files use collision-safe names and appear in the batch inbox.
 
 ### Phase 7: Optional nodes and registry polish
 
@@ -1497,7 +1455,7 @@ Required before claiming native extension success:
 10. Stop ComfyUI and confirm no shutdown errors.
 ```
 
-AI and watcher require separate manual smoke tests because they involve long-running work and filesystem movement.
+AI requires a separate smoke test because it involves long-running work.
 
 ## 20. Risks and Mitigations
 
@@ -1506,7 +1464,6 @@ AI and watcher require separate manual smoke tests because they involve long-run
 | Flask route behavior changes during aiohttp port | Frontend breakage | Preserve response shapes; port route-by-route; adapt existing tests. |
 | Static path mistakes | UI loads but JS/CSS fail | Use `/curator_static`; verify browser network tab. |
 | Path traversal regression | Security/file safety issue | Centralize `safe_path`; add tests for `..` and absolute paths. |
-| Moving ComfyUI outputs too early | Corrupt/missing generated outputs | Watcher default disabled; keep size-stability check; prefer completed-output events later. |
 | AI cancellation cannot interrupt blocking HTTP call | Shutdown delay | Use short timeouts; tracked executor/thread; async client later. |
 | Daemon threads killed mid-write | Corrupt run state or partial file moves | Avoid daemon threads in native lifecycle; bounded graceful shutdown. |
 | Registry rejects route-only empty mappings | Publication delay | Manager accepts empty mappings; add utility node if registry validation fails or for discoverability. |
@@ -1526,8 +1483,7 @@ These do not block proof-of-concept implementation:
 3. Whether to keep Flask standalone in the same repo long-term.
 4. Whether to keep Jinja rendering or convert Curator UI to fully static HTML/JS.
 5. Whether AI client should remain blocking urllib initially or be converted to aiohttp.
-6. Whether watcher should remain polling or use ComfyUI execution/output event hooks later.
-7. Whether first registry publication should include a utility node to improve discoverability.
+6. Whether first registry publication should include a utility node to improve discoverability.
 
 ## 22. Minimum Native Integration Scope
 
@@ -1547,7 +1503,6 @@ In scope:
 
 Out of scope:
 - full route migration
-- watcher
 - AI scoring
 - optional nodes
 - Registry publication
@@ -1566,7 +1521,6 @@ This keeps the first step small, verifiable, and reversible.
 | Config location | `folder_paths.get_system_user_directory("curator")`. |
 | Batch default root | `<ComfyUI user system curator dir>/batches`. |
 | Import source default | `folder_paths.get_output_directory()`. |
-| Watcher default | Disabled. |
 | AI queue | Keep single-worker semantics; lifecycle-managed. |
 | WebSocket | Optional notification layer only. |
 | Empty node mappings | Accepted by Manager; likely okay, but add node later for discoverability. |

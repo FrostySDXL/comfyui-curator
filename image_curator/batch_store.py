@@ -210,7 +210,7 @@ def move_image(src: Path, dst: Path) -> bool:
     """Move a single file from ``src`` to ``dst``.
 
     Centralised helper used by the Flask routes, the AI curate worker,
-    the ComfyUI watcher, and the CLI. Returns True on success, False if
+    and the CLI. Returns True on success, False if
     the source does not exist or the move raised ``OSError``. Never
     re-raises so callers don't have to wrap every call in try/except.
 

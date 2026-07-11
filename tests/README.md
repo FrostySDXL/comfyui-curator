@@ -34,7 +34,7 @@ Applied via `@pytest.mark.component`, `@pytest.mark.integration`, or `pytestmark
 
 | Fixture | Scope | What It Sets Up |
 |---------|-------|-----------------|
-| `app_module` | function | Imports `app`, monkeypatches `BATCHES_DIR`, `COMFYUI_OUTPUT`, `STATE_FILE` to `tmp_path` subdirs. Resets `watcher.seen_files`. Sets `TESTING=True`. |
+| `app_module` | function | Imports `app`, monkeypatches `BATCHES_DIR`, `COMFYUI_OUTPUT`, `STATE_FILE` to `tmp_path` subdirs, and sets `TESTING=True`. |
 | `client` | function | Returns `app_module.app.test_client()` -- a Flask test client. |
 | `sample_image_names` | function | Shared list: `["img_b.png", "img_a.png", "preview.webp"]` |
 | `make_file` | function | Callable `_touch(path, content=b"x")` -- creates parent dirs, writes bytes. |
@@ -57,7 +57,7 @@ The `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tes
 | File | Subject Under Test | Key Patterns |
 |------|-------------------|--------------|
 | `tests/conftest.py` | Shared fixtures | `app_module`, `client`, `make_file`, `sample_image_names` |
-| `tests/unit/test_app_helpers.py` | `app.py` -- `load_state`, `save_state`, `create_batch`, `get_images`, compatibility wrappers for `_safe_path`, `_validate_ai_curate_request`, `ImageWatcher` | `app_module` fixture, `tmp_path`, app-level wrapper/monkeypatch seam coverage |
+| `tests/unit/test_app_helpers.py` | `app.py` -- `load_state`, `save_state`, `create_batch`, `get_images`, compatibility wrappers for `_safe_path`, `_validate_ai_curate_request` | `app_module` fixture, `tmp_path`, app-level wrapper/monkeypatch seam coverage |
 | `tests/unit/test_batch_store.py` | `image_curator.batch_store` -- all public functions, 9 `_validate_name` tests | `tmp_path`, `monkeypatch` on `shutil.move` and `Path.stat` |
 | `tests/unit/test_client.py` | `ai_curate.client` -- `VisionClient`, `build_score_payload`, `parse_score_response` | `unittest.mock.patch` on `urllib.request.urlopen`, MagicMock |
 | `tests/unit/test_config.py` | `ai_curate.config` -- all constants and defaults | `importlib.reload` for env-dependent values |
@@ -86,7 +86,7 @@ The `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tes
 | `tests/component/test_workflow_constraints.py` | AI workflow invariants: move-after-scoring, cancel-no-history, failed-never-move | `RunStorage` + `QueueManager` integration |
 | `tests/integration/test_ai_curate_api.py` | Full AI API: preview, submit, get, list, cancel, runs, path traversal | `client` fixture, worker thread patched |
 | `tests/integration/test_image_metadata_api.py` | `/api/image-metadata` route -- PNG metadata, non-PNG, missing files | `client` fixture, `PngInfo`-rich PNGs |
-| `tests/integration/test_import_all_pending.py` | `/api/import-all` -- moves files, resets watcher | `client` fixture, ComfyUI output dir |
+| `tests/integration/test_import_all_pending.py` | `/api/import-all` -- moves available files into the selected batch | `client` fixture, ComfyUI output dir |
 | `tests/integration/test_favorites_api.py` | Favorites API -- batch/universal toggles and image response favorite flag | `client` fixture, real temp files |
 | `tests/integration/test_publish_api.py` | Public publish API -- export, list, serve/thumbnail public images, copy/move/delete route contracts | `client` fixture, `PIL.Image` PNGs, monkeypatched export root |
 | `tests/integration/test_prompt_history_api.py` | Prompt-history API -- build/load/rebuild/staleness/missing cache | `client` fixture, `PngInfo`-rich PNGs |

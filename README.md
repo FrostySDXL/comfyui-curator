@@ -21,8 +21,8 @@ before manual selection. Single-user, local-first, filesystem-backed.
   folder, with batch Public and virtual All Public views for generated copies.
 - **Prompt history** -- manually build per-batch prompt indexes from PNG
   metadata, then search, copy, and inspect prompt groups from a header modal.
-- **Auto-import from ComfyUI** -- background watcher moves new outputs into
-  the active batch inbox. One-click manual import also available.
+- **Import from ComfyUI** -- one-click **Import All** moves available outputs
+  into the selected batch inbox.
 - **AI-assisted scoring (optional)** -- sends images to a local vision LLM
   to check for prompt elements and quality baselines. The AI sidebar includes a
   contextual image inspector plus Inspect / Score / Runs tabs. Scores are
@@ -80,7 +80,6 @@ Optional import source:
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `IMAGE_CURATOR_COMFYUI` | `~/image-curator/comfyui-outputs` | Folder to import images from when ComfyUI outputs outside your batch inboxes |
-| `IMAGE_CURATOR_ENABLE_WATCHER` | `false` | Automatically move new images from `IMAGE_CURATOR_COMFYUI` into the active batch inbox |
 
 Other settings:
 
@@ -108,9 +107,6 @@ See `.env.example` for the full commented reference.
    posting files. Originals remain in the review folders.
 6. Optionally run AI scoring against a local OpenAI-compatible vision model;
    scores are advisory.
-
-Set `IMAGE_CURATOR_ENABLE_WATCHER=true` only when you want new files in
-`IMAGE_CURATOR_COMFYUI` imported automatically into the active batch.
 
 ## Keyboard shortcuts
 
@@ -201,8 +197,8 @@ Native foundation routes use `/api/curator/*` and media uses
 moves (undo-compatible reverse calls), reject deletion, favorites
 (batch/universal toggles, All Favorites), and public publish/export, listing,
 destination browsing, copy/move/delete, prompt history, and AI scoring lifecycle
-are now native. Watcher control remains provided only by the standalone Flask
-application (`app.py`). Native AI runtime smoke verification remains pending.
+are now native. Import All provides the explicit output-import workflow in both
+native and standalone modes.
 
 ## Limitations
 

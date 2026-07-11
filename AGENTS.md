@@ -34,7 +34,6 @@ app.py (Flask routes) ← standalone, fully supported
   ├── image_curator/publish.py      ← public derivative creation/list/copy/move/delete
   ├── image_curator/prompt_history.py ← manual PNG prompt index cache
   ├── image_curator/web_validation.py ← route path/batch validation helpers
-  ├── image_curator/watcher.py      ← dependency-injected ComfyUI auto-import watcher
   ├── image_curator/media.py        ← thumbnail cache/generation helpers
   ├── ai_curate/config.py           ← env-backed constants, paths, caps
   ├── ai_curate/elements.py         ← prompt parsing + element extraction + quality checklists
@@ -59,7 +58,6 @@ ComfyUI native extension
   ├── image_curator/native_ai_routes.py ← aiohttp AI curation route adapter (/api/curator/ai-curate/*) using NativeAiLifecycle
   ├── web/comfyui/top_menu_extension.js ← action-bar button opening /curator
   └── templates/curator.html          ← native page template (derived from index.html)
-  (Watcher remains provided only by app.py — native Phase 6 pending)
 
 Frontend (shared static/js/*.js + static/css/*.css)
   ├── templates/index.html  ← standalone page (Flask, /static/ paths)
@@ -75,7 +73,7 @@ Frontend (shared static/js/*.js + static/css/*.css)
 
 | Category | Key Files / Folders | Role |
 |----------|---------------------|------|
-| **Entrypoints** | `app.py` | Flask API + web UI serving + AI worker threads + auto-import watcher |
+| **Entrypoints** | `app.py` | Flask API + web UI serving + AI worker threads |
 | | `curate.py` | CLI entrypoint for headless scoring (argparse, no queue) |
 | **Non-AI Backend** | `image_curator/batch_store.py` | Batch creation, folder layout, file moves, counts, import, state persistence |
 | | `image_curator/png_metadata.py` | ComfyUI/A1111 PNG text-chunk extraction (prompt, seed, sampler, CFG, LoRAs, etc.) |
@@ -83,7 +81,6 @@ Frontend (shared static/js/*.js + static/css/*.css)
 | | `image_curator/publish.py` | Metadata-stripped optional-watermark public copy creation, public listing, external copy/move/delete under configured export root |
 | | `image_curator/prompt_history.py` | Manual prompt-history cache builder from PNG metadata |
 | | `image_curator/web_validation.py` | Path traversal and existing-batch validation helpers used by app route wrappers |
-| | `image_curator/watcher.py` | Dependency-injected ComfyUI output watcher used by app-level `ImageWatcher` wrapper |
 | | `image_curator/media.py` | Thumbnail cache key/freshness helpers and WebP generation |
 | | `image_curator/README.md` | Module-scoped agent startup guide (layout, contracts, gotchas) |
 | **Native Extension** | `__init__.py` | ComfyUI custom-node entrypoint; exposes `NODE_CLASS_MAPPINGS`, `WEB_DIRECTORY`, `NODE_DISPLAY_NAME_MAPPINGS`; loads `CuratorManager` via importlib (tolerates missing `server` module for standalone compatibility) |
@@ -246,7 +243,6 @@ Treat these as stability-sensitive:
 - **`load_dotenv()` before imports:** `app.py` and `curate.py` call `load_dotenv()` before importing `ai_curate` modules so env vars are visible at module import time. The `E402` ruff rule is suppressed for these two files. Do not reorder imports.
 - **`--panel` flag is deprecated (curate.py):** Use `--prompt`. `--panel` still works but prints a warning. `--prompt` takes precedence if both are provided.
 - **AI worker threads are daemons:** They die with the process. Shutdown tries to join for 5 seconds, then exits.
-- **Auto-import watcher defaults to OFF:** Set `IMAGE_CURATOR_ENABLE_WATCHER=true` to enable polling from ComfyUI output.
 - **Frontend tests are Python source-scraping:** The `test_frontend_*.py` files regex-scan ordered split JS/CSS sources through `tests/unit/frontend_source.py` for function names and invariants. No headless browser or JS test framework. Browser-only changes need manual verification.
 - **Generated files (never edit):** `.thumbs/` (thumbnail cache), `.favorites.json`, `<batch>/prompt-history.json`, `<batch>/ai-curate/runs/` (run history), `<batch>/ai-curate/latest.json`, `__pycache__/`, `*.egg-info/`.
 - **Favorites one click updates both scopes:** `toggle_favorite()` writes batch and universal stores; universal view uses `__favorites__` as a frontend sentinel, never as a real batch.
@@ -256,7 +252,7 @@ Treat these as stability-sensitive:
 - **No CORS headers:** The app binds to `127.0.0.1` by default. For remote access, use a reverse proxy with auth (nginx, Caddy).
 - **Thumbnail cache key includes folder name:** `<folder>__<stem>.webp` format prevents same-filename collisions across inbox/shortlisted/finals/rejects.
 - **`ELEMENT_CAP` (12) truncation is silent:** `scoring.py` caps elements without logging a warning.
-- **Native extension scope:** Native settings, batch/image/thumbnail foundation routes, curation mutations, favorites, public workflow, prompt history, and AI scoring lifecycle are namespaced under `/api/curator/*` and `/curator/{thumb,image}/*`. Native AI uses a lifecycle-owned queue with bounded shutdown; real ComfyUI AI smoke verification remains pending. Watcher lifecycle remains standalone-only. See `COMFYUI_EXTENSION_PORT_SPEC.md`.
+- **Native extension scope:** Native settings, batch/image/thumbnail foundation routes, curation mutations, favorites, public workflow, prompt history, and AI scoring lifecycle are namespaced under `/api/curator/*` and `/curator/{thumb,image}/*`. Native AI uses a lifecycle-owned queue with bounded shutdown. See `COMFYUI_EXTENSION_PORT_SPEC.md`.
 - **Native public export root default:** `NativeCuratorSettings.from_host_paths()` resolves a ComfyUI-owned `public-exports` directory under the curator system user directory (`<system_dir>/public-exports`). The host path is never serialized into the browser payload; only `public_enabled` (bool) is sent.
 - **curator.html must stay synchronized with index.html:** The native template is derived from `index.html` by two transforms: `/static/` → `/curator_static/` and inserting `window.CURATOR_NATIVE = true` before the first `<script src="...">`. Any change to `index.html` must be mirrored in `curator.html`.
 - **Shared frontend mode detection:** `static/js/state.js` checks `window.CURATOR_NATIVE === true` to select API paths, thumb URLs, and image URLs. Do not remove or rename `CURATOR_NATIVE` without updating both templates and all URL helpers.

@@ -47,7 +47,6 @@ command. On PowerShell, the launch sequence is:
 $env:IMAGE_CURATOR_BATCHES="tmp\local-browser-fixture\batches"
 $env:IMAGE_CURATOR_COMFYUI="tmp\local-browser-fixture\comfyui-outputs"
 $env:IMAGE_CURATOR_STATE="tmp\local-browser-fixture\state.json"
-$env:IMAGE_CURATOR_ENABLE_WATCHER="false"
 $env:IMAGE_CURATOR_HOST="127.0.0.1"
 $env:IMAGE_CURATOR_PORT="5000"
 .venv\Scripts\python.exe app.py

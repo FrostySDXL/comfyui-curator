@@ -18,7 +18,6 @@ def test_native_settings_resolve_host_paths_without_exposing_private_values(tmp_
     assert settings.public_payload() == {
         "available_models": ["vision-a", "vision-b"],
         "default_model": "vision-a",
-        "watcher_enabled": False,
         "public_enabled": True,
     }
     assert not any(

@@ -17,7 +17,6 @@ class NativeCuratorSettings:
     state_file: Path
     available_models: tuple[str, ...] = ()
     default_model: str = ""
-    watcher_enabled: bool = False
     public_export_root: Path | None = None
 
     @classmethod
@@ -47,6 +46,5 @@ class NativeCuratorSettings:
         return {
             "available_models": list(self.available_models),
             "default_model": self.default_model,
-            "watcher_enabled": self.watcher_enabled,
             "public_enabled": self.public_export_root is not None,
         }

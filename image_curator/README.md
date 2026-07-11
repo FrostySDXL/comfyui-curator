@@ -1,8 +1,8 @@
 # image_curator -- Guidance
 
-**One-sentence purpose:** Shared non-AI backend support for batch filesystem operations, web validation, media cache helpers, watcher logic, and ComfyUI PNG generation metadata extraction.
+**One-sentence purpose:** Shared non-AI backend support for batch filesystem operations, web validation, media cache helpers, and ComfyUI PNG generation metadata extraction.
 
-**Role in the Project:** Called by `app.py` (Flask) and `curate.py` (CLI) for filesystem-bound operations (batch creation, file moves, counts, import, state persistence), PNG metadata inspection, non-AI web validation, thumbnail cache helpers, and the ComfyUI auto-import watcher. Contains no AI logic.
+**Role in the Project:** Called by `app.py` (Flask) and `curate.py` (CLI) for filesystem-bound operations (batch creation, file moves, counts, import, state persistence), PNG metadata inspection, non-AI web validation, and thumbnail cache helpers. Contains no AI logic.
 
 ## What This Module Does
 
@@ -12,7 +12,6 @@
 - **Public derivative workflow** (`publish.py`): Creates metadata-stripped optional-watermark copies under `<batch>/public/`, lists public images, and copy/move/delete generated public copies under a configured export root.
 - **Prompt history indexing** (`prompt_history.py`): Builds manual prompt indexes from PNG metadata, deduplicated by normalized prompt/negative prompt. Safety: rejects symlinked review stages and resolves-containment escapes during build/count; rejects symlinked and non-regular cache entries during load; aggregate loading silently omits batches with unsafe caches.
 - **Web validation** (`web_validation.py`): Path traversal guard and existing-batch validation helpers used by Flask route wrappers.
-- **Auto-import watcher** (`watcher.py`): Dependency-injected polling watcher for moving new ComfyUI outputs into the active batch inbox.
 - **Media cache helpers** (`media.py`): Thumbnail cache path/freshness checks and WebP thumbnail generation.
 - **Native ComfyUI foundation** (`native_settings.py`, `native_routes.py`): Host-owned path resolution plus namespaced aiohttp adapters for batch/image reads, state, import, metadata, media serving, moves, reject deletion, favorites, public workflows, and prompt-history build/load/staleness/aggregate operations.
 
@@ -30,7 +29,6 @@ app.py ──> batch_store (nearly all functions: create, list, move, counts, im
        ──> prompt_history (manual prompt index build/load routes)
        ──> web_validation (safe path and existing-batch route wrappers)
        ──> media (thumbnail cache/generation helpers)
-       ──> watcher.ImageWatcher (auto-import polling via app dependency wrapper)
 
 curate.py ──> batch_store.move_image (single-file moves in --move mode)
 
@@ -85,7 +83,6 @@ Written atomically via `.tmp` + `os.replace()`.
 | `publish.py` | `create_public_copies`, `list_batch_public`, `list_all_public`, `copy_public_items`, `move_public_items`, `delete_public_items`; strips metadata by re-saving with Pillow, applies text watermarks, and confines external destinations to `IMAGE_CURATOR_PUBLIC_EXPORTS`. |
 | `prompt_history.py` | `build_prompt_index`, `load_prompt_index`, `load_all_prompt_indices`; scans PNG metadata, strips LoRA tags with `png_metadata.LORA_RE`, hashes normalized prompt pairs, and writes `prompt-history.json` atomically. |
 | `web_validation.py` | `safe_path(base, *parts)` blocks traversal/absolute path escape; `require_existing_batch()` validates app-provided batch lists while preserving Flask route response shape. |
-| `watcher.py` | Dependency-injected `ImageWatcher` with start/stop/reset, file-size stability wait, seen-file diff/rescan behavior, and app-level wrapper compatibility in `app.py`. |
 | `media.py` | `thumbnail_cache_path()`, `thumbnail_is_fresh()`, and `generate_thumbnail()` for WebP thumbnail cache semantics. |
 | `native_settings.py` | Resolves native batch/import/state paths from injected ComfyUI `folder_paths` callables and exposes only non-secret model/UI settings. |
 | `native_routes.py` | Registers the native settings, batch/state/import, image-list, metadata, thumbnail, original-image, move, delete-rejects, favorites, public, and prompt-history aiohttp contracts while reusing this package's filesystem helpers. |
@@ -95,7 +92,6 @@ Written atomically via `.tmp` + `os.replace()`.
 
 - For filesystem work (batch creation, moves, imports, counts): read `batch_store.py`.
 - For route path or existing-batch validation: read `web_validation.py` and the app-level wrappers in `app.py`.
-- For auto-import watcher behavior: read `watcher.py` and the app-level `ImageWatcher` wrapper in `app.py`.
 - For thumbnail cache/generation behavior: read `media.py` and the `serve_thumbnail` route in `app.py`.
 - For PNG metadata work (parameter extraction, LoRA parsing): read `png_metadata.py`.
 - `batch_store.get_images()` gracefully handles files deleted between `iterdir()` and `stat()` (catches `FileNotFoundError`/`OSError`).

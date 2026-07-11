@@ -84,4 +84,3 @@ def test_env_lines_are_shell_specific_and_use_fixture_paths(tmp_path):
     assert '$env:IMAGE_CURATOR_PORT="5123"' in powershell_lines
     assert "set IMAGE_CURATOR_BATCHES=" in cmd_lines[0]
     assert str(result.comfyui_dir) in "\n".join(cmd_lines)
-    assert "set IMAGE_CURATOR_ENABLE_WATCHER=false" in cmd_lines
