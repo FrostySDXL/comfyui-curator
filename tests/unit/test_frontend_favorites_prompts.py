@@ -37,6 +37,18 @@ def test_public_frontend_functions_and_virtual_batch_handling_exist():
     assert "/api/public" in source
 
 
+def test_native_mode_skips_unsupported_all_public_count_request():
+    source = read_frontend_js()
+    function_source = source.split("async function updateAllPublicCount() {", 1)[1].split(
+        "function normalizePublicItems", 1
+    )[0]
+
+    assert "if (CURATOR_NATIVE)" in function_source
+    assert function_source.index("if (CURATOR_NATIVE)") < function_source.index(
+        "apiGetAllPublic()"
+    )
+
+
 def test_prompt_history_frontend_functions_exist():
     source = read_frontend_js()
     for name in (
