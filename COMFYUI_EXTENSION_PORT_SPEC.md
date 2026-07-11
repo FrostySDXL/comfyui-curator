@@ -1374,18 +1374,23 @@ Verification:
 
 ### Phase 4: Move/favorites/publish/prompt history
 
+Status: Move, favorites, public, and prompt history routes are implemented with automated
+tests (2026-07-11). Prompt-history safety tests cover symlink rejection, resolved containment
+escapes, non-regular cache entries, and no-mutation rejection paths. Manual curation-flow
+verification inside ComfyUI has not been performed and remains explicitly pending.
+
 Deliverables:
 
-- move routes.
-- delete rejects.
-- favorites routes.
-- public publish/export routes.
-- prompt history routes.
+- move routes. **[done]**
+- delete rejects. **[done]**
+- favorites routes. **[done]**
+- public publish/export routes. **[done]**
+- prompt history routes. **[done]**
 
 Verification:
 
 - existing Flask/API tests adapted to aiohttp route tests where possible.
-- manual curation flow works inside ComfyUI.
+- manual curation flow works inside ComfyUI. **[pending manual runtime verification]**
 
 ### Phase 5: AI scoring
 

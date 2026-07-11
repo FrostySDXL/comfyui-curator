@@ -2812,3 +2812,597 @@ def test_native_public_browser_path_symlink_component_rejected_real_symlink(tmp_
         assert "symlink" in str(payload).lower()
 
     asyncio.run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Native prompt-history routes
+# ---------------------------------------------------------------------------
+
+
+def _write_png_test(path, parameters):
+    from PIL import Image
+    from PIL.PngImagePlugin import PngInfo
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    png_info = PngInfo()
+    png_info.add_text("parameters", parameters)
+    Image.new("RGB", (1, 1), color="blue").save(path, pnginfo=png_info)
+
+
+def test_native_build_prompt_index_succeeds(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        _write_png_test(
+            settings.batch_root / "alpha" / "inbox" / "one.png",
+            "cat\nSteps: 1",
+        )
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/prompt-history/{batch}/build",
+            match_info={"batch": "alpha"},
+        )
+        assert status == 200
+        assert payload["batch"] == "alpha"
+        assert payload["prompt_count"] == 1
+        assert payload["image_count"] == 1
+        assert "built_at" in payload
+        assert len(payload["prompts"]) == 1
+
+    asyncio.run(scenario())
+
+
+def test_native_build_prompt_index_nonexistent_batch(tmp_path, monkeypatch):
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/prompt-history/{batch}/build",
+            match_info={"batch": "nope"},
+        )
+        assert status == 404
+        assert "does not exist" in payload["error"].lower()
+
+    asyncio.run(scenario())
+
+
+def test_native_get_prompt_index_returns_cached(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        _write_png_test(
+            settings.batch_root / "alpha" / "inbox" / "one.png",
+            "cat\nSteps: 1",
+        )
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        # Build first
+        built = (
+            await _invoke(
+                router,
+                "POST",
+                "/api/curator/prompt-history/{batch}/build",
+                match_info={"batch": "alpha"},
+            )
+        )[1]
+
+        # Get and compare
+        status, payload = await _invoke(
+            router,
+            "GET",
+            "/api/curator/prompt-history/{batch}",
+            match_info={"batch": "alpha"},
+        )
+        assert status == 200
+        assert payload == built
+
+    asyncio.run(scenario())
+
+
+def test_native_get_prompt_index_not_built_returns_404(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "GET",
+            "/api/curator/prompt-history/{batch}",
+            match_info={"batch": "alpha"},
+        )
+        assert status == 404
+        assert "not built" in payload["error"].lower()
+
+    asyncio.run(scenario())
+
+
+def test_native_get_prompt_index_nonexistent_batch(tmp_path, monkeypatch):
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "GET",
+            "/api/curator/prompt-history/{batch}",
+            match_info={"batch": "nope"},
+        )
+        assert status == 404
+        assert "does not exist" in payload["error"].lower()
+
+    asyncio.run(scenario())
+
+
+def test_native_get_prompt_index_stale_check(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        _write_png_test(
+            settings.batch_root / "alpha" / "inbox" / "one.png",
+            "cat\nSteps: 1",
+        )
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        # Build index
+        await _invoke(
+            router,
+            "POST",
+            "/api/curator/prompt-history/{batch}/build",
+            match_info={"batch": "alpha"},
+        )
+
+        # Check stale = false when counts match
+        status, payload = await _invoke(
+            router,
+            "GET",
+            "/api/curator/prompt-history/{batch}",
+            match_info={"batch": "alpha"},
+            query={"check_stale": "true"},
+        )
+        assert status == 200
+        assert payload["stale"] is False
+        assert payload["current_image_count"] == 1
+
+        # Add a new image to make stale
+        _write_png_test(
+            settings.batch_root / "alpha" / "finals" / "two.png",
+            "dog\nSteps: 1",
+        )
+        status, payload = await _invoke(
+            router,
+            "GET",
+            "/api/curator/prompt-history/{batch}",
+            match_info={"batch": "alpha"},
+            query={"check_stale": "true"},
+        )
+        assert status == 200
+        assert payload["stale"] is True
+        assert payload["current_image_count"] == 2
+
+    asyncio.run(scenario())
+
+
+def test_native_get_all_prompt_indices_aggregates(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        batch_store.create_batch(settings.batch_root, "beta")
+        _write_png_test(
+            settings.batch_root / "alpha" / "inbox" / "one.png",
+            "cat\nSteps: 1",
+        )
+        _write_png_test(
+            settings.batch_root / "beta" / "inbox" / "two.png",
+            "dog\nSteps: 1",
+        )
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        await _invoke(
+            router,
+            "POST",
+            "/api/curator/prompt-history/{batch}/build",
+            match_info={"batch": "alpha"},
+        )
+        await _invoke(
+            router,
+            "POST",
+            "/api/curator/prompt-history/{batch}/build",
+            match_info={"batch": "beta"},
+        )
+
+        status, payload = await _invoke(
+            router,
+            "GET",
+            "/api/curator/prompt-history",
+        )
+        assert status == 200
+        assert sorted(payload["batches"].keys()) == ["alpha", "beta"]
+        assert payload["total_prompts"] == 2
+
+    asyncio.run(scenario())
+
+
+def test_native_prompt_history_virtual_sentinels_rejected(tmp_path, monkeypatch):
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        for sentinel in ("__favorites__", "__public__"):
+            status, payload = await _invoke(
+                router,
+                "POST",
+                "/api/curator/prompt-history/{batch}/build",
+                match_info={"batch": sentinel},
+            )
+            assert status == 404, f"sentinel {sentinel} should be 404, got {status}"
+            assert "does not exist" in payload["error"].lower()
+
+            status, payload = await _invoke(
+                router,
+                "GET",
+                "/api/curator/prompt-history/{batch}",
+                match_info={"batch": sentinel},
+            )
+            assert status == 404, f"sentinel {sentinel} GET should be 404, got {status}"
+
+    asyncio.run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Native prompt-history safety: symlink / containment escape rejection
+# ---------------------------------------------------------------------------
+
+
+def test_native_build_prompt_index_rejects_symlinked_stage_no_cache(tmp_path, monkeypatch):
+    """POST build must not create prompt-history.json when a review stage is a symlink."""
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        inbox = settings.batch_root / "alpha" / "inbox"
+        inbox.rmdir()
+        outside = tmp_path / "outside-native-build"
+        outside.mkdir()
+        _write_png_test(outside / "escaped.png", "secret\nSteps: 1")
+        _symlink_directory_or_skip(inbox, outside)
+
+        # Also put a valid image in a safe stage
+        _write_png_test(
+            settings.batch_root / "alpha" / "shortlisted" / "valid.png",
+            "safe prompt\nSteps: 1",
+        )
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/prompt-history/{batch}/build",
+            match_info={"batch": "alpha"},
+        )
+        assert status == 400
+        assert payload == {"error": "Unsafe prompt history path"}
+        assert not (settings.batch_root / "alpha" / "prompt-history.json").exists()
+
+    asyncio.run(scenario())
+
+
+def test_native_build_prompt_index_rejects_resolved_escape_stage_no_cache(tmp_path, monkeypatch):
+    """POST build must not surface external content when a stage resolves outside the batch root."""
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        inbox = settings.batch_root / "alpha" / "inbox"
+        outside = tmp_path / "outside-native-resolve"
+        outside.mkdir()
+        _write_png_test(outside / "escaped.png", "secret\nSteps: 1")
+        real_resolve = Path.resolve
+
+        def resolve(path, *args, **kwargs):
+            if path == inbox:
+                return outside
+            return real_resolve(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "resolve", resolve)
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/prompt-history/{batch}/build",
+            match_info={"batch": "alpha"},
+        )
+        assert status == 400
+        assert payload == {"error": "Unsafe prompt history path"}
+        cache_file = settings.batch_root / "alpha" / "prompt-history.json"
+        assert not cache_file.exists()
+
+    asyncio.run(scenario())
+
+
+def test_native_stale_check_rejects_unsafe_stage(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        _write_png_test(settings.batch_root / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+        assert (
+            await _invoke(
+                router,
+                "POST",
+                "/api/curator/prompt-history/{batch}/build",
+                match_info={"batch": "alpha"},
+            )
+        )[0] == 200
+        inbox = settings.batch_root / "alpha" / "inbox"
+        outside = tmp_path / "outside-stale"
+        outside.mkdir()
+        real_resolve = Path.resolve
+
+        def resolve(path, *args, **kwargs):
+            if path == inbox:
+                return outside
+            return real_resolve(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "resolve", resolve)
+        status, payload = await _invoke(
+            router,
+            "GET",
+            "/api/curator/prompt-history/{batch}",
+            match_info={"batch": "alpha"},
+            query={"check_stale": "true"},
+        )
+        assert status == 400
+        assert payload == {"error": "Unsafe prompt history path"}
+
+    asyncio.run(scenario())
+
+
+def test_native_get_prompt_index_rejects_symlinked_cache(tmp_path, monkeypatch):
+    """GET must return 404 when the cache file is a symlink."""
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        cache_path = settings.batch_root / "alpha" / "prompt-history.json"
+        outside = tmp_path / "outside-load"
+        outside.mkdir()
+        outside_cache = outside / "fake.json"
+
+        outside_cache.write_text(
+            '{"batch": "alpha", "image_count": 999, "prompt_count": 1, "prompts": []}',
+            encoding="utf-8",
+        )
+        try:
+            cache_path.symlink_to(outside_cache)
+        except (NotImplementedError, OSError) as exc:
+            pytest.skip(f"file symlink unavailable on this platform: {exc}")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "GET",
+            "/api/curator/prompt-history/{batch}",
+            match_info={"batch": "alpha"},
+        )
+        assert status == 404, f"expected 404 for symlinked cache, got {status}"
+        assert "not built" in payload["error"].lower()
+
+    asyncio.run(scenario())
+
+
+def test_native_get_prompt_index_rejects_non_regular_cache(tmp_path, monkeypatch):
+    """GET must return 404 when the cache path is a directory instead of a regular file."""
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        # Create a directory where the cache file should be
+        cache_path = settings.batch_root / "alpha" / "prompt-history.json"
+        cache_path.mkdir()
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "GET",
+            "/api/curator/prompt-history/{batch}",
+            match_info={"batch": "alpha"},
+        )
+        assert status == 404, f"expected 404 for non-regular cache, got {status}"
+        assert "not built" in payload["error"].lower()
+
+    asyncio.run(scenario())
+
+
+def test_native_get_all_prompt_indices_skips_unsafe_caches(tmp_path, monkeypatch):
+    """Aggregate must omit batches whose caches are unsafe while returning safe ones."""
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        batch_store.create_batch(settings.batch_root, "beta")
+        _write_png_test(
+            settings.batch_root / "alpha" / "inbox" / "one.png",
+            "cat\nSteps: 1",
+        )
+        _write_png_test(
+            settings.batch_root / "beta" / "inbox" / "two.png",
+            "dog\nSteps: 1",
+        )
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        # Build both indices
+        await _invoke(
+            router,
+            "POST",
+            "/api/curator/prompt-history/{batch}/build",
+            match_info={"batch": "alpha"},
+        )
+        await _invoke(
+            router,
+            "POST",
+            "/api/curator/prompt-history/{batch}/build",
+            match_info={"batch": "beta"},
+        )
+
+        # Make beta's cache a symlink (unsafe)
+        beta_cache = settings.batch_root / "beta" / "prompt-history.json"
+        outside = tmp_path / "outside-aggregate"
+        outside.mkdir()
+        fake_cache = outside / "fake.json"
+        fake_cache.write_text(
+            '{"batch": "beta", "image_count": 9999, "prompt_count": 99, "prompts": []}',
+            encoding="utf-8",
+        )
+        try:
+            beta_cache.symlink_to(fake_cache)
+        except (NotImplementedError, OSError) as exc:
+            pytest.skip(f"file symlink unavailable on this platform: {exc}")
+
+        status, payload = await _invoke(
+            router,
+            "GET",
+            "/api/curator/prompt-history",
+        )
+        assert status == 200
+        assert "alpha" in payload["batches"], "safe batch alpha must be present"
+        assert "beta" not in payload["batches"], "batch with symlinked cache must be omitted"
+        assert payload["total_prompts"] == 1
+
+    asyncio.run(scenario())

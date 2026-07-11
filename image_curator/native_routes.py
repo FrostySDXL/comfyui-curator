@@ -7,7 +7,7 @@ from typing import Any
 
 from aiohttp import web
 
-from image_curator import batch_store, publish
+from image_curator import batch_store, prompt_history, publish
 from image_curator.favorites import (
     get_batch_favorite_filenames,
     resolve_universal_favorites,
@@ -679,3 +679,48 @@ def register_native_routes(app, service: NativeCuratorService) -> None:
     app.router.add_post("/api/curator/public/copy", copy_public)
     app.router.add_post("/api/curator/public/move", move_public)
     app.router.add_post("/api/curator/public/delete", delete_public)
+
+    # -----------------------------------------------------------------------
+    # Prompt history routes
+    # -----------------------------------------------------------------------
+
+    async def build_prompt_index(request):
+        batch = request.match_info["batch"]
+        if not service.batch_exists(batch):
+            return web.json_response({"error": "Batch does not exist"}, status=404)
+        try:
+            return web.json_response(
+                prompt_history.build_prompt_index(service.settings.batch_root, batch)
+            )
+        except ValueError:
+            return web.json_response({"error": "Unsafe prompt history path"}, status=400)
+        except Exception:
+            return web.json_response({"error": "Prompt history build failed"}, status=500)
+
+    async def get_prompt_index(request):
+        batch = request.match_info["batch"]
+        if not service.batch_exists(batch):
+            return web.json_response({"error": "Batch does not exist"}, status=404)
+        index = prompt_history.load_prompt_index(service.settings.batch_root, batch)
+        if index is None:
+            return web.json_response({"error": "prompt history not built"}, status=404)
+        if request.query.get("check_stale", "").lower() == "true":
+            try:
+                current_count = prompt_history.count_prompt_index_images(
+                    service.settings.batch_root, batch
+                )
+            except ValueError:
+                return web.json_response({"error": "Unsafe prompt history path"}, status=400)
+            index = dict(index)
+            index["stale"] = current_count != index.get("image_count")
+            index["current_image_count"] = current_count
+        return web.json_response(index)
+
+    async def get_all_prompt_indices(_request):
+        return web.json_response(
+            prompt_history.load_all_prompt_indices(service.settings.batch_root)
+        )
+
+    app.router.add_post("/api/curator/prompt-history/{batch}/build", build_prompt_index)
+    app.router.add_get("/api/curator/prompt-history/{batch}", get_prompt_index)
+    app.router.add_get("/api/curator/prompt-history", get_all_prompt_indices)
