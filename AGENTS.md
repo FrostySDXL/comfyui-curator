@@ -54,10 +54,10 @@ ComfyUI native extension
   ├── __init__.py                     ← ComfyUI custom-node entrypoint, WEB_DIRECTORY
   ├── py/curator_manager.py           ← registers native page, static mount, health, and foundation routes
   ├── image_curator/native_settings.py ← ComfyUI-owned native path/default resolution
-  ├── image_curator/native_routes.py  ← aiohttp batch/image/move/delete foundation adapter
+  ├── image_curator/native_routes.py  ← aiohttp batch/image/move/delete/favorites foundation adapter
   ├── web/comfyui/top_menu_extension.js ← action-bar button opening /curator
   └── templates/curator.html          ← native page template (derived from index.html)
-  (Favorites/publish/prompt-history/watcher/AI routes remain owned by app.py)
+  (Publish/prompt-history/watcher/AI routes remain owned by app.py)
 
 Frontend (shared static/js/*.js + static/css/*.css)
   ├── templates/index.html  ← standalone page (Flask, /static/ paths)
@@ -86,7 +86,7 @@ Frontend (shared static/js/*.js + static/css/*.css)
 | | `image_curator/README.md` | Module-scoped agent startup guide (layout, contracts, gotchas) |
 | **Native Extension** | `__init__.py` | ComfyUI custom-node entrypoint; exposes `NODE_CLASS_MAPPINGS`, `WEB_DIRECTORY`, `NODE_DISPLAY_NAME_MAPPINGS`; loads `CuratorManager` via importlib (tolerates missing `server` module for standalone compatibility) |
 | | `py/curator_manager.py` | Registers `/curator`, `/curator_static`, health, and native foundation routes on `PromptServer`; idempotent `_registered` guard |
-| | `image_curator/native_settings.py`, `image_curator/native_routes.py` | Resolve ComfyUI-owned paths and provide namespaced settings, batch/state/import, image, metadata, thumbnail, original, single-image move, multi-image move, and delete-rejects routes without Flask lifecycle imports |
+| | `image_curator/native_settings.py`, `image_curator/native_routes.py` | Resolve ComfyUI-owned paths and provide namespaced settings, batch/state/import, image, metadata, thumbnail, original, single-image move, multi-image move, delete-rejects, and favorites routes without Flask lifecycle imports |
 | | `web/comfyui/top_menu_extension.js` | ComfyUI action-bar button that opens `/curator` in a new tab |
 | | `templates/curator.html` | Native page template derived from `index.html`; `/curator_static/` paths, `window.CURATOR_NATIVE = true`; must stay synchronized with `index.html` |
 | **AI Backend** | `ai_curate/config.py` | Env-backed constants: `BATCHES_DIR`, `COMFYUI_OUTPUT`, `DEFAULT_BASE_URL`, `DEFAULT_TOP_N` (15), `TOP_N_CAP` (100), `ELEMENT_CAP` (12) |
@@ -252,7 +252,7 @@ Treat these as stability-sensitive:
 - **No CORS headers:** The app binds to `127.0.0.1` by default. For remote access, use a reverse proxy with auth (nginx, Caddy).
 - **Thumbnail cache key includes folder name:** `<folder>__<stem>.webp` format prevents same-filename collisions across inbox/shortlisted/finals/rejects.
 - **`ELEMENT_CAP` (12) truncation is silent:** `scoring.py` caps elements without logging a warning.
-- **Native extension scope:** Native settings and batch/image/thumbnail foundation routes plus single-image moves, multi-image moves, and reject deletion are namespaced under `/api/curator/*` and `/curator/{thumb,image}/*`. Favorites, publish, prompt history, watcher, and AI lifecycle remain standalone-only. See `COMFYUI_EXTENSION_PORT_SPEC.md`.
+- **Native extension scope:** Native settings and batch/image/thumbnail foundation routes plus single-image moves, multi-image moves, reject deletion, and favorites (batch/universal toggles, All Favorites) are namespaced under `/api/curator/*` and `/curator/{thumb,image}/*`. Publish, prompt history, watcher, and AI lifecycle remain standalone-only. See `COMFYUI_EXTENSION_PORT_SPEC.md`.
 - **curator.html must stay synchronized with index.html:** The native template is derived from `index.html` by two transforms: `/static/` → `/curator_static/` and inserting `window.CURATOR_NATIVE = true` before the first `<script src="...">`. Any change to `index.html` must be mirrored in `curator.html`.
 - **Shared frontend mode detection:** `static/js/state.js` checks `window.CURATOR_NATIVE === true` to select API paths, thumb URLs, and image URLs. Do not remove or rename `CURATOR_NATIVE` without updating both templates and all URL helpers.
 

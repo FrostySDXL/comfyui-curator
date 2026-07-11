@@ -112,3 +112,141 @@ def test_universal_storage_shape_is_images_array(tmp_path):
     data = json.loads((tmp_path / ".favorites.json").read_text(encoding="utf-8"))
 
     assert data == {"images": [{"batch": "alpha", "filename": "one.png", "added_at": "now"}]}
+
+
+def test_resolve_universal_favorites_skips_symlinked_file(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    make_batch(tmp_path)
+    file_path = tmp_path / "alpha" / "inbox" / "one.png"
+    file_path.write_bytes(b"data")
+    save_favorites(tmp_path, [{"batch": "alpha", "filename": "one.png", "added_at": "now"}])
+
+    real_is_symlink = Path.is_symlink
+
+    def is_symlink(path, *args, **kwargs):
+        if path == file_path:
+            return True
+        return real_is_symlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "is_symlink", is_symlink)
+
+    assert resolve_universal_favorites(tmp_path) == []
+
+
+def test_resolve_universal_favorites_skips_symlinked_stage(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    make_batch(tmp_path)
+    file_path = tmp_path / "alpha" / "inbox" / "one.png"
+    file_path.write_bytes(b"data")
+    save_favorites(tmp_path, [{"batch": "alpha", "filename": "one.png", "added_at": "now"}])
+
+    real_is_symlink = Path.is_symlink
+
+    def is_symlink(path, *args, **kwargs):
+        if path == tmp_path / "alpha" / "inbox":
+            return True
+        return real_is_symlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "is_symlink", is_symlink)
+
+    assert resolve_universal_favorites(tmp_path) == []
+
+
+def test_resolve_universal_favorites_skips_unsupported_extension(tmp_path):
+    make_batch(tmp_path)
+    (tmp_path / "alpha" / "inbox" / "notes.txt").write_text("text", encoding="utf-8")
+    save_favorites(tmp_path, [{"batch": "alpha", "filename": "notes.txt", "added_at": "now"}])
+
+    assert resolve_universal_favorites(tmp_path) == []
+
+
+def test_resolve_universal_favorites_skips_non_regular_file(tmp_path):
+    make_batch(tmp_path)
+    (tmp_path / "alpha" / "inbox" / "subdir").mkdir()
+    save_favorites(tmp_path, [{"batch": "alpha", "filename": "subdir", "added_at": "now"}])
+
+    assert resolve_universal_favorites(tmp_path) == []
+
+
+def test_resolve_universal_favorites_skips_resolved_escape(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    make_batch(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "escaped.png").write_bytes(b"escaped")
+    file_path = tmp_path / "alpha" / "inbox" / "escaped.png"
+    file_path.write_bytes(b"data")
+    save_favorites(tmp_path, [{"batch": "alpha", "filename": "escaped.png", "added_at": "now"}])
+
+    real_resolve = Path.resolve
+
+    def resolve(path, *args, **kwargs):
+        if path == file_path:
+            return outside / "escaped.png"
+        return real_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", resolve)
+
+    assert resolve_universal_favorites(tmp_path) == []
+
+
+def test_load_favorites_rejects_symlinked_universal_store(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    store = tmp_path / ".favorites.json"
+    store.write_text(
+        '{"images": [{"batch": "a", "filename": "x.png", "added_at": "t"}]}', encoding="utf-8"
+    )
+
+    real_is_symlink = Path.is_symlink
+
+    def is_symlink(path, *args, **kwargs):
+        if path == store:
+            return True
+        return real_is_symlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "is_symlink", is_symlink)
+
+    assert load_favorites(tmp_path) == []
+
+
+def test_load_favorites_rejects_symlinked_batch_store(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    make_batch(tmp_path)
+    store = tmp_path / "alpha" / ".favorites.json"
+    store.write_text('{"images": ["one.png"]}', encoding="utf-8")
+
+    real_is_symlink = Path.is_symlink
+
+    def is_symlink(path, *args, **kwargs):
+        if path == store:
+            return True
+        return real_is_symlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "is_symlink", is_symlink)
+
+    assert load_favorites(tmp_path, "alpha") == []
+
+
+def test_find_file_folder_oserror_on_symlink_returns_none(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    make_batch(tmp_path)
+    (tmp_path / "alpha" / "inbox" / "one.png").write_bytes(b"data")
+
+    real_is_symlink = Path.is_symlink
+
+    def is_symlink(path, *args, **kwargs):
+        if path == tmp_path / "alpha" / "inbox":
+            raise OSError("unreachable")
+        return real_is_symlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "is_symlink", is_symlink)
+
+    from image_curator.favorites import _find_file_folder
+
+    assert _find_file_folder(tmp_path, "alpha", "one.png") is None

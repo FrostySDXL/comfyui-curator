@@ -7,7 +7,11 @@ from typing import Any
 from aiohttp import web
 
 from image_curator import batch_store, publish
-from image_curator.favorites import get_batch_favorite_filenames
+from image_curator.favorites import (
+    get_batch_favorite_filenames,
+    resolve_universal_favorites,
+    toggle_favorite,
+)
 from image_curator.media import generate_thumbnail, thumbnail_cache_path, thumbnail_is_fresh
 from image_curator.native_settings import NativeCuratorSettings
 from image_curator.png_metadata import extract_png_metadata
@@ -112,6 +116,37 @@ class NativeCuratorService:
             "batch_meta": {batch: batch_store.get_batch_metadata(root, batch) for batch in batches},
             "pending_count": batch_store.get_pending_count(self.settings.import_source),
         }
+
+    def resolve_favorite_image(self, batch: str, filename: str):
+        """Safely locate an image across review folders for favorite toggling.
+
+        Returns (folder_name, None) when a regular, supported, contained image
+        is found.  Returns (None, error_response) with 400 for invalid names /
+        extensions / symlinks / directory escapes and 404 when the filename has
+        a valid shape but no matching safe image exists.
+        """
+        if not self.batch_exists(batch):
+            return None, web.json_response({"error": "Batch does not exist"}, status=404)
+        if not isinstance(filename, str) or not filename.strip():
+            return None, web.json_response({"error": "Invalid path"}, status=400)
+        if filename.startswith(".") or "\\" in filename or "/" in filename:
+            return None, web.json_response({"error": "Invalid path"}, status=400)
+        if not filename.lower().endswith(tuple(batch_store.IMAGE_EXTENSIONS)):
+            return None, web.json_response({"error": "Invalid file type"}, status=400)
+        for folder in batch_store.BATCH_FOLDERS:
+            try:
+                directory = self.resolve_content_directory(batch, folder)
+            except ValueError:
+                continue
+            candidate = directory / filename
+            try:
+                if candidate.is_symlink() or not candidate.is_file():
+                    continue
+                candidate.resolve().relative_to(directory)
+            except (OSError, ValueError):
+                continue
+            return folder, None
+        return None, web.json_response({"error": "File not found"}, status=404)
 
 
 async def _json_body(request) -> dict[str, Any]:
@@ -433,3 +468,60 @@ def register_native_routes(app, service: NativeCuratorService) -> None:
     app.router.add_post("/api/curator/move", move_single)
     app.router.add_post("/api/curator/move-batch", move_batch)
     app.router.add_post("/api/curator/delete-rejects/{batch}", delete_rejects)
+
+    async def get_batch_favorites(request):
+        batch = request.match_info["batch"]
+        if batch == "__favorites__":
+            return web.json_response({"error": "Batch does not exist"}, status=404)
+        if not service.batch_exists(batch):
+            return web.json_response({"error": "Batch does not exist"}, status=404)
+        return web.json_response(
+            {"filenames": sorted(get_batch_favorite_filenames(service.settings.batch_root, batch))}
+        )
+
+    async def post_batch_favorite(request):
+        batch = request.match_info["batch"]
+        if batch == "__favorites__":
+            return web.json_response({"error": "Batch does not exist"}, status=404)
+        data = await _json_body(request)
+        filename = _string_field(data, "filename")
+        if filename is None or not filename.strip():
+            return web.json_response({"error": "filename required"}, status=400)
+        _folder, error = service.resolve_favorite_image(batch, filename)
+        if error is not None:
+            return error
+        try:
+            result = toggle_favorite(service.settings.batch_root, batch, filename)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        return web.json_response(result)
+
+    app.router.add_get("/api/curator/favorites/{batch}", get_batch_favorites)
+    app.router.add_post("/api/curator/favorites/{batch}", post_batch_favorite)
+
+    async def get_universal_favorites(_request):
+        return web.json_response(
+            {"favorites": resolve_universal_favorites(service.settings.batch_root)}
+        )
+
+    async def post_universal_favorite(request):
+        data = await _json_body(request)
+        batch = _string_field(data, "batch")
+        filename = _string_field(data, "filename")
+        if batch is None or not batch.strip():
+            return web.json_response({"error": "batch required"}, status=400)
+        if batch == "__favorites__":
+            return web.json_response({"error": "Batch does not exist"}, status=400)
+        if filename is None or not filename.strip():
+            return web.json_response({"error": "filename required"}, status=400)
+        _folder, error = service.resolve_favorite_image(batch, filename)
+        if error is not None:
+            return error
+        try:
+            result = toggle_favorite(service.settings.batch_root, batch, filename)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        return web.json_response(result)
+
+    app.router.add_get("/api/curator/favorites", get_universal_favorites)
+    app.router.add_post("/api/curator/favorites", post_universal_favorite)

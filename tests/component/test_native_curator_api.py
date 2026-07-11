@@ -1156,6 +1156,347 @@ def test_native_delete_rejects_removes_files_and_thumbnail_cache(tmp_path, monke
     asyncio.run(scenario())
 
 
+def test_native_get_batch_favorites_returns_sorted_filenames(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        inbox = settings.batch_root / "alpha" / "inbox"
+        inbox.mkdir(parents=True, exist_ok=True)
+        (inbox / "b.png").write_bytes(b"bb")
+        (inbox / "a.jpg").write_bytes(b"a")
+        # Pre-populate batch favorites via shared helper
+        from image_curator.favorites import save_favorites
+
+        save_favorites(settings.batch_root, ["b.png", "a.jpg"], "alpha")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "GET",
+            "/api/curator/favorites/{batch}",
+            match_info={"batch": "alpha"},
+        )
+        assert status == 200
+        assert payload == {"filenames": ["a.jpg", "b.png"]}
+
+    asyncio.run(scenario())
+
+
+def test_native_post_batch_favorite_toggles_both_scopes(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        inbox = settings.batch_root / "alpha" / "inbox"
+        inbox.mkdir(parents=True, exist_ok=True)
+        (inbox / "one.png").write_bytes(b"xx")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        # Toggle ON
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/favorites/{batch}",
+            {"filename": "one.png"},
+            match_info={"batch": "alpha"},
+        )
+        assert status == 200
+        assert payload == {"batch": True, "universal": True}
+
+        # Verify batch favorites list reflects the toggle
+        status, get_payload = await _invoke(
+            router,
+            "GET",
+            "/api/curator/favorites/{batch}",
+            match_info={"batch": "alpha"},
+        )
+        assert get_payload == {"filenames": ["one.png"]}
+
+        # Toggle OFF
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/favorites/{batch}",
+            {"filename": "one.png"},
+            match_info={"batch": "alpha"},
+        )
+        assert status == 200
+        assert payload == {"batch": False, "universal": False}
+
+        # Verify batch favorites list is empty
+        status, get_payload = await _invoke(
+            router,
+            "GET",
+            "/api/curator/favorites/{batch}",
+            match_info={"batch": "alpha"},
+        )
+        assert get_payload == {"filenames": []}
+
+    asyncio.run(scenario())
+
+
+def test_native_get_universal_favorites_resolves_existing_files(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        (settings.batch_root / "alpha" / "shortlisted" / "one.png").write_bytes(b"data")
+        (settings.batch_root / "alpha" / "finals" / "two.jpg").write_bytes(b"12345")
+        # Write universal favorites via toggles, which populates addedAt fields
+        from image_curator.favorites import toggle_favorite as tf
+
+        tf(settings.batch_root, "alpha", "one.png")
+        tf(settings.batch_root, "alpha", "two.jpg")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(router, "GET", "/api/curator/favorites")
+        assert status == 200
+        favs = payload["favorites"]
+        assert len(favs) == 2
+        by_filename = {f["filename"]: f for f in favs}
+        assert by_filename["one.png"]["batch"] == "alpha"
+        assert by_filename["one.png"]["folder"] == "shortlisted"
+        assert by_filename["one.png"]["size"] == 4
+        assert by_filename["two.jpg"]["batch"] == "alpha"
+        assert by_filename["two.jpg"]["folder"] == "finals"
+        assert by_filename["two.jpg"]["size"] == 5
+
+    asyncio.run(scenario())
+
+
+def test_native_post_universal_favorite_toggles_by_batch_and_filename(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        inbox = settings.batch_root / "alpha" / "inbox"
+        inbox.mkdir(parents=True, exist_ok=True)
+        (inbox / "img.png").write_bytes(b"yy")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        # Toggle ON via universal endpoint
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/favorites",
+            {"batch": "alpha", "filename": "img.png"},
+        )
+        assert status == 200
+        assert payload == {"batch": True, "universal": True}
+
+        # Verify in universal list
+        status, uni_payload = await _invoke(router, "GET", "/api/curator/favorites")
+        assert len(uni_payload["favorites"]) == 1
+        assert uni_payload["favorites"][0]["filename"] == "img.png"
+
+        # Toggle OFF via universal endpoint
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/favorites",
+            {"batch": "alpha", "filename": "img.png"},
+        )
+        assert status == 200
+        assert payload == {"batch": False, "universal": False}
+
+        # Universal list empty
+        status, uni_payload = await _invoke(router, "GET", "/api/curator/favorites")
+        assert uni_payload["favorites"] == []
+
+    asyncio.run(scenario())
+
+
+def test_native_batch_favorites_rejects_nonexistent_batch(tmp_path, monkeypatch):
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        assert await _invoke(
+            router, "GET", "/api/curator/favorites/{batch}", match_info={"batch": "nope"}
+        ) == (404, {"error": "Batch does not exist"})
+
+        assert await _invoke(
+            router,
+            "POST",
+            "/api/curator/favorites/{batch}",
+            {"filename": "x.png"},
+            match_info={"batch": "nope"},
+        ) == (404, {"error": "Batch does not exist"})
+
+    asyncio.run(scenario())
+
+
+def test_native_favorites_rejects_favorites_sentinel_as_batch(tmp_path, monkeypatch):
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        assert await _invoke(
+            router, "GET", "/api/curator/favorites/{batch}", match_info={"batch": "__favorites__"}
+        ) == (404, {"error": "Batch does not exist"})
+
+        assert await _invoke(
+            router,
+            "POST",
+            "/api/curator/favorites/{batch}",
+            {"filename": "x.png"},
+            match_info={"batch": "__favorites__"},
+        ) == (404, {"error": "Batch does not exist"})
+
+        assert await _invoke(
+            router,
+            "POST",
+            "/api/curator/favorites",
+            {"batch": "__favorites__", "filename": "x.png"},
+        ) == (400, {"error": "Batch does not exist"})
+
+    asyncio.run(scenario())
+
+
+def test_native_favorites_rejects_malformed_field_types(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        # Malformed filename in batch-scoped POST
+        for bad_filename in (None, [], {}, 1, True):
+            status, payload = await _invoke(
+                router,
+                "POST",
+                "/api/curator/favorites/{batch}",
+                {"filename": bad_filename},
+                match_info={"batch": "alpha"},
+            )
+            assert status == 400, f"expected 400 for filename={bad_filename!r}"
+            assert "filename required" in payload["error"]
+
+        # Malformed batch in universal POST
+        for bad_batch in (None, [], {}, 1, True):
+            status, payload = await _invoke(
+                router,
+                "POST",
+                "/api/curator/favorites",
+                {"batch": bad_batch, "filename": "x.png"},
+            )
+            assert status == 400, f"expected 400 for batch={bad_batch!r}"
+
+        # Malformed filename in universal POST
+        for bad_filename in (None, [], {}, 1, True):
+            status, payload = await _invoke(
+                router,
+                "POST",
+                "/api/curator/favorites",
+                {"batch": "alpha", "filename": bad_filename},
+            )
+            assert status == 400, f"expected 400 for filename={bad_filename!r}"
+            assert "filename required" in payload["error"]
+
+    asyncio.run(scenario())
+
+
+def test_native_universal_favorites_skips_stale_missing_entries(tmp_path, monkeypatch):
+    from image_curator import batch_store
+    from image_curator.favorites import toggle_favorite as tf
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        inbox = settings.batch_root / "alpha" / "inbox"
+        inbox.mkdir(parents=True, exist_ok=True)
+        (inbox / "present.png").write_bytes(b"here")
+        tf(settings.batch_root, "alpha", "present.png")
+
+        # Add a universal entry for a file that never existed
+        from image_curator.favorites import load_favorites, save_favorites
+
+        universal = load_favorites(settings.batch_root)
+        universal.append({"batch": "alpha", "filename": "ghost.png", "added_at": "old"})
+        save_favorites(settings.batch_root, universal)
+
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(router, "GET", "/api/curator/favorites")
+        assert status == 200
+        favs = payload["favorites"]
+        filenames = {f["filename"] for f in favs}
+        assert "present.png" in filenames
+        assert "ghost.png" not in filenames
+
+    asyncio.run(scenario())
+
+
 def test_native_delete_rejects_skips_cache_resolved_into_sibling_batch(tmp_path, monkeypatch):
     from image_curator import batch_store
 
@@ -1585,5 +1926,114 @@ def test_native_delete_rejects_skips_cache_when_resolved_outside_root(tmp_path, 
         assert payload["count"] == 1
         assert not bad.exists()
         assert cache_file.read_bytes() == b"cache-data"
+
+    asyncio.run(scenario())
+
+
+def test_native_post_favorite_rejects_ghost_filename_no_mutation(tmp_path, monkeypatch):
+    from image_curator import batch_store
+    from image_curator.favorites import load_favorites
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        batch_store.save_state(settings.state_file, {"active_batch": "alpha"})
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/favorites/{batch}",
+            {"filename": "ghost.png"},
+            match_info={"batch": "alpha"},
+        )
+        assert status == 404
+        assert "not found" in payload["error"].lower() or "file" in payload["error"].lower()
+        assert load_favorites(settings.batch_root, "alpha") == []
+        assert load_favorites(settings.batch_root) == []
+
+    asyncio.run(scenario())
+
+
+def test_native_post_favorite_rejects_unsupported_extension_no_mutation(tmp_path, monkeypatch):
+    from image_curator import batch_store
+    from image_curator.favorites import load_favorites
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        (settings.batch_root / "alpha" / "inbox" / "notes.txt").write_text("text", encoding="utf-8")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/favorites/{batch}",
+            {"filename": "notes.txt"},
+            match_info={"batch": "alpha"},
+        )
+        assert status == 400
+        assert "file type" in payload["error"].lower()
+        assert load_favorites(settings.batch_root, "alpha") == []
+
+    asyncio.run(scenario())
+
+
+def test_native_post_favorite_rejects_symlinked_file_no_mutation(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from image_curator import batch_store
+    from image_curator.favorites import load_favorites
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        file_path = settings.batch_root / "alpha" / "inbox" / "pic.png"
+        file_path.write_bytes(b"data")
+        real_is_symlink = Path.is_symlink
+
+        def is_symlink(path, *args, **kwargs):
+            if path == file_path:
+                return True
+            return real_is_symlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "is_symlink", is_symlink)
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/favorites/{batch}",
+            {"filename": "pic.png"},
+            match_info={"batch": "alpha"},
+        )
+        assert status == 404
+        assert "not found" in payload["error"].lower()
+        assert load_favorites(settings.batch_root, "alpha") == []
+        assert load_favorites(settings.batch_root) == []
 
     asyncio.run(scenario())
