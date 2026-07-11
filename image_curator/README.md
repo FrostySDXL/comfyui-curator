@@ -14,7 +14,7 @@
 - **Web validation** (`web_validation.py`): Path traversal guard and existing-batch validation helpers used by Flask route wrappers.
 - **Auto-import watcher** (`watcher.py`): Dependency-injected polling watcher for moving new ComfyUI outputs into the active batch inbox.
 - **Media cache helpers** (`media.py`): Thumbnail cache path/freshness checks and WebP thumbnail generation.
-- **Native ComfyUI foundation** (`native_settings.py`, `native_routes.py`): Host-owned path resolution plus namespaced aiohttp adapters for batch/image reads, state, import, metadata, media serving, single-image moves, multi-image moves, reject deletion, and favorites (batch/universal toggles and All Favorites resolution).
+- **Native ComfyUI foundation** (`native_settings.py`, `native_routes.py`): Host-owned path resolution plus namespaced aiohttp adapters for batch/image reads, state, import, metadata, media serving, single-image moves, multi-image moves, reject deletion, favorites (batch/universal toggles and All Favorites resolution), and public publish/export, listing, destination browsing, and copy/move/delete.
 
 Modules are responsibility-scoped; keep AI-specific validation and worker orchestration in `ai_curate/`.
 
@@ -88,7 +88,7 @@ Written atomically via `.tmp` + `os.replace()`.
 | `watcher.py` | Dependency-injected `ImageWatcher` with start/stop/reset, file-size stability wait, seen-file diff/rescan behavior, and app-level wrapper compatibility in `app.py`. |
 | `media.py` | `thumbnail_cache_path()`, `thumbnail_is_fresh()`, and `generate_thumbnail()` for WebP thumbnail cache semantics. |
 | `native_settings.py` | Resolves native batch/import/state paths from injected ComfyUI `folder_paths` callables and exposes only non-secret model/UI settings. |
-| `native_routes.py` | Registers the native settings, batch/state/import, image-list, metadata, thumbnail, original-image, single-image move, multi-image move, delete-rejects, and favorites aiohttp contracts while reusing this package's filesystem helpers. |
+| `native_routes.py` | Registers the native settings, batch/state/import, image-list, metadata, thumbnail, original-image, single-image move, multi-image move, delete-rejects, favorites, and public publish/export, listing, destination browsing, and copy/move/delete aiohttp contracts while reusing this package's filesystem helpers. |
 
 ## Agent Instructions
 

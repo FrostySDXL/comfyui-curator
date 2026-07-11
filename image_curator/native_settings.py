@@ -18,6 +18,7 @@ class NativeCuratorSettings:
     available_models: tuple[str, ...] = ()
     default_model: str = ""
     watcher_enabled: bool = False
+    public_export_root: Path | None = None
 
     @classmethod
     def from_host_paths(
@@ -38,6 +39,7 @@ class NativeCuratorSettings:
             state_file=system_dir / "state.json",
             available_models=models,
             default_model=models[0] if models else "",
+            public_export_root=system_dir / "public-exports",
         )
 
     def public_payload(self) -> dict[str, object]:
@@ -46,4 +48,5 @@ class NativeCuratorSettings:
             "available_models": list(self.available_models),
             "default_model": self.default_model,
             "watcher_enabled": self.watcher_enabled,
+            "public_enabled": self.public_export_root is not None,
         }

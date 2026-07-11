@@ -42,11 +42,30 @@ WATERMARK_POSITIONS = {
 
 
 def get_public_folder(batches_dir: Path, batch: str, *, create: bool = False) -> Path:
-    """Return the batch-local public output folder."""
+    """Return the batch-local public output folder.
+
+    Raises ValueError if the public folder or batch directory is a symlink.
+    """
     _validate_name(batch, "batch name")
-    folder = Path(batches_dir) / batch / PUBLIC_FOLDER
+    batch_dir = Path(batches_dir) / batch
+    if batch_dir.is_symlink():
+        raise ValueError("Batch directory is a symlink")
+    folder = batch_dir / PUBLIC_FOLDER
+    if folder.is_symlink():
+        raise ValueError("Public folder is a symlink")
+    root = Path(batches_dir).resolve()
+    real_batch = batch_dir.resolve()
+    real_folder = folder.resolve()
+    try:
+        real_batch.relative_to(root)
+        real_folder.relative_to(root)
+        real_folder.relative_to(real_batch)
+    except ValueError as exc:
+        raise ValueError("Invalid public folder path") from exc
     if create:
         folder.mkdir(parents=True, exist_ok=True)
+        if folder.is_symlink():
+            raise ValueError("Public folder is a symlink")
     return folder
 
 
@@ -187,8 +206,33 @@ def create_public_copies(
             "failed": len(filenames),
             "files": [{"source": name, "error": "Invalid source folder"} for name in filenames],
         }
-    source_dir = Path(batches_dir) / batch / folder
-    public_dir = get_public_folder(batches_dir, batch, create=True)
+    batch_dir = Path(batches_dir) / batch
+    if not batch_dir.is_dir() or batch_dir.is_symlink():
+        return {
+            "success": False,
+            "exported": 0,
+            "failed": len(filenames),
+            "files": [{"source": name, "error": "Batch does not exist"} for name in filenames],
+        }
+    source_dir = batch_dir / folder
+    if source_dir.is_symlink():
+        return {
+            "success": False,
+            "exported": 0,
+            "failed": len(filenames),
+            "files": [
+                {"source": name, "error": "Source folder is a symlink"} for name in filenames
+            ],
+        }
+    try:
+        public_dir = get_public_folder(batches_dir, batch, create=True)
+    except ValueError as exc:
+        return {
+            "success": False,
+            "exported": 0,
+            "failed": len(filenames),
+            "files": [{"source": name, "error": str(exc)} for name in filenames],
+        }
     for filename in filenames:
         try:
             _validate_name(filename, "file name")
@@ -204,6 +248,30 @@ def create_public_copies(
         if not source.exists():
             failed += 1
             files.append({"source": filename, "error": "Source file not found"})
+            continue
+        if source.is_symlink():
+            failed += 1
+            files.append({"source": filename, "error": "Source file is a symlink"})
+            continue
+        if not source.is_file():
+            failed += 1
+            files.append({"source": filename, "error": "Source is not a regular file"})
+            continue
+        # Reject resolved escapes before reading the source
+        resolved_batches_dir = Path(batches_dir).resolve()
+        resolved_batch_dir = batch_dir.resolve()
+        resolved_source_dir = source_dir.resolve()
+        resolved_source = source.resolve()
+        try:
+            resolved_batch_dir.relative_to(resolved_batches_dir)
+            resolved_source_dir.relative_to(resolved_batches_dir)
+            resolved_source_dir.relative_to(resolved_batch_dir)
+            resolved_source.relative_to(resolved_batches_dir)
+            resolved_source.relative_to(resolved_batch_dir)
+            resolved_source.relative_to(resolved_source_dir)
+        except ValueError:
+            failed += 1
+            files.append({"source": filename, "error": "Invalid path"})
             continue
         output_name = _public_output_name(public_dir, filename)
         output = public_dir / output_name
@@ -221,6 +289,8 @@ def create_public_copies(
 def _public_item(batch: str, path: Path) -> dict[str, Any] | None:
     if not _is_supported_image_name(path.name):
         return None
+    if path.is_symlink() or not path.is_file():
+        return None
     try:
         stat = path.stat()
     except OSError:
@@ -236,7 +306,10 @@ def _public_item(batch: str, path: Path) -> dict[str, Any] | None:
 
 def list_batch_public(batches_dir: Path, batch: str) -> list[dict[str, Any]]:
     """List generated public images for one batch."""
-    public_dir = get_public_folder(batches_dir, batch)
+    try:
+        public_dir = get_public_folder(batches_dir, batch)
+    except ValueError:
+        return []
     if not public_dir.is_dir():
         return []
     items = [
@@ -257,10 +330,27 @@ def list_all_public(batches_dir: Path) -> list[dict[str, Any]]:
 def _resolve_export_destination(destination: Path | str, export_root: Path | str | None) -> Path:
     if export_root is None:
         raise ValueError("Public export root is not configured")
-    root = Path(export_root).resolve()
+    raw_root = Path(export_root)
+    if raw_root.is_symlink():
+        raise ValueError("Public export root is a symlink")
+    root = raw_root.resolve()
     dest = Path(destination)
     if not dest.is_absolute():
-        dest = root / dest
+        dest = raw_root / dest
+    # Check raw intermediate path components within raw_root for symlinks
+    # before resolve can follow them away from the raw path.
+    try:
+        relative = dest.relative_to(raw_root)
+    except ValueError:
+        # dest is not inside raw_root — skip raw walk; resolved containment
+        # check below will catch the escape.
+        pass
+    else:
+        raw_walk = raw_root
+        for part in relative.parts:
+            raw_walk = raw_walk / part
+            if raw_walk.is_symlink():
+                raise ValueError("Destination path contains a symlink")
     resolved = dest.resolve()
     try:
         resolved.relative_to(root)
@@ -279,13 +369,25 @@ def _relative_export_path(path: Path, root: Path) -> str:
 def _resolve_export_browser_path(path: str, export_root: Path | str | None) -> tuple[Path, Path]:
     if export_root is None:
         raise ValueError("Public export root is not configured")
-    root = Path(export_root).resolve()
+    raw_root = Path(export_root)
+    if raw_root.is_symlink():
+        raise ValueError("Public export root is a symlink")
+    root = raw_root.resolve()
     requested = str(path or "").replace("\\", "/").strip("/")
     requested_path = Path(requested)
     if requested_path.is_absolute() or requested_path.drive:
         raise ValueError(f"Destination must stay inside {root}")
     if "\x00" in requested or any(part in {".", ".."} for part in requested.split("/")):
         raise ValueError(f"Destination must stay inside {root}")
+    # Check raw intermediate components for symlinks before resolving
+    if requested:
+        raw_walk = raw_root
+        for part in requested.split("/"):
+            if not part:
+                continue
+            raw_walk = raw_walk / part
+            if raw_walk.is_symlink():
+                raise ValueError("Destination path contains a symlink")
     resolved = (root / requested).resolve()
     try:
         resolved.relative_to(root)
@@ -302,7 +404,7 @@ def list_export_directories(export_root: Path | str | None, *, path: str = "") -
     directories: list[dict[str, str]] = []
     if current.is_dir():
         for child in sorted(current.iterdir(), key=lambda item: item.name.lower()):
-            if not child.is_dir():
+            if not child.is_dir() or child.is_symlink():
                 continue
             try:
                 child_resolved = child.resolve()
@@ -316,11 +418,33 @@ def list_export_directories(export_root: Path | str | None, *, path: str = "") -
 
 
 def _resolve_public_file(batches_dir: Path, item: dict[str, Any]) -> Path:
-    batch = str(item.get("batch") or "")
-    filename = str(item.get("filename") or item.get("name") or "")
+    batch_raw = item.get("batch")
+    filename_raw = item.get("filename") or item.get("name")
+    if not isinstance(batch_raw, str) or not batch_raw.strip():
+        raise ValueError("Invalid batch in item")
+    if not isinstance(filename_raw, str) or not filename_raw.strip():
+        raise ValueError("Invalid filename in item")
+    batch = batch_raw
+    filename = filename_raw
     _validate_name(batch, "batch name")
     _validate_name(filename, "file name")
-    return get_public_folder(batches_dir, batch) / filename
+    public_dir = get_public_folder(batches_dir, batch)
+    path = public_dir / filename
+    # Reject resolved escapes before any read/write/mutation
+    resolved_root = Path(batches_dir).resolve()
+    resolved_batch = (Path(batches_dir) / batch).resolve()
+    resolved_public = public_dir.resolve()
+    resolved_path = path.resolve()
+    try:
+        resolved_batch.relative_to(resolved_root)
+        resolved_public.relative_to(resolved_root)
+        resolved_public.relative_to(resolved_batch)
+        resolved_path.relative_to(resolved_root)
+        resolved_path.relative_to(resolved_batch)
+        resolved_path.relative_to(resolved_public)
+    except ValueError as exc:
+        raise ValueError("Invalid path") from exc
+    return path
 
 
 def _transfer_public_items(
@@ -363,6 +487,14 @@ def _transfer_public_items(
         if not _is_supported_image_name(source.name):
             failed += 1
             files.append({"filename": filename, "error": "Unsupported image type"})
+            continue
+        if source.is_symlink():
+            failed += 1
+            files.append({"filename": filename, "error": "Public file is a symlink"})
+            continue
+        if not source.is_file():
+            failed += 1
+            files.append({"filename": filename, "error": "Not a regular file"})
             continue
         output_name = _collision_safe_dest_name(dest_dir, source.name)
         output = dest_dir / output_name
@@ -431,6 +563,14 @@ def delete_public_items(batches_dir: Path, *, items: list[dict[str, Any]]) -> di
             failed += 1
             files.append({"filename": filename, "error": "Public file not found"})
             continue
+        if source.is_symlink():
+            failed += 1
+            files.append({"filename": filename, "error": "Public file is a symlink"})
+            continue
+        if not source.is_file():
+            failed += 1
+            files.append({"filename": filename, "error": "Not a regular file"})
+            continue
         try:
             source.unlink()
         except OSError as exc:
@@ -440,7 +580,28 @@ def delete_public_items(batches_dir: Path, *, items: list[dict[str, Any]]) -> di
         cache_path = thumbnail_cache_path(
             batches_dir, item.get("batch", ""), PUBLIC_FOLDER, filename
         )
-        if cache_path.exists():
+        cache_safe = False
+        try:
+            cache_parent = cache_path.parent
+            if (
+                not cache_path.is_symlink()
+                and not cache_parent.is_symlink()
+                and cache_path.exists()
+            ):
+                root = Path(batches_dir).resolve()
+                batch_val = str(item.get("batch", ""))
+                real_batch = (Path(batches_dir) / batch_val).resolve()
+                real_cache = cache_path.resolve()
+                real_parent = cache_parent.resolve()
+                real_batch.relative_to(root)
+                real_parent.relative_to(root)
+                real_parent.relative_to(real_batch)
+                real_cache.relative_to(root)
+                real_cache.relative_to(real_batch)
+                cache_safe = True
+        except (OSError, ValueError):
+            pass
+        if cache_safe:
             try:
                 cache_path.unlink()
             except OSError:

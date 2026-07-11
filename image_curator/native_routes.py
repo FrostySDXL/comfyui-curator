@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from aiohttp import web
@@ -525,3 +526,156 @@ def register_native_routes(app, service: NativeCuratorService) -> None:
 
     app.router.add_get("/api/curator/favorites", get_universal_favorites)
     app.router.add_post("/api/curator/favorites", post_universal_favorite)
+
+    # -----------------------------------------------------------------------
+    # Public derivative routes
+    # -----------------------------------------------------------------------
+
+    def _validate_batch_for_public(batch: str) -> web.Response | None:
+        if batch in ("__public__", "__favorites__"):
+            return web.json_response({"error": "Batch does not exist"}, status=404)
+        if not service.batch_exists(batch):
+            return web.json_response({"error": "Batch does not exist"}, status=404)
+        return None
+
+    def _public_items_payload_native(
+        data: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], web.Response | None]:
+        items = data.get("items", [])
+        if not isinstance(items, list) or not items:
+            return [], web.json_response({"error": "items required"}, status=400)
+        if any(not isinstance(item, dict) for item in items):
+            return [], web.json_response({"error": "items must be objects"}, status=400)
+        for item in items:
+            batch = item.get("batch")
+            filename = item.get("filename") or item.get("name")
+            if not isinstance(batch, str) or not batch.strip():
+                return [], web.json_response(
+                    {"error": "items batch must be a non-empty string"}, status=400
+                )
+            if not isinstance(filename, str) or not filename.strip():
+                return [], web.json_response(
+                    {"error": "items filename must be a non-empty string"}, status=400
+                )
+        return items, None
+
+    def _public_export_root_error_response(
+        result: dict[str, Any], action_key: str
+    ) -> tuple[dict[str, Any], int] | None:
+        if result.get("failed") and not result.get(action_key):
+            files = result.get("files") or []
+            first_error = files[0].get("error") if files else None
+            if first_error == "Public export root is not configured":
+                return {"error": first_error, **result}, 400
+        return None
+
+    def _public_transfer_status(result: dict[str, Any], action_key: str) -> int:
+        if result.get(action_key, 0) == 0 and result.get("failed", 0):
+            return 400
+        return 200
+
+    def _public_export_root() -> Path | None:
+        return service.settings.public_export_root
+
+    async def publish_export(request):
+        data = await _json_body(request)
+        batch = _string_field(data, "batch")
+        if batch is None or not batch.strip():
+            return web.json_response({"error": "Invalid batch name"}, status=400)
+        err = _validate_batch_for_public(batch)
+        if err is not None:
+            return err
+        folder_raw = data.get("folder", "")
+        if not isinstance(folder_raw, str) or not folder_raw.strip():
+            return web.json_response({"error": "Invalid folder"}, status=400)
+        folder = folder_raw
+        filenames = data.get("filenames", [])
+        if not isinstance(filenames, list) or not filenames:
+            return web.json_response({"error": "filenames required"}, status=400)
+        for name in filenames:
+            if not isinstance(name, str):
+                return web.json_response({"error": "filenames must be strings"}, status=400)
+        watermark_raw = data.get("watermark")
+        result = publish.create_public_copies(
+            service.settings.batch_root,
+            batch=batch,
+            folder=folder,
+            filenames=filenames,
+            strip_metadata=bool(data.get("strip_metadata", True)),
+            watermark=watermark_raw if isinstance(watermark_raw, dict) else None,
+        )
+        status = 200 if result.get("exported", 0) > 0 or result.get("failed", 0) == 0 else 400
+        return web.json_response(result, status=status)
+
+    async def get_all_public(_request):
+        return web.json_response({"public": publish.list_all_public(service.settings.batch_root)})
+
+    async def get_public_destinations(request):
+        try:
+            result = publish.list_export_directories(
+                _public_export_root(),
+                path=request.query.get("path", ""),
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc), "directories": []}, status=400)
+        return web.json_response(result)
+
+    async def get_batch_public(request):
+        batch = request.match_info["batch"]
+        err = _validate_batch_for_public(batch)
+        if err is not None:
+            return err
+        return web.json_response(publish.list_batch_public(service.settings.batch_root, batch))
+
+    async def copy_public(request):
+        data = await _json_body(request)
+        items, err = _public_items_payload_native(data)
+        if err is not None:
+            return err
+        destination_raw = data.get("destination", "")
+        if not isinstance(destination_raw, str) or not destination_raw.strip():
+            return web.json_response({"error": "destination required"}, status=400)
+        result = publish.copy_public_items(
+            service.settings.batch_root,
+            destination=destination_raw,
+            items=items,
+            export_root=_public_export_root(),
+        )
+        export_root_error = _public_export_root_error_response(result, "copied")
+        if export_root_error:
+            return web.json_response(export_root_error[0], status=export_root_error[1])
+        return web.json_response(result, status=_public_transfer_status(result, "copied"))
+
+    async def move_public(request):
+        data = await _json_body(request)
+        items, err = _public_items_payload_native(data)
+        if err is not None:
+            return err
+        destination_raw = data.get("destination", "")
+        if not isinstance(destination_raw, str) or not destination_raw.strip():
+            return web.json_response({"error": "destination required"}, status=400)
+        result = publish.move_public_items(
+            service.settings.batch_root,
+            destination=destination_raw,
+            items=items,
+            export_root=_public_export_root(),
+        )
+        export_root_error = _public_export_root_error_response(result, "moved")
+        if export_root_error:
+            return web.json_response(export_root_error[0], status=export_root_error[1])
+        return web.json_response(result, status=_public_transfer_status(result, "moved"))
+
+    async def delete_public(request):
+        items, err = _public_items_payload_native(await _json_body(request))
+        if err is not None:
+            return err
+        result = publish.delete_public_items(service.settings.batch_root, items=items)
+        return web.json_response(result, status=_public_transfer_status(result, "deleted"))
+
+    app.router.add_post("/api/curator/publish/export", publish_export)
+    app.router.add_get("/api/curator/public", get_all_public)
+    app.router.add_get("/api/curator/public/destinations", get_public_destinations)
+    app.router.add_get("/api/curator/public/{batch}", get_batch_public)
+    app.router.add_post("/api/curator/public/copy", copy_public)
+    app.router.add_post("/api/curator/public/move", move_public)
+    app.router.add_post("/api/curator/public/delete", delete_public)

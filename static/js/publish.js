@@ -156,7 +156,6 @@ async function submitPublicExport() {
         }
 
 async function updateAllPublicCount() {
-            if (CURATOR_NATIVE) return;
             try {
                 const data = await apiGetAllPublic();
                 const publicItems = data.public || [];

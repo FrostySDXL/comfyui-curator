@@ -66,7 +66,7 @@ The `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tes
 | `tests/unit/test_models.py` | `ai_curate.models` -- `JobState`, `ImageResult`, `RunTotals`, `CurationRun` round-trips | Pure unittests, no fixtures |
 | `tests/unit/test_png_metadata.py` | `image_curator.png_metadata` -- parsing, missing metadata, malformed input | `PIL.Image.new` + `PngInfo` for test PNGs |
 | `tests/unit/test_favorites.py` | `image_curator.favorites` -- batch/universal favorite load/save/toggle/resolve | `tmp_path`, real files, JSON shape checks |
-| `tests/unit/test_publish.py` | `image_curator.publish` -- public derivative creation, metadata stripping, watermark, public listing, export-root-gated copy/move/delete | `tmp_path`, Pillow PNG fixtures, real file copies/moves/deletes |
+| `tests/unit/test_publish.py` | `image_curator.publish` -- public derivative creation, metadata stripping, watermark, public listing, export-root-gated copy/move/delete, symlink-safe file operations | `tmp_path`, Pillow PNG fixtures, real file copies/moves/deletes |
 | `tests/unit/test_prompt_history.py` | `image_curator.prompt_history` -- normalization, hash, PNG prompt index build/cache | `tmp_path`, `PIL.Image.new` + `PngInfo` |
 | `tests/unit/test_web_validation.py` | `image_curator.web_validation` -- path traversal blocking and existing-batch validation | `tmp_path`, pure helper assertions |
 | `tests/unit/test_media.py` | `image_curator.media` -- thumbnail cache names, freshness checks, WebP generation | `tmp_path`, `PIL.Image.new` |
@@ -78,8 +78,8 @@ The `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tes
 | `tests/unit/test_setup_local_browser_fixture.py` | `scripts/setup_local_browser_fixture.py` -- disposable manual-browser fixture creation and launch env output | `tmp_path`, `importlib.util` dynamic import |
 | `tests/unit/test_comfyui_extension.py` | Native `__init__.py` entrypoint, `py/curator_manager.py`, `web/comfyui/top_menu_extension.js` | `importlib`, `MagicMock`, mock modules for `server`, `aiohttp`, `jinja2` |
 | `tests/unit/test_comfyui_static_ui.py` | Native template parity, URL centralization, error propagation, page handler context | `frontend_source.read_frontend_js`, `subprocess` (node), `tmp_path`, `MagicMock` |
-| `tests/unit/test_native_curator_settings.py` | Native host path/default resolution and safe public settings payload | Injected host path callables, `tmp_path`, `monkeypatch` |
-| `tests/component/test_native_curator_api.py` | Native settings, batch/state/import, image, metadata, thumbnail, original, single-image move, multi-image move, delete-rejects, and favorites route contracts | Precise aiohttp web mocks, async handler execution, real `tmp_path` files |
+| `tests/unit/test_native_curator_settings.py` | Native host path/default resolution, public export root, and safe public settings payload | Injected host path callables, `tmp_path`, `monkeypatch` |
+| `tests/component/test_native_curator_api.py` | Native settings, batch/state/import, image, metadata, thumbnail, original, single-image move, multi-image move, delete-rejects, favorites, public publish/export, public listing/destinations, and public copy/move/delete route contracts | Precise aiohttp web mocks, async handler execution, real `tmp_path` files |
 | `tests/unit/test_frontend_*.py` | Ordered `static/js/*.js` and `static/css/*.css` sources -- source scanning for function names, invariants, undefined references | `tests/unit/frontend_source.py` helpers + regex assertions |
 | `tests/component/test_batch_api.py` | Flask route contracts: batches, images, move, delete-rejects, thumbnails | `client` fixture, PIL image generation |
 | `tests/component/test_ai_curate_worker.py` | `app._run_scoring_worker_inner` -- cancel timing (scoring vs move vs race) | Real `QueueManager` + `RunStorage`, patched `score_images` |
