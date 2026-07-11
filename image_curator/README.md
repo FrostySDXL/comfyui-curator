@@ -14,7 +14,7 @@
 - **Web validation** (`web_validation.py`): Path traversal guard and existing-batch validation helpers used by Flask route wrappers.
 - **Auto-import watcher** (`watcher.py`): Dependency-injected polling watcher for moving new ComfyUI outputs into the active batch inbox.
 - **Media cache helpers** (`media.py`): Thumbnail cache path/freshness checks and WebP thumbnail generation.
-- **Native ComfyUI foundation** (`native_settings.py`, `native_routes.py`): Host-owned path resolution plus namespaced aiohttp adapters for batch/image reads, state, import, metadata, and media serving.
+- **Native ComfyUI foundation** (`native_settings.py`, `native_routes.py`): Host-owned path resolution plus namespaced aiohttp adapters for batch/image reads, state, import, metadata, media serving, single-image moves, multi-image moves, and reject deletion.
 
 Modules are responsibility-scoped; keep AI-specific validation and worker orchestration in `ai_curate/`.
 
@@ -88,7 +88,7 @@ Written atomically via `.tmp` + `os.replace()`.
 | `watcher.py` | Dependency-injected `ImageWatcher` with start/stop/reset, file-size stability wait, seen-file diff/rescan behavior, and app-level wrapper compatibility in `app.py`. |
 | `media.py` | `thumbnail_cache_path()`, `thumbnail_is_fresh()`, and `generate_thumbnail()` for WebP thumbnail cache semantics. |
 | `native_settings.py` | Resolves native batch/import/state paths from injected ComfyUI `folder_paths` callables and exposes only non-secret model/UI settings. |
-| `native_routes.py` | Registers the native settings, batch/state/import, image-list, metadata, thumbnail, and original-image aiohttp contracts while reusing this package's filesystem helpers. |
+| `native_routes.py` | Registers the native settings, batch/state/import, image-list, metadata, thumbnail, original-image, single-image move, multi-image move, and delete-rejects aiohttp contracts while reusing this package's filesystem helpers. |
 
 ## Agent Instructions
 
@@ -105,7 +105,7 @@ Written atomically via `.tmp` + `os.replace()`.
 - **`_collision_safe_name` has no locking:** If two processes import simultaneously, both could see `exists() == False` and one file would overwrite. Low risk for single-user operation.
 - **LoRA hash is always `None`:** `_parse_loras()` hardcodes `"hash": None`. The field exists in the return schema but is never populated.
 - **Workflow JSON is size-only:** `extract_png_metadata` returns `workflow_available: bool` and `workflow_size: int` but not the workflow JSON content itself. Callers needing the full workflow must re-read the file.
-- **No delete operations in batch_store:** Reject cleanup (deleting files from `rejects/`) is handled directly in `app.py`, not via batch_store.
+- **No delete operations in batch_store:** Reject cleanup (deleting files from `rejects/`) is handled in `app.py` and `native_routes.py`, not via batch_store.
 - **Thumbnail routes still live in `app.py`:** Thumbnail cache path/freshness/generation helpers live in `media.py`. `batch_store` only provides image listing and file moves.
 - **`get_batch_metadata` includes `ai-curate/` mtime:** The AI run-history directory's mtime contributes to batch `modified_at` for recent-first sorting, even though AI-curate is not a workflow folder.
 

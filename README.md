@@ -181,7 +181,8 @@ The repository includes a ComfyUI integration shell described in
 - `image_curator/native_settings.py` -- resolves ComfyUI-owned batch, import,
   and state paths without importing Flask or exposing host paths to the browser.
 - `image_curator/native_routes.py` -- aiohttp adapter for settings, batches,
-  active state, manual import, image lists, metadata, thumbnails, and originals.
+  active state, manual import, image lists, metadata, thumbnails, originals,
+  single-image moves, multi-image moves, and reject deletion.
 - `web/comfyui/top_menu_extension.js` -- ComfyUI action-bar button that
   opens `/curator`.
 - `templates/curator.html` -- native page template derived from `index.html`
@@ -191,9 +192,10 @@ The repository includes a ComfyUI integration shell described in
   `/api/curator`/`/curator/thumb`/`/curator/image` based on the native flag.
 
 Native foundation routes use `/api/curator/*` and media uses
-`/curator/thumb/*` and `/curator/image/*`. Move/delete, favorites, publishing,
-prompt history, watcher control, and AI lifecycle remain provided only by the
-standalone Flask application (`app.py`).
+`/curator/thumb/*` and `/curator/image/*`. Single-image moves, multi-image
+moves (undo-compatible reverse calls), and reject deletion are now native.
+Favorites, publishing, prompt history, watcher control, and AI lifecycle
+remain provided only by the standalone Flask application (`app.py`).
 
 ## Limitations
 

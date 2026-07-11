@@ -736,3 +736,854 @@ def test_native_batch_summary_excludes_batch_with_unsafe_stage_before_helpers(
     assert payload["batches"] == []
     assert payload["counts"] == {}
     assert payload["batch_meta"] == {}
+
+
+# ---------------------------------------------------------------------------
+# Native move / delete-rejects mutations
+# ---------------------------------------------------------------------------
+
+
+def test_native_move_moves_single_file(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        source_path = settings.batch_root / "alpha" / "inbox" / "pic.png"
+        source_path.write_bytes(b"image-data")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/move",
+            {
+                "batch": "alpha",
+                "filename": "pic.png",
+                "source": "inbox",
+                "destination": "shortlisted",
+            },
+        )
+        assert status == 200
+        assert payload == {"success": True}
+        assert not (settings.batch_root / "alpha" / "inbox" / "pic.png").exists()
+        assert (
+            settings.batch_root / "alpha" / "shortlisted" / "pic.png"
+        ).read_bytes() == b"image-data"
+
+    asyncio.run(scenario())
+
+
+def test_native_move_nonexistent_batch(tmp_path, monkeypatch):
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        assert await _invoke(
+            router,
+            "POST",
+            "/api/curator/move",
+            {
+                "batch": "nope",
+                "filename": "pic.png",
+                "source": "inbox",
+                "destination": "shortlisted",
+            },
+        ) == (404, {"error": "Batch does not exist"})
+
+    asyncio.run(scenario())
+
+
+def test_native_move_missing_params(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        missing_combos = [
+            {"batch": "alpha"},
+            {"batch": "alpha", "filename": "pic.png"},
+        ]
+        for payload in missing_combos:
+            assert await _invoke(router, "POST", "/api/curator/move", payload) == (
+                400,
+                {"error": "Missing parameters"},
+            )
+
+    asyncio.run(scenario())
+
+
+def test_native_move_invalid_source_or_dest_folder(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        source_path = settings.batch_root / "alpha" / "inbox" / "pic.png"
+        source_path.write_bytes(b"image-data")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        invalid_combos = [
+            ("inbox", "public"),
+            ("unknown", "inbox"),
+            ("inbox", "unknown"),
+        ]
+        for src, dst in invalid_combos:
+            status, payload = await _invoke(
+                router,
+                "POST",
+                "/api/curator/move",
+                {"batch": "alpha", "filename": "pic.png", "source": src, "destination": dst},
+            )
+            assert status == 400
+            assert "Invalid" in payload["error"]
+
+    asyncio.run(scenario())
+
+
+def test_native_move_missing_file(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        assert await _invoke(
+            router,
+            "POST",
+            "/api/curator/move",
+            {
+                "batch": "alpha",
+                "filename": "ghost.png",
+                "source": "inbox",
+                "destination": "shortlisted",
+            },
+        ) == (404, {"error": "File not found"})
+
+    asyncio.run(scenario())
+
+
+def test_native_move_rejects_malformed_types(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        base = {
+            "batch": "alpha",
+            "filename": "pic.png",
+            "source": "inbox",
+            "destination": "shortlisted",
+        }
+        for key in ("batch", "filename", "source", "destination"):
+            for bad_value in (None, [], {}, 1, True):
+                payload = dict(base)
+                payload[key] = bad_value
+                status, payload_result = await _invoke(router, "POST", "/api/curator/move", payload)
+                assert status == 400, f"expected 400 for key={key} value={bad_value!r}"
+                assert "Missing parameters" in payload_result["error"]
+
+    asyncio.run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Native move-batch
+# ---------------------------------------------------------------------------
+
+
+def test_native_move_batch_bulk_moves_files(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        inbox = settings.batch_root / "alpha" / "inbox"
+        (inbox / "one.png").write_bytes(b"one")
+        (inbox / "two.jpg").write_bytes(b"two")
+        (inbox / "ignore.txt").write_text("no", encoding="utf-8")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/move-batch",
+            {
+                "batch": "alpha",
+                "filenames": ["one.png", "two.jpg", "ignore.txt"],
+                "source": "inbox",
+                "destination": "finals",
+            },
+        )
+        assert status == 200
+        assert payload["success"] is True
+        assert payload["moved"] == 3
+        assert payload["skipped"] == 0
+        assert not (inbox / "one.png").exists()
+        assert not (inbox / "two.jpg").exists()
+        assert not (inbox / "ignore.txt").exists()
+        assert (settings.batch_root / "alpha" / "finals" / "one.png").read_bytes() == b"one"
+        assert (settings.batch_root / "alpha" / "finals" / "two.jpg").read_bytes() == b"two"
+
+    asyncio.run(scenario())
+
+
+def test_native_move_batch_nonexistent_batch(tmp_path, monkeypatch):
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        assert await _invoke(
+            router,
+            "POST",
+            "/api/curator/move-batch",
+            {
+                "batch": "nope",
+                "filenames": ["pic.png"],
+                "source": "inbox",
+                "destination": "shortlisted",
+            },
+        ) == (404, {"error": "Batch does not exist"})
+
+    asyncio.run(scenario())
+
+
+def test_native_move_batch_missing_params(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        assert await _invoke(
+            router,
+            "POST",
+            "/api/curator/move-batch",
+            {"batch": "alpha"},
+        ) == (400, {"error": "Missing parameters"})
+
+    asyncio.run(scenario())
+
+
+def test_native_move_batch_all_skipped_returns_success_false(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/move-batch",
+            {
+                "batch": "alpha",
+                "filenames": ["ghost.png"],
+                "source": "inbox",
+                "destination": "finals",
+            },
+        )
+        assert status == 200
+        assert payload["success"] is False
+        assert payload["moved"] == 0
+        assert payload["skipped"] >= 1
+
+    asyncio.run(scenario())
+
+
+def test_native_move_batch_rejects_non_list_filenames(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        for bad_filenames in ("not-a-list", None, 42, True, {}):
+            assert await _invoke(
+                router,
+                "POST",
+                "/api/curator/move-batch",
+                {
+                    "batch": "alpha",
+                    "filenames": bad_filenames,
+                    "source": "inbox",
+                    "destination": "shortlisted",
+                },
+            ) == (400, {"error": "Missing parameters"})
+
+    asyncio.run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Native delete-rejects
+# ---------------------------------------------------------------------------
+
+
+def test_native_delete_rejects_removes_files_and_thumbnail_cache(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        rejects_dir = settings.batch_root / "alpha" / "rejects"
+        bad = rejects_dir / "bad.png"
+        bad.write_bytes(b"bad-image")
+
+        # Create a matching thumbnail cache entry
+        from image_curator.media import thumbnail_cache_path
+
+        cache = thumbnail_cache_path(settings.batch_root, "alpha", "rejects", "bad.png")
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_bytes(b"cached-thumb")
+
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/delete-rejects/{batch}",
+            match_info={"batch": "alpha"},
+        )
+        assert status == 200
+        assert payload["success"] is True
+        assert payload["count"] == 1
+        assert not bad.exists()
+        assert not cache.exists()
+
+    asyncio.run(scenario())
+
+
+def test_native_delete_rejects_skips_cache_resolved_into_sibling_batch(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        batch_store.create_batch(settings.batch_root, "other")
+        bad = settings.batch_root / "alpha" / "rejects" / "bad.png"
+        bad.write_bytes(b"bad-image")
+        thumbs_dir = settings.batch_root / "alpha" / ".thumbs"
+        thumbs_dir.mkdir()
+        cache_file = thumbs_dir / "rejects__bad.webp"
+        cache_file.write_bytes(b"cache-data")
+        other_thumbs = settings.batch_root / "other" / ".thumbs"
+        other_thumbs.mkdir(parents=True)
+        real_resolve = Path.resolve
+
+        def resolve(path, *args, **kwargs):
+            if path == cache_file:
+                return other_thumbs / "rejects__bad.webp"
+            if path == cache_file.parent:
+                return other_thumbs
+            return real_resolve(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "resolve", resolve)
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/delete-rejects/{batch}",
+            match_info={"batch": "alpha"},
+        )
+        assert status == 200
+        assert payload["success"] is True
+        assert payload["count"] == 1
+        assert not bad.exists()
+        assert cache_file.read_bytes() == b"cache-data"
+
+    asyncio.run(scenario())
+
+
+def test_native_delete_rejects_nonexistent_batch(tmp_path, monkeypatch):
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        assert await _invoke(
+            router,
+            "POST",
+            "/api/curator/delete-rejects/{batch}",
+            match_info={"batch": "nope"},
+        ) == (404, {"error": "Batch does not exist"})
+
+    asyncio.run(scenario())
+
+
+def test_native_delete_rejects_skips_symlinks(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        rejects_dir = settings.batch_root / "alpha" / "rejects"
+        (rejects_dir / "normal.png").write_bytes(b"normal")
+        outside = tmp_path / "outside-target"
+        outside.mkdir()
+        (outside / "outside.png").write_bytes(b"outside")
+        linked = rejects_dir / "linked.png"
+        _symlink_directory_or_skip(linked, outside / "outside.png")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/delete-rejects/{batch}",
+            match_info={"batch": "alpha"},
+        )
+        assert status == 200
+        assert payload["success"] is True
+        assert payload["count"] == 1
+        assert not (rejects_dir / "normal.png").exists()
+        assert (outside / "outside.png").exists()
+
+    asyncio.run(scenario())
+
+
+def test_native_move_rejects_symlink_source_and_leaves_target_untouched(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        src = settings.batch_root / "alpha" / "inbox" / "pic.png"
+        src.write_bytes(b"image-data")
+        real_is_symlink = Path.is_symlink
+
+        def is_symlink(path, *args, **kwargs):
+            if path == src:
+                return True
+            return real_is_symlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "is_symlink", is_symlink)
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/move",
+            {
+                "batch": "alpha",
+                "filename": "pic.png",
+                "source": "inbox",
+                "destination": "shortlisted",
+            },
+        )
+        assert status == 400
+        assert payload["error"] == "Invalid path"
+        assert src.read_bytes() == b"image-data"
+        assert not (settings.batch_root / "alpha" / "shortlisted" / "pic.png").exists()
+
+    asyncio.run(scenario())
+
+
+def test_native_move_rejects_non_regular_source(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        src = settings.batch_root / "alpha" / "inbox" / "subdir"
+        src.mkdir()
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/move",
+            {
+                "batch": "alpha",
+                "filename": "subdir",
+                "source": "inbox",
+                "destination": "shortlisted",
+            },
+        )
+        assert status == 404
+        assert payload["error"] == "File not found"
+        assert src.is_dir()
+
+    asyncio.run(scenario())
+
+
+def test_native_move_rejects_symlink_destination_without_mutating_source(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        src = settings.batch_root / "alpha" / "inbox" / "pic.png"
+        src.write_bytes(b"image-data")
+        dst = settings.batch_root / "alpha" / "shortlisted" / "pic.png"
+        dst.write_bytes(b"stale")
+        real_is_symlink = Path.is_symlink
+
+        def is_symlink(path, *args, **kwargs):
+            if path == dst:
+                return True
+            return real_is_symlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "is_symlink", is_symlink)
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/move",
+            {
+                "batch": "alpha",
+                "filename": "pic.png",
+                "source": "inbox",
+                "destination": "shortlisted",
+            },
+        )
+        assert status == 400
+        assert payload["error"] == "Invalid path"
+        assert src.exists()
+        assert src.read_bytes() == b"image-data"
+
+    asyncio.run(scenario())
+
+
+def test_native_move_batch_skips_symlink_and_non_regular_sources(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        inbox = settings.batch_root / "alpha" / "inbox"
+        good = inbox / "ok.png"
+        good.write_bytes(b"ok")
+        bad_sym = inbox / "linked.png"
+        bad_sym.write_bytes(b"sym-target")
+        subdir = inbox / "adir"
+        subdir.mkdir()
+        real_is_symlink = Path.is_symlink
+
+        def is_symlink(path, *args, **kwargs):
+            if path == bad_sym:
+                return True
+            return real_is_symlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "is_symlink", is_symlink)
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/move-batch",
+            {
+                "batch": "alpha",
+                "filenames": ["ok.png", "linked.png", "adir"],
+                "source": "inbox",
+                "destination": "finals",
+            },
+        )
+        assert status == 200
+        assert payload["success"] is True
+        assert payload["moved"] == 1
+        assert payload["skipped"] == 2
+        assert not (inbox / "ok.png").exists()
+        assert (settings.batch_root / "alpha" / "finals" / "ok.png").read_bytes() == b"ok"
+        assert (inbox / "linked.png").read_bytes() == b"sym-target"
+        assert subdir.is_dir()
+
+    asyncio.run(scenario())
+
+
+def test_native_delete_rejects_skips_cache_when_thumbs_is_symlink(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        rejects_dir = settings.batch_root / "alpha" / "rejects"
+        bad = rejects_dir / "bad.png"
+        bad.write_bytes(b"bad-image")
+        thumbs_dir = settings.batch_root / "alpha" / ".thumbs"
+        thumbs_dir.mkdir()
+        cache_file = thumbs_dir / "rejects__bad.webp"
+        cache_file.write_bytes(b"cache-data")
+        real_is_symlink = Path.is_symlink
+
+        def is_symlink(path, *args, **kwargs):
+            if path == thumbs_dir:
+                return True
+            return real_is_symlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "is_symlink", is_symlink)
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/delete-rejects/{batch}",
+            match_info={"batch": "alpha"},
+        )
+        assert status == 200
+        assert payload["success"] is True
+        assert payload["count"] == 1
+        assert not bad.exists()
+        assert cache_file.read_bytes() == b"cache-data"
+
+    asyncio.run(scenario())
+
+
+def test_native_delete_rejects_skips_cache_when_cache_file_is_symlink(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        rejects_dir = settings.batch_root / "alpha" / "rejects"
+        bad = rejects_dir / "bad.png"
+        bad.write_bytes(b"bad-image")
+        thumbs_dir = settings.batch_root / "alpha" / ".thumbs"
+        thumbs_dir.mkdir()
+        cache_file = thumbs_dir / "rejects__bad.webp"
+        cache_file.write_bytes(b"cache-data")
+        real_is_symlink = Path.is_symlink
+
+        def is_symlink(path, *args, **kwargs):
+            if path == cache_file:
+                return True
+            return real_is_symlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "is_symlink", is_symlink)
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/delete-rejects/{batch}",
+            match_info={"batch": "alpha"},
+        )
+        assert status == 200
+        assert payload["success"] is True
+        assert payload["count"] == 1
+        assert not bad.exists()
+        assert cache_file.read_bytes() == b"cache-data"
+
+    asyncio.run(scenario())
+
+
+def test_native_delete_rejects_skips_cache_when_resolved_outside_root(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        rejects_dir = settings.batch_root / "alpha" / "rejects"
+        bad = rejects_dir / "bad.png"
+        bad.write_bytes(b"bad-image")
+        outside = tmp_path / "outside-cache"
+        outside.mkdir()
+        thumbs_dir = settings.batch_root / "alpha" / ".thumbs"
+        thumbs_dir.mkdir()
+        cache_file = thumbs_dir / "rejects__bad.webp"
+        cache_file.write_bytes(b"cache-data")
+        real_resolve = Path.resolve
+
+        def resolve(path, *args, **kwargs):
+            if path == cache_file:
+                return outside / "rejects__bad.webp"
+            return real_resolve(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "resolve", resolve)
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/delete-rejects/{batch}",
+            match_info={"batch": "alpha"},
+        )
+        assert status == 200
+        assert payload["success"] is True
+        assert payload["count"] == 1
+        assert not bad.exists()
+        assert cache_file.read_bytes() == b"cache-data"
+
+    asyncio.run(scenario())

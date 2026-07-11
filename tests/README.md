@@ -79,7 +79,7 @@ The `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tes
 | `tests/unit/test_comfyui_extension.py` | Native `__init__.py` entrypoint, `py/curator_manager.py`, `web/comfyui/top_menu_extension.js` | `importlib`, `MagicMock`, mock modules for `server`, `aiohttp`, `jinja2` |
 | `tests/unit/test_comfyui_static_ui.py` | Native template parity, URL centralization, error propagation, page handler context | `frontend_source.read_frontend_js`, `subprocess` (node), `tmp_path`, `MagicMock` |
 | `tests/unit/test_native_curator_settings.py` | Native host path/default resolution and safe public settings payload | Injected host path callables, `tmp_path`, `monkeypatch` |
-| `tests/component/test_native_curator_api.py` | Native settings, batch/state/import, image, metadata, thumbnail, and original route contracts | Precise aiohttp web mocks, async handler execution, real `tmp_path` files |
+| `tests/component/test_native_curator_api.py` | Native settings, batch/state/import, image, metadata, thumbnail, original, single-image move, multi-image move, and delete-rejects route contracts | Precise aiohttp web mocks, async handler execution, real `tmp_path` files |
 | `tests/unit/test_frontend_*.py` | Ordered `static/js/*.js` and `static/css/*.css` sources -- source scanning for function names, invariants, undefined references | `tests/unit/frontend_source.py` helpers + regex assertions |
 | `tests/component/test_batch_api.py` | Flask route contracts: batches, images, move, delete-rejects, thumbnails | `client` fixture, PIL image generation |
 | `tests/component/test_ai_curate_worker.py` | `app._run_scoring_worker_inner` -- cancel timing (scoring vs move vs race) | Real `QueueManager` + `RunStorage`, patched `score_images` |

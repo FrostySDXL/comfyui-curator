@@ -282,7 +282,154 @@ def register_native_routes(app, service: NativeCuratorService) -> None:
     app.router.add_post("/api/curator/batches", create_batch)
     app.router.add_post("/api/curator/active-batch", set_active_batch)
     app.router.add_post("/api/curator/import-all", import_all)
+
+    async def move_single(request):
+        data = await _json_body(request)
+        batch = _string_field(data, "batch")
+        filename = _string_field(data, "filename")
+        source = _string_field(data, "source")
+        destination = _string_field(data, "destination")
+        if None in (batch, filename, source, destination):
+            return web.json_response({"error": "Missing parameters"}, status=400)
+        if not all([batch, filename, source, destination]):
+            return web.json_response({"error": "Missing parameters"}, status=400)
+        if not service.batch_exists(batch):
+            return web.json_response({"error": "Batch does not exist"}, status=404)
+        if source not in batch_store.BATCH_FOLDERS or destination not in batch_store.BATCH_FOLDERS:
+            return web.json_response({"error": "Invalid source or destination folder"}, status=400)
+        try:
+            src_dir = service.resolve_content_directory(batch, source)
+            dst_dir = service.resolve_content_directory(batch, destination)
+        except ValueError:
+            return web.json_response({"error": "Invalid path"}, status=400)
+        src_path, src_err = safe_path(src_dir, filename)
+        if src_err:
+            return web.json_response({"error": src_err}, status=400)
+        dst_path, dst_err = safe_path(dst_dir, filename)
+        if dst_err:
+            return web.json_response({"error": dst_err}, status=400)
+        try:
+            if src_path.is_symlink():
+                return web.json_response({"error": "Invalid path"}, status=400)
+            if not src_path.is_file():
+                return web.json_response({"error": "File not found"}, status=404)
+            if dst_path.is_symlink():
+                return web.json_response({"error": "Invalid path"}, status=400)
+        except OSError:
+            return web.json_response({"error": "Invalid path"}, status=400)
+        if not batch_store.move_image(src_path, dst_path):
+            return web.json_response({"error": f"Could not move {filename}"}, status=500)
+        return web.json_response({"success": True})
+
+    async def move_batch(request):
+        data = await _json_body(request)
+        batch = _string_field(data, "batch")
+        source = _string_field(data, "source")
+        destination = _string_field(data, "destination")
+        raw_filenames = data.get("filenames", [])
+        if not isinstance(raw_filenames, list):
+            return web.json_response({"error": "Missing parameters"}, status=400)
+        if None in (batch, source, destination):
+            return web.json_response({"error": "Missing parameters"}, status=400)
+        if not all([batch, source, destination]):
+            return web.json_response({"error": "Missing parameters"}, status=400)
+        if not service.batch_exists(batch):
+            return web.json_response({"error": "Batch does not exist"}, status=404)
+        if source not in batch_store.BATCH_FOLDERS or destination not in batch_store.BATCH_FOLDERS:
+            return web.json_response({"error": "Invalid source or destination folder"}, status=400)
+        try:
+            src_dir = service.resolve_content_directory(batch, source)
+            dst_dir = service.resolve_content_directory(batch, destination)
+        except ValueError:
+            return web.json_response({"error": "Invalid path"}, status=400)
+        skipped = 0
+        valid_filenames: list[str] = []
+        for filename in raw_filenames:
+            if not isinstance(filename, str):
+                skipped += 1
+                continue
+            src_path, src_err = safe_path(src_dir, filename)
+            if src_err:
+                skipped += 1
+                continue
+            dst_path, dst_err = safe_path(dst_dir, filename)
+            if dst_err:
+                skipped += 1
+                continue
+            try:
+                if src_path.is_symlink() or not src_path.is_file():
+                    skipped += 1
+                    continue
+                if dst_path.is_symlink():
+                    skipped += 1
+                    continue
+            except OSError:
+                skipped += 1
+                continue
+            valid_filenames.append(filename)
+        moved = 0
+        if valid_filenames:
+            moved, skipped_in_loop = batch_store.move_images(
+                source_dir=src_dir,
+                names=valid_filenames,
+                dest_dir=dst_dir,
+            )
+            skipped += skipped_in_loop
+        if moved == 0 and raw_filenames:
+            return web.json_response({"success": False, "moved": 0, "skipped": skipped})
+        return web.json_response({"success": True, "moved": moved, "skipped": skipped})
+
+    async def delete_rejects(request):
+        batch = request.match_info["batch"]
+        if not service.batch_exists(batch):
+            return web.json_response({"error": "Batch does not exist"}, status=404)
+        try:
+            rejects_dir = service.resolve_content_directory(batch, "rejects")
+        except ValueError:
+            return web.json_response({"error": "Invalid path"}, status=400)
+        count = 0
+        failed = 0
+        for f in rejects_dir.iterdir():
+            if f.suffix.lower() not in batch_store.IMAGE_EXTENSIONS:
+                continue
+            try:
+                if f.is_symlink():
+                    continue
+            except OSError:
+                continue
+            try:
+                f.unlink()
+            except OSError:
+                failed += 1
+                continue
+            cache_file = thumbnail_cache_path(service.settings.batch_root, batch, "rejects", f.name)
+            cache_safe = False
+            try:
+                if not cache_file.is_symlink() and not cache_file.parent.is_symlink():
+                    root = service.settings.batch_root.resolve()
+                    real_batch = (service.settings.batch_root / batch).resolve()
+                    real_cache = cache_file.resolve()
+                    real_parent = cache_file.parent.resolve()
+                    real_batch.relative_to(root)
+                    real_parent.relative_to(root)
+                    real_parent.relative_to(real_batch)
+                    real_cache.relative_to(root)
+                    real_cache.relative_to(real_batch)
+                    cache_safe = True
+            except (OSError, ValueError):
+                pass
+            if cache_safe and cache_file.exists():
+                try:
+                    cache_file.unlink()
+                except OSError:
+                    pass
+            count += 1
+        return web.json_response({"success": True, "count": count, "failed": failed})
+
     app.router.add_get("/api/curator/images/{batch}/{folder}", get_images)
     app.router.add_get("/api/curator/image-metadata/{batch}/{folder}/{name}", get_metadata)
     app.router.add_get("/curator/thumb/{batch}/{folder}/{name}", serve_thumbnail)
     app.router.add_get("/curator/image/{batch}/{folder}/{name}", serve_image)
+    app.router.add_post("/api/curator/move", move_single)
+    app.router.add_post("/api/curator/move-batch", move_batch)
+    app.router.add_post("/api/curator/delete-rejects/{batch}", delete_rejects)
