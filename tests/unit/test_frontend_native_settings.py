@@ -39,3 +39,11 @@ def test_native_settings_modal_warns_before_replacing_invalid_stored_config():
     assert "data.config_error === true" in source
     assert "Replace Invalid Settings" in source
     assert "Save Settings" in source
+
+
+def test_native_settings_modal_explains_container_path_visibility():
+    html = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="settings-path-scope-note"' in html
+    assert "inside the ComfyUI process" in html
+    assert "Docker volume or bind mount" in html

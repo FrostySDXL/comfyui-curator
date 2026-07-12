@@ -239,4 +239,5 @@
         .settings-secret-status { color: #7fb6ff; float: right; }
         .settings-error { padding: 8px 10px; margin-bottom: 12px; color: #ffc0c0; background: #3a2020; border-radius: 4px; font-size: 12px; }
         .settings-config-warning { padding: 10px; margin-bottom: 12px; color: #ffe0a3; background: #3a2d18; border: 1px solid #70532a; border-radius: 4px; font-size: 12px; line-height: 1.5; }
+        .settings-path-scope-note { padding: 10px; margin-bottom: 12px; color: #b9d8ff; background: #1d2c3d; border: 1px solid #365878; border-radius: 4px; font-size: 12px; line-height: 1.5; }
         .settings-modal-content .modal-buttons { margin-top: 18px; }

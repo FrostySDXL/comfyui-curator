@@ -71,6 +71,26 @@ variables below are fallbacks only when a native value is absent. API keys are
 never returned by the settings API and can be replaced or explicitly cleared.
 Import All remains an explicit operator action.
 
+Native path defaults are inside ComfyUI's Curator system-user directory. In a
+Docker deployment, every path in Settings and every path supplied through an
+environment fallback is interpreted inside the container. To use host data,
+mount the host directory into the container and configure Curator with the
+container-side path. For example:
+
+```yaml
+services:
+  comfyui:
+    volumes:
+      - /host/image-curator/batches:/data/curator-batches
+    environment:
+      IMAGE_CURATOR_BATCHES: /data/curator-batches
+```
+
+A host-only path such as `/mnt/storage/batches` is not visible unless that path
+is mounted into the container. Without an override, native mode uses
+`<ComfyUI system user directory>/curator/batches`, which works inside the
+container but must be mounted if its contents should survive container removal.
+
 Copy `.env.example` to `.env`. Key variables:
 
 Core path:

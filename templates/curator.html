@@ -571,6 +571,9 @@
             <div class="settings-heading"><h3 id="settings-modal-title">Curator Settings</h3><button id="settings-close-btn" type="button" aria-label="Close settings">&times;</button></div>
             <div id="settings-error" class="settings-error hidden" role="alert"></div>
             <div id="settings-config-warning" class="settings-config-warning hidden" role="alert">Stored settings could not be loaded. Review these fallback values carefully; saving replaces the invalid file.</div>
+            <div id="settings-path-scope-note" class="settings-path-scope-note">
+                Paths are resolved inside the ComfyUI process. In Docker, a host directory must be exposed at the configured container path with a Docker volume or bind mount.
+            </div>
             <div class="settings-grid">
                 <label>Batch root<input id="settings-batch-root" type="text" autocomplete="off"></label>
                 <label>Import source<input id="settings-import-source" type="text" autocomplete="off"></label>
