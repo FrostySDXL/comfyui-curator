@@ -201,8 +201,7 @@ with auth (nginx, Caddy, etc.). Read `SECURITY.md` for related guidance.
 
 ## ComfyUI extension
 
-The repository includes a ComfyUI integration shell described in
-`COMFYUI_EXTENSION_PORT_SPEC.md`:
+The repository includes a native ComfyUI integration:
 
 - `__init__.py` -- ComfyUI custom-node entrypoint with `WEB_DIRECTORY`,
   `NODE_CLASS_MAPPINGS`, `NODE_DISPLAY_NAME_MAPPINGS`.
