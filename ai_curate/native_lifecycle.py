@@ -43,10 +43,10 @@ from .worker import run_scoring_worker_inner
 
 if __package__ and "." in __package__:
     from ..image_curator import batch_store
-    from ..image_curator.native_settings import NativeCuratorSettings
+    from ..image_curator.native_settings import NativeCuratorSettings, SettingsConflictError
 else:
     from image_curator import batch_store
-    from image_curator.native_settings import NativeCuratorSettings
+    from image_curator.native_settings import NativeCuratorSettings, SettingsConflictError
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +163,7 @@ class NativeAiLifecycle:
         """Refresh idle native dependencies after settings were persisted."""
         with self._state_lock:
             if self.has_active_jobs():
-                raise LifecycleShutdownError("AI work is active")
+                raise SettingsConflictError("AI work is active")
             self._storage = RunStorage(batches_dir=self.settings.batch_root)
             self._client = VisionClient(
                 base_url=self.settings.llm_base_url,
@@ -178,7 +178,7 @@ class NativeAiLifecycle:
         """Atomically gate submissions while validating and applying settings."""
         with self._state_lock:
             if self.has_active_jobs():
-                raise RuntimeError("Settings cannot change while AI work is active")
+                raise SettingsConflictError("Settings cannot change while AI work is active")
             candidate = self.settings.candidate(data)
             storage = RunStorage(batches_dir=candidate.batch_root)
             client = VisionClient(

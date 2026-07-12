@@ -1,3 +1,7 @@
+"""Unit tests for image_curator.batch_store."""
+
+from pathlib import Path
+
 import pytest
 
 from image_curator import batch_store
@@ -335,3 +339,269 @@ def test_move_images_skips_dotfile_names(tmp_path):
     assert moved == 1
     assert skipped == 2
     assert (dest / "valid.png").exists()
+
+
+# ---------------------------------------------------------------------------
+# State-file safety tests
+# ---------------------------------------------------------------------------
+
+
+def test_load_state_rejects_symlinked_target(tmp_path):
+    """load_state returns default dict when state file is a symlink."""
+    state_file = tmp_path / "state.json"
+    outside = tmp_path / "outside.json"
+    outside.write_text('{"active_batch": "escaped"}', encoding="utf-8")
+    try:
+        state_file.symlink_to(outside)
+    except (NotImplementedError, OSError):
+        pytest.skip("symlink creation unavailable")
+
+    result = batch_store.load_state(state_file)
+    assert result == {"active_batch": None}
+
+
+def test_save_state_rejects_symlinked_target(tmp_path):
+    """save_state rejects when the state file is a symlink (no mutation)."""
+    state_file = tmp_path / "state.json"
+    outside = tmp_path / "outside.json"
+    outside.write_text('{"active_batch": "original"}', encoding="utf-8")
+    try:
+        state_file.symlink_to(outside)
+    except (NotImplementedError, OSError):
+        pytest.skip("symlink creation unavailable")
+
+    with pytest.raises(ValueError):
+        batch_store.save_state(state_file, {"active_batch": "new"})
+
+    assert outside.read_text(encoding="utf-8") == '{"active_batch": "original"}'
+
+
+def test_save_state_rejects_symlinked_tmp_target(tmp_path):
+    """save_state rejects when the temp file is a symlink (no mutation)."""
+    state_dir = tmp_path / "state-dir"
+    state_dir.mkdir()
+    state_file = state_dir / "state.json"
+    tmp_path_file = state_dir / "state.json.tmp"
+    outside = tmp_path / "outside.json"
+    outside.write_text("external", encoding="utf-8")
+    # Create the symlink to the temp target before calling save_state
+    try:
+        tmp_path_file.symlink_to(outside)
+    except (NotImplementedError, OSError):
+        pytest.skip("symlink creation unavailable")
+
+    with pytest.raises(ValueError):
+        batch_store.save_state(state_file, {"active_batch": "after"})
+
+    assert outside.read_text(encoding="utf-8") == "external"
+    assert not state_file.exists()
+
+
+def test_save_state_rejects_non_regular_target(tmp_path):
+    """save_state rejects when the state file target exists as a directory."""
+    state_file = tmp_path / "state.json"
+    state_file.mkdir()
+
+    with pytest.raises(ValueError):
+        batch_store.save_state(state_file, {"active_batch": "test"})
+
+
+def test_save_state_rejects_resolved_escape(tmp_path, monkeypatch):
+    """save_state rejects when the state file resolves outside its parent."""
+    state_file = tmp_path / "state.json"
+    state_file.write_text('{"active_batch": "before"}', encoding="utf-8")
+    truly_outside = tmp_path.parent / "outside"  # above tmp_path
+    truly_outside.mkdir(exist_ok=True)
+    real_resolve = Path.resolve
+
+    def patched_resolve(path):
+        if path == state_file:
+            return truly_outside / "state.json"
+        return real_resolve(path)
+
+    monkeypatch.setattr(Path, "resolve", patched_resolve)
+
+    with pytest.raises(ValueError):
+        batch_store.save_state(state_file, {"active_batch": "after"})
+
+    assert state_file.read_text(encoding="utf-8") == '{"active_batch": "before"}'
+
+
+def test_save_state_safe_atomic_roundtrip(tmp_path):
+    """Ordinary atomic roundtrip saves and loads correctly."""
+    state_file = tmp_path / "state.json"
+    batch_store.save_state(state_file, {"active_batch": "alpha"})
+    result = batch_store.load_state(state_file)
+    assert result == {"active_batch": "alpha"}
+
+
+def test_save_state_cleans_tmp_on_rejection(tmp_path, monkeypatch):
+    """A rejected save must not leave a newly created temp file."""
+    state_file = tmp_path / "state.json"
+    state_file.write_text('{"active_batch": "original"}', encoding="utf-8")
+    # Simulate a validation failure by making Path.is_file return False
+    # when inspecting the state file (which triggers the non-regular check).
+    real_is_file = Path.is_file
+
+    def patched_is_file(path):
+        if path == state_file:
+            return False
+        return real_is_file(path)
+
+    monkeypatch.setattr(Path, "is_file", patched_is_file)
+
+    with pytest.raises(ValueError):
+        batch_store.save_state(state_file, {"active_batch": "new"})
+
+    # Tmp file must not exist
+    tmp_file = state_file.with_suffix(state_file.suffix + ".tmp")
+    assert not tmp_file.exists()
+    # Original content preserved
+    assert state_file.read_text(encoding="utf-8") == '{"active_batch": "original"}'
+
+
+# ---------------------------------------------------------------------------
+# State-file validator ordering tests (dangling symlink, raw parent chain)
+# ---------------------------------------------------------------------------
+
+
+def test_load_state_rejects_dangling_state_symlink(tmp_path, monkeypatch):
+    """load_state returns default when state.json is a dangling symlink
+    (exists()=False but is_symlink()=True)."""
+    state_file = tmp_path / "state.json"
+    real_is_symlink = Path.is_symlink
+    real_exists = Path.exists
+
+    monkeypatch.setattr(
+        Path,
+        "is_symlink",
+        lambda path: True if path == state_file else real_is_symlink(path),
+    )
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda path: False if path == state_file else real_exists(path),
+    )
+
+    result = batch_store.load_state(state_file)
+    assert result == {"active_batch": None}
+
+
+def test_save_state_rejects_dangling_state_symlink_no_mutation(tmp_path, monkeypatch):
+    """save_state rejects a dangling state.json symlink without creating files."""
+    state_file = tmp_path / "state.json"
+    real_is_symlink = Path.is_symlink
+    real_exists = Path.exists
+
+    monkeypatch.setattr(
+        Path,
+        "is_symlink",
+        lambda path: True if path == state_file else real_is_symlink(path),
+    )
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda path: False if path == state_file else real_exists(path),
+    )
+
+    with pytest.raises(ValueError):
+        batch_store.save_state(state_file, {"active_batch": "new"})
+
+    assert not (state_file.with_suffix(state_file.suffix + ".tmp")).exists()
+
+
+def test_save_state_rejects_dangling_temp_symlink(tmp_path, monkeypatch):
+    """save_state rejects a dangling state.json.tmp symlink without mutation."""
+    state_dir = tmp_path / "state-dir"
+    state_dir.mkdir()
+    state_file = state_dir / "state.json"
+    tmp_path_file = state_dir / "state.json.tmp"
+    real_is_symlink = Path.is_symlink
+    real_exists = Path.exists
+
+    monkeypatch.setattr(
+        Path,
+        "is_symlink",
+        lambda path: True if path == tmp_path_file else real_is_symlink(path),
+    )
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda path: False if path == tmp_path_file else real_exists(path),
+    )
+
+    with pytest.raises(ValueError):
+        batch_store.save_state(state_file, {"active_batch": "after"})
+
+    assert not state_file.exists()
+
+
+def test_save_state_rejects_intermediate_raw_parent_symlink(tmp_path, monkeypatch):
+    """save_state rejects when a raw (lexical) parent component appears
+    as a symlink, even when .resolve() would return a safe path."""
+    state_dir = tmp_path / "safe" / "state"
+    state_dir.parent.mkdir(parents=True)
+    state_file = state_dir / "state.json"
+
+    real_is_symlink = Path.is_symlink
+    monkeypatch.setattr(
+        Path,
+        "is_symlink",
+        lambda path: True if path == state_dir.parent else real_is_symlink(path),
+    )
+
+    with pytest.raises(ValueError):
+        batch_store.save_state(state_file, {"active_batch": "new"})
+
+    assert not state_file.exists()
+
+
+def test_save_state_rejects_raw_parent_symlink_even_when_resolve_erases_identity(
+    tmp_path, monkeypatch
+):
+    """save_state rejects a raw parent symlink even when monkeypatched
+    .resolve() would return a path under a different, safe parent.  The
+    raw lexical chain rules, not the resolved one."""
+    state_dir = tmp_path / "lexical" / "state"
+    state_dir.mkdir(parents=True)
+    state_file = state_dir / "state.json"
+    state_file.write_text('{"active_batch": "original"}', encoding="utf-8")
+
+    # The raw parent "lexical" appears as a symlink (monkeypatch).
+    real_is_symlink = Path.is_symlink
+    monkeypatch.setattr(
+        Path,
+        "is_symlink",
+        lambda path: True if path == state_dir.parent else real_is_symlink(path),
+    )
+
+    # Monkeypatch .resolve() so the state file appears to live directly
+    # under tmp_path, erasing the symlink identity at resolve time.
+    real_resolve = Path.resolve
+
+    def patched_resolve(path):
+        if path == state_file or path == state_file.parent:
+            return tmp_path / path.name if path == state_file else tmp_path
+        return real_resolve(path)
+
+    monkeypatch.setattr(Path, "resolve", patched_resolve)
+
+    with pytest.raises(ValueError):
+        batch_store.save_state(state_file, {"active_batch": "new"})
+
+    assert state_file.read_text(encoding="utf-8") == '{"active_batch": "original"}'
+
+
+def test_state_validation_checks_relative_leaf_symlink(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    original_is_symlink = Path.is_symlink
+
+    def fake_is_symlink(path):
+        if Path(path) == tmp_path / "state.json":
+            return True
+        return original_is_symlink(path)
+
+    monkeypatch.setattr(Path, "is_symlink", fake_is_symlink)
+
+    with pytest.raises(ValueError, match="State path is unsafe"):
+        batch_store._validate_state_target(Path("state.json"))

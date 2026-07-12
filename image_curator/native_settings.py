@@ -17,6 +17,15 @@ class NativeConfigError(ValueError):
     """A stable settings storage or validation error."""
 
 
+class SettingsConflictError(RuntimeError):
+    """Raised when settings change is attempted while AI work is active.
+
+    Lives here (rather than in ``ai_curate.native_lifecycle``) so both
+    the native settings routes and the AI lifecycle can import it without
+    circular dependencies.
+    """
+
+
 class NativeConfigStore:
     """Thread-safe native config persistence confined to one system directory."""
 
@@ -296,18 +305,19 @@ class NativeCuratorSettings:
         url = str(data.get("llm_base_url", "")).strip()
         if urlparse(url).scheme not in ("http", "https") or not urlparse(url).netloc:
             raise NativeConfigError("LLM base URL must be HTTP or HTTPS")
-        if not isinstance(data.get("models"), list) or any(
-            not isinstance(model, str) for model in data["models"]
+        raw_models = data.get("models")
+        if not isinstance(raw_models, list) or any(
+            not isinstance(model, str) for model in raw_models
         ):
             raise NativeConfigError("Models must be a list of strings")
-        models = _models(data.get("models"))
+        models = _models(raw_models)
         default = str(data.get("default_model", "")).strip()
         if default and default not in models:
             raise NativeConfigError("Default model must be in the model list")
         timeout = data.get("request_timeout")
         if isinstance(timeout, bool) or not isinstance(timeout, int) or not 1 <= timeout <= 3600:
             raise NativeConfigError("Request timeout must be between 1 and 3600")
-        key = (
+        resolved_key: str | None = (
             None
             if data.get("clear_api_key")
             else (str(data.get("api_key", "")).strip() or self.api_key)
@@ -321,7 +331,7 @@ class NativeCuratorSettings:
             "models": list(models),
             "default_model": default,
             "request_timeout": timeout,
-            "api_key": key or "",
+            "api_key": resolved_key or "",
         }
         if persist and self.config_store is None:
             raise NativeConfigError("Settings storage is unavailable")
@@ -332,6 +342,6 @@ class NativeCuratorSettings:
         self.import_source = paths["import_source"]
         self.public_export_root = export if export_enabled else None
         self.llm_base_url, self.available_models, self.default_model = url, models, default
-        self.request_timeout, self.api_key = timeout, key
+        self.request_timeout, self.api_key = timeout, resolved_key
         self.config_error = False
         return self.editable_payload()

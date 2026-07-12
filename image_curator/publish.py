@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 
@@ -108,13 +108,13 @@ def _load_font(image_width: int, size_percent: float) -> ImageFont.ImageFont:
     size = max(8, int(image_width * clamped_percent / 100))
     for font_path in WATERMARK_FONT_CANDIDATES:
         try:
-            return ImageFont.truetype(font_path, size=size)
+            return cast(ImageFont.ImageFont, ImageFont.truetype(font_path, size=size))
         except OSError:
             continue
     try:
-        return ImageFont.load_default(size=size)
+        return cast(ImageFont.ImageFont, ImageFont.load_default(size=size))
     except TypeError:
-        return ImageFont.load_default()
+        return cast(ImageFont.ImageFont, ImageFont.load_default())
 
 
 def _watermark_xy(
@@ -161,7 +161,7 @@ def _apply_text_watermark(image: Image.Image, options: dict[str, Any] | None) ->
     draw = ImageDraw.Draw(overlay)
     font = _load_font(base.width, size_percent)
     bbox = draw.textbbox((0, 0), text, font=font)
-    text_size = (bbox[2] - bbox[0], bbox[3] - bbox[1])
+    text_size = (int(bbox[2] - bbox[0]), int(bbox[3] - bbox[1]))
     xy = _watermark_xy(base.size, text_size, position, margin)
     draw.text(xy, text, fill=(*color, int(255 * opacity)), font=font)
     return Image.alpha_composite(base, overlay)

@@ -158,7 +158,7 @@ def _find_file_folder(batches_dir: Path, batch: str, filename: str) -> str | Non
     return None
 
 
-def resolve_universal_favorites(batches_dir: Path) -> list[dict[str, str]]:
+def resolve_universal_favorites(batches_dir: Path) -> list[dict[str, object]]:
     """Resolve universal favorites to existing files and their current folder.
 
     Skips entries whose batch, stage, or file path are symlinks, resolve

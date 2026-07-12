@@ -160,6 +160,9 @@ def test_full_plan_includes_mypy():
     assert mypy_check.requires == "mypy"
     # mypy must be the last (added) check, after the default-plan ordering.
     assert names[-1] == "mypy"
+    # mypy must use --explicit-package-bases so hyphenated repo dirnames
+    # with a root __init__.py do not cause "not a valid Python package name".
+    assert "--explicit-package-bases" in mypy_check.command
 
 
 def test_format_command_display_basenames_absolute_paths():

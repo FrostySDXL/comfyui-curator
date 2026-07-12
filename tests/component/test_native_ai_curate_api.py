@@ -940,6 +940,8 @@ class TestLifecycle:
     def test_settings_update_is_rejected_atomically_while_ai_job_is_active(
         self, tmp_path, monkeypatch
     ):
+        from image_curator.native_settings import SettingsConflictError
+
         _, _, lifecycle = _make_router_and_lifecycle(tmp_path, monkeypatch)
         lifecycle._launch_worker = lambda _run_id: None
         lifecycle.submit_job(
@@ -955,7 +957,7 @@ class TestLifecycle:
             }
         )
         original_root = lifecycle.settings.batch_root
-        with pytest.raises(RuntimeError, match="AI work is active"):
+        with pytest.raises(SettingsConflictError, match="AI work is active"):
             lifecycle.update_settings({})
         assert lifecycle.settings.batch_root == original_root
 

@@ -2,6 +2,8 @@
 
 import json
 import os
+from pathlib import Path
+
 import pytest
 from ai_curate.models import CurationRun, ImageResult, RunTotals, JobState
 from ai_curate.storage import RunStorage
@@ -257,3 +259,73 @@ class TestRunStorage:
         assert external.read_text(encoding="utf-8") == "unchanged"
         assert not (runs / "run001.json").exists()
         assert not (tmp_batches / "test-batch" / "ai-curate" / "latest.json").exists()
+
+    def test_save_revalidates_after_mkdir_rejects_target_turned_symlink(
+        self, tmp_batches, monkeypatch
+    ):
+        """After mkdir creates the runs directory, revalidate and reject
+        if the runs directory appears to be a symlink (TOCTOU transition)."""
+        storage = RunStorage(batches_dir=tmp_batches)
+        run = _make_completed_run()
+
+        runs_dir = tmp_batches / "test-batch" / "ai-curate" / "runs"
+        real_is_symlink = Path.is_symlink
+        after_mkdir = False
+
+        def patched_is_symlink(path):
+            if after_mkdir and path == runs_dir:
+                return True
+            return real_is_symlink(path)
+
+        real_mkdir = Path.mkdir
+
+        def patched_mkdir(path, *args, **kwargs):
+            nonlocal after_mkdir
+            result = real_mkdir(path, *args, **kwargs)
+            after_mkdir = True
+            return result
+
+        monkeypatch.setattr(Path, "is_symlink", patched_is_symlink)
+        monkeypatch.setattr(Path, "mkdir", patched_mkdir)
+
+        with pytest.raises(ValueError):
+            storage.save_run(run)
+
+        # No run file or latest pointer must have been written.
+        run_path = runs_dir / "run001.json"
+        assert not run_path.exists()
+        assert not (tmp_batches / "test-batch" / "ai-curate" / "latest.json").exists()
+
+    def test_save_revalidates_after_mkdir_rejects_resolved_escape(self, tmp_batches, monkeypatch):
+        """After mkdir creates the runs directory, revalidate and reject
+        if a target path suddenly resolves outside the batches root."""
+        storage = RunStorage(batches_dir=tmp_batches)
+        run = _make_completed_run()
+
+        runs_dir = tmp_batches / "test-batch" / "ai-curate" / "runs"
+        run_path = runs_dir / "run001.json"
+        outside = tmp_batches.parent / "outside"
+        outside.mkdir(exist_ok=True)
+        real_resolve = Path.resolve
+        after_mkdir = False
+
+        def patched_resolve(path):
+            if after_mkdir and path == run_path:
+                return outside / "run001.json"
+            return real_resolve(path)
+
+        real_mkdir = Path.mkdir
+
+        def patched_mkdir(path, *args, **kwargs):
+            nonlocal after_mkdir
+            result = real_mkdir(path, *args, **kwargs)
+            after_mkdir = True
+            return result
+
+        monkeypatch.setattr(Path, "resolve", patched_resolve)
+        monkeypatch.setattr(Path, "mkdir", patched_mkdir)
+
+        with pytest.raises(ValueError):
+            storage.save_run(run)
+
+        assert not run_path.exists()

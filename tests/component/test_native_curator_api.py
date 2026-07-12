@@ -228,6 +228,105 @@ def test_native_settings_post_rejects_read_only_response_fields(tmp_path, monkey
     asyncio.run(scenario())
 
 
+def test_native_settings_conflict_maps_to_409(tmp_path, monkeypatch):
+    """A SettingsConflictError from lifecycle.update_settings maps to 409."""
+    from image_curator.native_settings import (
+        NativeConfigStore,
+        NativeCuratorSettings,
+        SettingsConflictError,
+    )
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=(tmp_path / "batches").resolve(),
+            import_source=(tmp_path / "output").resolve(),
+            state_file=tmp_path / "state.json",
+            config_store=NativeConfigStore(tmp_path / "system"),
+        )
+
+        def _conflict_update(data):
+            raise SettingsConflictError("AI work is active")
+
+        lifecycle = SimpleNamespace(update_settings=_conflict_update)
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router),
+            native_routes.NativeCuratorService(settings),
+            lifecycle,
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/settings",
+            {
+                "batch_root": str((tmp_path / "new-batches").resolve()),
+                "import_source": str((tmp_path / "new-output").resolve()),
+                "public_export_enabled": False,
+                "public_export_root": "",
+                "llm_base_url": "http://localhost:9999",
+                "models": ["a"],
+                "default_model": "a",
+                "api_key": "",
+                "clear_api_key": False,
+                "request_timeout": 30,
+            },
+        )
+        assert status == 409
+        assert payload == {"error": "Settings cannot change while AI work is active"}
+
+    asyncio.run(scenario())
+
+
+def test_native_settings_unexpected_runtime_error_maps_to_500(tmp_path, monkeypatch):
+    """A generic RuntimeError from lifecycle.update_settings maps to 500,
+    NOT to 409 (only SettingsConflictError gets 409)."""
+    from image_curator.native_settings import NativeConfigStore, NativeCuratorSettings
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=(tmp_path / "batches").resolve(),
+            import_source=(tmp_path / "output").resolve(),
+            state_file=tmp_path / "state.json",
+            config_store=NativeConfigStore(tmp_path / "system"),
+        )
+
+        def _unexpected_error(data):
+            raise RuntimeError("something unexpected broke")
+
+        lifecycle = SimpleNamespace(update_settings=_unexpected_error)
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router),
+            native_routes.NativeCuratorService(settings),
+            lifecycle,
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/settings",
+            {
+                "batch_root": str((tmp_path / "new-batches").resolve()),
+                "import_source": str((tmp_path / "new-output").resolve()),
+                "public_export_enabled": False,
+                "public_export_root": "",
+                "llm_base_url": "http://localhost:9999",
+                "models": ["a"],
+                "default_model": "a",
+                "api_key": "",
+                "clear_api_key": False,
+                "request_timeout": 30,
+            },
+        )
+        assert status == 500
+        assert "Could not update settings" in payload.get("error", "")
+
+    asyncio.run(scenario())
+
+
 def test_native_metadata_and_media_contracts_enforce_boundaries(tmp_path, monkeypatch):
     from PIL import Image
     from PIL.PngImagePlugin import PngInfo
@@ -824,6 +923,38 @@ def test_native_batch_summary_excludes_batch_with_unsafe_stage_before_helpers(
         return real_resolve(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "resolve", resolve)
+    monkeypatch.setattr(
+        native_routes.batch_store,
+        "get_batch_counts",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("unsafe count traversal")),
+    )
+    monkeypatch.setattr(
+        native_routes.batch_store,
+        "get_batch_metadata",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("unsafe metadata traversal")),
+    )
+
+    payload = native_routes.NativeCuratorService(settings).batches_payload()
+
+    assert payload["batches"] == []
+    assert payload["counts"] == {}
+    assert payload["batch_meta"] == {}
+
+
+def test_native_batch_summary_excludes_batch_with_non_directory_ai_curate(tmp_path, monkeypatch):
+    """batch_summary_safe returns False when <batch>/ai-curate exists
+    but is not a real directory (e.g. a regular file)."""
+    from image_curator import batch_store
+
+    native_routes = _load_native_routes(monkeypatch)
+    settings = NativeCuratorSettings(
+        batch_root=tmp_path / "batches",
+        import_source=tmp_path / "output",
+        state_file=tmp_path / "state.json",
+    )
+    batch_store.create_batch(settings.batch_root, "alpha")
+    ai_curate = settings.batch_root / "alpha" / "ai-curate"
+    ai_curate.write_text("not-a-directory", encoding="utf-8")
     monkeypatch.setattr(
         native_routes.batch_store,
         "get_batch_counts",

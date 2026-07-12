@@ -107,7 +107,7 @@ class RunStorage:
             raise ValueError("batch path escapes batch root") from exc
 
         # Validate parent chain: every existing parent must not be a symlink.
-        _validate_no_symlink_chain_to(self.batches_dir, path)
+        _validate_parent_chain_no_symlinks(self.batches_dir, path)
 
         # Validate the target path itself.
         try:
@@ -141,7 +141,7 @@ class RunStorage:
         except (OSError, ValueError) as exc:
             raise ValueError("batch path escapes batch root") from exc
 
-        _validate_no_symlink_chain_to(self.batches_dir, path)
+        _validate_parent_chain_no_symlinks(self.batches_dir, path)
 
         # Must exist and be a regular file.
         try:
@@ -176,7 +176,7 @@ class RunStorage:
             return
 
         try:
-            _validate_no_symlink_chain_to(self.batches_dir, runs_dir / "placeholder")
+            _validate_parent_chain_no_symlinks(self.batches_dir, runs_dir / "placeholder")
             if runs_dir.is_symlink():
                 raise ValueError("runs dir is a symlink")
             if not runs_dir.is_dir():
@@ -251,6 +251,18 @@ class RunStorage:
 
             runs_dir = run_path.parent
             runs_dir.mkdir(parents=True, exist_ok=True)
+
+            # ------------------------------------------------------------------
+            # Post-creation revalidation: after mkdir the parent chain and
+            # every target may have transitioned to a symlink, non-regular
+            # file, or resolved escape.  Re-check before any write so a
+            # rejected save never mutates the filesystem.
+            # ------------------------------------------------------------------
+            self._validate_path_for_write(run_path, run.batch)
+            self._validate_path_for_write(tmp_path, run.batch)
+            self._validate_path_for_write(latest_path, run.batch)
+            self._validate_path_for_write(latest_tmp, run.batch)
+            _validate_parent_chain_no_symlinks(self.batches_dir, runs_dir)
 
             # Write the run file atomically via a temp file.
             tmp_path.write_text(
@@ -395,29 +407,15 @@ def _validate_containment_root(raw_root: Path, real_root: Path) -> None:
         raise ValueError("invalid batch root") from exc
 
 
-def _validate_no_symlink_chain(base: Path, target: Path) -> None:
-    """Check that no existing parent dir between ``base`` and ``target`` is a symlink.
+def _validate_parent_chain_no_symlinks(base_dir: Path, final_path: Path) -> None:
+    """Check that no parent of ``final_path`` (up to and including ``base_dir``) is a symlink.
 
-    ``base`` must be an ancestor of ``target``.
+    Traverses the directory chain from ``base_dir`` to the parent of
+    ``final_path``, rejecting any existing directory that is a symlink.
+    Non-existent intermediate directories are silently skipped (OSError
+    from ``is_symlink()`` is caught) because they will be created by
+    ``mkdir`` at a later stage and then revalidated.
     """
-    try:
-        target.relative_to(base)
-    except ValueError:
-        raise ValueError("target is not under base") from None
-    # Walk from base to target, checking each existing directory.
-    current = base
-    parts = target.relative_to(base).parts
-    for part in parts:
-        current = current / part
-        try:
-            if current.is_symlink():
-                raise ValueError(f"symlink in path: {current}")
-        except OSError:
-            pass
-
-
-def _validate_no_symlink_chain_to(base_dir: Path, final_path: Path) -> None:
-    """Check that no parent of ``final_path`` (up to and including ``base_dir``) is a symlink."""
     parts = final_path.relative_to(base_dir).parts
     current = base_dir
     # Check every ancestor directory except the final leaf.

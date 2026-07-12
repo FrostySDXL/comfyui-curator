@@ -706,9 +706,15 @@ def _on_job_promoted(run_id):
 # handlers cover Ctrl-C in dev and SIGTERM from systemd in production.
 atexit.register(_shutdown_workers)
 
+
+def _shutdown_signal_handler(_signum, _frame) -> None:
+    _shutdown_workers()
+    sys.exit(0)
+
+
 for _sig in (signal.SIGTERM, signal.SIGINT):
     try:
-        signal.signal(_sig, lambda signum, _frame: (_shutdown_workers(), sys.exit(0)))
+        signal.signal(_sig, _shutdown_signal_handler)
     except (ValueError, OSError):
         # SIGTERM is not installable on Windows in some contexts, and signal
         # handlers cannot be registered from non-main threads. Skip silently.

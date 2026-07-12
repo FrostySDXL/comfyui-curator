@@ -14,7 +14,7 @@ from .favorites import (
     toggle_favorite,
 )
 from .media import generate_thumbnail, thumbnail_cache_path, thumbnail_is_fresh
-from .native_settings import NativeConfigError, NativeCuratorSettings
+from .native_settings import NativeConfigError, NativeCuratorSettings, SettingsConflictError
 from .png_metadata import extract_png_metadata
 from .web_validation import safe_path
 
@@ -71,6 +71,8 @@ class NativeCuratorService:
         if ai_dir.is_symlink():
             return False
         if ai_dir.exists():
+            if not ai_dir.is_dir():
+                return False
             try:
                 real_ai_dir = ai_dir.resolve()
                 real_ai_dir.relative_to(root)
@@ -185,7 +187,7 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             return web.json_response({"success": True, **payload})
         except NativeConfigError as exc:
             return web.json_response({"error": str(exc)}, status=400)
-        except RuntimeError:
+        except SettingsConflictError:
             return web.json_response(
                 {"error": "Settings cannot change while AI work is active"}, status=409
             )
