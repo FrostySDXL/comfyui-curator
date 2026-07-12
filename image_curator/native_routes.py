@@ -14,7 +14,7 @@ from image_curator.favorites import (
     toggle_favorite,
 )
 from image_curator.media import generate_thumbnail, thumbnail_cache_path, thumbnail_is_fresh
-from image_curator.native_settings import NativeCuratorSettings
+from image_curator.native_settings import NativeConfigError, NativeCuratorSettings
 from image_curator.png_metadata import extract_png_metadata
 from image_curator.web_validation import safe_path
 
@@ -163,11 +163,34 @@ def _string_field(data: dict[str, Any], key: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def register_native_routes(app, service: NativeCuratorService) -> None:
+def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -> None:
     """Register namespaced native foundation routes on an aiohttp application."""
 
     async def get_settings(_request):
-        return web.json_response(service.settings.public_payload())
+        return web.json_response(service.settings.editable_payload())
+
+    async def post_settings(request):
+        try:
+            data = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+        if not isinstance(data, dict):
+            return web.json_response({"error": "Settings body must be an object"}, status=400)
+        try:
+            payload = (
+                lifecycle.update_settings(data)
+                if lifecycle is not None
+                else service.settings.update(data)
+            )
+            return web.json_response({"success": True, **payload})
+        except NativeConfigError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except RuntimeError:
+            return web.json_response(
+                {"error": "Settings cannot change while AI work is active"}, status=409
+            )
+        except Exception:
+            return web.json_response({"error": "Could not update settings"}, status=500)
 
     async def get_batches(_request):
         return web.json_response(service.batches_payload())
@@ -314,6 +337,7 @@ def register_native_routes(app, service: NativeCuratorService) -> None:
         )
 
     app.router.add_get("/api/curator/settings", get_settings)
+    app.router.add_post("/api/curator/settings", post_settings)
     app.router.add_get("/api/curator/batches", get_batches)
     app.router.add_post("/api/curator/batches", create_batch)
     app.router.add_post("/api/curator/active-batch", set_active_batch)

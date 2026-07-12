@@ -13,7 +13,7 @@
 - **Prompt history indexing** (`prompt_history.py`): Builds manual prompt indexes from PNG metadata, deduplicated by normalized prompt/negative prompt. Safety: rejects symlinked review stages and resolves-containment escapes during build/count; rejects symlinked and non-regular cache entries during load; aggregate loading silently omits batches with unsafe caches.
 - **Web validation** (`web_validation.py`): Path traversal guard and existing-batch validation helpers used by Flask route wrappers.
 - **Media cache helpers** (`media.py`): Thumbnail cache path/freshness checks and WebP thumbnail generation.
-- **Native ComfyUI foundation** (`native_settings.py`, `native_routes.py`): Host-owned path resolution plus namespaced aiohttp adapters for batch/image reads, state, import, metadata, media serving, moves, reject deletion, favorites, public workflows, and prompt-history build/load/staleness/aggregate operations.
+- **Native ComfyUI foundation** (`native_settings.py`, `native_routes.py`): Locked atomic `config.json` persistence, persisted/environment/default resolution, and namespaced aiohttp adapters including editable settings GET/POST.
 
 Modules are responsibility-scoped; keep AI-specific validation and worker orchestration in `ai_curate/`.
 
@@ -84,7 +84,7 @@ Written atomically via `.tmp` + `os.replace()`.
 | `prompt_history.py` | `build_prompt_index`, `load_prompt_index`, `load_all_prompt_indices`; scans PNG metadata, strips LoRA tags with `png_metadata.LORA_RE`, hashes normalized prompt pairs, and writes `prompt-history.json` atomically. |
 | `web_validation.py` | `safe_path(base, *parts)` blocks traversal/absolute path escape; `require_existing_batch()` validates app-provided batch lists while preserving Flask route response shape. |
 | `media.py` | `thumbnail_cache_path()`, `thumbnail_is_fresh()`, and `generate_thumbnail()` for WebP thumbnail cache semantics. |
-| `native_settings.py` | Resolves native batch/import/state paths from injected ComfyUI `folder_paths` callables and exposes only non-secret model/UI settings. |
+| `native_settings.py` | Persists schema-versioned native operation settings beside `state.json`; rejects symlinked, escaping, and non-regular config/temp targets and unsafe editable directory paths; resolves environment fallbacks; and exposes API-key status without the secret. |
 | `native_routes.py` | Registers the native settings, batch/state/import, image-list, metadata, thumbnail, original-image, move, delete-rejects, favorites, public, and prompt-history aiohttp contracts while reusing this package's filesystem helpers. |
 | `native_ai_routes.py` | Registers namespaced native AI preview, submit, status, cancellation, run-history, latest-run, and element-history aiohttp contracts using `ai_curate.native_lifecycle.NativeAiLifecycle`. |
 

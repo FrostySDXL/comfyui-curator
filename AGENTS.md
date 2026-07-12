@@ -53,7 +53,7 @@ curate.py (CLI)
 ComfyUI native extension
   ├── __init__.py                     ← ComfyUI custom-node entrypoint, WEB_DIRECTORY
   ├── py/curator_manager.py           ← registers native page, static mount, health, foundation routes, and AI lifecycle hooks
-  ├── image_curator/native_settings.py ← ComfyUI-owned native path/default resolution
+  ├── image_curator/native_settings.py ← locked atomic native config store and persisted/env/default resolution
   ├── image_curator/native_routes.py  ← aiohttp batch/image/move/delete/favorites/public/prompt-history foundation adapter
   ├── image_curator/native_ai_routes.py ← aiohttp AI curation route adapter (/api/curator/ai-curate/*) using NativeAiLifecycle
   ├── web/comfyui/top_menu_extension.js ← action-bar button opening /curator
@@ -253,7 +253,8 @@ Treat these as stability-sensitive:
 - **Thumbnail cache key includes folder name:** `<folder>__<stem>.webp` format prevents same-filename collisions across inbox/shortlisted/finals/rejects.
 - **`ELEMENT_CAP` (12) truncation is silent:** `scoring.py` caps elements without logging a warning.
 - **Native extension scope:** Native settings, batch/image/thumbnail foundation routes, curation mutations, favorites, public workflow, prompt history, and AI scoring lifecycle are namespaced under `/api/curator/*` and `/curator/{thumb,image}/*`. Native AI uses a lifecycle-owned queue with bounded shutdown. See `COMFYUI_EXTENSION_PORT_SPEC.md`.
-- **Native public export root default:** `NativeCuratorSettings.from_host_paths()` resolves a ComfyUI-owned `public-exports` directory under the curator system user directory (`<system_dir>/public-exports`). The host path is never serialized into the browser payload; only `public_enabled` (bool) is sent.
+- **Native public export root default:** `NativeCuratorSettings.from_host_paths()` resolves a ComfyUI-owned `public-exports` directory under the curator system user directory (`<system_dir>/public-exports`). The editable path appears only in the dedicated local-operator settings response, not general page or batch payloads.
+- **Native settings:** `<system_dir>/config.json` is the normal native source. Persisted values precede environment fallbacks and ComfyUI-owned defaults. The dedicated settings endpoint returns editable paths and API-key set status, never the key; saves support explicit replacement and clearing and are rejected while AI work is active.
 - **curator.html must stay synchronized with index.html:** The native template is derived from `index.html` by two transforms: `/static/` → `/curator_static/` and inserting `window.CURATOR_NATIVE = true` before the first `<script src="...">`. Any change to `index.html` must be mirrored in `curator.html`.
 - **Shared frontend mode detection:** `static/js/state.js` checks `window.CURATOR_NATIVE === true` to select API paths, thumb URLs, and image URLs. Do not remove or rename `CURATOR_NATIVE` without updating both templates and all URL helpers.
 

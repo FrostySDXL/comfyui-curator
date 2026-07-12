@@ -76,6 +76,23 @@ def _symlink_directory_or_skip(link, target):
         pytest.skip(f"directory symlink unavailable on this platform or permission set: {exc}")
 
 
+def _editable_request(settings, **changes):
+    payload = {
+        "batch_root": str(settings.batch_root),
+        "import_source": str(settings.import_source),
+        "public_export_enabled": settings.public_export_root is not None,
+        "public_export_root": str(settings.public_export_root or ""),
+        "llm_base_url": settings.llm_base_url,
+        "models": list(settings.available_models),
+        "default_model": settings.default_model,
+        "api_key": "",
+        "clear_api_key": False,
+        "request_timeout": settings.request_timeout,
+    }
+    payload.update(changes)
+    return payload
+
+
 def test_native_settings_and_batch_state_contracts(tmp_path, monkeypatch):
     async def scenario():
         native_routes = _load_native_routes(monkeypatch)
@@ -93,9 +110,16 @@ def test_native_settings_and_batch_state_contracts(tmp_path, monkeypatch):
         status, payload = await _invoke(router, "GET", "/api/curator/settings")
         assert status == 200
         assert payload == {
-            "available_models": ["vision"],
+            "batch_root": str(settings.batch_root),
+            "import_source": str(settings.import_source),
+            "public_export_enabled": False,
+            "public_export_root": "",
+            "llm_base_url": "http://localhost:8080",
+            "models": ["vision"],
             "default_model": "vision",
-            "public_enabled": False,
+            "ai_api_key_set": False,
+            "request_timeout": 120,
+            "config_error": False,
         }
 
         status, payload = await _invoke(router, "POST", "/api/curator/batches", {"name": "alpha"})
@@ -120,6 +144,86 @@ def test_native_settings_and_batch_state_contracts(tmp_path, monkeypatch):
         }
         assert payload["batch_meta"]["alpha"]["modified_at"] > 0
         assert payload["pending_count"] == 0
+
+    asyncio.run(scenario())
+
+
+def test_native_settings_post_updates_secret_without_echo_and_supports_clear(tmp_path, monkeypatch):
+    async def scenario():
+        from image_curator.native_settings import NativeConfigStore
+
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=(tmp_path / "batches").resolve(),
+            import_source=(tmp_path / "output").resolve(),
+            state_file=tmp_path / "state.json",
+            api_key="old-secret",
+            config_store=NativeConfigStore(tmp_path / "system"),
+        )
+        lifecycle = SimpleNamespace(update_settings=settings.update)
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings), lifecycle
+        )
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/settings",
+            {
+                "batch_root": str((tmp_path / "new-batches").resolve()),
+                "import_source": str((tmp_path / "new-output").resolve()),
+                "public_export_enabled": False,
+                "public_export_root": "",
+                "llm_base_url": "http://localhost:9999",
+                "models": [" a ", "a", "b"],
+                "default_model": "b",
+                "api_key": "replacement-secret",
+                "clear_api_key": False,
+                "request_timeout": 30,
+            },
+        )
+        assert status == 200
+        assert payload["ai_api_key_set"] is True
+        assert "replacement-secret" not in json.dumps(payload)
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/settings",
+            _editable_request(settings, models=["a", "b"], clear_api_key=True),
+        )
+        assert status == 200
+        assert payload["ai_api_key_set"] is False
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("field", ["ai_api_key_set", "config_error"])
+def test_native_settings_post_rejects_read_only_response_fields(tmp_path, monkeypatch, field):
+    async def scenario():
+        from image_curator.native_settings import NativeConfigStore
+
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+            config_store=NativeConfigStore(tmp_path / "system"),
+        )
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "POST",
+            "/api/curator/settings",
+            _editable_request(settings, **{field: False}),
+        )
+
+        assert status == 400
+        assert payload == {"error": "Unknown settings field"}
+        assert not settings.config_store.path.exists()
 
     asyncio.run(scenario())
 

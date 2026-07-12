@@ -105,6 +105,7 @@ def test_javascript_checks_use_ordered_split_file_list():
         "ai.js",
         "polling.js",
         "modals.js",
+        "settings.js",
         "combobox.js",
         "keyboard.js",
         "events.js",

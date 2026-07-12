@@ -65,6 +65,12 @@ template, and default local paths use `image-curator`.
 
 ## Configuration
 
+Native ComfyUI mode uses the header **Settings** modal. It persists operational
+settings in the Curator system-user directory as `config.json`; environment
+variables below are fallbacks only when a native value is absent. API keys are
+never returned by the settings API and can be replaced or explicitly cleared.
+Import All remains an explicit operator action.
+
 Copy `.env.example` to `.env`. Key variables:
 
 Core path:
@@ -175,7 +181,7 @@ The repository includes a ComfyUI integration shell described in
 - `py/curator_manager.py` -- registers `/curator`, `/curator_static`, health,
   and the namespaced native batch/image foundation.
 - `image_curator/native_settings.py` -- resolves ComfyUI-owned batch, import,
-  and state paths without importing Flask or exposing host paths to the browser.
+  state, and persistent native configuration without importing Flask.
 - `image_curator/native_routes.py` -- aiohttp adapter for settings, batches,
   active state, manual import, image lists, metadata, thumbnails, originals,
   single-image moves, multi-image moves, reject deletion, favorites
@@ -191,6 +197,8 @@ The repository includes a ComfyUI integration shell described in
 - Shared frontend URL helpers (`ccApiPath`, `ccThumbUrl`, `ccImageUrl` in
   `static/js/state.js`) switch between `/api`/`/thumb`/`/image` and
   `/api/curator`/`/curator/thumb`/`/curator/image` based on the native flag.
+- `GET` and `POST /api/curator/settings` back the native-only Settings modal;
+  editable paths are returned only by this dedicated local-operator endpoint.
 
 Native foundation routes use `/api/curator/*` and media uses
 `/curator/thumb/*` and `/curator/image/*`. Single-image moves, multi-image

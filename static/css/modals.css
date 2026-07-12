@@ -228,3 +228,15 @@
             padding: 4px 0;
             color: #888;
         }
+        .settings-modal-content { width: min(620px, calc(100vw - 40px)); max-height: 88vh; overflow-y: auto; }
+        .settings-heading { display: flex; justify-content: space-between; align-items: center; }
+        .settings-heading button { border: 0; background: transparent; color: #aaa; font-size: 24px; cursor: pointer; }
+        .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+        .settings-grid label { color: #aaa; font-size: 12px; }
+        .settings-grid input, .settings-grid textarea { margin: 5px 0 0; width: 100%; padding: 8px; background: #333; border: 1px solid #444; color: #eee; border-radius: 4px; }
+        .settings-grid .settings-check { display: flex; align-items: center; gap: 8px; }
+        .settings-grid .settings-check input { width: auto; margin: 0; }
+        .settings-secret-status { color: #7fb6ff; float: right; }
+        .settings-error { padding: 8px 10px; margin-bottom: 12px; color: #ffc0c0; background: #3a2020; border-radius: 4px; font-size: 12px; }
+        .settings-config-warning { padding: 10px; margin-bottom: 12px; color: #ffe0a3; background: #3a2d18; border: 1px solid #70532a; border-radius: 4px; font-size: 12px; line-height: 1.5; }
+        .settings-modal-content .modal-buttons { margin-top: 18px; }

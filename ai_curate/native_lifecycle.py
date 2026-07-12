@@ -34,7 +34,6 @@ from pathlib import Path
 from typing import Any
 
 from ai_curate.client import VisionClient
-from ai_curate.config import DEFAULT_BASE_URL, DEFAULT_MODEL, API_KEY, REQUEST_TIMEOUT
 from ai_curate.elements import build_element_list
 from ai_curate.models import CurationRun, JobState
 from ai_curate.queue import QueueManager
@@ -105,10 +104,10 @@ class NativeAiLifecycle:
                 return
             self._storage = RunStorage(batches_dir=self.settings.batch_root)
             self._client = VisionClient(
-                base_url=DEFAULT_BASE_URL,
-                model=DEFAULT_MODEL,
-                timeout=REQUEST_TIMEOUT,
-                api_key=API_KEY,
+                base_url=self.settings.llm_base_url,
+                model=self.settings.default_model or None,
+                timeout=self.settings.request_timeout,
+                api_key=self.settings.api_key,
             )
             self._queue = QueueManager(storage=self._storage, on_promote=self._on_job_promoted)
             self._accepting_submissions = True
@@ -147,6 +146,51 @@ class NativeAiLifecycle:
                 self._launch_worker(run.run_id)
 
         return run
+
+    def has_active_jobs(self) -> bool:
+        if self._queue is None:
+            return False
+        return any(
+            run.status in (JobState.QUEUED, JobState.RUNNING, JobState.CANCELLING)
+            for run in self._queue.list_jobs()
+        )
+
+    def reconfigure(self) -> None:
+        """Refresh idle native dependencies after settings were persisted."""
+        with self._state_lock:
+            if self.has_active_jobs():
+                raise LifecycleShutdownError("AI work is active")
+            self._storage = RunStorage(batches_dir=self.settings.batch_root)
+            self._client = VisionClient(
+                base_url=self.settings.llm_base_url,
+                model=self.settings.default_model or None,
+                timeout=self.settings.request_timeout,
+                api_key=self.settings.api_key,
+            )
+            if self._queue is not None:
+                self._queue = QueueManager(storage=self._storage, on_promote=self._on_job_promoted)
+
+    def update_settings(self, data: dict[str, object]) -> dict[str, object]:
+        """Atomically gate submissions while validating and applying settings."""
+        with self._state_lock:
+            if self.has_active_jobs():
+                raise RuntimeError("Settings cannot change while AI work is active")
+            candidate = self.settings.candidate(data)
+            storage = RunStorage(batches_dir=candidate.batch_root)
+            client = VisionClient(
+                base_url=candidate.llm_base_url,
+                model=candidate.default_model or None,
+                timeout=candidate.request_timeout,
+                api_key=candidate.api_key,
+            )
+            queue = self._queue
+            if self._queue is not None:
+                queue = QueueManager(storage=storage, on_promote=self._on_job_promoted)
+            payload = self.settings.update(data)
+            self._storage = storage
+            self._client = client
+            self._queue = queue
+            return payload
 
     # ------------------------------------------------------------------
     # Internal helpers

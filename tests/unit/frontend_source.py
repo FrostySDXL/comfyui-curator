@@ -25,6 +25,7 @@ JS_FILES = [
     Path("static/js/ai.js"),
     Path("static/js/polling.js"),
     Path("static/js/modals.js"),
+    Path("static/js/settings.js"),
     Path("static/js/combobox.js"),
     Path("static/js/keyboard.js"),
     Path("static/js/events.js"),

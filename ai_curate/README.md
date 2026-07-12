@@ -79,7 +79,7 @@ routes.py ──(Flask Blueprint)──> app.py-injected queue/storage/lifecycle
 | `routes.py` | `create_ai_curate_blueprint()` and `AiCurateRouteContext`; owns `/api/ai-curate/*` Flask routes while app lifecycle globals stay in `app.py`. |
 | `job_validation.py` | `validate_ai_curate_request()` validates Flask AI job payloads with injected app dependencies and preserves API error shapes. |
 | `worker.py` | `run_scoring_worker_inner()` orchestrates element expansion, image enumeration, scoring, cancellation, optional top-N moves, and queue completion with injected dependencies. |
-| `native_lifecycle.py` | `NativeAiLifecycle`: ComfyUI-native AI lifecycle manager with idempotent startup, permanent shutdown, submission gate, worker thread tracking, public `submit_job()`, and batch-folder containment. Used by `py/curator_manager.py`.
+| `native_lifecycle.py` | `NativeAiLifecycle`: ComfyUI-native AI lifecycle manager with candidate-first transactional reconfiguration, submission gate, worker tracking, and batch-folder containment. |
 
 ## Agent Instructions
 

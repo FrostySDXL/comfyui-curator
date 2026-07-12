@@ -44,6 +44,7 @@ class CuratorManager:
             get_output_directory=folder_paths.get_output_directory,
         )
         service = NativeCuratorService(settings)
+        ai_lifecycle = NativeAiLifecycle(settings)
 
         app.router.add_static("/curator_static", str(static_path))
 
@@ -68,13 +69,12 @@ class CuratorManager:
             return web.json_response({"ok": True})
 
         app.router.add_get("/api/curator/health", health_handler)
-        register_native_routes(app, service)
+        register_native_routes(app, service, ai_lifecycle)
 
         # ---- AI curation lifecycle and routes ----
         # Idempotent: the lifecycle is created once per add_routes call (which is
         # itself idempotent), so we never get duplicate on_startup/on_shutdown
         # callbacks. The caller (__init__.py) invokes add_routes() exactly once.
-        ai_lifecycle = NativeAiLifecycle(settings)
         app.on_startup.append(ai_lifecycle.startup)
         app.on_shutdown.append(ai_lifecycle.shutdown)
         register_native_ai_routes(app, service, ai_lifecycle)

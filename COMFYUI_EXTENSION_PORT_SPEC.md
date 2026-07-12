@@ -522,11 +522,16 @@ Security behavior:
 - Do not return API keys directly.
 - Return booleans such as `ai_api_key_set: true`.
 - Support clearing secrets explicitly.
-- Keep env vars as higher-priority runtime override only if desired.
+- Persisted native values take precedence; environment variables are fallbacks
+  only when the corresponding value is absent.
+- Settings writes are atomic, reject unsafe config/temp targets, and return a
+  conflict while AI work is active.
 
 ### 10.4 Environment variable migration
 
-Map current standalone `.env` variables into native config during first startup or through a migration command. Do not read `.env` directly from the extension unless explicitly supporting standalone mode.
+The native resolver reads `config.json`, then the documented environment
+fallback, then the ComfyUI-owned/default value. It does not read `.env`
+directly or silently rewrite malformed configuration.
 
 | Existing/current intent | Native config target |
 |---|---|
@@ -1467,7 +1472,7 @@ AI requires a separate smoke test because it involves long-running work.
 | AI cancellation cannot interrupt blocking HTTP call | Shutdown delay | Use short timeouts; tracked executor/thread; async client later. |
 | Daemon threads killed mid-write | Corrupt run state or partial file moves | Avoid daemon threads in native lifecycle; bounded graceful shutdown. |
 | Registry rejects route-only empty mappings | Publication delay | Manager accepts empty mappings; add utility node if registry validation fails or for discoverability. |
-| Secrets in config JSON | Local secret exposure | Mask API keys in GET responses; document local plaintext storage; allow env override. |
+| Secrets in config JSON | Local secret exposure | Mask API keys in GET responses; document local plaintext storage; use environment values only when native values are absent. |
 | Dependency conflicts | Manager install failure | Keep dependencies minimal; avoid Flask/dotenv in native mode. |
 | ComfyUI frontend API changes | Button/settings break | Use StarChart pinned APIs and Lora-Manager fallback pattern. |
 

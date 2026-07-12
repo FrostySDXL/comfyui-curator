@@ -57,6 +57,7 @@ JS_FILES = [
     "ai.js",
     "polling.js",
     "modals.js",
+    "settings.js",
     "combobox.js",
     "keyboard.js",
     "events.js",

@@ -15,6 +15,9 @@
 - **Public output workflow:** selected-image export modal, batch Public folder view, virtual All Public view, and derivative-only public copy/move/delete actions.
 - **Background polling:** 5-second interval for batches, images, and AI runs, with interaction-aware skip logic.
 - **Local storage persistence:** Sidebar widths, open states, last batch/folder, grid density, and batch sort.
+- **Native settings modal:** Native-only editable paths, public-export enablement,
+  model/endpoint/timeout controls, and secret replace/clear controls backed by
+  `/api/curator/settings`.
 
 ## Key Concepts
 
@@ -71,6 +74,7 @@
 | `ai.js` | Compatibility stub for the split AI files |
 | `polling.js` | Interaction-aware background polling helpers |
 | `modals.js` | Generic modal helpers plus new-batch and Help modal controls |
+| `settings.js` | Native Settings modal loading, validation feedback, secret-safe save, and UI refresh |
 | `combobox.js` | Active-batch custom combobox keyboard and outside-click binding |
 | `keyboard.js` | Document keyboard shortcuts and lightbox wheel zoom binding |
 | `events.js` | Delegated browser event binding |

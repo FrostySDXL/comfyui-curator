@@ -11,6 +11,16 @@ async function apiGetBatches() {
     return resp.json();
 }
 
+async function apiGetNativeSettings() {
+    const resp = await fetch(ccApiPath('/api/settings'));
+    if (!resp.ok) throw new Error('settings request failed');
+    return resp.json();
+}
+
+async function apiSaveNativeSettings(body) {
+    return apiPostJson('/api/settings', body);
+}
+
 async function apiGetImages(batch, folder, sort, order) {
     const resp = await fetch(ccApiPath(`/api/images/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}?sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}`));
     if (!resp.ok) throw new Error('images request failed');

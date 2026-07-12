@@ -73,6 +73,7 @@
                 <button id="ai-sidebar-toggle-btn" class="ai-sidebar-toggle-btn hidden" type="button">Hide AI</button>
                 <button id="help-btn" class="help-btn" type="button">Help</button>
                 <button id="prompts-btn" class="help-btn" type="button">Prompts</button>
+                <button id="settings-btn" class="help-btn hidden" type="button">Settings</button>
                 <button id="set-auto-import-btn" class="set-auto-import-btn hidden" type="button">Set as Auto-import</button>
             </div>
         </div>
@@ -565,6 +566,27 @@
         </div>
     </div>
 
+    <div id="settings-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+        <div class="modal-content settings-modal-content">
+            <div class="settings-heading"><h3 id="settings-modal-title">Curator Settings</h3><button id="settings-close-btn" type="button" aria-label="Close settings">&times;</button></div>
+            <div id="settings-error" class="settings-error hidden" role="alert"></div>
+            <div id="settings-config-warning" class="settings-config-warning hidden" role="alert">Stored settings could not be loaded. Review these fallback values carefully; saving replaces the invalid file.</div>
+            <div class="settings-grid">
+                <label>Batch root<input id="settings-batch-root" type="text" autocomplete="off"></label>
+                <label>Import source<input id="settings-import-source" type="text" autocomplete="off"></label>
+                <label class="settings-check"><input id="settings-public-enabled" type="checkbox"> Enable public export</label>
+                <label>Public export root<input id="settings-public-root" type="text" autocomplete="off"></label>
+                <label>LLM base URL<input id="settings-llm-url" type="url" autocomplete="off"></label>
+                <label>Models (one per line)<textarea id="settings-models" rows="3"></textarea></label>
+                <label>Default model<input id="settings-default-model" type="text" autocomplete="off"></label>
+                <label>Request timeout (seconds)<input id="settings-timeout" type="number" min="1" max="3600"></label>
+                <label>Replace API key <span id="settings-api-key-set" class="settings-secret-status">Not set</span><input id="settings-api-key" type="password" autocomplete="new-password"></label>
+                <label class="settings-check"><input id="settings-clear-api-key" type="checkbox"> Clear saved API key</label>
+            </div>
+            <div class="modal-buttons"><button class="cancel" type="button">Cancel</button><button class="create" id="settings-save-btn" type="button">Save Settings</button></div>
+        </div>
+    </div>
+
     <!-- Toast -->
     <div id="toast" class="toast" role="alert" aria-live="polite" aria-atomic="true">
         <span id="toast-text"></span>
@@ -593,6 +615,7 @@
     <script src="/curator_static/js/ai.js"></script>
     <script src="/curator_static/js/polling.js"></script>
     <script src="/curator_static/js/modals.js"></script>
+    <script src="/curator_static/js/settings.js"></script>
     <script src="/curator_static/js/combobox.js"></script>
     <script src="/curator_static/js/keyboard.js"></script>
     <script src="/curator_static/js/events.js"></script>

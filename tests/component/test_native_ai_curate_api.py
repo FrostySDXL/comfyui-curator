@@ -924,6 +924,97 @@ class TestLifecycle:
         assert lifecycle.queue is not None
         assert lifecycle.storage is not None
 
+    def test_startup_and_reconfigure_use_resolved_native_ai_settings(self, tmp_path, monkeypatch):
+        _, _, lifecycle = _make_router_and_lifecycle(tmp_path, monkeypatch)
+        lifecycle.settings.llm_base_url = "http://native:7777"
+        lifecycle.settings.default_model = "native-model"
+        lifecycle.settings.api_key = "native-key"
+        lifecycle.settings.request_timeout = 17
+        lifecycle.reconfigure()
+        assert lifecycle._client.base_url == "http://native:7777"
+        assert lifecycle._client.default_model == "native-model"
+        assert lifecycle._client.api_key == "native-key"
+        assert lifecycle._client.timeout == 17
+        assert lifecycle.has_active_jobs() is False
+
+    def test_settings_update_is_rejected_atomically_while_ai_job_is_active(
+        self, tmp_path, monkeypatch
+    ):
+        _, _, lifecycle = _make_router_and_lifecycle(tmp_path, monkeypatch)
+        lifecycle._launch_worker = lambda _run_id: None
+        lifecycle.submit_job(
+            {
+                "batch": "test-batch",
+                "elements": ["test"],
+                "model": "vl-scorer",
+                "source_folder": "inbox",
+                "top_n": 1,
+                "move_enabled": False,
+                "destination_folder": None,
+                "prompt": "",
+            }
+        )
+        original_root = lifecycle.settings.batch_root
+        with pytest.raises(RuntimeError, match="AI work is active"):
+            lifecycle.update_settings({})
+        assert lifecycle.settings.batch_root == original_root
+
+    @pytest.mark.parametrize("factory_name", ["RunStorage", "VisionClient", "QueueManager"])
+    def test_settings_update_dependency_failure_preserves_all_old_state(
+        self, tmp_path, monkeypatch, factory_name
+    ):
+        from ai_curate.native_lifecycle import NativeAiLifecycle
+        from image_curator.native_settings import NativeConfigStore
+
+        settings = _create_service(tmp_path)
+        settings.api_key = "old-secret"
+        settings.config_store = NativeConfigStore(tmp_path / "system")
+        old_request = {
+            "batch_root": str(settings.batch_root),
+            "import_source": str(settings.import_source),
+            "public_export_enabled": False,
+            "public_export_root": "",
+            "llm_base_url": settings.llm_base_url,
+            "models": list(settings.available_models),
+            "default_model": settings.default_model,
+            "api_key": "old-secret",
+            "clear_api_key": False,
+            "request_timeout": settings.request_timeout,
+        }
+        settings.update(old_request)
+        lifecycle = NativeAiLifecycle(settings)
+        asyncio.run(lifecycle.startup(None))
+        old_settings = settings.editable_payload()
+        old_secret = settings.api_key
+        old_client = lifecycle._client
+        old_storage = lifecycle._storage
+        old_queue = lifecycle._queue
+        old_bytes = settings.config_store.path.read_bytes()
+        new_request = {
+            **old_request,
+            "batch_root": str(tmp_path / "new-batches"),
+            "import_source": str(tmp_path / "new-import"),
+            "llm_base_url": "http://new-host:9999",
+            "models": ["new-model"],
+            "default_model": "new-model",
+            "api_key": "new-secret",
+            "request_timeout": 45,
+        }
+
+        monkeypatch.setattr(
+            "ai_curate.native_lifecycle." + factory_name,
+            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("injected failure")),
+        )
+        with pytest.raises(RuntimeError, match="injected failure"):
+            lifecycle.update_settings(new_request)
+
+        assert settings.editable_payload() == old_settings
+        assert settings.api_key == old_secret
+        assert lifecycle._client is old_client
+        assert lifecycle._storage is old_storage
+        assert lifecycle._queue is old_queue
+        assert settings.config_store.path.read_bytes() == old_bytes
+
     def test_shutdown_is_idempotent(self, tmp_path, monkeypatch):
         """Multiple shutdown calls do not raise."""
         router, _, lifecycle = _make_router_and_lifecycle(tmp_path, monkeypatch)
