@@ -11,7 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from ai_curate.models import RunTotals
+from .models import RunTotals
 
 
 def run_scoring_worker_inner(

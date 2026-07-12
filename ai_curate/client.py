@@ -16,7 +16,7 @@ import urllib.request
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-from ai_curate.config import DEFAULT_BASE_URL, DEFAULT_MODEL, REQUEST_TIMEOUT, API_KEY
+from .config import DEFAULT_BASE_URL, DEFAULT_MODEL, REQUEST_TIMEOUT, API_KEY
 
 logger = logging.getLogger(__name__)
 

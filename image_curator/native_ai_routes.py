@@ -12,16 +12,28 @@ from typing import Any
 
 from aiohttp import web
 
-from ai_curate.elements import build_element_list, extract_elements
-from ai_curate.job_validation import validate_ai_curate_request
-from ai_curate.config import (
-    DEFAULT_TOP_N,
-    TOP_N_CAP,
-    ELEMENT_CAP,
-    ALLOWED_SOURCE_FOLDERS,
-    ALLOWED_DEST_FOLDERS,
-)
-from ai_curate.native_lifecycle import LifecycleShutdownError
+if __package__ and "." in __package__:
+    from ..ai_curate.elements import build_element_list, extract_elements
+    from ..ai_curate.job_validation import validate_ai_curate_request
+    from ..ai_curate.config import (
+        DEFAULT_TOP_N,
+        TOP_N_CAP,
+        ELEMENT_CAP,
+        ALLOWED_SOURCE_FOLDERS,
+        ALLOWED_DEST_FOLDERS,
+    )
+    from ..ai_curate.native_lifecycle import LifecycleShutdownError
+else:
+    from ai_curate.elements import build_element_list, extract_elements
+    from ai_curate.job_validation import validate_ai_curate_request
+    from ai_curate.config import (
+        DEFAULT_TOP_N,
+        TOP_N_CAP,
+        ELEMENT_CAP,
+        ALLOWED_SOURCE_FOLDERS,
+        ALLOWED_DEST_FOLDERS,
+    )
+    from ai_curate.native_lifecycle import LifecycleShutdownError
 
 logger = logging.getLogger(__name__)
 

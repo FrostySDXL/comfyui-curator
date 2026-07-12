@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from image_curator.batch_store import BATCH_FOLDERS, IMAGE_EXTENSIONS, _validate_name
+from .batch_store import BATCH_FOLDERS, IMAGE_EXTENSIONS, _validate_name
 
 _LOCK = threading.RLock()
 

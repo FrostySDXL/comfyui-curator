@@ -338,6 +338,9 @@ class TestErrorPropagation:
         image_curator_dir = pkg / "image_curator"
         image_curator_dir.mkdir()
         (image_curator_dir / "__init__.py").write_text("", encoding="utf-8")
+        ai_curate_dir = pkg / "ai_curate"
+        ai_curate_dir.mkdir()
+        (ai_curate_dir / "__init__.py").write_text("", encoding="utf-8")
 
         init_src = (REPO_ROOT / "__init__.py").read_text(encoding="utf-8")
         (pkg / "__init__.py").write_text(init_src, encoding="utf-8")

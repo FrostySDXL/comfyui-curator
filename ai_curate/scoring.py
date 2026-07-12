@@ -8,9 +8,9 @@ scoring into a coherent scoring pipeline.
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
-from ai_curate.client import VisionClient, ELEMENT_PROMPT
-from ai_curate.config import IMAGE_EXTENSIONS
-from ai_curate.models import ImageResult
+from .client import VisionClient, ELEMENT_PROMPT
+from .config import IMAGE_EXTENSIONS, ELEMENT_CAP
+from .models import ImageResult
 
 
 def find_images(directory: Path) -> List[Path]:
@@ -74,7 +74,6 @@ def score_images(
         Tuple of (list of ImageResult, count of images scored before cancellation).
     """
     images = find_images(image_dir)
-    from ai_curate.config import ELEMENT_CAP
 
     if not elements:
         raise ValueError("score_images: elements list is empty")

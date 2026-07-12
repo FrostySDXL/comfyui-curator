@@ -16,8 +16,8 @@ import threading
 from pathlib import Path
 from typing import List, Optional
 
-from ai_curate.config import BATCHES_DIR, AI_CURATE_DIR, RUNS_SUBDIR, LATEST_FILE
-from ai_curate.models import CurationRun, JobState
+from .config import BATCHES_DIR, AI_CURATE_DIR, RUNS_SUBDIR, LATEST_FILE
+from .models import CurationRun, JobState
 
 logger = logging.getLogger(__name__)
 

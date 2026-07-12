@@ -13,7 +13,10 @@ from typing import Optional
 # consumers can still do ``from ai_curate.config import IMAGE_EXTENSIONS``
 # without importing the non-AI module directly. Keeping a single source of
 # truth prevents the two definitions from drifting.
-from image_curator.batch_store import IMAGE_EXTENSIONS  # noqa: F401
+if __package__ and "." in __package__:
+    from ..image_curator.batch_store import IMAGE_EXTENSIONS  # noqa: F401
+else:
+    from image_curator.batch_store import IMAGE_EXTENSIONS  # noqa: F401
 
 
 def _path_from_env(name: str, default: Path) -> Path:

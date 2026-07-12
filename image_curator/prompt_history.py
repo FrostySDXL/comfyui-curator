@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from image_curator.batch_store import BATCH_FOLDERS, _validate_name, get_batches
-from image_curator.png_metadata import LORA_RE, extract_png_metadata
+from .batch_store import BATCH_FOLDERS, _validate_name, get_batches
+from .png_metadata import LORA_RE, extract_png_metadata
 
 _LOCK = threading.RLock()
 

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from ai_curate.config import DEFAULT_TOP_N
+from .config import DEFAULT_TOP_N
 
 
 class JobState(str, Enum):

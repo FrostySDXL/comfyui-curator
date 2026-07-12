@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def _load_root_init_standalone():
     """Load root __init__.py as a virtual package, standalone mode (no ComfyUI)."""
+    before_modules = set(sys.modules.keys())
     init_path = REPO_ROOT / "__init__.py"
     spec = importlib.util.spec_from_file_location(
         "comfyui_curator",
@@ -24,7 +25,14 @@ def _load_root_init_standalone():
         spec.loader.exec_module(mod)
     finally:
         for name in tuple(sys.modules):
-            if name == "comfyui_curator" or name.startswith("comfyui_curator."):
+            if name not in before_modules and (
+                name == "comfyui_curator"
+                or name.startswith("comfyui_curator.")
+                or name == "image_curator"
+                or name.startswith("image_curator.")
+                or name == "ai_curate"
+                or name.startswith("ai_curate.")
+            ):
                 sys.modules.pop(name, None)
     return mod
 
@@ -118,6 +126,7 @@ class TestRootInitExports:
         """When ComfyUI modules are available, CuratorManager is not None and routes registered."""
         mock_app, mock_router = _setup_comfyui_mocks()
 
+        before_modules = set(sys.modules.keys())
         init_path = REPO_ROOT / "__init__.py"
         spec = importlib.util.spec_from_file_location(
             "comfyui_curator",
@@ -141,7 +150,14 @@ class TestRootInitExports:
             assert len(health_routes) == 1
         finally:
             for name in tuple(sys.modules):
-                if name == "comfyui_curator" or name.startswith("comfyui_curator."):
+                if name not in before_modules and (
+                    name == "comfyui_curator"
+                    or name.startswith("comfyui_curator.")
+                    or name == "image_curator"
+                    or name.startswith("image_curator.")
+                    or name == "ai_curate"
+                    or name.startswith("ai_curate.")
+                ):
                     sys.modules.pop(name, None)
             _teardown_comfyui_mocks()
 
@@ -154,10 +170,26 @@ class TestRootInitExports:
             "path",
             [entry for entry in sys.path if Path(entry or ".").resolve() != root],
         )
+
+        # Snapshot top-level ai_curate / image_curator BEFORE removing them.
+        def _top_level_present(prefixes):
+            return {
+                k
+                for k in sys.modules
+                if any(k == pfx or k.startswith(pfx + ".") for pfx in prefixes)
+            }
+
+        top_level_prefixes = ("image_curator", "ai_curate")
+        before_top = _top_level_present(top_level_prefixes)
+
+        # Remove image_curator / ai_curate from sys.modules so they load fresh.
         for name in tuple(sys.modules):
             if name == "image_curator" or name.startswith("image_curator."):
                 monkeypatch.delitem(sys.modules, name)
+            if name == "ai_curate" or name.startswith("ai_curate."):
+                monkeypatch.delitem(sys.modules, name)
 
+        before_modules = set(sys.modules.keys())
         init_path = REPO_ROOT / "__init__.py"
         spec = importlib.util.spec_from_file_location(
             "isolated_curator",
@@ -173,7 +205,148 @@ class TestRootInitExports:
 
         assert mod.CuratorManager is not None
         assert mod.CuratorManager.__module__ == "isolated_curator.py.curator_manager"
-        assert sys.modules["image_curator"] is sys.modules["isolated_curator.image_curator"]
+
+        # No top-level ai_curate / image_curator aliases should have been
+        # created by the import.  The only top-level entries present must
+        # be the ones that already existed before.
+        after_top = _top_level_present(top_level_prefixes)
+        leaked = after_top - before_top
+        assert not leaked, (
+            f"Top-level aliases leaked: {sorted(leaked)}. "
+            f"Only previously-existing entries are allowed: {sorted(before_top)}"
+        )
+
+        # Remove only the modules added by this test, preserving any that
+        # existed before (e.g. top-level imports from other test modules).
+        for name in tuple(sys.modules):
+            if name not in before_modules and (
+                name == "isolated_curator" or name.startswith("isolated_curator.")
+            ):
+                sys.modules.pop(name, None)
+
+    def test_package_import_succeeds_with_ai_curate_unavailable(self, monkeypatch):
+        """Full import graph succeeds when ai_curate is not on sys.path (ComfyUI custom-node context).
+
+        The editable install injects a meta-path finder that resolves ``ai_curate``
+        even when the repo root is not on ``sys.path``.  We must remove it to
+        replicate the real ComfyUI custom-node environment where no such finder exists.
+        """
+        _setup_comfyui_mocks()
+        root = REPO_ROOT.resolve()
+        monkeypatch.setattr(
+            sys,
+            "path",
+            [entry for entry in sys.path if Path(entry or ".").resolve() != root],
+        )
+        # Remove the editable-install meta-path finder so ai_curate is truly unavailable.
+        monkeypatch.setattr(
+            sys,
+            "meta_path",
+            [m for m in sys.meta_path if "editable" not in getattr(m, "__module__", "").lower()],
+        )
+
+        # Snapshot top-level ai_curate / image_curator entries BEFORE import.
+        # These must not appear or be mutated by the isolated package load.
+        def _top_level_snapshot(prefixes):
+            return {
+                k: sys.modules[k]
+                for k in sys.modules
+                if any(k == pfx or k.startswith(pfx + ".") for pfx in prefixes)
+            }
+
+        top_level_prefixes = ("ai_curate", "image_curator")
+        before_top = _top_level_snapshot(top_level_prefixes)
+
+        # Remove both image_curator and ai_curate from sys.modules
+        for prefix in ("image_curator", "ai_curate"):
+            for name in tuple(sys.modules):
+                if name == prefix or name.startswith(prefix + "."):
+                    monkeypatch.delitem(sys.modules, name)
+
+        init_path = REPO_ROOT / "__init__.py"
+        spec = importlib.util.spec_from_file_location(
+            "isolated_curator",
+            init_path,
+            submodule_search_locations=[str(REPO_ROOT)],
+        )
+        mod = importlib.util.module_from_spec(spec)
+        monkeypatch.setitem(sys.modules, "isolated_curator", mod)
+        curator_manager = None
+        curator_manager_module = None
+        mods_snapshot: set[str] = set()
+        try:
+            spec.loader.exec_module(mod)
+            curator_manager = mod.CuratorManager
+            curator_manager_module = curator_manager.__module__
+            mods_snapshot = set(sys.modules.keys())
+
+            # --- All assertions run while modules are still loaded ---
+
+            assert curator_manager is not None
+            assert curator_manager_module == "isolated_curator.py.curator_manager"
+            # All three top-level backend subpackages loaded under the package namespace
+            assert "isolated_curator.image_curator" in mods_snapshot
+            assert "isolated_curator.ai_curate" in mods_snapshot
+
+            # --- No top-level ai_curate / image_curator aliases leaked ---
+            after_top = _top_level_snapshot(top_level_prefixes)
+            leaked = {}
+            for k, v in after_top.items():
+                if k not in before_top or before_top[k] is not v:
+                    leaked[k] = v
+            assert not leaked, (
+                f"Top-level modules leaked after isolated package import: {sorted(leaked)}. "
+                f"No 'ai_curate' or 'image_curate' entries should appear at sys.modules top level."
+            )
+
+            # --- Module identity for key cross-module references ---
+            ai_ns = "isolated_curator.ai_curate"
+            models_mod = sys.modules.get(f"{ai_ns}.models")
+            queue_mod = sys.modules.get(f"{ai_ns}.queue")
+            lifecycle_mod = sys.modules.get(f"{ai_ns}.native_lifecycle")
+            assert models_mod is not None, "ai_curate.models not loaded"
+            assert queue_mod is not None, "ai_curate.queue not loaded"
+            assert lifecycle_mod is not None, "ai_curate.native_lifecycle not loaded"
+
+            # JobState: queue imports from models, lifecycle imports from models
+            assert queue_mod.JobState is models_mod.JobState, "queue.JobState != models.JobState"
+            assert lifecycle_mod.JobState is models_mod.JobState, (
+                "lifecycle.JobState != models.JobState"
+            )
+
+            # CurationRun: queue imports from models
+            assert queue_mod.CurationRun is models_mod.CurationRun, (
+                "queue.CurationRun != models.CurationRun"
+            )
+
+            # QueueManager: lifecycle imports from queue
+            assert lifecycle_mod.QueueManager is queue_mod.QueueManager, (
+                "lifecycle.QueueManager != queue.QueueManager"
+            )
+
+            # NativeAiLifecycle: curator_manager returns it
+            cm_mod = sys.modules.get(curator_manager_module)
+            assert cm_mod is not None
+            assert cm_mod.NativeAiLifecycle is lifecycle_mod.NativeAiLifecycle, (
+                "curator_manager.NativeAiLifecycle != native_lifecycle.NativeAiLifecycle"
+            )
+
+            # Root exports remain correct
+            assert mod.CuratorManager is not None
+            assert mod.NODE_CLASS_MAPPINGS == {}
+            assert mod.NODE_DISPLAY_NAME_MAPPINGS == {}
+            assert mod.WEB_DIRECTORY == "./web/comfyui"
+            assert mod.__all__ == [
+                "NODE_CLASS_MAPPINGS",
+                "NODE_DISPLAY_NAME_MAPPINGS",
+                "WEB_DIRECTORY",
+            ]
+        finally:
+            _teardown_comfyui_mocks()
+            # Clean up all isolated_curator submodules
+            for name in tuple(sys.modules):
+                if name == "isolated_curator" or name.startswith("isolated_curator."):
+                    sys.modules.pop(name, None)
 
 
 class TestCuratorManagerRoutes:

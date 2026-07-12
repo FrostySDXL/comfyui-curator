@@ -12,8 +12,13 @@ from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 
-from image_curator.batch_store import BATCH_FOLDERS, IMAGE_EXTENSIONS, _validate_name, get_batches
-from image_curator.media import thumbnail_cache_path
+from .batch_store import (
+    BATCH_FOLDERS,
+    IMAGE_EXTENSIONS,
+    _validate_name,
+    get_batches,
+)
+from .media import thumbnail_cache_path
 
 PUBLIC_FOLDER = "public"
 MIN_WATERMARK_SIZE_PERCENT = 1.0

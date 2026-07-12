@@ -7,16 +7,16 @@ from typing import Any
 
 from aiohttp import web
 
-from image_curator import batch_store, prompt_history, publish
-from image_curator.favorites import (
+from . import batch_store, prompt_history, publish
+from .favorites import (
     get_batch_favorite_filenames,
     resolve_universal_favorites,
     toggle_favorite,
 )
-from image_curator.media import generate_thumbnail, thumbnail_cache_path, thumbnail_is_fresh
-from image_curator.native_settings import NativeConfigError, NativeCuratorSettings
-from image_curator.png_metadata import extract_png_metadata
-from image_curator.web_validation import safe_path
+from .media import generate_thumbnail, thumbnail_cache_path, thumbnail_is_fresh
+from .native_settings import NativeConfigError, NativeCuratorSettings
+from .png_metadata import extract_png_metadata
+from .web_validation import safe_path
 
 THUMB_SIZE = (320, 320)
 CACHE_HEADERS = {"Cache-Control": "public, max-age=3600, immutable"}

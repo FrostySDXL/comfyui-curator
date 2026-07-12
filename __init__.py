@@ -1,14 +1,9 @@
 """ComfyUI Curator native extension for the image curation workspace."""
 
-import sys
-
 CuratorManager = None
 
 if __package__:
     try:
-        from . import image_curator as _packaged_image_curator
-
-        sys.modules.setdefault("image_curator", _packaged_image_curator)
         from .py.curator_manager import CuratorManager
     except ModuleNotFoundError as exc:
         # ComfyUI's server module is intentionally absent in standalone tests.

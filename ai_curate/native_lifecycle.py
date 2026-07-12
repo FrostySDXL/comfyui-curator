@@ -33,14 +33,20 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from ai_curate.client import VisionClient
-from ai_curate.elements import build_element_list
-from ai_curate.models import CurationRun, JobState
-from ai_curate.queue import QueueManager
-from ai_curate.scoring import find_images, score_images
-from ai_curate.storage import RunStorage
-from ai_curate.worker import run_scoring_worker_inner
-from image_curator import batch_store
+from .client import VisionClient
+from .elements import build_element_list
+from .models import CurationRun, JobState
+from .queue import QueueManager
+from .scoring import find_images, score_images
+from .storage import RunStorage
+from .worker import run_scoring_worker_inner
+
+if __package__ and "." in __package__:
+    from ..image_curator import batch_store
+    from ..image_curator.native_settings import NativeCuratorSettings
+else:
+    from image_curator import batch_store
+    from image_curator.native_settings import NativeCuratorSettings
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +74,6 @@ class NativeAiLifecycle:
     """
 
     def __init__(self, settings: Any) -> None:
-        from image_curator.native_settings import NativeCuratorSettings  # noqa: F811
-
         self.settings: NativeCuratorSettings = settings
         self._storage: RunStorage | None = None
         self._queue: QueueManager | None = None
