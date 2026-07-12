@@ -111,13 +111,30 @@ python -m pytest tests/integration
 ### Native extension tests
 
 ```bash
-python -m pytest tests/unit/test_native_curator_settings.py tests/component/test_native_curator_api.py tests/unit/test_comfyui_extension.py tests/unit/test_comfyui_static_ui.py -v
+python -m pytest tests/unit/test_native_curator_settings.py tests/component/test_native_curator_api.py tests/component/test_native_ai_curate_api.py tests/unit/test_comfyui_extension.py tests/unit/test_comfyui_static_ui.py -v
 ```
 
 A manual ComfyUI smoke test is required to claim native extension readiness:
 install the package into `ComfyUI/custom_nodes`, start ComfyUI, confirm the
 action-bar button appears and `/curator` loads. Native batch/image foundation
 routes are namespaced under `/api/curator/*` and `/curator/{thumb,image}/*`.
+
+### Comfy Registry package validation
+
+Registry metadata lives in `pyproject.toml`, and `.comfyignore` excludes
+development-only files from the published archive. Before preparing a release:
+
+```bash
+comfy node validate
+comfy node pack
+tar -tf node.zip
+```
+
+Inspect the archive and confirm it includes the root `__init__.py`, backend
+packages, templates, static assets, ComfyUI web extension, branding assets,
+requirements, README, and license. Publishing is a separate irreversible step:
+do not run `comfy node publish` without explicit release approval, and bump the
+semantic version before every published release.
 
 ### Updating `scripts/run_all.py`
 

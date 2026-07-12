@@ -11,4 +11,5 @@ Provides reusable modules for:
 - Single-job queue management (queue)
 - Web job submission validation (job_validation)
 - Flask worker orchestration core (worker)
+- Native AI lifecycle: idempotent startup, submission gate, worker tracking, permanent shutdown (native_lifecycle)
 """

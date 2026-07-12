@@ -1,12 +1,12 @@
 # AGENTS.md
 
-**Purpose:** Operator-focused web application for reviewing generated images with optional AI-assisted scoring. **Status:** Actively maintained. **Audience:** AI agents and single-operator maintainers. **Last Updated:** 2026-06-13
+**Purpose:** Operator-focused web application for reviewing generated images with optional AI-assisted scoring. **Status:** Actively maintained. **Audience:** AI agents and single-operator maintainers. **Last Updated:** 2026-07-12
 
 ## Quickstart
 
 - Read `README.md` first.
 - Use the virtual environment at `.venv/`.
-- Entrypoints: `app.py` (Flask web UI + API), `curate.py` (CLI scoring).
+- Entrypoints: `__init__.py` (ComfyUI custom-node), `app.py` (Flask web UI + API), `curate.py` (CLI scoring).
 - New non-AI backend logic -> `image_curator/`. New AI logic -> `ai_curate/`.
 - Frontend is `templates/index.html` + ordered vanilla scripts under `static/js/` + split CSS files under `static/css/`.
 - Verification: `python scripts/run_all.py` (default) or `--quick` for fast loops.
@@ -14,7 +14,7 @@
 
 ## What This Repo Provides
 
-- **Batch filesystem workflow:** inbox/shortlisted/finals/rejects folders under `IMAGE_CURATOR_BATCHES/<batch>/`. Counts, metadata, auto-import from ComfyUI outputs.
+- **Batch filesystem workflow:** inbox/shortlisted/finals/rejects folders under `IMAGE_CURATOR_BATCHES/<batch>/`. Counts, metadata, operator-triggered Import All from ComfyUI outputs.
 - **Web review UI:** Asset-manager style batch sidebar, compact workspace toolbar, center thumbnail grid, right AI sidebar. Drag/drop moves, multi-select/Select All, undo toast, keyboard shortcuts, background polling.
 - **Lightbox viewer:** Full-image review with zoom, PNG generation metadata inspection (`M` toggle), scored-image navigation (`[`/`]`), keyboard folder moves (`S`/`F`/`R`).
 - **Favorites workflow:** One-click favorites update batch and universal scope, with a favorites-only filter and virtual All Favorites sidebar view.
@@ -113,7 +113,7 @@ Frontend (shared static/js/*.js + static/css/*.css)
 | | `tests/README.md` | Module-scoped agent startup guide (layers, fixtures, markers, coverage gaps) |
 | **Scripts** | `scripts/run_all.py` | Multi-tool verification runner (ruff, compileall, pytest, mypy, JS syntax, git diff) |
 | | `scripts/README.md` | Module-scoped agent startup guide (verification modes) |
-| **Config** | `pyproject.toml` | Build system, ruff, mypy configuration |
+| **Config** | `pyproject.toml` | Build system, Comfy Registry package metadata, ruff, and mypy configuration |
 | | `pytest.ini` | Test markers (`unit`, `component`, `integration`) and paths |
 | | `.env.example` | Documented environment variable reference (never read `.env` directly) |
 | **Deployment** | `image-curator.service.example` | Templated systemd unit (use this, not the production service file) |
@@ -139,7 +139,6 @@ Maintain a fast operator-facing curation workflow for generated images with opti
 
 ## Non-goals
 
-- Public packaging polish
 - Public-facing docs site
 - Generic DAM/media-library scope
 - Silent contract changes to API routes, batch layout, or CLI behavior

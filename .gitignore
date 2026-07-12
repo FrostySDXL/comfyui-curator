@@ -10,6 +10,7 @@ env/
 *.egg-info/
 dist/
 build/
+node.zip
 
 # Testing
 .pytest_cache/

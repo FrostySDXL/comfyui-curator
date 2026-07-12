@@ -34,6 +34,42 @@ before manual selection. Single-user, local-first, filesystem-backed.
 
 ## Quickstart
 
+Two supported installation paths.
+
+### ComfyUI native extension
+
+Recommended for ComfyUI users. Provides the full curation workflow inside
+ComfyUI without a separate server process.
+
+1. Clone or copy this repository into ComfyUI's `custom_nodes` folder.
+   The custom-node folder must be named `comfyui-curator`:
+   ```bash
+   cd ComfyUI/custom_nodes
+   git clone https://github.com/FrostySDXL/comfyui-curator.git comfyui-curator
+   ```
+
+2. Install required dependencies in ComfyUI's Python environment:
+   ```bash
+   # Windows (embedded Python)
+   cd ComfyUI\custom_nodes\comfyui-curator
+   ..\..\python_embeded\python.exe -m pip install -r requirements.txt
+
+   # Linux / macOS (system or venv Python)
+   cd ComfyUI/custom_nodes/comfyui-curator
+   pip install -r requirements.txt
+   ```
+
+3. Restart ComfyUI.
+
+4. Use the Curator action-bar button or open `/curator`.
+
+Native settings, batch paths, import source, and AI model configuration are
+managed through the header **Settings** modal inside the Curator page. See
+[Configuration](#configuration) for path defaults, Docker guidance, and
+environment fallbacks.
+
+### Standalone Flask
+
 Requires Python 3.10 or newer.
 
 ```bash
@@ -60,8 +96,11 @@ configure `IMAGE_CURATOR_COMFYUI` as an optional import source.
 `requirements.txt` is the convenience install file. Use
 `requirements-lock.txt` when you need the pinned dependency set.
 
-The repository is named `comfyui-curator`; the Python package, service
-template, and default local paths use `image-curator`.
+The repository, Python distribution, Registry package, and expected custom-node
+folder are named `comfyui-curator`. Internal Python modules, environment
+variables, the standalone service template, and existing local configuration
+paths retain their established `image_curator` / `IMAGE_CURATOR_*` /
+`image-curator` names.
 
 ## Configuration
 

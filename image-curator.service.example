@@ -1,3 +1,6 @@
+# Standalone Flask deployment only. Unnecessary when Curator runs natively
+# inside ComfyUI as a custom node (use the action-bar button or /curator instead).
+
 [Unit]
 Description=Image Curator Web UI
 After=network.target

@@ -1,0 +1,38 @@
+# Development and repository-maintenance files excluded from Registry releases.
+.github/
+tests/
+scripts/
+AGENTS.md
+CONTRIBUTING.md
+pytest.ini
+requirements-dev.in
+requirements-dev.txt
+requirements-dev-lock.txt
+requirements-lock.txt
+image-curator.service.example
+
+# Generated and local artifacts (also covered by .gitignore where relevant).
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+artifacts/
+build/
+dist/
+tmp/
+node.zip
+.env
+*.log
+
+# Local editors and source artwork.
+.idea/
+.vscode/
+*.psd

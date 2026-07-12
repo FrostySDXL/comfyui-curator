@@ -3,8 +3,8 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "image-curator"
-version = "0.1.0"
+name = "comfyui-curator"
+version = "1.0.0"
 description = "Operator-focused web application and curation toolkit for reviewing generated images with optional AI-assisted scoring"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -20,6 +20,13 @@ dependencies = [
 Homepage = "https://github.com/FrostySDXL/comfyui-curator"
 Repository = "https://github.com/FrostySDXL/comfyui-curator"
 Issues = "https://github.com/FrostySDXL/comfyui-curator/issues"
+
+[tool.comfy]
+PublisherId = "FrostySDXL"
+DisplayName = "ComfyUI Curator"
+Icon = "https://raw.githubusercontent.com/FrostySDXL/comfyui-curator/master/assets/icon.png"
+Banner = "https://raw.githubusercontent.com/FrostySDXL/comfyui-curator/master/assets/banner.png"
+requires-comfyui = ">=0.19.5"
 
 [tool.setuptools.packages.find]
 include = ["image_curator*", "ai_curate*"]

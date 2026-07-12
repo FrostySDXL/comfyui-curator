@@ -1,6 +1,7 @@
 """
-Image Curator v2 - Batch-based image organization
-Web UI for reviewing and organizing AI-generated images.
+Image Curator - Batch-based image organization and curation.
+Web UI for reviewing and organizing AI-generated images with optional
+AI-assisted scoring.
 """
 
 import atexit
