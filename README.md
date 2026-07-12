@@ -82,6 +82,8 @@ services:
   comfyui:
     volumes:
       - /host/image-curator/batches:/data/curator-batches
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       IMAGE_CURATOR_BATCHES: /data/curator-batches
 ```
@@ -90,6 +92,12 @@ A host-only path such as `/mnt/storage/batches` is not visible unless that path
 is mounted into the container. Without an override, native mode uses
 `<ComfyUI system user directory>/curator/batches`, which works inside the
 container but must be mounted if its contents should survive container removal.
+
+Docker also has a separate network namespace. An LLM URL using `localhost`
+targets the ComfyUI container itself. To reach a model server on the Docker host,
+use `http://host.docker.internal:<port>`; Linux deployments require the
+`host.docker.internal:host-gateway` mapping shown above. Use a Compose service
+name for a model server in another container on the same Docker network.
 
 Copy `.env.example` to `.env`. Key variables:
 
