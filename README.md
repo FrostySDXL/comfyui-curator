@@ -21,8 +21,8 @@ before manual selection. Single-user, local-first, filesystem-backed.
   folder, with batch Public and virtual All Public views for generated copies.
 - **Prompt history** -- manually build per-batch prompt indexes from PNG
   metadata, then search, copy, and inspect prompt groups from a header modal.
-- **Auto-import from ComfyUI** -- background watcher moves new outputs into
-  the active batch inbox. One-click manual import also available.
+- **Import from ComfyUI** -- one-click **Import All** moves available outputs
+  into the selected batch inbox.
 - **AI-assisted scoring (optional)** -- sends images to a local vision LLM
   to check for prompt elements and quality baselines. The AI sidebar includes a
   contextual image inspector plus Inspect / Score / Runs tabs. Scores are
@@ -65,6 +65,40 @@ template, and default local paths use `image-curator`.
 
 ## Configuration
 
+Native ComfyUI mode uses the header **Settings** modal. It persists operational
+settings in the Curator system-user directory as `config.json`; environment
+variables below are fallbacks only when a native value is absent. API keys are
+never returned by the settings API and can be replaced or explicitly cleared.
+Import All remains an explicit operator action.
+
+Native path defaults are inside ComfyUI's Curator system-user directory. In a
+Docker deployment, every path in Settings and every path supplied through an
+environment fallback is interpreted inside the container. To use host data,
+mount the host directory into the container and configure Curator with the
+container-side path. For example:
+
+```yaml
+services:
+  comfyui:
+    volumes:
+      - /host/image-curator/batches:/data/curator-batches
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      IMAGE_CURATOR_BATCHES: /data/curator-batches
+```
+
+A host-only path such as `/mnt/storage/batches` is not visible unless that path
+is mounted into the container. Without an override, native mode uses
+`<ComfyUI system user directory>/curator/batches`, which works inside the
+container but must be mounted if its contents should survive container removal.
+
+Docker also has a separate network namespace. An LLM URL using `localhost`
+targets the ComfyUI container itself. To reach a model server on the Docker host,
+use `http://host.docker.internal:<port>`; Linux deployments require the
+`host.docker.internal:host-gateway` mapping shown above. Use a Compose service
+name for a model server in another container on the same Docker network.
+
 Copy `.env.example` to `.env`. Key variables:
 
 Core path:
@@ -80,7 +114,6 @@ Optional import source:
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `IMAGE_CURATOR_COMFYUI` | `~/image-curator/comfyui-outputs` | Folder to import images from when ComfyUI outputs outside your batch inboxes |
-| `IMAGE_CURATOR_ENABLE_WATCHER` | `false` | Automatically move new images from `IMAGE_CURATOR_COMFYUI` into the active batch inbox |
 
 Other settings:
 
@@ -108,9 +141,6 @@ See `.env.example` for the full commented reference.
    posting files. Originals remain in the review folders.
 6. Optionally run AI scoring against a local OpenAI-compatible vision model;
    scores are advisory.
-
-Set `IMAGE_CURATOR_ENABLE_WATCHER=true` only when you want new files in
-`IMAGE_CURATOR_COMFYUI` imported automatically into the active batch.
 
 ## Keyboard shortcuts
 
@@ -168,6 +198,43 @@ to pin the active image and compare it against other images with Left/Right.
 Binds to `127.0.0.1` by default. No built-in authentication -- sufficient
 for single-user local use. For remote access, place behind a reverse proxy
 with auth (nginx, Caddy, etc.). Read `SECURITY.md` for related guidance.
+
+## ComfyUI extension
+
+The repository includes a ComfyUI integration shell described in
+`COMFYUI_EXTENSION_PORT_SPEC.md`:
+
+- `__init__.py` -- ComfyUI custom-node entrypoint with `WEB_DIRECTORY`,
+  `NODE_CLASS_MAPPINGS`, `NODE_DISPLAY_NAME_MAPPINGS`.
+- `py/curator_manager.py` -- registers `/curator`, `/curator_static`, health,
+  and the namespaced native batch/image foundation.
+- `image_curator/native_settings.py` -- resolves ComfyUI-owned batch, import,
+  state, and persistent native configuration without importing Flask.
+- `image_curator/native_routes.py` -- aiohttp adapter for settings, batches,
+  active state, manual import, image lists, metadata, thumbnails, originals,
+  single-image moves, multi-image moves, reject deletion, favorites
+  (batch/universal toggles and All Favorites resolution), and public
+  publish/export, listing, destination browsing, and copy/move/delete.
+- `image_curator/native_ai_routes.py` and `ai_curate/native_lifecycle.py` --
+  namespaced AI job, cancellation, and run-history routes with a lifecycle-owned
+  single-worker queue and bounded shutdown.
+- `web/comfyui/top_menu_extension.js` -- ComfyUI action-bar button that
+  opens `/curator`.
+- `templates/curator.html` -- native page template derived from `index.html`
+  with `/curator_static/` paths and `window.CURATOR_NATIVE = true`.
+- Shared frontend URL helpers (`ccApiPath`, `ccThumbUrl`, `ccImageUrl` in
+  `static/js/state.js`) switch between `/api`/`/thumb`/`/image` and
+  `/api/curator`/`/curator/thumb`/`/curator/image` based on the native flag.
+- `GET` and `POST /api/curator/settings` back the native-only Settings modal;
+  editable paths are returned only by this dedicated local-operator endpoint.
+
+Native foundation routes use `/api/curator/*` and media uses
+`/curator/thumb/*` and `/curator/image/*`. Single-image moves, multi-image
+moves (undo-compatible reverse calls), reject deletion, favorites
+(batch/universal toggles, All Favorites), and public publish/export, listing,
+destination browsing, copy/move/delete, prompt history, and AI scoring lifecycle
+are now native. Import All provides the explicit output-import workflow in both
+native and standalone modes.
 
 ## Limitations
 

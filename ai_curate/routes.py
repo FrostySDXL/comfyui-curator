@@ -6,7 +6,7 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request
 
-from ai_curate.models import JobState
+from .models import JobState
 
 
 @dataclass(frozen=True)

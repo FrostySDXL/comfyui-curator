@@ -2,13 +2,11 @@ import pytest
 
 
 @pytest.mark.integration
-def test_import_all_moves_pending_images_and_resets_watcher(client, app_module, make_file):
+def test_import_all_moves_available_images(client, app_module, make_file):
     app_module.create_batch("alpha")
     make_file(app_module.COMFYUI_OUTPUT / "one.png")
     make_file(app_module.COMFYUI_OUTPUT / "two.jpg")
     make_file(app_module.COMFYUI_OUTPUT / "skip.txt")
-    app_module.watcher.seen_files = {"stale-entry.png"}
-
     response = client.post("/api/import-all", json={"batch": "alpha"})
 
     assert response.status_code == 200
@@ -18,7 +16,6 @@ def test_import_all_moves_pending_images_and_resets_watcher(client, app_module, 
     assert not (app_module.COMFYUI_OUTPUT / "one.png").exists()
     assert not (app_module.COMFYUI_OUTPUT / "two.jpg").exists()
     assert (app_module.COMFYUI_OUTPUT / "skip.txt").exists()
-    assert app_module.watcher.seen_files == set()
 
 
 @pytest.mark.integration

@@ -6,6 +6,8 @@ Manages on-disk layout for per-batch run history:
   <batch>/ai-curate/latest.json
 
 Cancelled runs are never persisted. Saved runs are immutable history.
+All read/write operations validate filesystem containment against the
+configured batches directory and reject symlinked or escaping paths.
 """
 
 import json
@@ -14,8 +16,8 @@ import threading
 from pathlib import Path
 from typing import List, Optional
 
-from ai_curate.config import BATCHES_DIR, AI_CURATE_DIR, RUNS_SUBDIR, LATEST_FILE
-from ai_curate.models import CurationRun, JobState
+from .config import BATCHES_DIR, AI_CURATE_DIR, RUNS_SUBDIR, LATEST_FILE
+from .models import CurationRun, JobState
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,10 @@ class RunStorage:
     def __init__(self, batches_dir: Optional[Path] = None):
         self.batches_dir = Path(batches_dir) if batches_dir is not None else BATCHES_DIR
         self._lock = threading.RLock()
+
+    # ------------------------------------------------------------------
+    # String-level validation (defence layer 1)
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _validate_run_id(run_id: str) -> None:
@@ -59,6 +65,132 @@ class RunStorage:
         if batch.startswith("."):
             raise ValueError("batch starts with a dot")
 
+    # ------------------------------------------------------------------
+    # Filesystem-level containment (defence layer 2)
+    # ------------------------------------------------------------------
+
+    def _validate_path_for_write(self, path: Path, batch: str) -> None:
+        """Validate *before* writing that ``path`` is safely contained.
+
+        Checks:
+        - The path is not an existing symlink.
+        - If the path exists, it is a regular file.
+        - The resolved path is within ``self.batches_dir``.
+        - The resolved path is within the resolved batch directory.
+        - No parent directory that already exists is a symlink.
+
+        Raises ValueError on any violation.  The caller must perform this
+        check **before** any write (including ``mkdir``) to guarantee
+        rejected saves do not mutate the filesystem.
+        """
+        real_root = self.batches_dir.resolve()
+        _validate_containment_root(self.batches_dir, real_root)
+
+        # Check the batch directory exists, is a dir, and is not a symlink.
+        batch_dir = self.batches_dir / batch
+        self._validate_batch(batch)
+        try:
+            if not batch_dir.exists():
+                raise ValueError("batch directory does not exist")
+            if batch_dir.is_symlink():
+                raise ValueError("batch path is a symlink")
+            if not batch_dir.is_dir():
+                raise ValueError("batch path is not a directory")
+        except OSError as exc:
+            raise ValueError("invalid batch path") from exc
+
+        # Resolve batch for containment: must resolve within real_root.
+        try:
+            real_batch = batch_dir.resolve()
+            real_batch.relative_to(real_root)
+        except (OSError, ValueError) as exc:
+            raise ValueError("batch path escapes batch root") from exc
+
+        # Validate parent chain: every existing parent must not be a symlink.
+        _validate_parent_chain_no_symlinks(self.batches_dir, path)
+
+        # Validate the target path itself.
+        try:
+            if path.exists():
+                if path.is_symlink():
+                    raise ValueError("target path is a symlink")
+                if not path.is_file():
+                    raise ValueError("target path exists but is not a regular file")
+            real_path = path.resolve()
+            real_path.relative_to(real_root)
+            real_path.relative_to(real_batch)
+        except (OSError, ValueError) as exc:
+            raise ValueError("target path escapes containment") from exc
+
+    def _validate_path_for_read(self, path: Path, batch: str) -> None:
+        """Validate *before* reading that ``path`` is safely contained.
+
+        Similar to ``_validate_path_for_write`` but also requires the file
+        to be a regular file (not a directory or symlink).
+        """
+        real_root = self.batches_dir.resolve()
+        _validate_containment_root(self.batches_dir, real_root)
+
+        batch_dir = self.batches_dir / batch
+        self._validate_batch(batch)
+        try:
+            if batch_dir.is_symlink() or not batch_dir.is_dir():
+                raise ValueError("invalid batch path")
+            real_batch = batch_dir.resolve()
+            real_batch.relative_to(real_root)
+        except (OSError, ValueError) as exc:
+            raise ValueError("batch path escapes batch root") from exc
+
+        _validate_parent_chain_no_symlinks(self.batches_dir, path)
+
+        # Must exist and be a regular file.
+        try:
+            if not path.exists():
+                return  # not-found is not a safety violation
+            if path.is_symlink():
+                raise ValueError("path is a symlink")
+            if not path.is_file():
+                raise ValueError("path is not a regular file")
+            real_path = path.resolve()
+            real_path.relative_to(real_root)
+            real_path.relative_to(real_batch)
+        except (OSError, ValueError) as exc:
+            raise ValueError("path escapes containment") from exc
+
+    def _validate_dir_for_listing(self, runs_dir: Path, batch: str) -> None:
+        """Validate that ``runs_dir`` is a safe directory for listing."""
+        real_root = self.batches_dir.resolve()
+        _validate_containment_root(self.batches_dir, real_root)
+
+        batch_dir = self.batches_dir / batch
+        self._validate_batch(batch)
+        try:
+            if batch_dir.is_symlink() or not batch_dir.is_dir():
+                raise ValueError("invalid batch path")
+            real_batch = batch_dir.resolve()
+            real_batch.relative_to(real_root)
+        except (OSError, ValueError) as exc:
+            raise ValueError("batch path escapes batch root") from exc
+
+        if not runs_dir.exists():
+            return
+
+        try:
+            _validate_parent_chain_no_symlinks(self.batches_dir, runs_dir / "placeholder")
+            if runs_dir.is_symlink():
+                raise ValueError("runs dir is a symlink")
+            if not runs_dir.is_dir():
+                raise ValueError("runs dir is not a directory")
+            real_runs = runs_dir.resolve()
+            real_runs.relative_to(real_root)
+            real_runs.relative_to(real_batch)
+        except (OSError, ValueError) as exc:
+            raise ValueError("runs dir escapes containment") from exc
+
+    # ------------------------------------------------------------------
+    # Path builders
+    # ------------------------------------------------------------------
+
     def _ai_curate_dir(self, batch: str) -> Path:
         self._validate_batch(batch)
         return self.batches_dir / batch / AI_CURATE_DIR
@@ -76,6 +208,10 @@ class RunStorage:
         self._validate_run_id(run_id)
         return self._runs_dir(batch) / f"{run_id}.json"
 
+    # ------------------------------------------------------------------
+    # Public I/O operations
+    # ------------------------------------------------------------------
+
     def save_run(self, run: CurationRun, allow_cancelled: bool = False) -> bool:
         """Persist a completed run to disk.
 
@@ -84,6 +220,10 @@ class RunStorage:
         calls this with ``allow_cancelled=True`` when partial results
         were supplied, so the operator can see which files were moved
         before the cancellation.
+
+        All target paths (run JSON, .tmp, latest.json, latest.json.tmp)
+        are validated for filesystem containment BEFORE any write.
+        Rejected saves never create or mutate files.
 
         Args:
             run: The CurationRun to save.
@@ -97,23 +237,41 @@ class RunStorage:
         if run.status == JobState.CANCELLED and not allow_cancelled:
             return False
 
+        run_path = self._run_path(run.batch, run.run_id)
+        tmp_path = run_path.with_suffix(run_path.suffix + ".tmp")
+        latest_path = self._latest_path(run.batch)
+        latest_tmp = latest_path.with_suffix(latest_path.suffix + ".tmp")
+
         with self._lock:
-            runs_dir = self._runs_dir(run.batch)
+            # Validate ALL paths before any write — if any fail, nothing is created.
+            self._validate_path_for_write(run_path, run.batch)
+            self._validate_path_for_write(tmp_path, run.batch)
+            self._validate_path_for_write(latest_path, run.batch)
+            self._validate_path_for_write(latest_tmp, run.batch)
+
+            runs_dir = run_path.parent
             runs_dir.mkdir(parents=True, exist_ok=True)
 
-            # Write the run file atomically with a temp file.
-            # os.replace() is atomic on both POSIX and Windows (Python 3.3+).
-            run_path = self._run_path(run.batch, run.run_id)
-            tmp_path = run_path.with_suffix(run_path.suffix + ".tmp")
+            # ------------------------------------------------------------------
+            # Post-creation revalidation: after mkdir the parent chain and
+            # every target may have transitioned to a symlink, non-regular
+            # file, or resolved escape.  Re-check before any write so a
+            # rejected save never mutates the filesystem.
+            # ------------------------------------------------------------------
+            self._validate_path_for_write(run_path, run.batch)
+            self._validate_path_for_write(tmp_path, run.batch)
+            self._validate_path_for_write(latest_path, run.batch)
+            self._validate_path_for_write(latest_tmp, run.batch)
+            _validate_parent_chain_no_symlinks(self.batches_dir, runs_dir)
+
+            # Write the run file atomically via a temp file.
             tmp_path.write_text(
                 json.dumps(run.to_dict(), indent=2),
                 encoding="utf-8",
             )
             tmp_path.replace(run_path)
 
-            # Update latest pointer atomically (under lock to prevent TOCTOU)
-            latest_path = self._latest_path(run.batch)
-            latest_tmp = latest_path.with_suffix(latest_path.suffix + ".tmp")
+            # Update latest pointer atomically.
             latest_tmp.write_text(
                 json.dumps({"run_id": run.run_id}, indent=2),
                 encoding="utf-8",
@@ -134,17 +292,24 @@ class RunStorage:
         """
         with self._lock:
             run_path = self._run_path(batch, run_id)
+            try:
+                self._validate_path_for_read(run_path, batch)
+            except ValueError:
+                return None
             if not run_path.exists():
                 return None
             try:
                 data = json.loads(run_path.read_text(encoding="utf-8"))
                 return CurationRun.from_dict(data)
-            except (json.JSONDecodeError, KeyError) as e:
-                print(f"Corrupt run file {run_path}: {e}", flush=True)
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                logger.warning("Corrupt run file: %s", e)
                 return None
 
     def list_runs(self, batch: str) -> List[str]:
         """List run IDs for a batch in chronological order (oldest first).
+
+        Unsafe entries (symlinks, escaping paths, non-regular files) are
+        silently excluded.
 
         Args:
             batch: Batch name.
@@ -154,9 +319,29 @@ class RunStorage:
         """
         with self._lock:
             runs_dir = self._runs_dir(batch)
+            try:
+                self._validate_dir_for_listing(runs_dir, batch)
+            except ValueError:
+                return []
             if not runs_dir.exists():
                 return []
-            run_files = list(runs_dir.glob("*.json"))
+
+            all_files = list(runs_dir.glob("*.json"))
+            safe_files: list[Path] = []
+            for f in all_files:
+                try:
+                    if f.is_symlink():
+                        continue
+                    if not f.is_file():
+                        continue
+                    real_f = f.resolve()
+                    real_root = self.batches_dir.resolve()
+                    real_batch = (self.batches_dir / batch).resolve()
+                    real_f.relative_to(real_root)
+                    real_f.relative_to(real_batch)
+                except (OSError, ValueError):
+                    continue
+                safe_files.append(f)
 
             # Sort by created_at from inside each run file, falling back to
             # file modification time for backward compatibility.
@@ -170,10 +355,13 @@ class RunStorage:
                         return datetime.fromisoformat(created).timestamp()
                 except Exception:
                     pass
-                return path.stat().st_mtime
+                try:
+                    return path.stat().st_mtime
+                except OSError:
+                    return 0.0
 
-            run_files.sort(key=_run_created_at)
-            return [f.stem for f in run_files]
+            safe_files.sort(key=_run_created_at)
+            return [f.stem for f in safe_files]
 
     def load_latest(self, batch: str) -> Optional[CurationRun]:
         """Load the most recent run for a batch via the latest pointer.
@@ -186,6 +374,10 @@ class RunStorage:
         """
         with self._lock:
             latest_path = self._latest_path(batch)
+            try:
+                self._validate_path_for_read(latest_path, batch)
+            except ValueError:
+                return None
             if not latest_path.exists():
                 return None
             try:
@@ -194,6 +386,43 @@ class RunStorage:
                 if not isinstance(run_id, str) or not run_id:
                     return None
                 return self.load_run(batch, run_id)
-            except (json.JSONDecodeError, KeyError) as e:
-                print(f"Corrupt latest.json {latest_path}: {e}", flush=True)
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                logger.warning("Corrupt latest.json: %s", e)
                 return None
+
+
+# ------------------------------------------------------------------
+# Module-level path safety helpers
+# ------------------------------------------------------------------
+
+
+def _validate_containment_root(raw_root: Path, real_root: Path) -> None:
+    """Ensure the configured batches_dir resolves to a real directory."""
+    try:
+        if raw_root.is_symlink():
+            raise ValueError("configured batch root is a symlink")
+        if not real_root.is_dir():
+            raise ValueError("configured batch root is not a directory")
+    except (OSError, ValueError) as exc:
+        raise ValueError("invalid batch root") from exc
+
+
+def _validate_parent_chain_no_symlinks(base_dir: Path, final_path: Path) -> None:
+    """Check that no parent of ``final_path`` (up to and including ``base_dir``) is a symlink.
+
+    Traverses the directory chain from ``base_dir`` to the parent of
+    ``final_path``, rejecting any existing directory that is a symlink.
+    Non-existent intermediate directories are silently skipped (OSError
+    from ``is_symlink()`` is caught) because they will be created by
+    ``mkdir`` at a later stage and then revalidated.
+    """
+    parts = final_path.relative_to(base_dir).parts
+    current = base_dir
+    # Check every ancestor directory except the final leaf.
+    for part in parts[:-1]:
+        current = current / part
+        try:
+            if current.is_symlink():
+                raise ValueError(f"symlink in path: {current}")
+        except OSError:
+            pass

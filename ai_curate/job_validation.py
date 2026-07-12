@@ -15,15 +15,23 @@ def validate_ai_curate_request(
     allowed_dest_folders: set[str],
 ) -> tuple[dict | None, tuple[dict[str, str], int] | None]:
     """Validate an AI curation job submission payload."""
-    batch = data.get("batch", "").strip()
+    batch_value = data.get("batch", "")
+    if not isinstance(batch_value, str):
+        return None, ({"error": "batch must be a string"}, 400)
+    batch = batch_value.strip()
     if not batch:
         return None, ({"error": "batch is required"}, 400)
     if batch not in get_batches():
         return None, ({"error": f"batch '{batch}' does not exist"}, 400)
 
-    prompt = data.get("prompt", "").strip()
+    prompt_value = data.get("prompt", "")
+    if not isinstance(prompt_value, str):
+        return None, ({"error": "prompt must be a string"}, 400)
+    prompt = prompt_value.strip()
 
     source_folder = data.get("source_folder", "inbox")
+    if not isinstance(source_folder, str):
+        return None, ({"error": "source_folder must be a string"}, 400)
     if source_folder not in allowed_source_folders:
         return None, (
             {"error": f"source_folder must be one of {sorted(allowed_source_folders)}"},
@@ -53,6 +61,8 @@ def validate_ai_curate_request(
 
     move_enabled = bool(data.get("move_enabled", False))
     destination_folder = data.get("destination_folder")
+    if destination_folder is not None and not isinstance(destination_folder, str):
+        return None, ({"error": "destination_folder must be a string"}, 400)
     if move_enabled:
         if not destination_folder or destination_folder not in allowed_dest_folders:
             return None, (
@@ -62,7 +72,13 @@ def validate_ai_curate_request(
                 400,
             )
 
-    model = (data.get("model") or default_model or "").strip()
+    supplied_model = data.get("model")
+    if supplied_model is not None and not isinstance(supplied_model, str):
+        return None, ({"error": "model must be a string"}, 400)
+    model_value = supplied_model or default_model or ""
+    if not isinstance(model_value, str):
+        return None, ({"error": "model must be a string"}, 400)
+    model = model_value.strip()
     if not model:
         return None, (
             {"error": "model is required — set IMAGE_CURATOR_MODEL or pass model in request"},

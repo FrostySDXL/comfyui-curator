@@ -57,6 +57,7 @@ JS_FILES = [
     "ai.js",
     "polling.js",
     "modals.js",
+    "settings.js",
     "combobox.js",
     "keyboard.js",
     "events.js",
@@ -116,7 +117,7 @@ def _all_checks() -> dict[str, Check]:
         ),
         "mypy": Check(
             "mypy",
-            _python_module("mypy", *PYTHON_TARGETS),
+            _python_module("mypy", "--explicit-package-bases", *PYTHON_TARGETS),
             requires="mypy",
         ),
         "unit-tests": Check(

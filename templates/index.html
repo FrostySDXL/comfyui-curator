@@ -73,6 +73,7 @@
                 <button id="ai-sidebar-toggle-btn" class="ai-sidebar-toggle-btn hidden" type="button">Hide AI</button>
                 <button id="help-btn" class="help-btn" type="button">Help</button>
                 <button id="prompts-btn" class="help-btn" type="button">Prompts</button>
+                <button id="settings-btn" class="help-btn hidden" type="button">Settings</button>
                 <button id="set-auto-import-btn" class="set-auto-import-btn hidden" type="button">Set as Auto-import</button>
             </div>
         </div>
@@ -565,6 +566,52 @@
         </div>
     </div>
 
+    <div id="settings-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+        <div class="modal-content settings-modal-content">
+            <div class="settings-heading"><h3 id="settings-modal-title">Curator Settings</h3><button id="settings-close-btn" type="button" aria-label="Close settings">&times;</button></div>
+            <div id="settings-error" class="settings-error hidden" role="alert"></div>
+            <div id="settings-config-warning" class="settings-config-warning hidden" role="alert">Stored settings could not be loaded. Review these fallback values carefully; saving replaces the invalid file.</div>
+            <div id="settings-path-scope-note" class="settings-path-scope-note">
+                Paths are resolved inside the ComfyUI process. In Docker, a host directory must be exposed at the configured container path with a Docker volume or bind mount.
+            </div>
+            <section class="settings-section" aria-labelledby="settings-storage-heading">
+                <h4 id="settings-storage-heading">Storage</h4>
+                <div class="settings-grid">
+                    <label class="settings-field">Batch root<input id="settings-batch-root" type="text" autocomplete="off"></label>
+                    <label class="settings-field">Import source<input id="settings-import-source" type="text" autocomplete="off"></label>
+                    <div class="settings-field settings-field-wide">
+                        <div class="settings-label-row">
+                            <label for="settings-public-root">Public export root</label>
+                            <label class="settings-inline-check"><input id="settings-public-enabled" type="checkbox"> Enabled</label>
+                        </div>
+                        <input id="settings-public-root" type="text" autocomplete="off">
+                    </div>
+                </div>
+            </section>
+            <section class="settings-section" aria-labelledby="settings-ai-heading">
+                <h4 id="settings-ai-heading">AI connection</h4>
+                <div class="settings-grid">
+                    <label class="settings-field">LLM base URL
+                        <input id="settings-llm-url" type="url" autocomplete="off">
+                        <span class="settings-field-hint">In Docker, localhost is this container. For a model server on the host, use host.docker.internal; Linux also requires host-gateway configuration.</span>
+                    </label>
+                    <label class="settings-field">Models (one per line)<textarea id="settings-models" rows="3"></textarea></label>
+                    <label class="settings-field">Default model<input id="settings-default-model" type="text" autocomplete="off"></label>
+                    <label class="settings-field">Request timeout (seconds)<input id="settings-timeout" type="number" min="1" max="3600"></label>
+                </div>
+            </section>
+            <section class="settings-section" aria-labelledby="settings-credentials-heading">
+                <h4 id="settings-credentials-heading">Credentials</h4>
+                <div class="settings-field">
+                    <div class="settings-label-row"><label for="settings-api-key">Replace API key</label><span id="settings-api-key-set" class="settings-secret-status">Not set</span></div>
+                    <input id="settings-api-key" type="password" autocomplete="new-password">
+                    <label class="settings-inline-check settings-clear-key"><input id="settings-clear-api-key" type="checkbox"> Clear saved API key</label>
+                </div>
+            </section>
+            <div class="modal-buttons"><button class="cancel" type="button">Cancel</button><button class="create" id="settings-save-btn" type="button">Save Settings</button></div>
+        </div>
+    </div>
+
     <!-- Toast -->
     <div id="toast" class="toast" role="alert" aria-live="polite" aria-atomic="true">
         <span id="toast-text"></span>
@@ -592,6 +639,7 @@
     <script src="/static/js/ai.js"></script>
     <script src="/static/js/polling.js"></script>
     <script src="/static/js/modals.js"></script>
+    <script src="/static/js/settings.js"></script>
     <script src="/static/js/combobox.js"></script>
     <script src="/static/js/keyboard.js"></script>
     <script src="/static/js/events.js"></script>

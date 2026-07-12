@@ -38,7 +38,6 @@ class FixtureResult:
                 f'$env:IMAGE_CURATOR_BATCHES="{self.batches_dir}"',
                 f'$env:IMAGE_CURATOR_COMFYUI="{self.comfyui_dir}"',
                 f'$env:IMAGE_CURATOR_STATE="{self.state_file}"',
-                '$env:IMAGE_CURATOR_ENABLE_WATCHER="false"',
                 f'$env:IMAGE_CURATOR_HOST="{self.host}"',
                 f'$env:IMAGE_CURATOR_PORT="{self.port}"',
             ]
@@ -47,7 +46,6 @@ class FixtureResult:
                 f"set IMAGE_CURATOR_BATCHES={self.batches_dir}",
                 f"set IMAGE_CURATOR_COMFYUI={self.comfyui_dir}",
                 f"set IMAGE_CURATOR_STATE={self.state_file}",
-                "set IMAGE_CURATOR_ENABLE_WATCHER=false",
                 f"set IMAGE_CURATOR_HOST={self.host}",
                 f"set IMAGE_CURATOR_PORT={self.port}",
             ]

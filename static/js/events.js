@@ -57,6 +57,8 @@ function _bindDelegatedEvents() {
 
             const promptsBtn = document.getElementById('prompts-btn');
             if (promptsBtn) promptsBtn.addEventListener('click', showPromptsModal);
+            const settingsBtn = document.getElementById('settings-btn');
+            if (settingsBtn) settingsBtn.addEventListener('click', showSettingsModal);
 
             const autoImportBtn = document.getElementById('set-auto-import-btn');
             if (autoImportBtn) autoImportBtn.addEventListener('click', setCurrentBatchAsAutoImport);
@@ -183,6 +185,13 @@ function _bindDelegatedEvents() {
             });
             const helpModal = document.getElementById('help-modal');
             if (helpModal) helpModal.addEventListener('click', function(event) { closeModalOnBackdropClick(event, hideHelpModal); });
+            document.querySelectorAll('#settings-modal .cancel').forEach(btn => btn.addEventListener('click', hideSettingsModal));
+            const settingsClose = document.getElementById('settings-close-btn');
+            if (settingsClose) settingsClose.addEventListener('click', hideSettingsModal);
+            const settingsSave = document.getElementById('settings-save-btn');
+            if (settingsSave) settingsSave.addEventListener('click', saveNativeSettings);
+            const settingsModal = document.getElementById('settings-modal');
+            if (settingsModal) settingsModal.addEventListener('click', event => closeModalOnBackdropClick(event, hideSettingsModal));
 
             document.querySelectorAll('#prompts-modal .cancel').forEach(btn => {
                 btn.addEventListener('click', hidePromptsModal);

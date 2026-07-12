@@ -59,7 +59,7 @@ function aiPopulateOptionalElements() {
             // that includes quality defaults.  We piggyback on preview-elements
             // with a single dummy element so the response has the quality
             // elements appended.  Then extract only the quality ones.
-            fetch('/api/ai-curate/preview-elements', {
+            fetch(ccApiPath('/api/ai-curate/preview-elements'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({elements: ['x']}),
@@ -109,7 +109,7 @@ async function aiLoadElementHistory() {
             const select = document.getElementById('ai-history-select');
             if (!container || !select || !currentBatch) return;
             try {
-                const resp = await fetch(`/api/ai-curate/batches/${currentBatch}/element-history?limit=10`);
+                const resp = await fetch(ccApiPath(`/api/ai-curate/batches/${currentBatch}/element-history?limit=10`));
                 if (!resp.ok) return;
                 const data = await resp.json();
                 const items = data.history || [];

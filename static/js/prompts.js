@@ -54,7 +54,7 @@
             _trapFocus(modal);
             // Always refetch the batch list on open so newly created batches appear.
             try {
-                const resp = await fetch('/api/batches');
+                const resp = await fetch(ccApiPath('/api/batches'));
                 if (resp.ok) {
                     promptsBatchList = (await resp.json()).batches || [];
                 }
@@ -264,8 +264,8 @@
             if (list) list.textContent = 'Loading prompt history...';
             const token = ++promptsRequestToken;
             const url = promptsCurrentBatch
-                ? `/api/prompt-history/${encodeURIComponent(promptsCurrentBatch)}?check_stale=true`
-                : '/api/prompt-history';
+                ? ccApiPath(`/api/prompt-history/${encodeURIComponent(promptsCurrentBatch)}?check_stale=true`)
+                : ccApiPath('/api/prompt-history');
             try {
                 const resp = await fetch(url);
                 if (token !== promptsRequestToken) return; // stale response, ignore
@@ -777,7 +777,7 @@
             if (rebuildBtn) { rebuildBtn.disabled = true; rebuildBtn.textContent = 'Building...'; }
             const token = ++promptsRequestToken;
             try {
-                const resp = await fetch(`/api/prompt-history/${encodeURIComponent(batch)}/build`, {method: 'POST'});
+                const resp = await fetch(ccApiPath(`/api/prompt-history/${encodeURIComponent(batch)}/build`), {method: 'POST'});
                 if (token !== promptsRequestToken) return;
                 if (!resp.ok) throw new Error('build failed');
                 if (!options.quietSuccess) showToast('Prompt index built');

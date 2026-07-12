@@ -30,7 +30,7 @@ async function aiPreviewElements() {
                 elements: elements,
                 quality_flags: qualityFlags,
             };
-            const resp = await fetch('/api/ai-curate/preview-elements', {
+            const resp = await fetch(ccApiPath('/api/ai-curate/preview-elements'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(body)
@@ -88,7 +88,7 @@ async function aiSubmitJob() {
                 destination_folder: moveEnabled ? destFolder : null,
             };
 
-            const resp = await fetch('/api/ai-curate/jobs', {
+            const resp = await fetch(ccApiPath('/api/ai-curate/jobs'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(body)
@@ -164,7 +164,7 @@ async function aiPollJobStatus() {
                 aiStopPolling();
                 return;
             }
-            const resp = await fetch(`/api/ai-curate/jobs/${aiCurrentJobId}`);
+            const resp = await fetch(ccApiPath(`/api/ai-curate/jobs/${aiCurrentJobId}`));
             if (!resp.ok) {
                 aiStopPolling();
                 return;
@@ -175,7 +175,7 @@ async function aiPollJobStatus() {
 
 async function aiCancelJob() {
             if (!aiCurrentJobId) return;
-            const resp = await fetch(`/api/ai-curate/jobs/${aiCurrentJobId}/cancel`, {method: 'POST'});
+            const resp = await fetch(ccApiPath(`/api/ai-curate/jobs/${aiCurrentJobId}/cancel`), {method: 'POST'});
             const data = await resp.json();
             if (data.success) {
                 showToast('Cancellation requested');

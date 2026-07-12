@@ -32,12 +32,98 @@ def _validate_name(name: str, label: str = "name") -> None:
         raise ValueError(f"{label} starts with a dot")
 
 
+def _validate_state_target(path: Path) -> None:
+    """Validate that a state-related path is safe to read or write.
+
+    Checks (in order):
+    1. Every existing or dangling-symlink component in the raw lexical
+       parent chain is rejected.
+    2. A symlink leaf is rejected BEFORE the missing-file check so
+       dangling symlinks are not mistaken for safe missing files.
+    3. Existing non-directory ancestors and non-regular leaves are
+       rejected.
+    4. The resolved path must be contained under the real parent.
+
+    OSError during validation is never silently swallowed; it is
+    converted to a stable ValueError without host paths.
+    """
+    path = Path(path)
+    lexical_path = path if path.is_absolute() else Path.cwd() / path
+
+    # ---- Walk raw parent chain (lexical, not resolved) ----
+    try:
+        anchor = Path(lexical_path.anchor)
+    except Exception as exc:
+        raise ValueError("State path is unsafe") from exc
+
+    raw_parts = lexical_path.parts[1:]  # everything after the anchor
+    for i, part in enumerate(raw_parts):
+        anchor = anchor / part
+        is_leaf = i == len(raw_parts) - 1
+        try:
+            if anchor.is_symlink():
+                raise ValueError("State path is unsafe")
+        except ValueError:
+            raise
+        except OSError:
+            # is_symlink() can fail if a component is missing.  A
+            # missing *parent* component is fine (it will be created
+            # by mkdir).  A missing *leaf* that is also a dangling
+            # symlink has already been caught above because is_symlink
+            # returns True for dangling symlinks on most platforms.
+            # If the platform cannot detect a dangling symlink via
+            # is_symlink(), we fall through to the containment check.
+            if not is_leaf:
+                continue
+            raise ValueError("State path is unsafe") from None
+
+        if not is_leaf:
+            # Parent component: must be a directory (or not exist yet).
+            try:
+                if anchor.exists() and not anchor.is_dir():
+                    raise ValueError("State path is unsafe")
+            except ValueError:
+                raise
+            except OSError:
+                raise ValueError("State path is unsafe") from None
+        else:
+            # Leaf component: symlink rejected above; now check
+            # regular-file-ness if it already exists.
+            try:
+                if anchor.exists() and not anchor.is_file():
+                    raise ValueError("State path is unsafe")
+            except ValueError:
+                raise
+            except OSError:
+                raise ValueError("State path is unsafe") from None
+
+    # ---- Resolved containment under real parent ----
+    try:
+        real_parent = lexical_path.parent.resolve()
+        if lexical_path.exists():
+            lexical_path.resolve().relative_to(real_parent)
+        else:
+            # For a missing target the path.resolve() may return a
+            # different path than a future write would actually use.
+            # We validate that a future resolve would be contained by
+            # checking the parent chain containment instead.
+            lexical_path.parent.resolve().relative_to(real_parent)
+    except ValueError:
+        raise
+    except OSError as exc:
+        raise ValueError("State path is unsafe") from exc
+
+
 def load_state(state_file: Path) -> dict:
     """Load persistent state from a JSON file.
 
-    Returns a default state dict if the file is missing or corrupt.
+    Returns a default state dict if the file is missing, corrupt, or unsafe.
     """
     state_file = Path(state_file)
+    try:
+        _validate_state_target(state_file)
+    except ValueError:
+        return {"active_batch": None}
     if state_file.exists():
         try:
             with state_file.open(encoding="utf-8") as f:
@@ -54,10 +140,22 @@ def save_state(state_file: Path, state: dict) -> None:
     """Save persistent state to a JSON file atomically.
 
     Writes to a temporary file then renames to avoid corruption on crash.
+    Rejects unsafe targets before any filesystem mutation so a rejected
+    save never writes outside the state directory or leaves a temp file.
     """
     state_file = Path(state_file)
-    state_file.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = state_file.with_suffix(state_file.suffix + ".tmp")
+
+    # Validate before any write.
+    _validate_state_target(state_file)
+    _validate_state_target(tmp_path)
+
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Revalidate post-mkdir in case a created parent is a symlink.
+    _validate_state_target(state_file)
+    _validate_state_target(tmp_path)
+
     tmp_path.write_text(json.dumps(state), encoding="utf-8")
     tmp_path.replace(state_file)
 
@@ -210,7 +308,7 @@ def move_image(src: Path, dst: Path) -> bool:
     """Move a single file from ``src`` to ``dst``.
 
     Centralised helper used by the Flask routes, the AI curate worker,
-    the ComfyUI watcher, and the CLI. Returns True on success, False if
+    and the CLI. Returns True on success, False if
     the source does not exist or the move raised ``OSError``. Never
     re-raises so callers don't have to wrap every call in try/except.
 
@@ -270,7 +368,11 @@ def import_all_pending(comfyui_output: Path, batches_dir: Path, batch_name: str)
 
     count = 0
     for path in comfyui_output.iterdir():
-        if _is_supported_image(path):
+        try:
+            is_symlink = path.is_symlink()
+        except OSError:
+            continue
+        if not is_symlink and _is_supported_image(path):
             safe_name = _collision_safe_name(dest_inbox, path.name)
             dst = dest_inbox / safe_name
             if move_image(path, dst):

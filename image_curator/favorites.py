@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from image_curator.batch_store import BATCH_FOLDERS, _validate_name
+from .batch_store import BATCH_FOLDERS, IMAGE_EXTENSIONS, _validate_name
 
 _LOCK = threading.RLock()
 
@@ -21,9 +21,38 @@ def _favorites_path(batches_dir: Path, batch: str | None = None) -> Path:
     return batches_dir / batch / ".favorites.json"
 
 
+def _is_safe_store_path(batches_dir: Path, batch: str | None = None) -> bool:
+    """Return False when the store file or its parent chain is untrusted."""
+    root = Path(batches_dir).resolve()
+    if batch is not None:
+        batch_dir = Path(batches_dir) / batch
+        try:
+            if batch_dir.is_symlink():
+                return False
+            real_batch = batch_dir.resolve()
+            real_batch.relative_to(root)
+        except (OSError, ValueError):
+            return False
+        store = batch_dir / ".favorites.json"
+        real_parent = real_batch
+    else:
+        store = Path(batches_dir) / ".favorites.json"
+        real_parent = root
+    try:
+        if store.is_symlink():
+            return False
+        real_store = store.resolve()
+        real_store.relative_to(real_parent)
+    except (OSError, ValueError):
+        return False
+    return True
+
+
 def load_favorites(batches_dir: Path, batch: str | None = None) -> list[Any]:
     """Load favorite data for a batch or universal scope."""
     with _LOCK:
+        if not _is_safe_store_path(batches_dir, batch):
+            return []
         path = _favorites_path(batches_dir, batch)
         if not path.exists():
             return []
@@ -85,15 +114,56 @@ def get_batch_favorite_filenames(batches_dir: Path, batch: str) -> set[str]:
 def _find_file_folder(batches_dir: Path, batch: str, filename: str) -> str | None:
     _validate_name(batch, "batch name")
     _validate_name(filename, "file name")
+    root = Path(batches_dir).resolve()
     batch_dir = Path(batches_dir) / batch
+    try:
+        if batch_dir.is_symlink():
+            return None
+    except OSError:
+        return None
+    try:
+        real_batch = batch_dir.resolve()
+        real_batch.relative_to(root)
+    except (OSError, ValueError):
+        return None
+    if not filename.lower().endswith(tuple(IMAGE_EXTENSIONS)):
+        return None
     for folder in BATCH_FOLDERS:
-        if (batch_dir / folder / filename).exists():
-            return folder
+        stage = batch_dir / folder
+        try:
+            if stage.is_symlink():
+                continue
+        except OSError:
+            continue
+        try:
+            real_stage = stage.resolve()
+            real_stage.relative_to(root)
+            real_stage.relative_to(real_batch)
+        except (OSError, ValueError):
+            continue
+        file_path = stage / filename
+        try:
+            if file_path.is_symlink() or not file_path.is_file():
+                continue
+        except OSError:
+            continue
+        try:
+            real_file = file_path.resolve()
+            real_file.relative_to(root)
+            real_file.relative_to(real_batch)
+            real_file.relative_to(real_stage)
+        except (OSError, ValueError):
+            continue
+        return folder
     return None
 
 
-def resolve_universal_favorites(batches_dir: Path) -> list[dict[str, str]]:
-    """Resolve universal favorites to existing files and their current folder."""
+def resolve_universal_favorites(batches_dir: Path) -> list[dict[str, object]]:
+    """Resolve universal favorites to existing files and their current folder.
+
+    Skips entries whose batch, stage, or file path are symlinks, resolve
+    outside the configured root, or are not regular supported image files.
+    """
     resolved = []
     for item in load_favorites(batches_dir):
         if not isinstance(item, dict):

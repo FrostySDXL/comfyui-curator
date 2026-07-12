@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Image Curator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/curator_static/css/base.css">
+    <link rel="stylesheet" href="/curator_static/css/sidebar.css">
+    <link rel="stylesheet" href="/curator_static/css/layout.css">
+    <link rel="stylesheet" href="/curator_static/css/grid.css">
+    <link rel="stylesheet" href="/curator_static/css/lightbox.css">
+    <link rel="stylesheet" href="/curator_static/css/modals.css">
+    <link rel="stylesheet" href="/curator_static/css/prompts.css">
+    <link rel="stylesheet" href="/curator_static/css/toast.css">
+    <link rel="stylesheet" href="/curator_static/css/ai.css">
+    <link rel="stylesheet" href="/curator_static/css/responsive.css">
+</head>
+<body>
+    <div class="sidebar" id="batch-sidebar">
+        <div class="sidebar-section active-batch">
+            <h2>Auto-import</h2>
+            <select id="active-batch-select" aria-label="Select active batch for auto-import" hidden>
+                <option value="">-- Select batch --</option>
+            </select>
+            <div class="custom-select" id="active-batch-custom">
+                <input class="custom-select-input" id="active-batch-input" type="text"
+                       placeholder="Select batch..." autocomplete="off" spellcheck="false"
+                       aria-haspopup="listbox" aria-expanded="false" aria-autocomplete="list">
+                <span class="custom-select-arrow" id="active-batch-arrow">&#9662;</span>
+                <ul class="custom-select-dropdown" id="active-batch-dropdown" role="listbox" tabindex="-1"></ul>
+            </div>
+            <div id="pending-info" class="pending-bar hidden">
+                <span><span id="pending-count">0</span> pending</span>
+                <button class="import-btn">Import All</button>
+            </div>
+        </div>
+        <div class="sidebar-section sidebar-batches">
+            <div class="batch-controls">
+                <div class="sidebar-library-header">
+                    <div class="sidebar-title-group">
+                        <h2>Batches</h2>
+                        <div class="sidebar-subtitle">Batch library</div>
+                    </div>
+                    <div class="sort-group batch-sort-group">
+                        <button class="sort-btn batch-sort-btn active" data-bsort="alpha" title="A-Z">A-Z</button>
+                        <button class="sort-btn batch-sort-btn" data-bsort="count" title="By image count">#</button>
+                        <button class="sort-btn batch-sort-btn" data-bsort="recent" title="Most recent">Recent</button>
+                        <button class="sort-btn batch-sort-btn" data-bsort="ai" title="AI history first">AI</button>
+                    </div>
+                </div>
+                <div id="batch-count-label" class="batch-count-label">Batches 0 (0 shown)</div>
+                <div class="batch-search-wrap">
+                    <input id="batch-search" class="batch-search" type="text" placeholder="Search batches..." autocomplete="off">
+                    <button id="batch-search-clear" class="batch-search-clear" aria-label="Clear batch search" title="Clear">x</button>
+                </div>
+            </div>
+            <ul id="batch-list" class="batch-list"></ul>
+            <div class="sidebar-action-row">
+                <button class="new-batch-btn">+ New Batch</button>
+            </div>
+        </div>
+    </div>
+    <div id="sidebar-resizer" class="sidebar-resizer"></div>
+
+    <main class="main">
+        <div class="header">
+            <div class="workspace-context">
+                <div class="context-kicker">Review workspace</div>
+                <h1><span id="current-path">Select a batch</span><span id="img-count" class="img-count"></span></h1>
+            </div>
+            <div class="header-actions">
+                <button id="batch-sidebar-toggle-btn" class="batch-sidebar-toggle-btn" type="button">Hide Batches</button>
+                <button id="ai-sidebar-toggle-btn" class="ai-sidebar-toggle-btn hidden" type="button">Hide AI</button>
+                <button id="help-btn" class="help-btn" type="button">Help</button>
+                <button id="prompts-btn" class="help-btn" type="button">Prompts</button>
+                <button id="settings-btn" class="help-btn hidden" type="button">Settings</button>
+                <button id="set-auto-import-btn" class="set-auto-import-btn hidden" type="button">Set as Auto-import</button>
+            </div>
+        </div>
+
+        <div class="workspace-toolbar" id="workspace-toolbar">
+            <div class="folder-tabs" id="folder-tabs">
+                <span class="folder-tab-label">Review</span>
+                <div class="folder-tab" data-folder="inbox" role="button" tabindex="0">
+                    inbox <span class="tab-count" id="tc-inbox">0</span>
+                </div>
+                <div class="folder-tab" data-folder="shortlisted" role="button" tabindex="0">
+                    shortlisted <span class="tab-count" id="tc-shortlisted">0</span>
+                </div>
+                <div class="folder-tab" data-folder="finals" role="button" tabindex="0">
+                    finals <span class="tab-count" id="tc-finals">0</span>
+                </div>
+                <div class="folder-tab" data-folder="rejects" role="button" tabindex="0">
+                    rejects <span class="tab-count" id="tc-rejects">0</span>
+                </div>
+                <span class="folder-tab-label folder-tab-label-output">Output</span>
+                <div class="folder-tab" data-folder="public" role="button" tabindex="0">
+                    public <span class="tab-count" id="tc-public">0</span>
+                </div>
+                <div class="folder-tabs-spacer"></div>
+                <button class="delete-rejects-btn" id="delete-rejects-btn">Empty Rejects</button>
+            </div>
+            <div class="sort-controls hidden" id="sort-controls">
+                <button class="workspace-select-all-btn" id="workspace-select-all-btn" title="Select all visible images" type="button">Select All</button>
+                <span class="sort-label">Sort</span>
+                <div class="sort-group">
+                    <button class="sort-btn active" data-sort="date">Date</button>
+                    <button class="sort-btn" data-sort="shuffle">Shuffle</button>
+                    <button class="sort-btn hidden" data-sort="score-desc" id="sort-btn-score-desc">Score</button>
+                </div>
+                <button class="sort-dir" id="sort-dir-btn" title="Toggle direction">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 5v14M5 12l7 7 7-7"/>
+                    </svg>
+                </button>
+                <button class="favorites-filter-btn" id="favorites-filter-btn" title="Favorites only (F)" type="button">&#9734;</button>
+                <span class="sort-label density-label">Density</span>
+                <div class="density-controls" id="density-controls" aria-label="Thumbnail density">
+                    <button class="density-btn" data-density="compact" type="button" title="Compact thumbnails">Compact</button>
+                    <button class="density-btn active" data-density="comfortable" type="button" title="Comfortable thumbnails">Comfort</button>
+                    <button class="density-btn" data-density="large" type="button" title="Large thumbnails">Large</button>
+                </div>
+                <div class="ai-display-controls hidden ai-header-controls" id="ai-display-controls">
+                    <label class="ai-checkbox-label ai-header-toggle">
+                        <input type="checkbox" id="ai-overlay-toggle">
+                        AI badges <span class="shortcut-hint">B</span>
+                    </label>
+                    <select id="ai-filter-mode" class="ai-select ai-select-sm">
+                        <option value="all">All</option>
+                        <option value="scored">Scored</option>
+                        <option value="failed">Failed</option>
+                        <option value="top-n">Top-N</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="workspace">
+            <div class="content">
+                <div class="grid-shell" id="grid-shell">
+                    <div id="grid" class="grid is-empty">
+                        <div class="empty">
+                            <div class="empty-title">Select a batch</div>
+                            <div class="empty-detail">Choose a batch from the sidebar to begin reviewing images.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ai-sidebar-shell hidden" id="ai-sidebar-shell">
+                <div class="ai-sidebar-resizer" id="ai-sidebar-resizer"></div>
+                <aside class="ai-curate-panel" id="ai-curate-panel">
+                    <div class="ai-curate-header">
+                        <div>
+                            <h3>AI Curate</h3>
+                            <div class="ai-curate-advisory">Scores are advisory</div>
+                        </div>
+                    </div>
+                    <div class="ai-curate-body" id="ai-curate-body">
+                        <div class="ai-panel-tabs" role="tablist" aria-label="AI Curate sections">
+                            <button class="ai-panel-tab active" id="ai-panel-tab-inspect" data-ai-tab="inspect" type="button">Inspect</button>
+                            <button class="ai-panel-tab" id="ai-panel-tab-score" data-ai-tab="score" type="button">Score</button>
+                            <button class="ai-panel-tab" id="ai-panel-tab-runs" data-ai-tab="runs" type="button">Runs</button>
+                        </div>
+                        <div class="ai-review-section" id="ai-review-section">
+                            <div class="ai-section-heading">AI Review</div>
+                            <div id="ai-image-inspector" class="ai-image-inspector ai-image-inspector-empty">
+                                Select an image to inspect AI score details.
+                            </div>
+                        </div>
+
+                        <div class="ai-curate-form ai-panel-section" data-ai-panel-section="score">
+                            <label class="ai-label" for="ai-elements">Elements</label>
+                            <textarea id="ai-elements" class="ai-textarea" rows="3" placeholder="One element per line, e.g.:&#10;blushing&#10;blonde hair&#10;black dress"></textarea>
+
+                            <div class="ai-element-history hidden" id="ai-element-history">
+                                <label class="ai-label" for="ai-history-select">Previous elements</label>
+                                <select id="ai-history-select" class="ai-select">
+                                    <option value="">-- Select a previous set --</option>
+                                </select>
+                            </div>
+
+                            <div class="ai-optional-section" id="ai-optional-section">
+                                <div class="ai-optional-header" id="ai-optional-header" role="button" tabindex="0" aria-expanded="false">
+                                    Optional elements <span class="ai-optional-arrow">&#9662;</span>
+                                </div>
+                                <div class="ai-optional-body hidden" id="ai-optional-body">
+                                    <!-- Checkboxes populated dynamically -->
+                                </div>
+                            </div>
+
+                            <button class="ai-btn ai-btn-secondary">Preview elements</button>
+                            <div id="ai-elements-preview" class="ai-elements-preview hidden"></div>
+
+                            <div class="ai-form-row">
+                                <div class="ai-form-field">
+                                    <label class="ai-label" for="ai-source-folder">Source folder</label>
+                                    <select id="ai-source-folder" class="ai-select">
+                                        <option value="inbox" selected>inbox</option>
+                                        <option value="shortlisted">shortlisted</option>
+                                        <option value="finals">finals</option>
+                                        <option value="rejects">rejects</option>
+                                    </select>
+                                </div>
+                                <div class="ai-form-field">
+                                    <label class="ai-label" for="ai-top-n">Top N</label>
+                                    <input id="ai-top-n" class="ai-input" type="number" value="15" min="1" max="100">
+                                </div>
+                                <div class="ai-form-field">
+                                    <label class="ai-label" for="ai-model">Model</label>
+                                    {% if available_models %}
+                                    <select id="ai-model" class="ai-select">
+                                        {% for model in available_models %}
+                                        <option value="{{ model }}"{% if model == default_model %} selected{% endif %}>{{ model }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    {% else %}
+                                    <input id="ai-model" class="ai-input" type="text" placeholder="model name (required)">
+                                    <small class="ai-hint" title="Set IMAGE_CURATOR_MODEL in .env">Set IMAGE_CURATOR_MODEL.</small>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="ai-form-row">
+                                <div class="ai-form-field ai-toggle-field">
+                                    <label class="ai-checkbox-label">
+                                        <input type="checkbox" id="ai-move-toggle">
+                                        Move top-N after scoring
+                                    </label>
+                                </div>
+                                <div class="ai-form-field hidden" id="ai-dest-field">
+                                    <label class="ai-label" for="ai-dest-folder">Destination</label>
+                                    <select id="ai-dest-folder" class="ai-select">
+                                        <option value="shortlisted">shortlisted</option>
+                                        <option value="finals">finals</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <button class="ai-btn ai-btn-primary" id="ai-submit-btn">Score only</button>
+                        </div>
+
+                        <div class="ai-job-section hidden ai-panel-section" id="ai-job-section" data-ai-panel-section="score">
+                            <div class="ai-job-status">
+                                <span class="ai-status-dot" id="ai-status-dot" aria-hidden="true"></span>
+                                <span class="ai-job-label">Job status:</span>
+                                <span class="ai-job-state" id="ai-job-state">--</span>
+                                <span class="ai-job-progress" id="ai-job-progress"></span>
+                            </div>
+                            <button class="ai-btn ai-btn-danger hidden" id="ai-cancel-btn">Cancel</button>
+                        </div>
+
+                        <div class="ai-history-section hidden ai-panel-section" id="ai-history-section" data-ai-panel-section="runs">
+                            <div class="ai-history-controls">
+                                <div class="ai-form-field">
+                                    <label class="ai-label" for="ai-run-select">View run</label>
+                                    <select id="ai-run-select" class="ai-select">
+                                        <option value="">-- Active run --</option>
+                                    </select>
+                                </div>
+                                <div class="ai-form-field">
+                                    <label class="ai-label" for="ai-compare-run-select">Baseline</label>
+                                    <select id="ai-compare-run-select" class="ai-select">
+                                        <option value="previous">Previous completed run</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="ai-run-summary" class="ai-run-summary hidden"></div>
+                            <div id="ai-run-diff" class="ai-run-diff hidden"></div>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </div>
+    </main>
+
+    <!-- Action bar for multi-select -->
+    <div class="action-bar" id="action-bar">
+        <span class="action-count" id="action-count">0 selected</span>
+        <div class="action-group action-group-review">
+            <span class="action-group-label">Move to</span>
+            <button class="action-btn" data-dest="inbox">Inbox</button>
+            <button class="action-btn" data-dest="shortlisted">Shortlist</button>
+            <button class="action-btn" data-dest="finals">Finals</button>
+            <button class="action-btn" data-dest="rejects">Reject</button>
+            <span class="action-divider" aria-hidden="true"></span>
+            <button class="action-btn action-publish" id="publish-btn" type="button">Prepare Public Copies</button>
+            <button class="action-btn action-compare" id="compare-lightbox-btn" type="button">Compare in Lightbox</button>
+        </div>
+        <div class="action-group action-group-public">
+            <span class="action-group-label">Public copies</span>
+            <button class="action-btn action-public" id="public-copy-btn" type="button">Copy...</button>
+            <button class="action-btn action-public" id="public-move-btn" type="button">Move...</button>
+            <button class="action-btn action-public action-public-danger" id="public-delete-btn" type="button">Delete</button>
+        </div>
+        <button class="action-btn action-clear">Clear</button>
+    </div>
+
+    <!-- Lightbox -->
+    <div id="lightbox" class="lightbox">
+        <span class="lightbox-close" role="button" aria-label="Close lightbox" tabindex="0">&times;</span>
+        <span class="lightbox-info" id="lightbox-info"></span>
+        <aside class="lightbox-metadata-panel" id="lightbox-metadata-panel" aria-live="polite"></aside>
+        <aside class="lightbox-ai-panel" id="lightbox-ai-panel" aria-live="polite"></aside>
+        <span class="lightbox-nav prev" role="button" aria-label="Previous image" tabindex="0">&#8249;</span>
+        <div class="lightbox-image-wrap" id="lightbox-image-wrap">
+            <img id="lightbox-img" src="">
+        </div>
+        <div class="lightbox-compare" id="lightbox-compare" hidden>
+            <div class="lightbox-compare-pane active" data-compare-pane="0" tabindex="0">
+                <div class="lightbox-compare-label" id="lightbox-compare-label-0"></div>
+                <div class="lightbox-image-wrap lightbox-compare-wrap" id="lightbox-compare-wrap-0">
+                    <img id="lightbox-compare-img-0" src="">
+                </div>
+                <div class="lightbox-zoom-indicator lightbox-compare-zoom" id="lightbox-compare-zoom-0" aria-live="polite">100%</div>
+            </div>
+            <div class="lightbox-compare-pane" data-compare-pane="1" tabindex="0">
+                <div class="lightbox-compare-label" id="lightbox-compare-label-1"></div>
+                <div class="lightbox-image-wrap lightbox-compare-wrap" id="lightbox-compare-wrap-1">
+                    <img id="lightbox-compare-img-1" src="">
+                </div>
+                <div class="lightbox-zoom-indicator lightbox-compare-zoom" id="lightbox-compare-zoom-1" aria-live="polite">100%</div>
+            </div>
+        </div>
+        <div class="lightbox-zoom-indicator" id="lightbox-zoom-indicator" aria-live="polite">100%</div>
+        <span class="lightbox-nav next" role="button" aria-label="Next image" tabindex="0">&#8250;</span>
+        <div class="lightbox-controls" id="lightbox-actions">
+            <div><button class="btn btn-secondary">Prev scored</button><div class="key-hint">[</div></div>
+            <div><button class="btn btn-secondary">Zoom −</button><div class="key-hint">-</div></div>
+            <div><button class="btn btn-secondary">Reset zoom</button><div class="key-hint">0</div></div>
+            <div><button class="btn btn-secondary">Zoom +</button><div class="key-hint">+</div></div>
+            <div><button class="btn btn-secondary">Next scored</button><div class="key-hint">]</div></div>
+            <div><button class="btn btn-secondary" id="lightbox-pin-compare-btn">Pin active</button><div class="key-hint">C</div></div>
+            <div><button class="btn btn-secondary" id="metadata-toggle-btn" disabled>Metadata</button><div class="key-hint">M</div></div>
+            <div><button class="btn btn-secondary" id="lightbox-ai-toggle-btn">AI</button><div class="key-hint">I</div></div>
+            <div><button class="btn btn-secondary" id="lightbox-publish-btn">Prepare Public</button><div class="key-hint">P</div></div>
+            <div><button class="btn btn-shortlist">Shortlisted</button><div class="key-hint">S</div></div>
+            <div><button class="btn btn-finals">Finals</button><div class="key-hint">F</div></div>
+            <div><button class="btn btn-reject">Reject</button><div class="key-hint">R</div></div>
+        </div>
+    </div>
+
+    <!-- New batch modal -->
+    <div id="new-batch-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="new-batch-modal-title">
+        <div class="modal-content">
+            <h3 id="new-batch-modal-title">Create New Batch</h3>
+            <input type="text" id="new-batch-name" placeholder="batch-name">
+            <div class="modal-buttons">
+                <button class="cancel">Cancel</button>
+                <button class="create">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete rejects modal -->
+    <div id="delete-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
+        <div class="modal-content">
+            <h3 id="delete-modal-title">Empty Rejects</h3>
+            <p>Permanently delete <strong id="delete-count">0</strong> rejected images from this batch. This cannot be undone.</p>
+            <div class="modal-buttons">
+                <button class="cancel">Cancel</button>
+                <button class="delete-confirm">Delete All</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="publish-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="publish-modal-title">
+        <div class="modal-content publish-modal-content">
+            <h3 id="publish-modal-title">Prepare Public Copies</h3>
+            <div class="publish-scope">Selected images: <strong id="publish-selected-count">0</strong></div>
+            <div id="publish-source-summary" class="publish-summary">Output: this batch's public folder. Originals are not changed.</div>
+            <label class="publish-check"><input type="checkbox" id="publish-strip-metadata" checked> Strip metadata</label>
+            <label class="publish-check"><input type="checkbox" id="publish-watermark-enabled" checked> Add text watermark</label>
+            <div id="publish-watermark-options" class="publish-watermark-options">
+                <label class="publish-field">Text <input id="publish-watermark-text" type="text" value="FrostySDXL"></label>
+                <div id="publish-watermark-warning" class="publish-warning hidden">Watermark is enabled but the text is empty.</div>
+                <label class="publish-field">Position
+                    <select id="publish-watermark-position">
+                        <option value="bottom-right" selected>Bottom right</option>
+                        <option value="bottom-left">Bottom left</option>
+                        <option value="top-right">Top right</option>
+                        <option value="top-left">Top left</option>
+                        <option value="bottom-center">Bottom center</option>
+                        <option value="center">Center</option>
+                    </select>
+                </label>
+                <div class="publish-grid-fields">
+                    <label class="publish-field">Opacity % <input id="publish-watermark-opacity" type="number" min="0" max="100" value="55"></label>
+                    <label class="publish-field">Size % <input id="publish-watermark-size" type="number" min="1" max="20" value="4"></label>
+                    <label class="publish-field">Margin px <input id="publish-watermark-margin" type="number" min="0" value="32"></label>
+                </div>
+                <label class="publish-check"><input type="checkbox" id="publish-watermark-black"> Use black text</label>
+                <button class="modal-link-btn" id="publish-reset-watermark-btn" type="button">Reset watermark defaults</button>
+            </div>
+            <p>Generated copies are written to this batch's public folder. Originals are not changed.</p>
+            <div id="publish-result" class="publish-result hidden">
+                <span id="publish-result-text"></span>
+                <button id="publish-view-public-btn" type="button">View Public Copies</button>
+            </div>
+            <div class="modal-buttons">
+                <button class="cancel" type="button">Cancel</button>
+                <button class="create" id="publish-submit-btn" type="button">Create Public Copies</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="public-destination-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="public-destination-modal-title">
+        <div class="modal-content public-destination-modal-content">
+            <h3 id="public-destination-modal-title">Copy Public Copies</h3>
+            <p id="public-destination-detail">Choose a destination under IMAGE_CURATOR_PUBLIC_EXPORTS. Only generated public copies are affected.</p>
+            <label class="publish-field">Destination under export root
+                <input id="public-destination-input" type="text" placeholder="posts/batch-name" autocomplete="off">
+            </label>
+            <div id="public-destination-history" class="public-destination-history hidden"></div>
+            <div class="public-destination-browser" aria-label="Existing folders under export root">
+                <div class="public-destination-browser-heading">Existing folders under IMAGE_CURATOR_PUBLIC_EXPORTS</div>
+                <div class="public-destination-browser-toolbar">
+                    <button id="public-destination-up-btn" type="button">Up</button>
+                    <button id="public-destination-refresh-btn" type="button">Refresh</button>
+                    <span id="public-destination-current-path">/</span>
+                </div>
+                <div id="public-destination-browser-list" class="public-destination-browser-list" aria-live="polite">Loading folders...</div>
+            </div>
+            <div class="publish-summary">External copy/move is available only when IMAGE_CURATOR_PUBLIC_EXPORTS is configured.</div>
+            <div class="modal-buttons">
+                <button class="cancel" type="button">Cancel</button>
+                <button class="create" id="public-destination-submit-btn" type="button">Copy Public Copies</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="public-delete-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="public-delete-modal-title">
+        <div class="modal-content public-destination-modal-content">
+            <h3 id="public-delete-modal-title">Delete Public Copies</h3>
+            <p>Delete <strong id="public-delete-count">0</strong> generated public copies?</p>
+            <div class="publish-summary">Only generated public copies are deleted. Original curated images are not changed.</div>
+            <div class="modal-buttons">
+                <button class="cancel" type="button">Cancel</button>
+                <button class="delete-confirm" id="public-delete-confirm-btn" type="button">Delete Public Copies</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="help-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
+        <div class="modal-content help-modal-content">
+            <h3 id="help-modal-title">Operator Help</h3>
+            <div class="help-section">
+                <h4>Global shortcuts</h4>
+                <ul class="help-list">
+                    <li><strong>/</strong> open batch sidebar if closed, then focus batch search</li>
+                    <li><strong>Ctrl/Cmd+K</strong> open batch sidebar if closed, then focus and select batch search</li>
+                    <li><strong>P</strong> open the Prompt History modal and focus the search field</li>
+                    <li><strong>Ctrl/Cmd+A</strong> select all images in current folder (not in lightbox)</li>
+                    <li><strong>Ctrl/Cmd+Z</strong> undo last move while undo is available</li>
+                    <li><strong>U</strong> toggle the batch sidebar</li>
+                    <li><strong>F</strong> toggle favorites-only filter</li>
+                    <li><strong>B</strong> toggle AI badges when an AI run is available</li>
+                    <li><strong>V</strong> toggle score sort when an AI run is available</li>
+                    <li><strong>I</strong> toggle AI sidebar</li>
+                    <li><strong>Esc</strong> close lightbox, Help modal, or clear batch search (context-dependent)</li>
+                </ul>
+            </div>
+            <div class="help-section">
+                <h4>Lightbox shortcuts</h4>
+                <ul class="help-list">
+                    <li><strong>Left / Right</strong> previous or next image</li>
+                    <li><strong>[ / ]</strong> previous or next scored image</li>
+                    <li><strong>M</strong> toggle PNG generation metadata when available</li>
+                    <li><strong>I</strong> toggle the lightbox AI review panel</li>
+                    <li><strong>P</strong> prepare a public copy for the current image</li>
+                    <li><strong>S / F / R</strong> move to shortlisted, finals, or rejects</li>
+                    <li><strong>Shift+F</strong> toggle favorite for the current image</li>
+                    <li><strong>+ / - / 0</strong> zoom in, zoom out, reset zoom</li>
+                    <li><strong>Ctrl+wheel</strong> zoom in/out around the cursor</li>
+                    <li>Drag zoomed images to pan around details</li>
+                    <li><strong>Compare in Lightbox</strong> is available when exactly two review-folder images are selected.</li>
+                    <li>Click a compare pane to make it active; move, favorite, public, metadata, and AI actions apply to that pane.</li>
+                    <li><strong>C</strong> pins the active compare image; Left/Right replace the other pane.</li>
+                </ul>
+            </div>
+            <div class="help-section">
+                <h4>Review workflow</h4>
+                <ul class="help-list">
+                    <li><strong>Inbox</strong> holds new images for review.</li>
+                    <li>Move keepers to <strong>Shortlisted</strong> or <strong>Finals</strong>; move rejects to <strong>Rejects</strong>.</li>
+                    <li>Use favorites, Prompt History, and metadata as review aids.</li>
+                    <li>Public posting creates generated derivatives; originals stay in review folders.</li>
+                    <li>AI scores are advisory evidence. Manual moves remain authoritative.</li>
+                </ul>
+            </div>
+            <div class="help-section">
+                <h4>AI Curate</h4>
+                <ul class="help-list">
+                    <li><strong>Inspect</strong> shows selected-image AI details, or a multi-select summary with expandable image rows.</li>
+                    <li><strong>Score</strong> sends the chosen source folder, elements, Top N, and model to the configured vision endpoint.</li>
+                    <li><strong>Runs</strong> shows saved batch runs and can compare one run against another run from the same batch.</li>
+                    <li>AI badges, score sorting, and filters are batch-scoped and reset when no active run is available.</li>
+                    <li>Manual moves remain authoritative; AI scores are advisory evidence only.</li>
+                </ul>
+            </div>
+            <div class="help-section">
+                <h4>Public Posting</h4>
+                <ul class="help-list">
+                    <li><strong>Prepare Public Copies</strong> creates metadata-stripped generated derivatives in the batch public folder.</li>
+                    <li>Original review images are never modified by public posting actions.</li>
+                    <li><strong>Public</strong> shows one batch's generated copies; <strong>All Public</strong> aggregates generated copies across batches.</li>
+                    <li>Copy, move, and delete actions in public views affect generated public copies only.</li>
+                    <li>External copy or move requires <strong>IMAGE_CURATOR_PUBLIC_EXPORTS</strong>.</li>
+                </ul>
+            </div>
+            <div class="help-section">
+                <h4>Prompt History</h4>
+                <ul class="help-list">
+                    <li><strong>P</strong> opens Prompt History and focuses search.</li>
+                    <li><strong>Build Index</strong> scans PNG metadata for the selected batch. <strong>Build All Indexes</strong> asks for confirmation.</li>
+                    <li><strong>Stale badge</strong> means the cached image count changed; click <strong>Rebuild Index</strong>.</li>
+                    <li>Search prompts, negative prompts, and batch labels; refine the search to narrow large result sets.</li>
+                    <li>Use <strong>copy positive</strong>, <strong>copy pair</strong>, and <strong>copy negative</strong> to reuse prompts.</li>
+                    <li><strong>show images</strong> lists image references grouped by review folder.</li>
+                </ul>
+            </div>
+            <div class="modal-buttons">
+                <button class="cancel">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="prompts-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="prompts-modal-title">
+        <div class="modal-content prompts-modal-content">
+            <h3 id="prompts-modal-title">Prompt History</h3>
+            <div class="prompts-modal-top">
+                <span id="prompts-scope-chip" class="prompts-scope-chip is-all" aria-live="polite">Scope: All Batches</span>
+            </div>
+            <div class="prompts-controls">
+                <div id="prompts-batch-wrap" class="prompts-batch-wrap">
+                    <div class="prompts-batch-select">
+                        <input id="prompts-batch-filter" type="text" placeholder="All Batches" autocomplete="off" spellcheck="false" aria-haspopup="listbox" aria-expanded="false" aria-autocomplete="list">
+                        <ul id="prompts-batch-list" class="prompts-batch-list" role="listbox" tabindex="-1"></ul>
+                    </div>
+                    <button id="prompts-all-batches-btn" class="prompts-all-batches-btn" aria-pressed="true" aria-label="Show all batches">All Batches</button>
+                </div>
+                <input id="prompts-search" type="text" placeholder="Search prompts..." autocomplete="off" aria-label="Search prompts">
+                <select id="prompts-sort" class="prompts-sort" aria-label="Sort prompts">
+                    <option value="count">Most used</option>
+                    <option value="alpha">A-Z</option>
+                    <option value="length">Longest</option>
+                </select>
+                <button id="prompts-group-toggle" type="button" class="prompts-toggle-btn" aria-pressed="false">Group by batch</button>
+                <button id="prompts-collapse-all" type="button">Collapse all</button>
+            </div>
+            <div id="prompts-list" class="prompts-list">Select a batch and build an index.</div>
+            <div id="prompts-footer" class="prompts-footer">
+                <span id="prompts-stale-warning" class="prompts-stale hidden" aria-live="polite">Index may be stale. <button id="prompts-rebuild-btn" type="button" aria-label="Rebuild prompt index">Rebuild Index</button></span>
+                <span id="prompts-total"></span>
+                <span id="prompts-built-at" aria-live="polite"></span>
+                <div id="prompts-build-all-confirm" class="prompts-build-all-confirm hidden" hidden>
+                    <span>Build prompt indexes for all batches? This can take a while on large libraries.</span>
+                    <button id="prompts-build-all-confirm-btn" type="button">Build All Indexes</button>
+                    <button id="prompts-build-all-cancel-btn" type="button">Cancel</button>
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button id="prompts-build-btn" class="create" type="button">Build Index</button>
+                <button class="cancel" type="button">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="settings-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+        <div class="modal-content settings-modal-content">
+            <div class="settings-heading"><h3 id="settings-modal-title">Curator Settings</h3><button id="settings-close-btn" type="button" aria-label="Close settings">&times;</button></div>
+            <div id="settings-error" class="settings-error hidden" role="alert"></div>
+            <div id="settings-config-warning" class="settings-config-warning hidden" role="alert">Stored settings could not be loaded. Review these fallback values carefully; saving replaces the invalid file.</div>
+            <div id="settings-path-scope-note" class="settings-path-scope-note">
+                Paths are resolved inside the ComfyUI process. In Docker, a host directory must be exposed at the configured container path with a Docker volume or bind mount.
+            </div>
+            <section class="settings-section" aria-labelledby="settings-storage-heading">
+                <h4 id="settings-storage-heading">Storage</h4>
+                <div class="settings-grid">
+                    <label class="settings-field">Batch root<input id="settings-batch-root" type="text" autocomplete="off"></label>
+                    <label class="settings-field">Import source<input id="settings-import-source" type="text" autocomplete="off"></label>
+                    <div class="settings-field settings-field-wide">
+                        <div class="settings-label-row">
+                            <label for="settings-public-root">Public export root</label>
+                            <label class="settings-inline-check"><input id="settings-public-enabled" type="checkbox"> Enabled</label>
+                        </div>
+                        <input id="settings-public-root" type="text" autocomplete="off">
+                    </div>
+                </div>
+            </section>
+            <section class="settings-section" aria-labelledby="settings-ai-heading">
+                <h4 id="settings-ai-heading">AI connection</h4>
+                <div class="settings-grid">
+                    <label class="settings-field">LLM base URL
+                        <input id="settings-llm-url" type="url" autocomplete="off">
+                        <span class="settings-field-hint">In Docker, localhost is this container. For a model server on the host, use host.docker.internal; Linux also requires host-gateway configuration.</span>
+                    </label>
+                    <label class="settings-field">Models (one per line)<textarea id="settings-models" rows="3"></textarea></label>
+                    <label class="settings-field">Default model<input id="settings-default-model" type="text" autocomplete="off"></label>
+                    <label class="settings-field">Request timeout (seconds)<input id="settings-timeout" type="number" min="1" max="3600"></label>
+                </div>
+            </section>
+            <section class="settings-section" aria-labelledby="settings-credentials-heading">
+                <h4 id="settings-credentials-heading">Credentials</h4>
+                <div class="settings-field">
+                    <div class="settings-label-row"><label for="settings-api-key">Replace API key</label><span id="settings-api-key-set" class="settings-secret-status">Not set</span></div>
+                    <input id="settings-api-key" type="password" autocomplete="new-password">
+                    <label class="settings-inline-check settings-clear-key"><input id="settings-clear-api-key" type="checkbox"> Clear saved API key</label>
+                </div>
+            </section>
+            <div class="modal-buttons"><button class="cancel" type="button">Cancel</button><button class="create" id="settings-save-btn" type="button">Save Settings</button></div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast" role="alert" aria-live="polite" aria-atomic="true">
+        <span id="toast-text"></span>
+        <button class="toast-undo hidden" id="toast-undo">Undo</button>
+    </div>
+    <script>window.CURATOR_NATIVE = true;</script>
+    <script src="/curator_static/js/state.js"></script>
+    <script src="/curator_static/js/dom-utils.js"></script>
+    <script src="/curator_static/js/api.js"></script>
+    <script src="/curator_static/js/sidebar.js"></script>
+    <script src="/curator_static/js/batches.js"></script>
+    <script src="/curator_static/js/grid.js"></script>
+    <script src="/curator_static/js/favorites.js"></script>
+    <script src="/curator_static/js/publish.js"></script>
+    <script src="/curator_static/js/moves.js"></script>
+    <script src="/curator_static/js/lightbox.js"></script>
+    <script src="/curator_static/js/metadata.js"></script>
+    <script src="/curator_static/js/prompts.js"></script>
+    <script src="/curator_static/js/ai-state.js"></script>
+    <script src="/curator_static/js/ai-sidebar.js"></script>
+    <script src="/curator_static/js/ai-panel.js"></script>
+    <script src="/curator_static/js/ai-history.js"></script>
+    <script src="/curator_static/js/ai-job.js"></script>
+    <script src="/curator_static/js/ai-inspector.js"></script>
+    <script src="/curator_static/js/ai-overlays.js"></script>
+    <script src="/curator_static/js/ai.js"></script>
+    <script src="/curator_static/js/polling.js"></script>
+    <script src="/curator_static/js/modals.js"></script>
+    <script src="/curator_static/js/settings.js"></script>
+    <script src="/curator_static/js/combobox.js"></script>
+    <script src="/curator_static/js/keyboard.js"></script>
+    <script src="/curator_static/js/events.js"></script>
+    <script src="/curator_static/js/bootstrap.js"></script>
+    <script src="/curator_static/js/app.js"></script>
+</body>
+</html>

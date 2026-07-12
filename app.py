@@ -1,5 +1,5 @@
 """
-Image Curator v2 - Batch-based organization with auto-import
+Image Curator v2 - Batch-based image organization
 Web UI for reviewing and organizing AI-generated images.
 """
 
@@ -31,7 +31,6 @@ from image_curator.prompt_history import (
     load_all_prompt_indices,
     load_prompt_index,
 )
-from image_curator.watcher import ImageWatcher as _ImageWatcher
 from image_curator.web_validation import require_existing_batch, safe_path
 
 logger = logging.getLogger(__name__)
@@ -73,8 +72,6 @@ STATE_FILE = Path(
 )
 THUMB_SIZE = (320, 320)
 IMAGE_EXTENSIONS = batch_store.IMAGE_EXTENSIONS
-POLL_INTERVAL = 2  # seconds
-ENABLE_WATCHER = os.environ.get("IMAGE_CURATOR_ENABLE_WATCHER", "").strip().lower() == "true"
 _PUBLIC_EXPORT_ROOT_RAW = os.environ.get("IMAGE_CURATOR_PUBLIC_EXPORTS", "").strip()
 PUBLIC_EXPORT_ROOT = Path(_PUBLIC_EXPORT_ROOT_RAW).expanduser() if _PUBLIC_EXPORT_ROOT_RAW else None
 
@@ -151,33 +148,8 @@ def get_pending_count():
 
 
 def import_all_pending(batch_name):
-    """Import all pending images from comfyui-outputs to a batch's inbox.
-
-    Resets the watcher's seen-files set so any pre-existing files are
-    re-discovered on the next watcher tick. Uses the public ``reset_seen``
-    method instead of touching the watcher's private lock directly so
-    the coupling is explicit and stays correct if the watcher changes.
-    """
-    count = batch_store.import_all_pending(COMFYUI_OUTPUT, BATCHES_DIR, batch_name)
-    watcher.reset_seen()
-    return count
-
-
-class ImageWatcher(_ImageWatcher):
-    """Compatibility wrapper using app-level dependencies."""
-
-    def __init__(self) -> None:
-        super().__init__(
-            comfyui_output=lambda: COMFYUI_OUTPUT,
-            image_extensions=IMAGE_EXTENSIONS,
-            load_state=load_state,
-            get_batch_folder=get_batch_folder,
-            move_image=batch_store.move_image,
-            poll_interval=POLL_INTERVAL,
-        )
-
-
-watcher = ImageWatcher()
+    """Import all available images from the configured source into a batch inbox."""
+    return batch_store.import_all_pending(COMFYUI_OUTPUT, BATCHES_DIR, batch_name)
 
 
 @app.route("/")
@@ -701,13 +673,6 @@ def _shutdown_workers() -> None:
             return
         _shutdown_started = True
 
-    # Stop accepting new watcher callbacks first so an in-progress watcher
-    # tick cannot race with the directory move we may issue below.
-    try:
-        watcher.stop()
-    except Exception as e:
-        logger.warning("Watcher stop raised during shutdown: %s", e)
-
     # Mark every active AI job as cancelling. The scoring loop polls
     # is_cancel_requested() between images, so it will exit at the next
     # checkpoint and call finalize_cancelled() with no results.
@@ -741,9 +706,15 @@ def _on_job_promoted(run_id):
 # handlers cover Ctrl-C in dev and SIGTERM from systemd in production.
 atexit.register(_shutdown_workers)
 
+
+def _shutdown_signal_handler(_signum, _frame) -> None:
+    _shutdown_workers()
+    sys.exit(0)
+
+
 for _sig in (signal.SIGTERM, signal.SIGINT):
     try:
-        signal.signal(_sig, lambda signum, _frame: (_shutdown_workers(), sys.exit(0)))
+        signal.signal(_sig, _shutdown_signal_handler)
     except (ValueError, OSError):
         # SIGTERM is not installable on Windows in some contexts, and signal
         # handlers cannot be registered from non-main threads. Skip silently.
@@ -872,19 +843,6 @@ if __name__ == "__main__":
         print(f"Error: cannot create state directory {STATE_FILE.parent}: {e}")
         print("Set IMAGE_CURATOR_STATE to a writable location.")
         exit(1)
-
-    # Start the ComfyUI auto-import watcher (disabled by default; opt-in via env var)
-    if ENABLE_WATCHER:
-        if COMFYUI_OUTPUT.exists():
-            watcher.start()
-            print(f"Image watcher started (watching {COMFYUI_OUTPUT})")
-        else:
-            print(
-                f"Image watcher skipped: {COMFYUI_OUTPUT} does not exist. "
-                "Set IMAGE_CURATOR_COMFYUI to enable auto-import."
-            )
-    else:
-        print("Image watcher disabled. Set IMAGE_CURATOR_ENABLE_WATCHER=true to enable.")
 
     # Bind to localhost by default; use IMAGE_CURATOR_HOST for other interfaces
     host = os.environ.get("IMAGE_CURATOR_HOST", "127.0.0.1")

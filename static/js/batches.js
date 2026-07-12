@@ -82,7 +82,7 @@ function clearBatchSearch() {
         }
 
 async function loadBatches() {
-            const resp = await fetch('/api/batches').catch(err => {
+            const resp = await fetch(ccApiPath('/api/batches')).catch(err => {
                 console.warn('loadBatches fetch failed', err);
                 return null;
             });
@@ -541,7 +541,7 @@ async function setActiveBatch(batch) {
             pendingActiveBatchSelection = batch || null;
             const select = document.getElementById('active-batch-select');
             if (select) { select.value = batch || ''; _syncCustomSelectDisplay(); }
-            const resp = await fetch('/api/active-batch', {
+            const resp = await fetch(ccApiPath('/api/active-batch'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({batch: batch})
@@ -559,7 +559,7 @@ async function setActiveBatch(batch) {
 async function importAll() {
             const batch = document.getElementById('active-batch-select').value;
             if (!batch) { showToast('Select a batch first'); return; }
-            const resp = await fetch('/api/import-all', {
+            const resp = await fetch(ccApiPath('/api/import-all'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({batch: batch})
@@ -577,7 +577,7 @@ async function createBatch() {
             const name = document.getElementById('new-batch-name').value.trim();
             if (!name) return;
             const safeName = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '');
-            const resp = await fetch('/api/batches', {
+            const resp = await fetch(ccApiPath('/api/batches'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({name: safeName})

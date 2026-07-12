@@ -15,9 +15,9 @@ from collections import OrderedDict, deque
 from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional
 
-from ai_curate.models import CurationRun, ImageResult, JobState, RunTotals
-from ai_curate.config import DEFAULT_MODEL, DEFAULT_TOP_N
-from ai_curate.storage import RunStorage
+from .models import CurationRun, ImageResult, JobState, RunTotals
+from .config import DEFAULT_MODEL, DEFAULT_TOP_N
+from .storage import RunStorage
 
 logger = logging.getLogger(__name__)
 

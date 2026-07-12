@@ -36,6 +36,12 @@ document.addEventListener('keydown', (e) => {
                 return;
             }
 
+            if (e.key === 'Escape' && document.getElementById('settings-modal').classList.contains('active')) {
+                e.preventDefault();
+                hideSettingsModal();
+                return;
+            }
+
             if (e.key === 'Escape' && document.getElementById('prompts-modal').classList.contains('active')) {
                 e.preventDefault();
                 hidePromptsModal();

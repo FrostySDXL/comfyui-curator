@@ -1,6 +1,9 @@
 """Unit tests for ai_curate.storage -- run history persistence."""
 
 import json
+import os
+from pathlib import Path
+
 import pytest
 from ai_curate.models import CurationRun, ImageResult, RunTotals, JobState
 from ai_curate.storage import RunStorage
@@ -43,6 +46,13 @@ def _make_completed_run(run_id="run001", batch="test-batch"):
 
 
 class TestRunStorage:
+    @staticmethod
+    def _symlink_or_skip(source, link, *, directory=False):
+        try:
+            os.symlink(source, link, target_is_directory=directory)
+        except OSError:
+            pytest.skip("symlink creation requires platform permission")
+
     def test_save_run_creates_files(self, storage, tmp_batches):
         """Saving a completed run creates a timestamped file and latest pointer."""
         run = _make_completed_run()
@@ -203,3 +213,119 @@ class TestRunStorage:
             storage.load_latest(bad_batch)
         with pytest.raises(ValueError):
             storage.list_runs(bad_batch)
+
+    def test_save_rejects_symlinked_configured_root(self, tmp_path):
+        real_root = tmp_path / "real-root"
+        real_root.mkdir()
+        (real_root / "test-batch").mkdir()
+        linked_root = tmp_path / "linked-root"
+        self._symlink_or_skip(real_root, linked_root, directory=True)
+
+        linked_storage = RunStorage(batches_dir=linked_root)
+        with pytest.raises(ValueError):
+            linked_storage.save_run(_make_completed_run())
+
+        assert not (real_root / "test-batch" / "ai-curate").exists()
+
+    def test_load_and_list_reject_intermediate_ai_curate_symlink(self, tmp_batches, tmp_path):
+        outside = tmp_path / "outside-ai"
+        runs = outside / "runs"
+        runs.mkdir(parents=True)
+        (runs / "escaped.json").write_text(
+            json.dumps(_make_completed_run(run_id="escaped").to_dict()), encoding="utf-8"
+        )
+        (outside / "latest.json").write_text(json.dumps({"run_id": "escaped"}), encoding="utf-8")
+        self._symlink_or_skip(
+            outside,
+            tmp_batches / "test-batch" / "ai-curate",
+            directory=True,
+        )
+
+        unsafe_storage = RunStorage(batches_dir=tmp_batches)
+        assert unsafe_storage.load_run("test-batch", "escaped") is None
+        assert unsafe_storage.load_latest("test-batch") is None
+        assert unsafe_storage.list_runs("test-batch") == []
+
+    def test_save_rejects_symlinked_temp_target_without_mutation(self, tmp_batches, tmp_path):
+        runs = tmp_batches / "test-batch" / "ai-curate" / "runs"
+        runs.mkdir(parents=True)
+        external = tmp_path / "external.json"
+        external.write_text("unchanged", encoding="utf-8")
+        self._symlink_or_skip(external, runs / "run001.json.tmp")
+
+        with pytest.raises(ValueError):
+            RunStorage(batches_dir=tmp_batches).save_run(_make_completed_run())
+
+        assert external.read_text(encoding="utf-8") == "unchanged"
+        assert not (runs / "run001.json").exists()
+        assert not (tmp_batches / "test-batch" / "ai-curate" / "latest.json").exists()
+
+    def test_save_revalidates_after_mkdir_rejects_target_turned_symlink(
+        self, tmp_batches, monkeypatch
+    ):
+        """After mkdir creates the runs directory, revalidate and reject
+        if the runs directory appears to be a symlink (TOCTOU transition)."""
+        storage = RunStorage(batches_dir=tmp_batches)
+        run = _make_completed_run()
+
+        runs_dir = tmp_batches / "test-batch" / "ai-curate" / "runs"
+        real_is_symlink = Path.is_symlink
+        after_mkdir = False
+
+        def patched_is_symlink(path):
+            if after_mkdir and path == runs_dir:
+                return True
+            return real_is_symlink(path)
+
+        real_mkdir = Path.mkdir
+
+        def patched_mkdir(path, *args, **kwargs):
+            nonlocal after_mkdir
+            result = real_mkdir(path, *args, **kwargs)
+            after_mkdir = True
+            return result
+
+        monkeypatch.setattr(Path, "is_symlink", patched_is_symlink)
+        monkeypatch.setattr(Path, "mkdir", patched_mkdir)
+
+        with pytest.raises(ValueError):
+            storage.save_run(run)
+
+        # No run file or latest pointer must have been written.
+        run_path = runs_dir / "run001.json"
+        assert not run_path.exists()
+        assert not (tmp_batches / "test-batch" / "ai-curate" / "latest.json").exists()
+
+    def test_save_revalidates_after_mkdir_rejects_resolved_escape(self, tmp_batches, monkeypatch):
+        """After mkdir creates the runs directory, revalidate and reject
+        if a target path suddenly resolves outside the batches root."""
+        storage = RunStorage(batches_dir=tmp_batches)
+        run = _make_completed_run()
+
+        runs_dir = tmp_batches / "test-batch" / "ai-curate" / "runs"
+        run_path = runs_dir / "run001.json"
+        outside = tmp_batches.parent / "outside"
+        outside.mkdir(exist_ok=True)
+        real_resolve = Path.resolve
+        after_mkdir = False
+
+        def patched_resolve(path):
+            if after_mkdir and path == run_path:
+                return outside / "run001.json"
+            return real_resolve(path)
+
+        real_mkdir = Path.mkdir
+
+        def patched_mkdir(path, *args, **kwargs):
+            nonlocal after_mkdir
+            result = real_mkdir(path, *args, **kwargs)
+            after_mkdir = True
+            return result
+
+        monkeypatch.setattr(Path, "resolve", patched_resolve)
+        monkeypatch.setattr(Path, "mkdir", patched_mkdir)
+
+        with pytest.raises(ValueError):
+            storage.save_run(run)
+
+        assert not run_path.exists()

@@ -17,8 +17,8 @@ async function pollForChanges() {
             await loadBatches();
             if (!currentBatch || isVirtualCollectionView() || isPublicView() || !currentFolder || selectedImages.size > 0 || isInteractionBusy()) return;
             const [imageResp, runResp] = await Promise.all([
-                fetch(`/api/images/${currentBatch}/${currentFolder}?sort=${currentSort}&order=${currentOrder}`),
-                fetch(`/api/ai-curate/batches/${currentBatch}/runs`),
+                fetch(ccApiPath(`/api/images/${currentBatch}/${currentFolder}?sort=${currentSort}&order=${currentOrder}`)),
+                fetch(ccApiPath(`/api/ai-curate/batches/${currentBatch}/runs`)),
             ]);
             if (!imageResp.ok || !runResp.ok) return;
             const [nextImages, runData] = await Promise.all([imageResp.json(), runResp.json()]);
