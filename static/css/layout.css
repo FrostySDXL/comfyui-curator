@@ -242,6 +242,30 @@
             border-color: #444;
         }
 
+        .selection-mode-control {
+            display: flex;
+            border: 1px solid var(--border-strong);
+            border-radius: var(--control-radius);
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .selection-mode-btn {
+            height: 28px;
+            padding: 5px 10px;
+            border: 0;
+            border-right: 1px solid var(--border-strong);
+            background: var(--surface-1);
+            color: var(--text-muted);
+            font: 600 11px/1 inherit;
+            cursor: pointer;
+        }
+        .selection-mode-btn:last-child { border-right: 0; }
+        .selection-mode-btn:hover { color: var(--text-primary); background: var(--surface-raised); }
+        .selection-mode-btn[aria-pressed="true"] {
+            color: var(--button-accent-text);
+            background: var(--button-accent-fill);
+        }
+
         .density-label { margin-left: 4px; }
         .density-controls {
             display: flex;

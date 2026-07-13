@@ -121,6 +121,7 @@
         .thumb:hover .thumb-select { opacity: 1; }
         .selecting .thumb-select { opacity: 0.7; }
         .selecting .thumb:hover .thumb-select { opacity: 1; }
+        body.selection-mode-active .thumb-select { opacity: 0.78; }
         .thumb-select.selected {
             opacity: 1;
             background: var(--accent-primary);
@@ -258,8 +259,9 @@
             position: fixed;
             bottom: 0; left: calc(var(--sidebar-effective-width) + 8px); right: 0;
             padding: 10px 20px;
-            background: #252525;
-            border-top: 1px solid #333;
+            background: var(--surface-raised);
+            border-top: 1px solid var(--accent-primary);
+            color: var(--text-primary);
             display: flex;
             align-items: center;
             gap: 10px;
@@ -272,7 +274,7 @@
         .sidebar-resizer.collapsed ~ main .action-bar {
             left: var(--sidebar-effective-width);
         }
-        .action-count { font-size: 13px; color: #aaa; margin-right: 4px; }
+        .action-count { font-size: 13px; color: var(--text-secondary); margin-right: 4px; font-weight: 600; }
         .action-group {
             display: flex;
             align-items: center;
@@ -288,7 +290,7 @@
         .action-divider {
             width: 1px;
             height: 24px;
-            background: #3a3a3a;
+            background: var(--border-strong);
             margin: 0 2px;
         }
         .action-btn {
@@ -301,21 +303,27 @@
         .action-btn[data-dest="rejects"] { background: var(--button-danger-fill); color: var(--button-danger-text); }
         .action-btn.action-publish { background: var(--button-accent-fill); color: var(--button-accent-text); }
         .action-btn.action-compare {
-            background: #24384b;
-            border: 1px solid #3e5e7a;
-            color: #d9e8f5;
+            background: var(--accent-surface);
+            border: 1px solid var(--accent-primary);
+            color: var(--text-primary);
         }
         .action-btn.action-compare:disabled {
-            background: #1d242b;
-            border-color: #343d46;
-            color: #6f7b86;
-            cursor: not-allowed;
-            opacity: 0.72;
+            background: var(--surface-1);
+            border-color: var(--border-subtle);
+            color: var(--text-disabled);
         }
-        .action-btn.action-public { background: #3a345f; }
-        .action-btn.action-public-danger { background: #8d2f3a; }
+        .action-btn.action-public { background: var(--button-accent-fill); color: var(--button-accent-text); }
+        .action-btn.action-public-danger { background: var(--button-danger-fill); color: var(--button-danger-text); }
         .action-btn.action-clear {
-            background: transparent; border: 1px solid #444;
-            color: #888; margin-left: auto;
+            background: transparent; border: 1px solid var(--border-strong);
+            color: var(--text-secondary); margin-left: auto;
         }
-        .action-btn:hover { opacity: 0.85; }
+        .action-btn:hover:not(:disabled) { filter: brightness(1.12); }
+        .action-btn:disabled {
+            background: var(--surface-1);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-disabled);
+            cursor: not-allowed;
+            opacity: 1;
+        }
+        .action-btn:focus-visible { position: relative; z-index: 1; }

@@ -144,7 +144,7 @@ async function submitPublicExport() {
                     return;
                 }
                 lastPublishedPublicBatch = currentBatch;
-                clearSelection();
+                resetSelectionState();
                 showToast(`Created ${data.exported || 0} public cop${data.exported === 1 ? 'y' : 'ies'}`);
                 showPublishResult(data);
                 await loadBatches();
@@ -190,12 +190,10 @@ async function loadBatchPublic(batch) {
             currentBatch = batch;
             currentFolder = 'public';
             saveBatchState();
-            selectedImages.clear();
-            lastSelectIndex = -1;
+            resetSelectionState();
             lastAction = null;
             resetAiBatchState(false);
             closeLightbox();
-            updateActionBar();
             document.querySelectorAll('.batch-name').forEach(el =>
                 el.classList.toggle('selected', el.dataset.batch === batch));
             document.querySelectorAll('.folder-tab').forEach(t =>
@@ -214,12 +212,10 @@ async function loadAllPublic() {
             currentBatch = '__public__';
             currentFolder = null;
             saveBatchState();
-            selectedImages.clear();
-            lastSelectIndex = -1;
+            resetSelectionState();
             lastAction = null;
             resetAiBatchState(false);
             closeLightbox();
-            updateActionBar();
             document.querySelectorAll('.batch-name').forEach(el =>
                 el.classList.toggle('selected', el.dataset.batch === '__public__'));
             const tabs = document.getElementById('folder-tabs');
@@ -481,8 +477,7 @@ async function submitPublicDestinationAction() {
         }
 
 async function refreshPublicViewAfterAction() {
-            selectedImages.clear();
-            updateActionBar();
+            resetSelectionState();
             if (currentBatch === '__public__') {
                 await loadAllPublic();
             } else if (currentFolder === 'public') {

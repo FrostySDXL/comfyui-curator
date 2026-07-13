@@ -73,12 +73,10 @@ async function loadUniversalFavorites() {
             currentBatch = '__favorites__';
             currentFolder = null;
             saveBatchState();
-            selectedImages.clear();
-            lastSelectIndex = -1;
+            resetSelectionState();
             lastAction = null;
             resetAiBatchState(false);
             closeLightbox();
-            updateActionBar();
             document.querySelectorAll('.batch-name').forEach(el =>
                 el.classList.toggle('selected', el.dataset.batch === '__favorites__'));
             const tabs = document.getElementById('folder-tabs');

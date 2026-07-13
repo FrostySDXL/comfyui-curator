@@ -101,6 +101,10 @@
                 <button class="delete-rejects-btn" id="delete-rejects-btn">Empty Rejects</button>
             </div>
             <div class="sort-controls hidden" id="sort-controls">
+                <div class="selection-mode-control" role="group" aria-label="Thumbnail click behavior">
+                    <button class="selection-mode-btn" id="browse-mode-btn" type="button" aria-pressed="true" title="Ordinary click opens the image">Browse</button>
+                    <button class="selection-mode-btn" id="select-mode-btn" type="button" aria-pressed="false" title="Ordinary click toggles selection">Select</button>
+                </div>
                 <button class="workspace-select-all-btn" id="workspace-select-all-btn" title="Select all visible images" type="button">Select All</button>
                 <span class="sort-label">Sort</span>
                 <div class="sort-group">
@@ -275,8 +279,8 @@
     </main>
 
     <!-- Action bar for multi-select -->
-    <div class="action-bar" id="action-bar">
-        <span class="action-count" id="action-count">0 selected</span>
+    <div class="action-bar" id="action-bar" role="toolbar" aria-label="Selection actions">
+        <span class="action-count" id="action-count" aria-live="polite" aria-atomic="true">0 selected</span>
         <div class="action-group action-group-review">
             <span class="action-group-label">Move to</span>
             <button class="action-btn" data-dest="inbox">Inbox</button>
@@ -293,7 +297,7 @@
             <button class="action-btn action-public" id="public-move-btn" type="button">Move...</button>
             <button class="action-btn action-public action-public-danger" id="public-delete-btn" type="button">Delete</button>
         </div>
-        <button class="action-btn action-clear">Clear</button>
+        <button class="action-btn action-clear" type="button">Clear selection</button>
     </div>
 
     <!-- Lightbox -->
@@ -458,7 +462,7 @@
                     <li><strong>B</strong> toggle AI badges when an AI run is available</li>
                     <li><strong>V</strong> toggle score sort when an AI run is available</li>
                     <li><strong>I</strong> toggle AI sidebar</li>
-                    <li><strong>Esc</strong> close lightbox, Help modal, or clear batch search (context-dependent)</li>
+                    <li><strong>Esc</strong> exit selection, close lightbox or Help, or clear batch search (context-dependent)</li>
                 </ul>
             </div>
             <div class="help-section">
@@ -482,6 +486,8 @@
             <div class="help-section">
                 <h4>Review workflow</h4>
                 <ul class="help-list">
+                    <li><strong>Browse</strong> opens images on ordinary click; <strong>Select</strong> toggles them.</li>
+                    <li><strong>Ctrl/Cmd+click</strong> selects disjoint images; <strong>Shift+click</strong> adds a range. Shift takes precedence when both are held.</li>
                     <li><strong>Inbox</strong> holds new images for review.</li>
                     <li>Move keepers to <strong>Shortlisted</strong> or <strong>Finals</strong>; move rejects to <strong>Rejects</strong>.</li>
                     <li>Use favorites, Prompt History, and metadata as review aids.</li>

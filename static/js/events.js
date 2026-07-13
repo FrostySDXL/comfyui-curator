@@ -76,6 +76,10 @@ function _bindDelegatedEvents() {
 
             const selectAllBtn = document.getElementById('workspace-select-all-btn');
             if (selectAllBtn) selectAllBtn.addEventListener('click', selectAllDisplayedImages);
+            const browseModeBtn = document.getElementById('browse-mode-btn');
+            if (browseModeBtn) browseModeBtn.addEventListener('click', () => setSelectionMode(false));
+            const selectModeBtn = document.getElementById('select-mode-btn');
+            if (selectModeBtn) selectModeBtn.addEventListener('click', () => setSelectionMode(true));
 
             document.querySelectorAll('.density-btn').forEach(btn => {
                 btn.addEventListener('click', function() { setGridDensity(this.dataset.density); });
@@ -388,7 +392,8 @@ function _bindDelegatedEvents() {
                     const btn = e.target.closest('.action-btn');
                     if (!btn) return;
                     if (btn.classList.contains('action-clear')) {
-                        clearSelection();
+                        if (selectedImages.size > 0) clearSelection();
+                        else setSelectionMode(false);
                     } else if (btn.id === 'compare-lightbox-btn') {
                         openCompareLightbox();
                     } else if (btn.id === 'publish-btn') {

@@ -475,10 +475,8 @@ function selectBatch(batch) {
             const batchChanged = currentBatch !== batch;
             currentBatch = batch;
             saveBatchState();
-            selectedImages.clear();
-            lastSelectIndex = -1;
+            resetSelectionState();
             lastAction = null;  // Clear undo state on batch switch
-            updateActionBar();
             updateAutoImportQuickAction(document.getElementById('active-batch-select').value || null);
             document.querySelectorAll('.batch-name').forEach(el =>
                 el.classList.toggle('selected', el.dataset.batch === batch));
@@ -502,9 +500,7 @@ async function selectFolder(batch, folder) {
             currentBatch = batch;
             currentFolder = folder;
             saveBatchState();
-            selectedImages.clear();
-            lastSelectIndex = -1;
-            updateActionBar();
+            resetSelectionState();
 
             document.querySelectorAll('.folder-tab').forEach(t =>
                 t.classList.toggle('active', t.dataset.folder === folder));

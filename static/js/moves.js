@@ -5,7 +5,9 @@ function onThumbClick(index, event) {
             const displayImages = getCurrentDisplayImages();
             if (!displayImages[index]) return;
             if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(displayImages[index]);
-            if (selectedImages.size > 0) {
+            const modifierSelect = event.ctrlKey || event.metaKey;
+            if (selectionMode || modifierSelect || event.shiftKey) {
+                setSelectionMode(true);
                 toggleSelect(index, event);
             } else {
                 openLightbox(index);
@@ -39,8 +41,28 @@ function clearSelection() {
             if (typeof aiRenderImageInspector === 'function') aiRenderImageInspector();
         }
 
+function setSelectionMode(active) {
+            selectionMode = active === true;
+            const browseBtn = document.getElementById('browse-mode-btn');
+            const selectBtn = document.getElementById('select-mode-btn');
+            if (browseBtn) browseBtn.setAttribute('aria-pressed', selectionMode ? 'false' : 'true');
+            if (selectBtn) selectBtn.setAttribute('aria-pressed', selectionMode ? 'true' : 'false');
+            document.body.classList.toggle('selection-mode-active', selectionMode);
+            updateActionBar();
+        }
+
+function resetSelectionState() {
+            selectedImages.clear();
+            lastSelectIndex = -1;
+            selectionMode = false;
+            updateSelectionVisuals();
+            setSelectionMode(false);
+            if (typeof aiRenderImageInspector === 'function') aiRenderImageInspector();
+        }
+
 function selectAllDisplayedImages() {
             if (!currentBatch || images.length === 0) return;
+            setSelectionMode(true);
             const displayedNames = getDisplayImages().map(img => img.name);
             const allDisplayedSelected = displayedNames.length > 0 && displayedNames.every(name => selectedImages.has(name));
             selectedImages = allDisplayedSelected ? new Set() : new Set(displayedNames);
@@ -58,7 +80,11 @@ function updateSelectionVisuals() {
                 const isSelected = selectedImages.has(fname);
                 thumb.classList.toggle('selected', isSelected);
                 const selectBtn = thumb.querySelector('.thumb-select');
-                if (selectBtn) selectBtn.classList.toggle('selected', isSelected);
+                if (selectBtn) {
+                    selectBtn.classList.toggle('selected', isSelected);
+                    selectBtn.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+                    selectBtn.setAttribute('aria-label', `${isSelected ? 'Deselect' : 'Select'} ${fname}`);
+                }
             });
         }
 
@@ -67,7 +93,8 @@ function updateActionBar() {
             const grid = document.getElementById('grid');
             const showPublicActions = isPublicView();
             const showReviewMove = !isVirtualCollectionView() && !isPublicView();
-            if (selectedImages.size > 0) {
+            const hasSelection = selectedImages.size > 0;
+            if (selectedImages.size > 0 || selectionMode) {
                 bar.classList.add('visible');
                 grid.classList.add('selecting');
                 document.body.classList.add('has-active-selection');
@@ -89,6 +116,11 @@ function updateActionBar() {
                     const btn = document.getElementById(id);
                     if (btn) btn.style.display = showPublicActions ? '' : 'none';
                 });
+                bar.querySelectorAll('.action-btn:not(.action-clear)').forEach(b => {
+                    if (b.id !== 'compare-lightbox-btn') b.disabled = !hasSelection;
+                });
+                const clearBtn = bar.querySelector('.action-clear');
+                if (clearBtn) clearBtn.textContent = hasSelection ? 'Clear selection' : 'Done';
             } else {
                 bar.classList.remove('visible');
                 grid.classList.remove('selecting');
@@ -203,9 +235,8 @@ async function moveBatch(filenames, destination) {
                 recordLastAction(filenames, currentFolder, destination);
                 showToast(`Moved ${data.moved} image${data.moved!==1?'s':''} to ${destination}`, true);
                 removeImagesFromCurrentView(filenames);
-                selectedImages.clear();
+                resetSelectionState();
                 updateGrid();
-                updateActionBar();
                 loadBatches();
             } else {
                 const data = await resp.json().catch(() => ({}));
@@ -249,10 +280,10 @@ async function moveImage(destination) {
                 recordLastAction([img.name], source.folder, destination, source.batch);
                 showToast(`Moved to ${destination}`, true);
                 removeImagesFromCurrentView([img.name]);
+                resetSelectionState();
                 loadBatches();
                 if (compareWasActive) {
                     closeLightbox();
-                    clearSelection();
                     updateGrid();
                     return;
                 }

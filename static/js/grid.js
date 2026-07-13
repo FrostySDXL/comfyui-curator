@@ -261,8 +261,10 @@ function createThumbElement() {
             const badge = document.createElement('span');
             badge.className = 'ai-score-badge';
 
-            const select = document.createElement('div');
+            const select = document.createElement('button');
+            select.type = 'button';
             select.className = 'thumb-select';
+            select.setAttribute('aria-pressed', 'false');
             select.innerHTML = `
                 <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12"></polyline>
@@ -270,6 +272,7 @@ function createThumbElement() {
             `;
             select.addEventListener('click', (event) => {
                 event.stopPropagation();
+                setSelectionMode(true);
                 toggleSelect(Number(thumb.dataset.index), event);
             });
 
@@ -317,7 +320,12 @@ function updateThumbElement(thumb, img, index) {
             thumb.classList.toggle('inspected', typeof aiInspectedImageName !== 'undefined' && aiInspectedImageName === img.name);
             thumb.classList.toggle('ai-filtered-out', !shouldShow);
             thumb.classList.remove('removing');
-            if (selectBtn) selectBtn.classList.toggle('selected', selectedImages.has(img.name));
+            if (selectBtn) {
+                const isSelected = selectedImages.has(img.name);
+                selectBtn.classList.toggle('selected', isSelected);
+                selectBtn.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+                selectBtn.setAttribute('aria-label', `${isSelected ? 'Deselect' : 'Select'} ${img.name}`);
+            }
             if (favStar) {
                 const isFav = img.favorite === true;
                 favStar.classList.toggle('active', isFav);

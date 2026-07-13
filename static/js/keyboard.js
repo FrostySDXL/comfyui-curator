@@ -68,6 +68,12 @@ document.addEventListener('keydown', (e) => {
 
             if (isTypingTarget) return;
 
+            if (e.key === 'Escape' && !lightboxActive && (selectionMode || selectedImages.size > 0)) {
+                e.preventDefault();
+                resetSelectionState();
+                return;
+            }
+
             if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
                 e.preventDefault();
                 undoLastMove();
@@ -76,6 +82,7 @@ document.addEventListener('keydown', (e) => {
 
             if (!lightboxActive && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && currentBatch && currentFolder && images.length > 0) {
                 e.preventDefault();
+                setSelectionMode(true);
                 selectedImages = new Set(images.map(img => img.name));
                 lastSelectIndex = images.length - 1;
                 updateSelectionVisuals();

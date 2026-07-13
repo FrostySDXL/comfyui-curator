@@ -51,6 +51,7 @@
         let currentSort = 'date';
         let currentOrder = 'desc';
         let selectedImages = new Set();
+        let selectionMode = false;
         let lastSelectIndex = -1;
         let lastAction = null;
         let draggedFiles = [];
