@@ -3,6 +3,7 @@
  * Later-file globals called at runtime: loadLightboxMetadata, renderLightboxMetadataPanel, toggleLightboxMetadata from metadata.js.
  */
 let lightboxZoom = 1;
+const _prefetchRegistry = new Map();
 let lightboxImageToken = 0;
 let lightboxAiOpen = false;
 let lightboxBaseWidth = 0;
@@ -105,6 +106,7 @@ function getLightboxImages() {
         }
 
 function closeLightbox() {
+            _cleanupPrefetch();
             document.getElementById('lightbox').classList.remove('active');
             resetLightboxZoom();
             resetCompareZoom();
@@ -649,6 +651,7 @@ function showCurrentImage() {
                 currentLightboxDimensions = {w: this.naturalWidth, h: this.naturalHeight};
                 captureLightboxBaseSize();
                 updateLightboxInfo(img, this.naturalWidth, this.naturalHeight);
+                _prefetchAdjacentImages(imageToken);
             };
             el.onerror = function() {
                 el.classList.remove('loading');
@@ -807,4 +810,58 @@ function navigate(delta) {
             if (lightboxImages.length === 0) return;
             currentIndex = (currentIndex + delta + lightboxImages.length) % lightboxImages.length;
             showCurrentImage();
+        }
+
+function _prefetchAdjacentImages(imageToken) {
+            if (imageToken !== lightboxImageToken) return;
+            const lb = document.getElementById('lightbox');
+            if (!lb || !lb.classList.contains('active')) { _cleanupPrefetch(); return; }
+            if (lightboxCompareMode) { _cleanupPrefetch(); return; }
+            const lightboxImages = getLightboxImages();
+            if (lightboxImages.length <= 1) { _cleanupPrefetch(); return; }
+            const prevIdx = (currentIndex - 1 + lightboxImages.length) % lightboxImages.length;
+            const nextIdx = (currentIndex + 1) % lightboxImages.length;
+            const desired = new Set();
+            const addDesired = function(idx) {
+                const cand = lightboxImages[idx];
+                if (!cand) return;
+                const source = getImageBatchAndFolder(cand);
+                desired.add(ccImageUrl(source.batch, source.folder, cand.name));
+            };
+            addDesired(prevIdx);
+            if (nextIdx !== prevIdx) addDesired(nextIdx);
+            for (const [url, entry] of _prefetchRegistry) {
+                if (!desired.has(url)) {
+                    entry.img.onload = null;
+                    entry.img.onerror = null;
+                    entry.img.src = '';
+                    _prefetchRegistry.delete(url);
+                }
+            }
+            for (const url of desired) {
+                if (_prefetchRegistry.has(url)) continue;
+                const preload = new Image();
+                const entry = {img: preload, token: imageToken};
+                _prefetchRegistry.set(url, entry);
+                preload.onload = function() {
+                    if (_prefetchRegistry.get(url) === entry) {
+                        _prefetchRegistry.delete(url);
+                    }
+                };
+                preload.onerror = function() {
+                    if (_prefetchRegistry.get(url) === entry) {
+                        _prefetchRegistry.delete(url);
+                    }
+                };
+                preload.src = url;
+            }
+        }
+
+function _cleanupPrefetch() {
+            for (const [, entry] of _prefetchRegistry) {
+                entry.img.onload = null;
+                entry.img.onerror = null;
+                entry.img.src = '';
+            }
+            _prefetchRegistry.clear();
         }
