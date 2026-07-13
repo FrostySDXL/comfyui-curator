@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 from tests.unit.frontend_source import read_frontend_css, read_frontend_js
@@ -5,6 +6,12 @@ from tests.unit.frontend_source import read_frontend_css, read_frontend_js
 
 def read_index_html() -> str:
     return Path("templates/index.html").read_text(encoding="utf-8")
+
+
+def rule_body(css: str, selector: str) -> str:
+    match = re.search(rf"{re.escape(selector)}\s*\{{(?P<body>.*?)\}}", css, re.DOTALL)
+    assert match, selector
+    return match.group("body")
 
 
 def test_sidebar_controls_use_structured_library_header() -> None:
@@ -88,3 +95,43 @@ def test_batch_library_header_wraps_before_overlapping_sort_buttons() -> None:
     assert "overflow: hidden;" in css
     assert ".batch-sort-group" in css
     assert "max-width: 100%;" in css
+
+
+def test_workspace_sort_geometry_does_not_leak_into_batch_sort_controls() -> None:
+    layout = Path("static/css/layout.css").read_text(encoding="utf-8")
+
+    assert re.search(r"(?m)^\s*\.sort-btn\s*\{", layout) is None
+    assert re.search(r"(?m)^\s*\.sort-group\s*,", layout) is None
+    assert ".workspace-toolbar .sort-btn" in layout
+    assert ".workspace-toolbar .sort-group" in layout
+
+
+def test_batch_sort_buttons_have_comfortable_segmented_geometry() -> None:
+    css = Path("static/css/sidebar.css").read_text(encoding="utf-8")
+    group = rule_body(css, ".batch-sort-group")
+    button = rule_body(css, ".batch-sort-btn")
+
+    assert "height: 30px;" in group
+    assert "border: 1px solid var(--border-subtle);" in group
+    assert "height: 100%;" in button
+    assert "padding: 0 9px;" in button
+    assert "line-height: 1;" in button
+    assert ".batch-sort-btn:hover" in css
+    assert ".batch-sort-btn.active" in css
+    assert ".batch-sort-btn:focus-visible" in css
+
+
+def test_batch_library_region_uses_cohesive_semantic_sidebar_surfaces() -> None:
+    css = Path("static/css/sidebar.css").read_text(encoding="utf-8")
+    batches = rule_body(css, ".sidebar-batches")
+    controls = rule_body(css, ".batch-controls")
+    search = rule_body(css, ".batch-search")
+    batch_list = rule_body(css, ".batch-list")
+
+    assert "background: var(--surface-1);" in batches
+    assert "background: var(--surface-1);" in controls
+    assert "border-bottom: 1px solid var(--border-subtle);" in controls
+    assert "background: var(--surface-2);" in search
+    assert "border: 1px solid var(--border-subtle);" in search
+    assert "background: var(--surface-1);" in batch_list
+    assert "#202020" not in controls

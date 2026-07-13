@@ -193,7 +193,7 @@
             letter-spacing: 1.5px;
             font-weight: 600;
         }
-        .sort-group,
+        .workspace-toolbar .sort-group,
         .selection-mode-control,
         .density-controls {
             display: flex;
@@ -202,7 +202,7 @@
             border-radius: var(--toolbar-control-radius);
             overflow: hidden;
         }
-        .sort-btn {
+        .workspace-toolbar .sort-btn {
             height: 100%;
             padding: 0 10px;
             background: transparent;
@@ -214,9 +214,9 @@
             transition: all 0.15s;
             border-right: 1px solid #333;
         }
-        .sort-btn:last-child { border-right: none; }
-        .sort-btn:hover { color: #bbb; background: #252525; }
-        .sort-btn.active { color: var(--button-accent-text); background: var(--button-accent-fill); }
+        .workspace-toolbar .sort-btn:last-child { border-right: none; }
+        .workspace-toolbar .sort-btn:hover { color: #bbb; background: #252525; }
+        .workspace-toolbar .sort-btn.active { color: var(--button-accent-text); background: var(--button-accent-fill); }
         .sort-dir {
             width: var(--toolbar-control-height); height: var(--toolbar-control-height);
             display: flex; align-items: center; justify-content: center;

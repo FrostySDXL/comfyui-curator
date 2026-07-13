@@ -149,13 +149,15 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            background: var(--surface-1);
         }
         .batch-controls {
             position: sticky;
             top: 0;
             z-index: 2;
-            background: #202020;
-            padding-bottom: 8px;
+            background: var(--surface-1);
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-subtle);
         }
         .sidebar-library-header {
             display: flex;
@@ -187,10 +189,32 @@
             white-space: nowrap;
         }
         .batch-sort-group {
-            border-color: #2a2a2a;
+            display: flex;
+            height: 30px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--control-radius);
+            overflow: hidden;
             flex-shrink: 0;
             max-width: 100%;
         }
+        .batch-sort-btn {
+            height: 100%;
+            padding: 0 9px;
+            border: 0;
+            border-right: 1px solid var(--border-subtle);
+            background: transparent;
+            color: var(--text-muted);
+            font-family: inherit;
+            font-size: var(--type-label);
+            font-weight: 600;
+            line-height: 1;
+            cursor: pointer;
+            transition: color 0.15s, background 0.15s;
+        }
+        .batch-sort-btn:last-child { border-right: 0; }
+        .batch-sort-btn:hover { color: var(--text-primary); background: var(--surface-raised); }
+        .batch-sort-btn.active { color: var(--button-accent-text); background: var(--button-accent-fill); }
+        .batch-sort-btn:focus-visible { position: relative; z-index: 1; }
         .batch-count-label {
             font-size: 11px;
             color: #999;
@@ -205,8 +229,8 @@
         .batch-search {
             width: 100%;
             padding: 7px 8px;
-            background: #2a2a2a;
-            border: 1px solid #333;
+            background: var(--surface-2);
+            border: 1px solid var(--border-subtle);
             color: #ccc;
             border-radius: 4px;
             font-size: 12px;
@@ -217,9 +241,9 @@
         .batch-search-clear {
             width: 24px;
             height: 24px;
-            border: 1px solid #3a3a3a;
+            border: 1px solid var(--border-subtle);
             border-radius: 4px;
-            background: #2a2a2a;
+            background: var(--surface-2);
             color: #888;
             cursor: pointer;
             line-height: 1;
@@ -232,6 +256,7 @@
             list-style: none;
             flex: 1;
             overflow-y: auto;
+            background: var(--surface-1);
         }
         .batch-item { margin-bottom: 2px; }
         .batch-name {

@@ -159,7 +159,8 @@ def test_toolbar_controls_share_one_compact_geometry_token() -> None:
         assert "border-radius: var(--toolbar-control-radius);" in body, selector
 
     segmented = rule_body(
-        css, ".sort-group,\n        .selection-mode-control,\n        .density-controls"
+        css,
+        ".workspace-toolbar .sort-group,\n        .selection-mode-control,\n        .density-controls",
     )
     assert "height: var(--toolbar-control-height);" in segmented
     assert "border-radius: var(--toolbar-control-radius);" in segmented
@@ -178,7 +179,10 @@ def test_view_panel_uses_subtle_surfaces_and_quiet_setting_rows() -> None:
     assert "border-bottom: 1px solid var(--border-subtle);" in section
     assert "border: 1px solid" not in favorite
     assert "background: transparent;" in favorite
-    assert ".sort-group,\n        .selection-mode-control,\n        .density-controls" in css
+    assert (
+        ".workspace-toolbar .sort-group,\n        .selection-mode-control,\n        .density-controls"
+        in css
+    )
 
 
 def test_density_segments_are_exempt_from_quiet_row_minimum_height() -> None:
