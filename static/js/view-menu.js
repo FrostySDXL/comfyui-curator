@@ -1,5 +1,5 @@
 /* Ordered classic script.
- * Defines: workspace View menu disclosure, keyboard navigation, and active-state summary.
+ * Defines: workspace View disclosure, focus flow, and dismissal behavior.
  */
 function getViewMenuItems() {
             const menu = document.getElementById('view-menu');
@@ -41,23 +41,6 @@ function handleViewPanelFocusout() {
             });
         }
 
-function updateViewSummary() {
-            const summary = document.getElementById('view-summary');
-            if (!summary) return;
-            const sortNames = {'date': 'Date', 'shuffle': 'Shuffle', 'score-desc': 'Score'};
-            const densityNames = {'compact': 'Compact', 'comfortable': 'Comfort', 'large': 'Large'};
-            const parts = [sortNames[currentSort] || 'Date'];
-            if (currentSort === 'date') parts[0] += currentOrder === 'asc' ? ' up' : ' down';
-            parts.push(densityNames[gridDensity] || 'Comfort');
-            if (favoritesFilterOn) parts.push('Favorites');
-            if (typeof aiActiveRun !== 'undefined' && aiActiveRun) {
-                const filterNames = {'all': 'All', 'scored': 'Scored', 'failed': 'Failed', 'top-n': 'Top-N'};
-                if (aiShowOverlays) parts.push('AI badges');
-                if (aiFilterMode !== 'all') parts.push(`AI: ${filterNames[aiFilterMode] || 'All'}`);
-            }
-            summary.textContent = parts.join(' · ');
-        }
-
 function initializeViewMenu() {
             const wrapper = document.getElementById('workspace-view-control');
             const trigger = document.getElementById('view-menu-button');
@@ -72,5 +55,4 @@ function initializeViewMenu() {
             document.addEventListener('pointerdown', event => {
                 if (!menu.hidden && !wrapper.contains(event.target)) closeViewMenu();
             });
-            updateViewSummary();
         }

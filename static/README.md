@@ -72,7 +72,7 @@
 | `ai-inspector.js` | AI image inspector and multi-selection score breakdowns |
 | `ai-overlays.js` | AI score badges, score filtering/sorting, score color helpers, batch run counts |
 | `ai.js` | Compatibility stub for the split AI files |
-| `view-menu.js` | Workspace View menu disclosure, keyboard navigation, focus return, and active-setting summary |
+| `view-menu.js` | Workspace View disclosure, native-control focus flow, and dismissal behavior |
 | `polling.js` | Interaction-aware background polling helpers |
 | `modals.js` | Generic modal helpers plus new-batch and Help modal controls |
 | `settings.js` | Native Settings modal loading, validation feedback, secret-safe save, and UI refresh |
@@ -213,8 +213,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
   last batch/folder, and batch sort persist across sessions.
 - The workspace toolbar keeps folder stages, Browse/Select, Select All, and
   sorting directly accessible. The compact View menu contains density,
-  favorites-only, and available AI display/filter controls while its summary
-  keeps active view settings visible.
+  favorites-only, and available AI display/filter controls.
 - The batch sidebar shows folder count breakdowns, AI-run indicators, a pinned
   All Favorites collection, and an All Public generated-output collection.
 - AI badges and score filtering reset when switching to a batch with no active

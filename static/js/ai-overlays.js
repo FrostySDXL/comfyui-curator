@@ -3,13 +3,11 @@
  */
 function aiToggleOverlays() {
             aiShowOverlays = document.getElementById('ai-overlay-toggle').checked;
-            updateViewSummary();
             updateGrid();
         }
 
 function aiApplyFilter() {
             aiFilterMode = document.getElementById('ai-filter-mode').value;
-            updateViewSummary();
             updateGrid();
         }
 
@@ -27,7 +25,6 @@ function aiShowHeaderControls(show) {
                 const filter = document.getElementById('ai-filter-mode');
                 if (filter) filter.value = 'all';
             }
-            updateViewSummary();
         }
 
 function aiGetImageScore(filename) {

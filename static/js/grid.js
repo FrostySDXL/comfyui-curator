@@ -80,7 +80,6 @@ function setSort(sort) {
             currentSort = sort;
             document.querySelectorAll('.sort-btn:not(.batch-sort-btn)').forEach(b => b.classList.toggle('active', b.dataset.sort === sort));
             document.getElementById('sort-dir-btn').classList.toggle('is-placeholder', sort === 'shuffle' || sort === 'score-desc');
-            updateViewSummary();
             if (isVirtualCollectionView() || isPublicView()) { updateGrid(); return; }
             if (currentBatch && currentFolder) loadCurrentFolderImages();
         }
@@ -88,7 +87,6 @@ function setSort(sort) {
 function toggleOrder() {
             currentOrder = currentOrder === 'desc' ? 'asc' : 'desc';
             document.getElementById('sort-dir-btn').classList.toggle('asc', currentOrder === 'asc');
-            updateViewSummary();
             if (isVirtualCollectionView() || isPublicView()) { updateGrid(); return; }
             if (currentBatch && currentFolder) loadCurrentFolderImages();
         }
@@ -155,7 +153,6 @@ function setGridDensity(density) {
                 btn.setAttribute('aria-pressed', btn.dataset.density === gridDensity ? 'true' : 'false');
             });
             localStorage.setItem(GRID_DENSITY_KEY, gridDensity);
-            if (typeof updateViewSummary === 'function') updateViewSummary();
         }
 
 function initializeGridDensity() {

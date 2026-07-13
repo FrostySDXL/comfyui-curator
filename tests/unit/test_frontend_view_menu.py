@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 from tests.unit.frontend_source import extract_function_body, read_frontend_css, read_frontend_js
@@ -5,6 +6,12 @@ from tests.unit.frontend_source import extract_function_body, read_frontend_css,
 
 def read_index_html() -> str:
     return Path("templates/index.html").read_text(encoding="utf-8")
+
+
+def rule_body(css: str, selector: str) -> str:
+    match = re.search(rf"{re.escape(selector)}\s*\{{(?P<body>.*?)\}}", css, re.DOTALL)
+    assert match, selector
+    return match.group("body")
 
 
 def test_toolbar_separates_stage_navigation_primary_actions_and_view_settings() -> None:
@@ -19,7 +26,35 @@ def test_toolbar_separates_stage_navigation_primary_actions_and_view_settings() 
     assert html.index('id="sort-controls"') < html.index('id="view-menu-button"')
 
 
-def test_view_disclosure_has_native_trigger_options_panel_and_active_summary() -> None:
+def test_desktop_toolbar_is_one_compact_row_with_controls_pushed_right() -> None:
+    css = Path("static/css/layout.css").read_text(encoding="utf-8")
+    toolbar = rule_body(css, ".workspace-toolbar")
+    tabs = rule_body(css, ".folder-tabs")
+    primary = rule_body(css, ".workspace-toolbar-primary")
+
+    assert "flex-direction: row;" in toolbar
+    assert "align-items: center;" in toolbar
+    assert "flex-wrap: wrap;" in toolbar
+    assert "min-height: 48px;" in toolbar
+    assert "flex: 1 1 560px;" in tabs
+    assert "min-width: min(560px, 100%);" in tabs
+    assert "width: 100%;" not in tabs
+    assert "margin-left: auto;" in primary
+    assert "flex-shrink: 0;" in primary
+
+
+def test_toolbar_wraps_from_available_width_without_waiting_for_viewport_breakpoint() -> None:
+    layout = Path("static/css/layout.css").read_text(encoding="utf-8")
+    responsive = Path("static/css/responsive.css").read_text(encoding="utf-8")
+
+    assert "flex-wrap: wrap;" in rule_body(layout, ".workspace-toolbar")
+    assert ".workspace-toolbar { flex-wrap: wrap; }" not in responsive
+    assert "@media (max-width: 900px)" in responsive
+    narrow_toolbar = responsive.split("@media (max-width: 900px)", 1)[1]
+    assert "flex-direction: column;" in narrow_toolbar
+
+
+def test_view_disclosure_has_native_trigger_and_options_panel() -> None:
     html = read_index_html()
 
     assert 'id="view-menu-button"' in html
@@ -27,7 +62,7 @@ def test_view_disclosure_has_native_trigger_options_panel_and_active_summary() -
     assert 'aria-controls="view-menu"' in html
     assert 'aria-label="View options"' in html
     assert 'id="view-menu" class="view-menu" role="group" aria-label="View options" hidden' in html
-    assert 'id="view-summary" class="view-summary" aria-live="polite"' in html
+    assert 'id="view-summary"' not in html
     assert 'role="menu"' not in html
     assert 'role="menuitemradio"' not in html
     assert 'role="menuitemcheckbox"' not in html
@@ -77,29 +112,19 @@ def test_view_panel_closes_on_keyboard_exit_outside_pointer_and_escape() -> None
     assert "moveViewMenuFocus" not in js
 
 
-def test_view_state_summary_tracks_sort_density_favorites_and_ai() -> None:
+def test_redundant_view_summary_is_removed_from_markup_behavior_and_docs() -> None:
+    html = read_index_html()
     js = read_frontend_js()
-    summary = extract_function_body(js, "function updateViewSummary()")
+    css = read_frontend_css()
+    static_readme = Path("static/README.md").read_text(encoding="utf-8")
 
-    assert "currentSort" in summary
-    assert "currentOrder" in summary
-    assert "gridDensity" in summary
-    assert "favoritesFilterOn" in summary
-    assert "aiShowOverlays" in summary
-    assert "aiFilterMode" in summary
-    assert "aiActiveRun" in summary
-    assert "if (aiShowOverlays) parts.push('AI badges');" in summary
-    assert "if (aiFilterMode !== 'all')" in summary
-    for signature in (
-        "function setSort(sort)",
-        "function toggleOrder()",
-        "function setGridDensity(density)",
-        "function toggleFavoritesFilter()",
-        "function aiToggleOverlays()",
-        "function aiApplyFilter()",
-        "function aiShowHeaderControls(show)",
-    ):
-        assert "updateViewSummary();" in extract_function_body(js, signature), signature
+    assert "view-summary" not in html
+    assert "view-summary" not in css
+    assert "updateViewSummary" not in js
+    assert "summary beside it" not in html
+    toolbar_docs = static_readme.split("The workspace toolbar", 1)[1].split("\n-", 1)[0]
+    assert "summary" not in toolbar_docs
+    assert "active-setting summary" not in static_readme
 
 
 def test_view_menu_layout_is_anchored_and_narrow_toolbar_stays_intentional() -> None:
@@ -113,11 +138,58 @@ def test_view_menu_layout_is_anchored_and_narrow_toolbar_stays_intentional() -> 
     assert "min-width: 260px;" in css
     assert ".view-menu-item" in css
     assert "min-height: 36px;" in css
-    assert "@media (max-width: 1280px)" in responsive
-    assert ".workspace-toolbar-primary" in responsive
+    assert "@media (max-width: 1280px)" not in responsive
+    assert "@media (max-width: 900px)" in responsive
     assert ".workspace-primary-actions" in responsive
     assert "@media (max-width: 700px)" in responsive
-    assert ".view-summary" in responsive
+    assert ".view-summary" not in responsive
+
+
+def test_toolbar_controls_share_one_compact_geometry_token() -> None:
+    css = Path("static/css/layout.css").read_text(encoding="utf-8")
+    toolbar = rule_body(css, ".workspace-toolbar")
+
+    assert "--toolbar-control-height: 30px;" in toolbar
+    for selector in (".workspace-select-all-btn", ".sort-dir", ".view-menu-button"):
+        body = rule_body(css, selector)
+        assert "height: var(--toolbar-control-height);" in body, selector
+
+    for selector in (".workspace-select-all-btn", ".sort-dir", ".view-menu-button"):
+        body = rule_body(css, selector)
+        assert "border-radius: var(--toolbar-control-radius);" in body, selector
+
+    segmented = rule_body(
+        css, ".sort-group,\n        .selection-mode-control,\n        .density-controls"
+    )
+    assert "height: var(--toolbar-control-height);" in segmented
+    assert "border-radius: var(--toolbar-control-radius);" in segmented
+    for selector in (".selection-mode-btn", ".sort-btn", ".density-btn"):
+        assert "height: 100%;" in rule_body(css, selector), selector
+
+
+def test_view_panel_uses_subtle_surfaces_and_quiet_setting_rows() -> None:
+    css = Path("static/css/layout.css").read_text(encoding="utf-8")
+    panel = rule_body(css, ".view-menu")
+    section = rule_body(css, ".view-menu-section")
+    favorite = rule_body(css, ".favorites-filter-btn")
+
+    assert "border: 1px solid var(--border-subtle);" in panel
+    assert "background: var(--surface-2);" in panel
+    assert "border-bottom: 1px solid var(--border-subtle);" in section
+    assert "border: 1px solid" not in favorite
+    assert "background: transparent;" in favorite
+    assert ".sort-group,\n        .selection-mode-control,\n        .density-controls" in css
+
+
+def test_density_segments_are_exempt_from_quiet_row_minimum_height() -> None:
+    css = Path("static/css/layout.css").read_text(encoding="utf-8")
+    density = rule_body(css, ".density-btn")
+    quiet_row = rule_body(css, ".view-menu-item:not(.density-btn)")
+
+    assert ".view-menu-item { min-height: 36px; }" not in css
+    assert "min-height: 0;" in density
+    assert "height: 100%;" in density
+    assert "min-height: 36px;" in quiet_row
 
 
 def test_sort_controls_have_semantic_grouping() -> None:

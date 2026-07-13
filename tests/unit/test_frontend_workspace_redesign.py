@@ -560,7 +560,8 @@ def test_select_all_matches_compact_toolbar_button_style() -> None:
     css = read_frontend_css()
 
     assert ".workspace-select-all-btn" in css
-    assert "height: 28px;" in css
+    assert "--toolbar-control-height: 30px;" in css
+    assert "height: var(--toolbar-control-height);" in css
     assert "background: transparent;" in css
     assert "color: var(--text-muted);" in css
     assert "font-weight: 600;" in css

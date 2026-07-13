@@ -13,7 +13,6 @@ function syncFavoriteButton(btn, isOn) {
 function toggleFavoritesFilter() {
             favoritesFilterOn = !favoritesFilterOn;
             syncFavoriteButton(document.getElementById('favorites-filter-btn'), favoritesFilterOn);
-            updateViewSummary();
             updateImageCountLabel();
             updateGrid();
         }

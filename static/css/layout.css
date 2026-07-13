@@ -66,11 +66,14 @@
         }
 
         .workspace-toolbar {
+            --toolbar-control-height: 30px;
+            --toolbar-control-radius: 4px;
             display: flex;
-            flex-direction: column;
-            align-items: stretch;
-            gap: 8px;
-            padding: 8px 18px;
+            flex-direction: row;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 7px 18px;
             background: var(--surface-1);
             border-bottom: 1px solid var(--border-subtle);
             min-height: 48px;
@@ -81,6 +84,8 @@
             align-items: center;
             gap: 12px;
             min-width: 0;
+            margin-left: auto;
+            flex-shrink: 0;
         }
 
         /* Folder tabs */
@@ -88,9 +93,8 @@
             display: none;
             align-items: center;
             gap: 6px;
-            flex: 1;
-            min-width: 0;
-            width: 100%;
+            flex: 1 1 560px;
+            min-width: min(560px, 100%);
         }
         .folder-tabs.visible { display: flex; }
         .folder-tab {
@@ -165,10 +169,10 @@
             align-items: center;
             justify-content: flex-end;
             gap: 6px;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
             margin-left: auto;
             min-width: 0;
-            flex: 1;
+            flex: 0 0 auto;
         }
         .workspace-primary-actions,
         .workspace-sort-group {
@@ -189,14 +193,18 @@
             letter-spacing: 1.5px;
             font-weight: 600;
         }
-        .sort-group {
+        .sort-group,
+        .selection-mode-control,
+        .density-controls {
             display: flex;
-            border: 1px solid #333;
-            border-radius: 4px;
+            height: var(--toolbar-control-height);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--toolbar-control-radius);
             overflow: hidden;
         }
         .sort-btn {
-            padding: 5px 10px;
+            height: 100%;
+            padding: 0 10px;
             background: transparent;
             border: none;
             color: var(--text-muted);
@@ -210,11 +218,11 @@
         .sort-btn:hover { color: #bbb; background: #252525; }
         .sort-btn.active { color: var(--button-accent-text); background: var(--button-accent-fill); }
         .sort-dir {
-            width: 28px; height: 28px;
+            width: var(--toolbar-control-height); height: var(--toolbar-control-height);
             display: flex; align-items: center; justify-content: center;
             background: transparent;
             border: 1px solid #333;
-            border-radius: 4px;
+            border-radius: var(--toolbar-control-radius);
             color: var(--text-muted);
             cursor: pointer;
             transition: all 0.15s;
@@ -231,12 +239,12 @@
             min-height: 36px;
             display: flex; align-items: center; justify-content: center;
             background: transparent;
-            border: 1px solid #333;
-            border-radius: 4px;
+            border: 0;
+            border-radius: var(--toolbar-control-radius);
             color: var(--text-muted);
             cursor: pointer;
             transition: all 0.15s;
-            padding: 0;
+            padding: 0 8px;
             font-size: 14px;
             gap: 8px;
             width: 100%;
@@ -248,12 +256,12 @@
         }
 
         .workspace-select-all-btn {
-            height: 28px;
-            padding: 5px 10px;
+            height: var(--toolbar-control-height);
+            padding: 0 10px;
             border: 1px solid #333;
             background: transparent;
             color: var(--text-muted);
-            border-radius: 4px;
+            border-radius: var(--toolbar-control-radius);
             font-size: 11px;
             font-family: inherit;
             font-weight: 600;
@@ -268,15 +276,11 @@
         }
 
         .selection-mode-control {
-            display: flex;
-            border: 1px solid var(--border-strong);
-            border-radius: var(--control-radius);
-            overflow: hidden;
             flex-shrink: 0;
         }
         .selection-mode-btn {
-            height: 28px;
-            padding: 5px 10px;
+            height: 100%;
+            padding: 0 10px;
             border: 0;
             border-right: 1px solid var(--border-strong);
             background: var(--surface-1);
@@ -292,14 +296,10 @@
         }
 
         .density-label { margin-left: 4px; }
-        .density-controls {
-            display: flex;
-            border: 1px solid #333;
-            border-radius: 4px;
-            overflow: hidden;
-        }
         .density-btn {
-            padding: 7px 10px;
+            height: 100%;
+            min-height: 0;
+            padding: 0 10px;
             background: transparent;
             border: none;
             border-right: 1px solid #333;
@@ -317,22 +317,14 @@
             position: relative;
             display: flex;
             align-items: center;
-            gap: 8px;
             margin-left: auto;
             min-width: 0;
         }
-        .view-summary {
-            overflow: hidden;
-            color: var(--text-secondary);
-            font-size: 12px;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
         .view-menu-button {
-            min-height: 32px;
-            padding: 6px 11px;
+            height: var(--toolbar-control-height);
+            padding: 0 11px;
             border: 1px solid var(--border-strong);
-            border-radius: var(--control-radius);
+            border-radius: var(--toolbar-control-radius);
             background: var(--surface-2);
             color: var(--text-primary);
             font: 600 12px/1 inherit;
@@ -348,10 +340,10 @@
             z-index: 120;
             min-width: 260px;
             padding: 8px;
-            border: 1px solid var(--border-strong);
+            border: 1px solid var(--border-subtle);
             border-radius: 7px;
-            background: var(--surface-raised);
-            box-shadow: 0 12px 28px rgba(0,0,0,0.42);
+            background: var(--surface-2);
+            box-shadow: 0 10px 24px rgba(0,0,0,0.34);
         }
         .view-menu[hidden] { display: none; }
         .view-menu-section {
@@ -370,7 +362,7 @@
             letter-spacing: 0.8px;
             text-transform: uppercase;
         }
-        .view-menu-item { min-height: 36px; }
+        .view-menu-item:not(.density-btn) { min-height: 36px; }
         .view-menu .density-controls { width: 100%; }
         .view-menu .density-btn { flex: 1; }
         .view-menu .shortcut-hint { margin-left: auto; }

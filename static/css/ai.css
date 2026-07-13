@@ -231,11 +231,11 @@
         }
         .ai-display-controls.ai-header-controls {
             margin-bottom: 0;
-            padding: 0 0 0 8px;
+            padding: 8px 2px;
             background: transparent;
             border: none;
-            border-left: 1px solid #333;
             border-radius: 0;
+            align-items: stretch;
         }
         .ai-label {
             font-size: var(--type-label);
@@ -626,17 +626,21 @@
         /* AI header controls (in the sort bar) */
         .ai-header-controls {
             display: flex;
-            align-items: center;
+            align-items: stretch;
             gap: 8px;
-            margin-left: 8px;
-            padding-left: 8px;
-            border-left: 1px solid #333;
+            margin-left: 0;
+            padding-left: 0;
+            border-left: 0;
         }
         .ai-header-toggle {
+            min-height: 32px;
+            padding: 0 8px;
+            border-radius: 4px;
             font-size: 11px;
-            color: #888;
+            color: var(--text-secondary);
             white-space: nowrap;
         }
+        .ai-header-toggle:hover { background: var(--surface-raised); }
         .shortcut-hint {
             display: inline-flex;
             align-items: center;
