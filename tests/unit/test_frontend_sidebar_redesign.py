@@ -135,3 +135,15 @@ def test_batch_library_region_uses_cohesive_semantic_sidebar_surfaces() -> None:
     assert "border: 1px solid var(--border-subtle);" in search
     assert "background: var(--surface-1);" in batch_list
     assert "#202020" not in controls
+
+
+def test_batch_list_boundary_matches_pinned_collection_separator_spacing() -> None:
+    css = Path("static/css/sidebar.css").read_text(encoding="utf-8")
+    controls = rule_body(css, ".batch-controls")
+    batch_list = rule_body(css, ".batch-list")
+    favorites = rule_body(css, ".batch-item-favorites")
+
+    assert "border-bottom: 1px solid var(--border-subtle);" in controls
+    assert "padding-top: 6px;" in batch_list
+    assert "padding-bottom: 6px;" in favorites
+    assert "margin-top" not in favorites

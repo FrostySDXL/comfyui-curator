@@ -256,6 +256,7 @@
             list-style: none;
             flex: 1;
             overflow-y: auto;
+            padding-top: 6px;
             background: var(--surface-1);
         }
         .batch-item { margin-bottom: 2px; }
