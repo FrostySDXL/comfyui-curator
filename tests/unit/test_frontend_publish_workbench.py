@@ -918,7 +918,8 @@ def test_publish_result_uses_a_reserved_visibility_controlled_slot() -> None:
     result = _rule_body(css, ".publish-result")
     visible = _rule_body(css, ".publish-result.is-visible")
     assert "box-sizing: border-box;" in result
-    assert "height:" in result
+    assert "height: 36px;" in result
+    assert "padding: 3px 18px;" in result
     assert "visibility: hidden;" in result
     assert "visibility: visible;" in visible
     assert ".publish-result.hidden" not in css

@@ -473,9 +473,9 @@
              justify-content: space-between;
              gap: 10px;
              box-sizing: border-box;
-             height: 44px;
+             height: 36px;
              margin: 0;
-             padding: 6px 18px;
+             padding: 3px 18px;
              border-top: 1px solid transparent;
              border-bottom: 1px solid transparent;
              border-radius: 0;
