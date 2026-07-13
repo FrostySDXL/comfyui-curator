@@ -1,3 +1,15 @@
+        @media (max-width: 1280px) {
+            .workspace-toolbar-primary {
+                align-items: flex-start;
+                flex-wrap: wrap;
+            }
+            .sort-controls {
+                justify-content: flex-start;
+                margin-left: 0;
+            }
+            .workspace-view-control { margin-left: auto; }
+        }
+
         @media (max-width: 900px) {
             :root {
                 --sidebar-width: 220px;
@@ -20,10 +32,9 @@
                 gap: 8px;
             }
             .workspace-toolbar {
-                align-items: stretch;
-                flex-direction: column;
                 gap: 8px;
             }
+            .workspace-toolbar-primary { align-items: center; }
             .folder-tabs.visible,
             .sort-controls {
                 justify-content: flex-start;
@@ -71,4 +82,26 @@
             .lightbox-compare-wrap img {
                 max-height: 34vh;
             }
+        }
+
+        @media (max-width: 700px) {
+            .workspace-primary-actions,
+            .workspace-sort-group { flex-wrap: wrap; }
+            .workspace-primary-actions {
+                padding-right: 0;
+                border-right: 0;
+            }
+            .workspace-view-control {
+                width: 100%;
+                justify-content: space-between;
+            }
+            .view-summary { max-width: calc(100% - 76px); }
+            .view-menu {
+                right: 0;
+                left: 0;
+                min-width: 0;
+            }
+            .folder-tabs.visible { overflow-x: auto; padding-bottom: 3px; }
+            .folder-tab,
+            .folder-tab-label { flex-shrink: 0; }
         }

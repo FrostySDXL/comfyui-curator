@@ -103,6 +103,7 @@ def test_javascript_checks_use_ordered_split_file_list():
         "ai-inspector.js",
         "ai-overlays.js",
         "ai.js",
+        "view-menu.js",
         "polling.js",
         "modals.js",
         "settings.js",

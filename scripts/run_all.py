@@ -55,6 +55,7 @@ JS_FILES = [
     "ai-inspector.js",
     "ai-overlays.js",
     "ai.js",
+    "view-menu.js",
     "polling.js",
     "modals.js",
     "settings.js",

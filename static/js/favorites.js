@@ -4,14 +4,16 @@
  */
 function syncFavoriteButton(btn, isOn) {
             if (!btn) return;
-            btn.innerHTML = isOn ? '&#9733;' : '&#9734;';
+            btn.innerHTML = `${isOn ? '&#9733;' : '&#9734;'} <span>Favorites only</span><span class="shortcut-hint">F</span>`;
             btn.style.color = isOn ? '#e8c84a' : '';
             btn.classList.toggle('active', isOn);
+            btn.setAttribute('aria-pressed', isOn ? 'true' : 'false');
         }
 
 function toggleFavoritesFilter() {
             favoritesFilterOn = !favoritesFilterOn;
             syncFavoriteButton(document.getElementById('favorites-filter-btn'), favoritesFilterOn);
+            updateViewSummary();
             updateImageCountLabel();
             updateGrid();
         }

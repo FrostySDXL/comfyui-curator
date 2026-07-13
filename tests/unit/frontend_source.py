@@ -23,6 +23,7 @@ JS_FILES = [
     Path("static/js/ai-inspector.js"),
     Path("static/js/ai-overlays.js"),
     Path("static/js/ai.js"),
+    Path("static/js/view-menu.js"),
     Path("static/js/polling.js"),
     Path("static/js/modals.js"),
     Path("static/js/settings.js"),

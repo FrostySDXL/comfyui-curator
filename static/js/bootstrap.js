@@ -4,6 +4,7 @@
 initializeSidebarState();
 initializeAiSidebarState();
 initializeGridDensity();
+initializeViewMenu();
 _bindCustomSelectKeys();
 _bindDelegatedEvents();
 // Sync batch sort button highlights with stored preference

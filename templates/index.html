@@ -100,41 +100,59 @@
                 <div class="folder-tabs-spacer"></div>
                 <button class="delete-rejects-btn" id="delete-rejects-btn">Empty Rejects</button>
             </div>
-            <div class="sort-controls hidden" id="sort-controls">
-                <div class="selection-mode-control" role="group" aria-label="Thumbnail click behavior">
-                    <button class="selection-mode-btn" id="browse-mode-btn" type="button" aria-pressed="true" title="Ordinary click opens the image">Browse</button>
-                    <button class="selection-mode-btn" id="select-mode-btn" type="button" aria-pressed="false" title="Ordinary click toggles selection">Select</button>
+            <div class="workspace-toolbar-primary">
+                <div class="sort-controls hidden" id="sort-controls">
+                    <div class="workspace-primary-actions">
+                        <div class="selection-mode-control" role="group" aria-label="Thumbnail click behavior">
+                            <button class="selection-mode-btn" id="browse-mode-btn" type="button" aria-pressed="true" title="Ordinary click opens the image">Browse</button>
+                            <button class="selection-mode-btn" id="select-mode-btn" type="button" aria-pressed="false" title="Ordinary click toggles selection">Select</button>
+                        </div>
+                        <button class="workspace-select-all-btn" id="workspace-select-all-btn" title="Select all visible images" type="button">Select All</button>
+                    </div>
+                    <div class="workspace-sort-group" role="group" aria-label="Image sorting">
+                        <span class="sort-label">Sort</span>
+                        <div class="sort-group">
+                            <button class="sort-btn active" data-sort="date">Date</button>
+                            <button class="sort-btn" data-sort="shuffle">Shuffle</button>
+                            <button class="sort-btn hidden" data-sort="score-desc" id="sort-btn-score-desc">Score</button>
+                        </div>
+                        <button class="sort-dir" id="sort-dir-btn" title="Toggle sort direction" aria-label="Toggle sort direction">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 5v14M5 12l7 7 7-7"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
-                <button class="workspace-select-all-btn" id="workspace-select-all-btn" title="Select all visible images" type="button">Select All</button>
-                <span class="sort-label">Sort</span>
-                <div class="sort-group">
-                    <button class="sort-btn active" data-sort="date">Date</button>
-                    <button class="sort-btn" data-sort="shuffle">Shuffle</button>
-                    <button class="sort-btn hidden" data-sort="score-desc" id="sort-btn-score-desc">Score</button>
-                </div>
-                <button class="sort-dir" id="sort-dir-btn" title="Toggle direction">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M12 5v14M5 12l7 7 7-7"/>
-                    </svg>
-                </button>
-                <button class="favorites-filter-btn" id="favorites-filter-btn" title="Favorites only (F)" type="button">&#9734;</button>
-                <span class="sort-label density-label">Density</span>
-                <div class="density-controls" id="density-controls" aria-label="Thumbnail density">
-                    <button class="density-btn" data-density="compact" type="button" title="Compact thumbnails">Compact</button>
-                    <button class="density-btn active" data-density="comfortable" type="button" title="Comfortable thumbnails">Comfort</button>
-                    <button class="density-btn" data-density="large" type="button" title="Large thumbnails">Large</button>
-                </div>
-                <div class="ai-display-controls hidden ai-header-controls" id="ai-display-controls">
-                    <label class="ai-checkbox-label ai-header-toggle">
-                        <input type="checkbox" id="ai-overlay-toggle">
-                        AI badges <span class="shortcut-hint">B</span>
-                    </label>
-                    <select id="ai-filter-mode" class="ai-select ai-select-sm">
-                        <option value="all">All</option>
-                        <option value="scored">Scored</option>
-                        <option value="failed">Failed</option>
-                        <option value="top-n">Top-N</option>
-                    </select>
+                <div class="workspace-view-control" id="workspace-view-control">
+                    <span id="view-summary" class="view-summary" aria-live="polite">Date down · Comfort</span>
+                    <button id="view-menu-button" class="view-menu-button" type="button" aria-label="View options" aria-expanded="false" aria-controls="view-menu">View <span aria-hidden="true">&#9662;</span></button>
+                    <div id="view-menu" class="view-menu" role="group" aria-label="View options" hidden>
+                        <div class="view-menu-section" aria-labelledby="view-density-label">
+                            <div class="view-menu-label" id="view-density-label">Grid density</div>
+                            <div class="density-controls" id="density-controls" role="group" aria-label="Thumbnail density">
+                                <button class="density-btn view-menu-item" data-density="compact" type="button" aria-pressed="false" title="Compact thumbnails">Compact</button>
+                                <button class="density-btn view-menu-item active" data-density="comfortable" type="button" aria-pressed="true" title="Comfortable thumbnails">Comfort</button>
+                                <button class="density-btn view-menu-item" data-density="large" type="button" aria-pressed="false" title="Large thumbnails">Large</button>
+                            </div>
+                        </div>
+                        <div class="view-menu-section">
+                            <button class="favorites-filter-btn view-menu-item" id="favorites-filter-btn" title="Favorites only (F)" type="button" aria-pressed="false">&#9734; <span>Favorites only</span><span class="shortcut-hint">F</span></button>
+                        </div>
+                        <div class="ai-display-controls hidden ai-header-controls view-menu-section" id="ai-display-controls">
+                            <label class="ai-checkbox-label ai-header-toggle view-menu-item">
+                                <input type="checkbox" id="ai-overlay-toggle">
+                                AI badges <span class="shortcut-hint">B</span>
+                            </label>
+                            <label class="view-menu-field" for="ai-filter-mode">AI filter
+                                <select id="ai-filter-mode" class="ai-select ai-select-sm">
+                                    <option value="all">All</option>
+                                    <option value="scored">Scored</option>
+                                    <option value="failed">Failed</option>
+                                    <option value="top-n">Top-N</option>
+                                </select>
+                            </label>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -488,6 +506,7 @@
                 <ul class="help-list">
                     <li><strong>Browse</strong> opens images on ordinary click; <strong>Select</strong> toggles them.</li>
                     <li><strong>Ctrl/Cmd+click</strong> selects disjoint images; <strong>Shift+click</strong> adds a range. Shift takes precedence when both are held.</li>
+                    <li><strong>View</strong> contains density, favorites-only, and available AI display filters; the summary beside it shows active settings.</li>
                     <li><strong>Inbox</strong> holds new images for review.</li>
                     <li>Move keepers to <strong>Shortlisted</strong> or <strong>Finals</strong>; move rejects to <strong>Rejects</strong>.</li>
                     <li>Use favorites, Prompt History, and metadata as review aids.</li>
@@ -645,6 +664,7 @@
     <script src="/static/js/ai-inspector.js"></script>
     <script src="/static/js/ai-overlays.js"></script>
     <script src="/static/js/ai.js"></script>
+    <script src="/static/js/view-menu.js"></script>
     <script src="/static/js/polling.js"></script>
     <script src="/static/js/modals.js"></script>
     <script src="/static/js/settings.js"></script>
