@@ -102,6 +102,26 @@ def test_prompt_results_render_as_labeled_rows_with_display_only_image_reference
     assert "open first image" not in source.lower()
 
 
+def test_prompt_empty_states_are_compact_contextual_and_cardless() -> None:
+    source = PROMPTS_JS.read_text(encoding="utf-8")
+    css = PROMPTS_CSS.read_text(encoding="utf-8")
+    unbuilt = extract_function_body(source, "function _buildEmptyCta(")
+    empty_all = extract_function_body(source, "function _buildAllEmptyState()")
+    no_matches = extract_function_body(source, "function _buildNoMatchesState(")
+    state = _rule_body(css, ".prompts-empty-state")
+
+    assert "prompts-empty-state" in unbuilt
+    assert "Build Index for" in unbuilt
+    assert "prompts-empty-state" in empty_all
+    assert "if (!query)" in no_matches
+    assert "No prompts found" in no_matches
+    assert 'No prompts match "${query}"' in no_matches
+    assert 'No prompts match ""' not in source
+    assert "border" not in state
+    assert "background" not in state
+    assert "padding: 12px 0;" in state
+
+
 def test_prompt_selection_uses_a_dedicated_keyboard_button_without_option_semantics() -> None:
     source = PROMPTS_JS.read_text(encoding="utf-8")
     entry = extract_function_body(source, "function _buildEntry(entry, query)")
@@ -113,6 +133,18 @@ def test_prompt_selection_uses_a_dedicated_keyboard_button_without_option_semant
     assert "promptsSelectedEntryKey" in select
     assert "role', 'option" not in entry
     assert "role', 'button" not in entry
+
+
+def test_prompt_selector_is_compact_legible_and_geometry_stable() -> None:
+    source = PROMPTS_JS.read_text(encoding="utf-8")
+    css = PROMPTS_CSS.read_text(encoding="utf-8")
+    entry = extract_function_body(source, "function _buildEntry(entry, query)")
+    selector = _rule_body(css, ".prompts-select-entry")
+
+    assert "isSelected ? 'Selected' : 'Select'" in entry
+    assert "width: 64px;" in selector
+    assert "font-size: var(--type-label);" in selector
+    assert "padding: 3px 8px;" in selector
 
 
 def test_prompt_button_selection_restores_focus_without_row_click_focus_theft() -> None:
@@ -192,11 +224,29 @@ def test_prompt_copy_actions_have_stable_horizontal_geometry() -> None:
     actions = _rule_body(css, ".prompts-entry-actions")
     copies = _rule_body(css, ".prompts-copy-actions")
 
-    assert "264px" in entry
+    assert "grid-template-columns: 64px minmax(0, 1fr);" in entry
+    assert "264px" not in entry
     assert "flex-direction: column" not in actions
+    assert "grid-column: 2;" in actions
+    assert "justify-content: flex-end;" in actions
     assert "grid-template-columns: repeat(3, minmax(0, 1fr));" in copies
     assert "width: 264px;" in copies
     assert ".prompts-copy-placeholder" in css
+
+
+def test_prompt_rows_do_not_repeat_batch_labels_and_details_own_variable_height() -> None:
+    source = PROMPTS_JS.read_text(encoding="utf-8")
+    css = PROMPTS_CSS.read_text(encoding="utf-8")
+    entry = extract_function_body(source, "function _buildEntry(entry, query)")
+    header = _rule_body(css, ".prompts-entry-header")
+    main = _rule_body(css, ".prompts-entry-main")
+
+    assert "_buildBatchChip" not in source
+    assert "prompts-batch-chip" not in source
+    assert ".prompts-batch-chip" not in css
+    assert "grid-row: 1 / span 2;" in header
+    assert "grid-column: 2;" in main
+    assert entry.index("card.appendChild(textWrap)") < entry.index("card.appendChild(actions)")
 
 
 def test_prompt_scope_drives_grouping_and_all_batches_is_a_combobox_option() -> None:

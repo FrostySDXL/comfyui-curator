@@ -434,14 +434,6 @@
             return chip;
         }
 
-        function _buildBatchChip(batch) {
-            if (!batch) return null;
-            const chip = document.createElement('span');
-            chip.className = 'prompts-batch-chip';
-            chip.textContent = batch;
-            return chip;
-        }
-
         function _buildActionChip(label, className, onClick) {
             const btn = document.createElement('button');
             btn.type = 'button';
@@ -536,9 +528,7 @@
             const header = document.createElement('div');
             header.className = 'prompts-entry-header';
             header.appendChild(_buildCountChip(entry.count || 0));
-            const batchChip = _buildBatchChip(entry.batch);
-            if (batchChip) header.appendChild(batchChip);
-            const selectButton = _buildActionChip(isSelected ? 'Selected' : 'Select prompt', 'prompts-select-entry', event => {
+            const selectButton = _buildActionChip(isSelected ? 'Selected' : 'Select', 'prompts-select-entry', event => {
                 event.stopPropagation();
                 _selectPromptEntry(entryKey, true);
             });
@@ -685,9 +675,9 @@
 
         function _buildEmptyCta(batch, hasExisting) {
             const wrap = document.createElement('div');
-            wrap.className = 'prompts-empty-cta';
-            const title = createTextElement('div', 'prompts-empty-title', `No prompt index for ${batch}`);
-            const body = createTextElement('p', 'prompts-empty-body', 'Build the index to search every prompt text in this batch and see which prompts get reused the most.');
+            wrap.className = 'prompts-empty-state';
+            const title = createTextElement('div', 'prompts-empty-title', 'Index not built');
+            const body = createTextElement('p', 'prompts-empty-body', `Build an index for ${batch} to search prompt metadata.`);
             const cta = document.createElement('button');
             cta.type = 'button';
             cta.className = 'prompts-empty-build-btn prompts-primary-action';
@@ -699,18 +689,26 @@
 
         function _buildAllEmptyState() {
             const wrap = document.createElement('div');
-            wrap.className = 'prompts-empty-cta';
-            wrap.appendChild(createTextElement('div', 'prompts-empty-title', 'No prompt indexes found'));
-            wrap.appendChild(createTextElement('p', 'prompts-empty-body', 'Open a single batch above to build its index. Aggregate view shows indexes already built.'));
+            wrap.className = 'prompts-empty-state';
+            wrap.appendChild(createTextElement('div', 'prompts-empty-title', 'No prompt indexes'));
+            wrap.appendChild(createTextElement('p', 'prompts-empty-body', 'Choose a batch to build its index, or use Build All Indexes below.'));
             return wrap;
         }
 
         function _buildNoMatchesState(query, totalCount) {
             const wrap = document.createElement('div');
-            wrap.className = 'prompts-empty-cta';
+            wrap.className = 'prompts-empty-state';
+            if (!query) {
+                wrap.appendChild(createTextElement('div', 'prompts-empty-title', 'No prompts found'));
+                const emptyCopy = promptsCurrentBatch
+                    ? 'This index contains no prompt metadata.'
+                    : 'No indexed prompts are available across the current scope.';
+                wrap.appendChild(createTextElement('p', 'prompts-empty-body', emptyCopy));
+                return wrap;
+            }
             const title = createTextElement('div', 'prompts-empty-title', `No prompts match "${query}"`);
             wrap.appendChild(title);
-            const body = createTextElement('p', 'prompts-empty-body', `${totalCount} prompt${totalCount === 1 ? '' : 's'} available across the current scope.`);
+            const body = createTextElement('p', 'prompts-empty-body', `${totalCount} prompt${totalCount === 1 ? '' : 's'} available. Try a different search.`);
             wrap.appendChild(body);
             return wrap;
         }

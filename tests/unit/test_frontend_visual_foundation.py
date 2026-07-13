@@ -218,7 +218,7 @@ def test_prompt_history_uses_cohesive_semantic_surface_layers() -> None:
             "background: var(--surface-2);",
             "border: 1px solid var(--border-subtle);",
         ),
-        ".prompts-empty-cta": ("background: var(--surface-2);", "color: var(--text-secondary);"),
+        ".prompts-empty-state": ("color: var(--text-secondary);",),
         ".prompts-workbench-footer": (
             "border-top: 1px solid var(--border-subtle);",
             "background: var(--surface-2);",
