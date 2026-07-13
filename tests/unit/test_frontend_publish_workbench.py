@@ -918,8 +918,8 @@ def test_publish_result_uses_a_reserved_visibility_controlled_slot() -> None:
     result = _rule_body(css, ".publish-result")
     visible = _rule_body(css, ".publish-result.is-visible")
     assert "box-sizing: border-box;" in result
-    assert "height: 36px;" in result
-    assert "padding: 3px 18px;" in result
+    assert "height: 44px;" in result
+    assert "padding: 6px 18px;" in result
     assert "visibility: hidden;" in result
     assert "visibility: visible;" in visible
     assert ".publish-result.hidden" not in css
@@ -971,6 +971,13 @@ def test_publish_preview_navigation_preserves_selection_order_and_resets_view() 
     assert "resetPublishPreviewView(false);" in update
     assert "navigatePublishPreview(-1)" in events
     assert "navigatePublishPreview(1)" in events
+
+
+def test_single_image_preview_navigation_really_collapses() -> None:
+    css = MODALS_CSS.read_text(encoding="utf-8")
+
+    hidden_navigation = _rule_body(css, ".publish-preview-navigation[hidden]")
+    assert "display: none;" in hidden_navigation
 
 
 def test_publish_preview_navigation_does_not_change_export_filename_set() -> None:

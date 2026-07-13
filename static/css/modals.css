@@ -149,6 +149,7 @@
              color: var(--text-secondary);
              font-size: 12px;
          }
+         .publish-preview-navigation[hidden] { display: none; }
          .publish-preview-navigation button,
          .publish-preview-controls button {
              box-sizing: border-box;
@@ -473,9 +474,9 @@
              justify-content: space-between;
              gap: 10px;
              box-sizing: border-box;
-             height: 36px;
+             height: 44px;
              margin: 0;
-             padding: 3px 18px;
+             padding: 6px 18px;
              border-top: 1px solid transparent;
              border-bottom: 1px solid transparent;
              border-radius: 0;
