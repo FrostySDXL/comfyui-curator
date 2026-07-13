@@ -76,11 +76,21 @@
 
         @media (max-width: 760px) {
             .publish-workbench-body { grid-template-columns: minmax(0, 1fr); }
-            .publish-settings-rail { border-right: 0; border-bottom: 1px solid var(--border-subtle); }
+             .publish-settings-rail {
+                 margin: 10px 10px 0;
+                 border: 1px solid var(--border-subtle);
+                 border-radius: 6px;
+             }
             .publish-preview-pane { --publish-preview-height: min(44vh, 360px); }
             .publish-preview-frame { min-height: 180px; }
             .publish-preset-save-row { grid-template-columns: minmax(0, 1fr); }
-            .publish-preset-save-row button { width: 100%; }
+             .publish-preset-save-row button { width: 100%; }
+             .publish-preview-controls {
+                 align-items: stretch;
+                 flex-direction: column;
+             }
+             .publish-preview-zoom-actions { width: 100%; }
+             .publish-preview-zoom-actions button { flex: 1; }
             .publish-workbench-footer {
                 align-items: stretch;
                 flex-direction: column;

@@ -397,11 +397,12 @@
                     <div class="publish-presets">
                         <div class="publish-presets-label">Saved presets</div>
                         <div id="publish-preset-list" class="publish-preset-list" aria-live="polite"></div>
-                        <div class="publish-preset-save-row">
-                            <label class="publish-field publish-preset-name-field">Preset name
+                        <div class="publish-preset-name-field">
+                            <label for="publish-preset-name">Preset name</label>
+                            <div class="publish-preset-save-row">
                                 <input id="publish-preset-name" type="text" placeholder="e.g. Bluesky watermark" autocomplete="off">
-                            </label>
-                            <button id="publish-preset-save-btn" type="button">Save preset</button>
+                                <button id="publish-preset-save-btn" type="button">Save preset</button>
+                            </div>
                         </div>
                     </div>
                     <label class="publish-check"><input type="checkbox" id="publish-strip-metadata" checked> Strip metadata</label>
@@ -429,7 +430,12 @@
                     </div>
                 </aside>
                 <section class="publish-preview-pane" aria-label="Watermark preview">
-                    <div id="publish-preview-frame" class="publish-preview-frame">
+                    <div id="publish-preview-navigation" class="publish-preview-navigation" aria-label="Selected image preview navigation" hidden>
+                        <button id="publish-preview-prev-btn" type="button">Previous</button>
+                        <span id="publish-preview-position" aria-live="polite">1 of 1</span>
+                        <button id="publish-preview-next-btn" type="button">Next</button>
+                    </div>
+                    <div id="publish-preview-frame" class="publish-preview-frame" tabindex="0" aria-label="Selected source preview" aria-describedby="publish-preview-guidance">
                         <div id="publish-preview-image-wrap" class="publish-preview-image-wrap">
                             <img id="publish-preview-image" alt="Selected source preview" />
                             <span id="publish-preview-watermark" class="publish-preview-watermark" aria-hidden="true"></span>
@@ -441,7 +447,17 @@
                         <div id="publish-preview-empty" class="publish-preview-empty">Select images to preview the watermark.</div>
                         <div id="publish-preview-error" class="publish-preview-error hidden">Preview unavailable for this image.</div>
                     </div>
+                    <div class="publish-preview-controls" aria-label="Preview zoom controls">
+                        <button id="publish-preview-activation" type="button" aria-pressed="false">Enable zoom and pan</button>
+                        <span class="publish-preview-zoom-actions">
+                            <button id="publish-preview-zoom-out-btn" type="button" aria-label="Zoom preview out">&minus;</button>
+                            <button id="publish-preview-reset-btn" type="button">Reset 100%</button>
+                            <button id="publish-preview-zoom-in-btn" type="button" aria-label="Zoom preview in">+</button>
+                            <span id="publish-preview-zoom-level" aria-live="polite">100%</span>
+                        </span>
+                    </div>
                     <p class="publish-preview-note">Approximate preview — the final watermark is rendered server-side.</p>
+                    <p id="publish-preview-guidance" class="publish-preview-guidance">Click the preview to enable zoom and pan. Use the wheel to zoom and drag to pan.</p>
                     <p id="publish-preview-metadata-note" class="publish-preview-metadata-note">Metadata will be stripped from generated copies.</p>
                 </section>
             </div>

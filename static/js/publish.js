@@ -7,6 +7,16 @@ let pendingPublicMoveConfirmDestination = null;
 let publicDestinationBrowserPath = '';
 let publishSubmitInflight = false;
 let publishPreviewToken = 0;
+const PUBLISH_PREVIEW_MIN_ZOOM = 1;
+const PUBLISH_PREVIEW_MAX_ZOOM = 4;
+const PUBLISH_PREVIEW_ZOOM_STEP = 0.25;
+let publishPreviewSources = [];
+let publishPreviewIndex = 0;
+let publishPreviewActive = false;
+let publishPreviewZoom = PUBLISH_PREVIEW_MIN_ZOOM;
+let publishPreviewPanX = 0;
+let publishPreviewPanY = 0;
+let publishPreviewPanState = null;
 const PUBLIC_DESTINATION_HISTORY_KEY = 'imageCurator.publicDestinationHistory';
 const PUBLIC_DESTINATION_HISTORY_LIMIT = 10;
 const PUBLISH_PRESETS_KEY = 'imageCurator.publishPresets';
@@ -38,11 +48,15 @@ function showPublishModal() {
             const result = document.getElementById('publish-result');
             if (result) result.classList.add('hidden');
             syncPublishSubmitActivity(publishSubmitInflight);
-            const submitBtn = document.getElementById('publish-submit-btn');
-            if (submitBtn) submitBtn.disabled = publishSubmitInflight;
-            renderPublishPresets();
-            modal.classList.add('active');
-            updatePublishPreview();
+             const submitBtn = document.getElementById('publish-submit-btn');
+             if (submitBtn) submitBtn.disabled = publishSubmitInflight;
+             renderPublishPresets();
+             publishPreviewSources = getSelectedSourceImages();
+             publishPreviewIndex = 0;
+             resetPublishPreviewView(false);
+             syncPublishPreviewNavigation();
+             modal.classList.add('active');
+             updatePublishPreview();
             const closeButton = modal.querySelector('.publish-workbench-footer .cancel');
             _trapFocus(modal, closeButton);
         }
@@ -64,8 +78,11 @@ function showLightboxPublishModal() {
             showPublishModal();
         }
 
-        function hidePublishModal() {
-            publishPreviewToken += 1;
+         function hidePublishModal() {
+             publishPreviewToken += 1;
+             resetPublishPreviewView(false);
+             publishPreviewSources = [];
+             publishPreviewIndex = 0;
             const img = document.getElementById('publish-preview-image');
             if (img) {
                 img.onload = null;
@@ -86,8 +103,12 @@ function showLightboxPublishModal() {
         }
 
 function getSelectedSourceFilenames() {
-            return images.filter(img => selectedImages.has(img.name)).map(img => img.name);
-        }
+             return images.filter(img => selectedImages.has(img.name)).map(img => img.name);
+         }
+
+function getSelectedSourceImages() {
+             return getCurrentDisplayImages().filter(img => selectedImages.has(img.name));
+         }
 
 function updatePublishSourceSummary() {
             const summary = document.getElementById('publish-source-summary');
@@ -151,12 +172,144 @@ function buildPublishWatermarkOptions() {
             };
         }
 
-function getFirstSelectedSourceImage() {
-            const selected = images.filter(img => selectedImages.has(img.name));
-            if (!selected.length) return null;
-            // Prefer a non-public review-folder image; public views are blocked upstream.
-            return selected.find(img => !img.public) || selected[0];
-        }
+function syncPublishPreviewNavigation() {
+             const controls = document.getElementById('publish-preview-navigation');
+             const previous = document.getElementById('publish-preview-prev-btn');
+             const next = document.getElementById('publish-preview-next-btn');
+             const position = document.getElementById('publish-preview-position');
+             const total = publishPreviewSources.length;
+             if (controls) controls.hidden = total <= 1;
+             if (previous) previous.disabled = publishPreviewIndex <= 0;
+             if (next) next.disabled = publishPreviewIndex >= total - 1;
+             if (position) position.textContent = total ? `${publishPreviewIndex + 1} of ${total}` : '0 of 0';
+         }
+
+function navigatePublishPreview(delta) {
+             if (publishPreviewSources.length <= 1) return;
+             const nextIndex = Math.min(
+                 publishPreviewSources.length - 1,
+                 Math.max(0, publishPreviewIndex + delta),
+             );
+             if (nextIndex === publishPreviewIndex) return;
+             publishPreviewIndex = nextIndex;
+             syncPublishPreviewNavigation();
+             updatePublishPreview();
+         }
+
+function clearPublishPreviewPan() {
+             const frame = document.getElementById('publish-preview-frame');
+             const pointerId = publishPreviewPanState?.pointerId;
+             if (frame && pointerId !== undefined && frame.hasPointerCapture(pointerId)) {
+                 frame.releasePointerCapture(pointerId);
+             }
+             if (frame) frame.classList.remove('is-panning');
+             publishPreviewPanState = null;
+         }
+
+function applyPublishPreviewView() {
+             const frame = document.getElementById('publish-preview-frame');
+             const wrap = document.getElementById('publish-preview-image-wrap');
+             const activation = document.getElementById('publish-preview-activation');
+             const level = document.getElementById('publish-preview-zoom-level');
+             if (!frame || !wrap) return;
+             const maxX = Math.max(0, ((wrap.offsetWidth * publishPreviewZoom) - frame.clientWidth) / 2);
+             const maxY = Math.max(0, ((wrap.offsetHeight * publishPreviewZoom) - frame.clientHeight) / 2);
+             publishPreviewPanX = Math.min(maxX, Math.max(-maxX, publishPreviewPanX));
+             publishPreviewPanY = Math.min(maxY, Math.max(-maxY, publishPreviewPanY));
+             wrap.style.transform = `translate(${publishPreviewPanX}px, ${publishPreviewPanY}px) scale(${publishPreviewZoom})`;
+             frame.classList.toggle('is-active', publishPreviewActive);
+             frame.classList.toggle('is-zoomed', publishPreviewZoom > PUBLISH_PREVIEW_MIN_ZOOM);
+             if (activation) {
+                 activation.textContent = publishPreviewActive ? 'Zoom and pan on' : 'Enable zoom and pan';
+                 activation.setAttribute('aria-pressed', publishPreviewActive ? 'true' : 'false');
+             }
+             if (level) level.textContent = `${Math.round(publishPreviewZoom * 100)}%`;
+         }
+
+function setPublishPreviewActive(active) {
+             publishPreviewActive = active === true;
+             if (!publishPreviewActive) {
+                 clearPublishPreviewPan();
+                 publishPreviewZoom = PUBLISH_PREVIEW_MIN_ZOOM;
+                 publishPreviewPanX = 0;
+                 publishPreviewPanY = 0;
+             }
+             applyPublishPreviewView();
+         }
+
+function resetPublishPreviewView(active = publishPreviewActive) {
+             clearPublishPreviewPan();
+             publishPreviewActive = active === true;
+             publishPreviewZoom = PUBLISH_PREVIEW_MIN_ZOOM;
+             publishPreviewPanX = 0;
+             publishPreviewPanY = 0;
+             applyPublishPreviewView();
+         }
+
+function zoomPublishPreview(delta, anchorEvent = null) {
+             if (!publishPreviewActive) setPublishPreviewActive(true);
+             const currentZoom = publishPreviewZoom;
+             const nextZoom = Math.min(
+                 PUBLISH_PREVIEW_MAX_ZOOM,
+                 Math.max(PUBLISH_PREVIEW_MIN_ZOOM, +(currentZoom + delta).toFixed(2)),
+             );
+             if (nextZoom === currentZoom) return;
+             if (anchorEvent) {
+                 const frame = document.getElementById('publish-preview-frame');
+                 const rect = frame?.getBoundingClientRect();
+                 if (rect) {
+                     const ratio = nextZoom / currentZoom;
+                     publishPreviewPanX -= (anchorEvent.clientX - (rect.left + rect.width / 2)) * (ratio - 1);
+                     publishPreviewPanY -= (anchorEvent.clientY - (rect.top + rect.height / 2)) * (ratio - 1);
+                 }
+             }
+             publishPreviewZoom = nextZoom;
+             applyPublishPreviewView();
+         }
+
+function handlePublishPreviewWheel(event) {
+             if (!publishPreviewActive) return;
+             event.preventDefault();
+             zoomPublishPreview(event.deltaY < 0 ? PUBLISH_PREVIEW_ZOOM_STEP : -PUBLISH_PREVIEW_ZOOM_STEP, event);
+         }
+
+function handlePublishPreviewKeydown(event) {
+             if (event.key === 'Enter' || event.key === ' ') {
+                 event.preventDefault();
+                 setPublishPreviewActive(!publishPreviewActive);
+             }
+         }
+
+function startPublishPreviewPan(event) {
+             if (!publishPreviewActive || publishPreviewZoom <= PUBLISH_PREVIEW_MIN_ZOOM || event.button !== 0) return;
+             const frame = document.getElementById('publish-preview-frame');
+             if (!frame) return;
+             publishPreviewPanState = {
+                 pointerId: event.pointerId,
+                 startX: event.clientX,
+                 startY: event.clientY,
+                 panX: publishPreviewPanX,
+                 panY: publishPreviewPanY,
+             };
+             frame.classList.add('is-panning');
+             frame.setPointerCapture(event.pointerId);
+             event.preventDefault();
+         }
+
+function movePublishPreviewPan(event) {
+             if (!publishPreviewPanState || event.pointerId !== publishPreviewPanState.pointerId) return;
+             publishPreviewPanX = publishPreviewPanState.panX + event.clientX - publishPreviewPanState.startX;
+             publishPreviewPanY = publishPreviewPanState.panY + event.clientY - publishPreviewPanState.startY;
+             applyPublishPreviewView();
+             event.preventDefault();
+         }
+
+function endPublishPreviewPan(event) {
+             if (!publishPreviewPanState || event.pointerId !== publishPreviewPanState.pointerId) return;
+             const frame = document.getElementById('publish-preview-frame');
+             if (frame?.hasPointerCapture(event.pointerId)) frame.releasePointerCapture(event.pointerId);
+             clearPublishPreviewPan();
+         }
 
 function setPublishPreviewState(state) {
             const frame = document.getElementById('publish-preview-frame');
@@ -207,20 +360,22 @@ function updatePublishWatermarkOverlay() {
             const w = img.clientWidth;
             const h = img.clientHeight;
             if (w <= 0 || h <= 0) return;
-            wrap.style.width = w + 'px';
-            wrap.style.height = h + 'px';
-            updatePublishWatermarkOverlay();
-        }
+             wrap.style.width = w + 'px';
+             wrap.style.height = h + 'px';
+             updatePublishWatermarkOverlay();
+             applyPublishPreviewView();
+         }
 
         function updatePublishPreview() {
             const img = document.getElementById('publish-preview-image');
             const overlay = document.getElementById('publish-preview-watermark');
-            const wrap = document.getElementById('publish-preview-image-wrap');
-            if (!img || !overlay) return;
-            if (wrap) { wrap.style.width = ''; wrap.style.height = ''; }
+             const wrap = document.getElementById('publish-preview-image-wrap');
+             if (!img || !overlay) return;
+             resetPublishPreviewView(false);
+             if (wrap) { wrap.style.width = ''; wrap.style.height = ''; }
             publishPreviewToken += 1;
             const token = publishPreviewToken;
-            const source = getFirstSelectedSourceImage();
+             const source = publishPreviewSources[publishPreviewIndex];
             if (!source || !currentBatch || !currentFolder) {
                 img.removeAttribute('src');
                 img.style.display = 'none';

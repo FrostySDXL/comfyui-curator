@@ -636,7 +636,7 @@ def test_publish_preview_keeps_the_full_image_inspectable() -> None:
     frame = _rule_body(css, ".publish-preview-frame")
     pane = _rule_body(css, ".publish-preview-pane")
     image = _rule_body(css, ".publish-preview-image-wrap img")
-    assert "overflow: auto;" in frame
+    assert "overflow: hidden;" in frame
     assert "height: var(--publish-preview-height);" in frame
     assert "min-height: 0;" in pane
     assert "overflow: hidden;" in pane
@@ -679,15 +679,22 @@ def test_publish_shell_is_continuous_bounded_and_surface_consistent() -> None:
 
 
 def test_publish_preset_save_row_has_aligned_controls_and_narrow_wrap() -> None:
+    markup = _publish_markup()
     css = MODALS_CSS.read_text(encoding="utf-8")
     responsive = RESPONSIVE_CSS.read_text(encoding="utf-8")
 
     row = _rule_body(css, ".publish-preset-save-row")
     button = _rule_body(css, ".publish-preset-save-row button")
-    input_rule = _rule_body(css, ".publish-preset-name-field input")
+    input_rule = _rule_body(css, ".publish-preset-save-row input")
+    field = markup.split('class="publish-preset-name-field"', 1)[1].split("</div>", 2)[0]
+    assert '<label for="publish-preset-name">Preset name</label>' in field
+    assert field.index('class="publish-preset-save-row"') < field.index('id="publish-preset-name"')
+    assert field.index('id="publish-preset-name"') < field.index('id="publish-preset-save-btn"')
     assert "display: grid;" in row
-    assert "align-items: end;" in row
+    assert "align-items: stretch;" in row
     assert "grid-template-columns: minmax(0, 1fr) auto;" in row
+    assert "box-sizing: border-box;" in button
+    assert "box-sizing: border-box;" in input_rule
     assert "height: 34px;" in button
     assert "height: 34px;" in input_rule
     assert ".publish-preset-save-row" in responsive
@@ -735,3 +742,153 @@ def test_publish_success_preserves_source_selection_for_repeat_export() -> None:
     assert "selectedImages.has(img.name)" in filenames
     assert "selectedImages.clear()" not in filenames
     assert "selectedImages =" not in filenames
+
+
+def test_publish_settings_rail_is_inset_inside_continuous_shell() -> None:
+    css = MODALS_CSS.read_text(encoding="utf-8")
+
+    body = _rule_body(css, ".publish-workbench-body")
+    rail = _rule_body(css, ".publish-settings-rail")
+    assert "background: var(--surface-1);" in body
+    assert "margin: 10px 0 10px 10px;" in rail
+    assert "border: 1px solid var(--border-subtle);" in rail
+    assert "border-radius: 6px 0 0 6px;" in rail
+
+
+def test_publish_preview_has_accessible_activation_zoom_and_guidance_markup() -> None:
+    markup = _publish_markup()
+
+    frame_tag = markup.split('id="publish-preview-frame"', 1)[1].split(">", 1)[0]
+    assert 'tabindex="0"' in frame_tag
+    assert 'aria-describedby="publish-preview-guidance"' in frame_tag
+    for control_id in (
+        "publish-preview-prev-btn",
+        "publish-preview-position",
+        "publish-preview-next-btn",
+        "publish-preview-activation",
+        "publish-preview-zoom-out-btn",
+        "publish-preview-reset-btn",
+        "publish-preview-zoom-in-btn",
+        "publish-preview-guidance",
+    ):
+        assert markup.count(f'id="{control_id}"') == 1, control_id
+    assert (
+        "Click the preview to enable zoom and pan. Use the wheel to zoom and drag to pan." in markup
+    )
+    assert ">100%<" in markup
+
+
+def test_publish_preview_zoom_pan_state_is_bounded_and_applied_without_scrollbars() -> None:
+    source = PUBLISH_JS.read_text(encoding="utf-8")
+    css = MODALS_CSS.read_text(encoding="utf-8")
+
+    frame = _rule_body(css, ".publish-preview-frame")
+    image = _rule_body(css, ".publish-preview-image-wrap img")
+    assert "overflow: hidden;" in frame
+    assert "object-fit: contain;" in image
+    assert "max-width: 100%;" in image
+    assert "max-height: var(--publish-preview-height);" in image
+    assert "const PUBLISH_PREVIEW_MIN_ZOOM = 1;" in source
+    assert "const PUBLISH_PREVIEW_MAX_ZOOM = 4;" in source
+    assert "let publishPreviewActive = false;" in source
+    assert "let publishPreviewZoom = PUBLISH_PREVIEW_MIN_ZOOM;" in source
+    assert "let publishPreviewPanX = 0;" in source
+    assert "let publishPreviewPanY = 0;" in source
+    apply_view = extract_function_body(source, "function applyPublishPreviewView()")
+    zoom = extract_function_body(source, "function zoomPublishPreview(delta, anchorEvent = null)")
+    assert "PUBLISH_PREVIEW_MAX_ZOOM" in zoom and "Math.min(" in zoom
+    assert "PUBLISH_PREVIEW_MIN_ZOOM" in zoom and "Math.max(" in zoom
+    assert "translate(" in apply_view
+    assert "scale(" in apply_view
+    assert "is-active" in apply_view
+
+
+def test_publish_preview_activation_wheel_pointer_reset_and_cleanup_are_wired() -> None:
+    source = PUBLISH_JS.read_text(encoding="utf-8")
+    events = EVENTS_JS.read_text(encoding="utf-8")
+
+    for name in (
+        "setPublishPreviewActive",
+        "zoomPublishPreview",
+        "resetPublishPreviewView",
+        "handlePublishPreviewWheel",
+        "startPublishPreviewPan",
+        "movePublishPreviewPan",
+        "endPublishPreviewPan",
+        "handlePublishPreviewKeydown",
+    ):
+        assert f"function {name}(" in source, name
+    keydown = extract_function_body(source, "function handlePublishPreviewKeydown(event)")
+    assert "event.key === 'Enter' || event.key === ' '" in keydown
+    assert "setPublishPreviewActive(!publishPreviewActive)" in keydown
+    wheel = extract_function_body(source, "function handlePublishPreviewWheel(event)")
+    assert "if (!publishPreviewActive) return;" in wheel
+    assert "event.preventDefault();" in wheel
+    start_pan = extract_function_body(source, "function startPublishPreviewPan(event)")
+    assert "publishPreviewZoom <= PUBLISH_PREVIEW_MIN_ZOOM" in start_pan
+    assert "setPointerCapture" in start_pan
+    clear_pan = extract_function_body(source, "function clearPublishPreviewPan()")
+    assert "hasPointerCapture" in clear_pan
+    assert "releasePointerCapture" in clear_pan
+    assert "publishPreviewFrame.addEventListener('click'" in events
+    assert "publishPreviewFrame.addEventListener('keydown', handlePublishPreviewKeydown);" in events
+    assert "publishPreviewFrame.addEventListener('wheel', handlePublishPreviewWheel" in events
+    assert "publishPreviewFrame.addEventListener('pointerdown', startPublishPreviewPan);" in events
+    assert "publishPreviewFrame.addEventListener('pointermove', movePublishPreviewPan);" in events
+    assert "publishPreviewFrame.addEventListener('pointerup', endPublishPreviewPan);" in events
+    assert "publishPreviewFrame.addEventListener('pointercancel', endPublishPreviewPan);" in events
+    hide = extract_function_body(source, "function hidePublishModal()")
+    update = extract_function_body(source, "function updatePublishPreview()")
+    assert "resetPublishPreviewView(false);" in hide
+    assert "resetPublishPreviewView(false);" in update
+
+
+def test_publish_preset_list_reserves_scrollbar_gutter_and_truncates_names() -> None:
+    css = MODALS_CSS.read_text(encoding="utf-8")
+
+    preset_list = _rule_body(css, ".publish-preset-list")
+    row = _rule_body(css, ".publish-preset-row")
+    apply_button = _rule_body(css, ".publish-preset-apply")
+    delete_button = _rule_body(css, ".publish-preset-delete")
+    assert "padding-right: 12px;" in preset_list
+    assert "scrollbar-gutter: stable;" in preset_list
+    assert "min-width: 0;" in row
+    assert "min-width: 0;" in apply_button
+    assert "overflow: hidden;" in apply_button
+    assert "text-overflow: ellipsis;" in apply_button
+    assert "flex-shrink: 0;" in delete_button
+
+
+def test_publish_preview_navigation_preserves_selection_order_and_resets_view() -> None:
+    source = PUBLISH_JS.read_text(encoding="utf-8")
+    events = EVENTS_JS.read_text(encoding="utf-8")
+
+    selected = extract_function_body(source, "function getSelectedSourceImages()")
+    assert "getCurrentDisplayImages().filter(img => selectedImages.has(img.name))" in selected
+    assert ".sort(" not in selected
+    assert "let publishPreviewSources = [];" in source
+    assert "let publishPreviewIndex = 0;" in source
+    assert "function syncPublishPreviewNavigation()" in source
+    navigate = extract_function_body(source, "function navigatePublishPreview(delta)")
+    assert "publishPreviewSources.length <= 1" in navigate
+    assert "Math.min(" in navigate and "Math.max(" in navigate
+    assert "updatePublishPreview();" in navigate
+    update = extract_function_body(source, "function updatePublishPreview()")
+    assert "publishPreviewSources[publishPreviewIndex]" in update
+    assert "ccImageUrl(currentBatch, currentFolder, source.name)" in update
+    assert "publishPreviewToken" in update
+    assert "resetPublishPreviewView(false);" in update
+    assert "navigatePublishPreview(-1)" in events
+    assert "navigatePublishPreview(1)" in events
+
+
+def test_publish_preview_navigation_does_not_change_export_filename_set() -> None:
+    source = PUBLISH_JS.read_text(encoding="utf-8")
+    submit = extract_function_body(source, "async function submitPublicExport()")
+    filenames = extract_function_body(source, "function getSelectedSourceFilenames()")
+    navigate = extract_function_body(source, "function navigatePublishPreview(delta)")
+
+    assert "const filenames = getSelectedSourceFilenames();" in submit
+    assert "images.filter(img => selectedImages.has(img.name)).map(img => img.name)" in filenames
+    assert "selectedImages" not in navigate
+    assert "filenames" not in navigate

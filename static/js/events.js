@@ -161,9 +161,31 @@ function _bindDelegatedEvents() {
             });
             const publishResetWatermarkBtn = document.getElementById('publish-reset-watermark-btn');
             if (publishResetWatermarkBtn) publishResetWatermarkBtn.addEventListener('click', () => { resetPublishWatermarkDefaults(); updatePublishWatermarkOverlay(); });
-            const publishStripMetadata = document.getElementById('publish-strip-metadata');
-            if (publishStripMetadata) publishStripMetadata.addEventListener('change', syncPublishMetadataNote);
-            const publishViewPublicBtn = document.getElementById('publish-view-public-btn');
+             const publishStripMetadata = document.getElementById('publish-strip-metadata');
+             if (publishStripMetadata) publishStripMetadata.addEventListener('change', syncPublishMetadataNote);
+             const publishPreviewFrame = document.getElementById('publish-preview-frame');
+             if (publishPreviewFrame) {
+                 publishPreviewFrame.addEventListener('click', () => setPublishPreviewActive(true));
+                 publishPreviewFrame.addEventListener('keydown', handlePublishPreviewKeydown);
+                 publishPreviewFrame.addEventListener('wheel', handlePublishPreviewWheel, {passive: false});
+                 publishPreviewFrame.addEventListener('pointerdown', startPublishPreviewPan);
+                 publishPreviewFrame.addEventListener('pointermove', movePublishPreviewPan);
+                 publishPreviewFrame.addEventListener('pointerup', endPublishPreviewPan);
+                 publishPreviewFrame.addEventListener('pointercancel', endPublishPreviewPan);
+             }
+             const publishPreviewActivation = document.getElementById('publish-preview-activation');
+             if (publishPreviewActivation) publishPreviewActivation.addEventListener('click', () => setPublishPreviewActive(!publishPreviewActive));
+             const publishPreviewZoomOut = document.getElementById('publish-preview-zoom-out-btn');
+             if (publishPreviewZoomOut) publishPreviewZoomOut.addEventListener('click', () => zoomPublishPreview(-PUBLISH_PREVIEW_ZOOM_STEP));
+             const publishPreviewReset = document.getElementById('publish-preview-reset-btn');
+             if (publishPreviewReset) publishPreviewReset.addEventListener('click', () => resetPublishPreviewView(true));
+             const publishPreviewZoomIn = document.getElementById('publish-preview-zoom-in-btn');
+             if (publishPreviewZoomIn) publishPreviewZoomIn.addEventListener('click', () => zoomPublishPreview(PUBLISH_PREVIEW_ZOOM_STEP));
+             const publishPreviewPrevious = document.getElementById('publish-preview-prev-btn');
+             if (publishPreviewPrevious) publishPreviewPrevious.addEventListener('click', () => navigatePublishPreview(-1));
+             const publishPreviewNext = document.getElementById('publish-preview-next-btn');
+             if (publishPreviewNext) publishPreviewNext.addEventListener('click', () => navigatePublishPreview(1));
+             const publishViewPublicBtn = document.getElementById('publish-view-public-btn');
             if (publishViewPublicBtn) publishViewPublicBtn.addEventListener('click', viewCreatedPublicCopies);
             const publishPresetSaveBtn = document.getElementById('publish-preset-save-btn');
             if (publishPresetSaveBtn) publishPresetSaveBtn.addEventListener('click', () => {
