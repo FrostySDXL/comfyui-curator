@@ -666,7 +666,10 @@ def test_publish_settings_rail_only_scrolls_the_capped_saved_preset_list() -> No
     rail = _rule_body(css, ".publish-settings-rail")
     presets = _rule_body(css, ".publish-preset-list")
     assert "overflow-y: auto;" not in rail
-    assert "overflow: visible;" in rail
+    # The rail must never grow its own scrollbar. Overflow is either visible
+    # (relying on the body to clip) or hidden (the rail clips itself). The
+    # preset list inside the rail is the only thing allowed to scroll.
+    assert ("overflow: visible;" in rail) or ("overflow: hidden;" in rail)
     assert "max-height:" in presets
     assert "overflow-y: auto;" in presets
     assert "scrollbar-gutter: stable;" in presets
@@ -765,7 +768,10 @@ def test_publish_settings_rail_is_inset_inside_continuous_shell() -> None:
     body = _rule_body(css, ".publish-workbench-body")
     rail = _rule_body(css, ".publish-settings-rail")
     assert "background: var(--surface-1);" in body
-    assert "margin: 10px 0 0 10px;" in rail
+    # Bottom margin is present and safe because the body uses align-items: start
+    # so the rail never stretches into the body's bottom edge and the margin
+    # creates a visible gap between the rail and the safety-note bar below.
+    assert "margin: 10px 0 10px 10px;" in rail
     assert "border: 1px solid var(--border-subtle);" in rail
     assert "border-radius: 6px;" in rail
 
@@ -993,13 +999,21 @@ def test_publish_preview_navigation_does_not_change_export_filename_set() -> Non
 
 
 def test_publish_settings_rail_bottom_margin_does_not_contribute_scroll_overflow() -> None:
-    """The settings rail bottom margin must be zero to prevent the grid item
-    margin from extending below the track and adding spurious scrollHeight
-    that creates a pointless vertical scrollbar in the workbench body."""
+    """The settings rail's bottom margin must not cause a scrollbar in the
+    workbench body. The body pins grid items to the start (align-items: start)
+    so the rail never stretches into the body's bottom edge, and the body uses
+    overflow: hidden so no scrollbar can ever appear even if a few pixels of
+    content would otherwise overflow.
+    """
     css = MODALS_CSS.read_text(encoding="utf-8")
 
+    body = _rule_body(css, ".publish-workbench-body")
     rail = _rule_body(css, ".publish-settings-rail")
-    assert "margin: 10px 0 10px 10px;" not in rail, (
-        "Settings rail must not have 10px bottom margin; "
-        "it overflows the grid track and causes spurious scrollbar"
-    )
+    # The rail can keep its 10px bottom margin because the body no longer
+    # lets it stretch to the full track height.
+    assert "margin: 10px 0 10px 10px;" in rail
+    # The body must pin grid items to the start so the rail cannot grow.
+    assert "align-items: start;" in body
+    # The body must never show a scrollbar; content is clipped instead.
+    assert "overflow: hidden;" in body
+    assert "overflow-y: auto;" not in body
