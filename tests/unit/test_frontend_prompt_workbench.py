@@ -91,7 +91,7 @@ def test_prompt_results_render_as_labeled_rows_with_display_only_image_reference
     assert "prompts-entry-main" in entry
     assert "prompts-field-label" in entry
     assert "Positive prompt" in entry
-    assert "prompts-entry-actions" in entry
+    assert "prompts-entry-heading" in entry
     assert "prompts-copy-actions" in entry
     assert "prompts-copy-pair" in entry
     assert "prompts-image-references-label" in images
@@ -221,17 +221,41 @@ def test_prompt_workbench_uses_semantic_surfaces_and_accessible_primary_pair() -
 def test_prompt_copy_actions_have_stable_horizontal_geometry() -> None:
     css = PROMPTS_CSS.read_text(encoding="utf-8")
     entry = _rule_body(css, ".prompts-entry")
-    actions = _rule_body(css, ".prompts-entry-actions")
+    heading = _rule_body(css, ".prompts-entry-heading")
     copies = _rule_body(css, ".prompts-copy-actions")
 
     assert "grid-template-columns: 64px minmax(0, 1fr);" in entry
     assert "264px" not in entry
-    assert "flex-direction: column" not in actions
-    assert "grid-column: 2;" in actions
-    assert "justify-content: flex-end;" in actions
+    assert "display: flex;" in heading
+    assert "align-items: flex-start;" in heading
+    assert "justify-content: space-between;" in heading
+    assert "flex-wrap: wrap;" in heading
     assert "grid-template-columns: repeat(3, minmax(0, 1fr));" in copies
     assert "width: 264px;" in copies
+    assert "max-width: 100%;" in copies
+    assert "flex-shrink: 0;" in copies
     assert ".prompts-copy-placeholder" in css
+
+
+def test_prompt_copy_actions_share_the_positive_heading_above_all_disclosures() -> None:
+    source = PROMPTS_JS.read_text(encoding="utf-8")
+    entry = extract_function_body(source, "function _buildEntry(entry, query)")
+
+    assert "prompts-entry-heading" in entry
+    assert (
+        "heading.appendChild(createTextElement('div', 'prompts-field-label', 'Positive prompt'));"
+        in entry
+    )
+    assert "heading.appendChild(copyActions);" in entry
+    assert "textWrap.appendChild(heading);" in entry
+    assert entry.index("textWrap.appendChild(heading)") < entry.index("textWrap.appendChild(full)")
+    assert entry.index("textWrap.appendChild(full)") < entry.index(
+        "if (neg) textWrap.appendChild(neg)"
+    )
+    assert entry.index("if (neg) textWrap.appendChild(neg)") < entry.index(
+        "if (imgs) textWrap.appendChild(imgs)"
+    )
+    assert "prompts-entry-actions" not in entry
 
 
 def test_prompt_rows_do_not_repeat_batch_labels_and_details_own_variable_height() -> None:
@@ -246,7 +270,8 @@ def test_prompt_rows_do_not_repeat_batch_labels_and_details_own_variable_height(
     assert ".prompts-batch-chip" not in css
     assert "grid-row: 1 / span 2;" in header
     assert "grid-column: 2;" in main
-    assert entry.index("card.appendChild(textWrap)") < entry.index("card.appendChild(actions)")
+    assert "card.appendChild(textWrap)" in entry
+    assert "card.appendChild(actions)" not in entry
 
 
 def test_prompt_scope_drives_grouping_and_all_batches_is_a_combobox_option() -> None:
@@ -333,10 +358,12 @@ def test_prompt_responsive_layout_keeps_copy_actions_and_context_controls_usable
     css = PROMPTS_CSS.read_text(encoding="utf-8")
 
     assert "@media (max-width: 760px)" in css
-    assert ".prompts-entry-actions { grid-column: 2;" in css
-    assert ".prompts-copy-actions { width: 100%;" in css
+    assert ".prompts-workbench-body { grid-template-columns: minmax(0, 1fr);" in css
     assert "@media (max-width: 480px)" in css
-    assert ".prompts-entry-actions { grid-column: 1;" in css
+    assert (
+        ".prompts-entry-heading { flex-direction: column; align-items: stretch; gap: 6px; }" in css
+    )
+    assert ".prompts-copy-actions { width: 100%; }" in css
 
 
 def test_prompt_template_keeps_exact_native_two_transform_parity() -> None:

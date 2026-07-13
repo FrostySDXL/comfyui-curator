@@ -544,8 +544,9 @@
             const neg = _buildNegativeDisclosure(entry.negative_prompt || '', isSelected && promptsDetailModes.negative);
             const imgs = _buildImageDisclosure(entry.images || [], isSelected && promptsDetailModes.images);
 
-            const actions = document.createElement('div');
-            actions.className = 'prompts-entry-actions';
+            const heading = document.createElement('div');
+            heading.className = 'prompts-entry-heading';
+            heading.appendChild(createTextElement('div', 'prompts-field-label', 'Positive prompt'));
             const copyActions = document.createElement('div');
             copyActions.className = 'prompts-copy-actions';
             copyActions.appendChild(_buildActionChip('copy positive', 'prompts-copy-prompt', () => copyMetadataText(promptText, 'positive prompt')));
@@ -556,9 +557,9 @@
             }
             const copyPairText = _formatCopyPair(promptText, entry.negative_prompt || '');
             copyActions.appendChild(_buildActionChip('copy pair', 'prompts-copy-pair', () => copyMetadataText(copyPairText, 'prompt pair')));
-            actions.appendChild(copyActions);
+            heading.appendChild(copyActions);
 
-            textWrap.appendChild(createTextElement('div', 'prompts-field-label', 'Positive prompt'));
+            textWrap.appendChild(heading);
             textWrap.appendChild(full);
 
             if (neg) textWrap.appendChild(neg);
@@ -566,7 +567,6 @@
 
             card.appendChild(header);
             card.appendChild(textWrap);
-            card.appendChild(actions);
             return card;
         }
 
