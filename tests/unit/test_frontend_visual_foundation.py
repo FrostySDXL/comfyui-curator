@@ -156,14 +156,34 @@ def test_visible_text_does_not_use_legacy_low_contrast_grays() -> None:
     assert not re.search(r"(?:^|[;{])\s*color:\s*#(?:555|666|777)\b", css, re.MULTILINE)
 
 
-def test_help_sticky_actions_share_the_modal_surface() -> None:
+def test_help_actions_share_the_modal_surface() -> None:
     css = Path("static/css/modals.css").read_text(encoding="utf-8")
     footer = rule_body(css, ".help-modal-content .modal-buttons")
 
-    assert "position: sticky;" in footer
     assert "background: var(--surface-2);" in footer
     assert "border-top: 1px solid var(--border-subtle);" in footer
     assert "#252525" not in footer
+
+
+def test_help_footer_is_outside_dedicated_scroll_region() -> None:
+    html = Path("templates/index.html").read_text(encoding="utf-8")
+    css = Path("static/css/modals.css").read_text(encoding="utf-8")
+    js = Path("static/js/modals.js").read_text(encoding="utf-8")
+    help_markup = html.split('id="help-modal"', 1)[1].split('id="prompts-modal"', 1)[0]
+
+    scroll_start = help_markup.index('class="help-modal-scroll"')
+    footer_start = help_markup.index('class="modal-buttons"')
+    assert scroll_start < footer_start
+    assert '</div>\n            <div class="modal-buttons">' in help_markup
+
+    content = rule_body(css, ".help-modal-content")
+    scroll = rule_body(css, ".help-modal-scroll")
+    footer = rule_body(css, ".help-modal-content .modal-buttons")
+    assert "overflow: hidden;" in content
+    assert "overflow-y: auto;" in scroll
+    assert "flex-shrink: 0;" in footer
+    assert "position: sticky;" not in footer
+    assert "modal.querySelector('.help-modal-scroll').scrollTop = 0;" in js
 
 
 def test_prompt_history_uses_cohesive_semantic_surface_layers() -> None:
@@ -240,3 +260,30 @@ def test_prompt_history_primary_and_cancel_actions_use_control_tokens() -> None:
     assert "background: var(--surface-raised);" in cancel
     assert "border: 1px solid var(--border-strong);" in cancel
     assert "color: var(--text-secondary);" in cancel
+
+
+def test_lightbox_metadata_and_ai_panels_share_a_semantic_panel_family() -> None:
+    css = Path("static/css/lightbox.css").read_text(encoding="utf-8")
+
+    shared_shell = rule_body(css, ".lightbox-metadata-panel,\n        .lightbox-ai-panel")
+    assert "background: var(--surface-overlay);" in shared_shell
+    assert "border: 1px solid var(--border-strong);" in shared_shell
+    assert "color: var(--text-secondary);" in shared_shell
+    assert "scrollbar-gutter: stable;" in shared_shell
+
+    header = rule_body(css, ".metadata-header")
+    assert "position: sticky;" in header
+    assert "background: var(--surface-overlay);" in header
+    assert "border-bottom: 1px solid var(--border-subtle);" in header
+
+    metadata_field = rule_body(css, ".metadata-field")
+    assert "background: var(--surface-2);" in metadata_field
+    assert "border: 1px solid var(--border-subtle);" in metadata_field
+
+    ai_header = rule_body(css, ".lightbox-ai-panel .ai-inspector-header")
+    assert "background: var(--surface-2);" in ai_header
+    assert "border: 1px solid var(--border-subtle);" in ai_header
+
+    ai_empty = rule_body(css, ".lightbox-ai-panel .ai-image-inspector-empty")
+    assert "background: var(--surface-2);" in ai_empty
+    assert "color: var(--text-muted);" in ai_empty

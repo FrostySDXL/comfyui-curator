@@ -18,16 +18,23 @@
             max-width: 560px;
             width: min(560px, calc(100vw - 40px));
             max-height: 80vh;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .help-modal-scroll {
+            min-height: 0;
+            padding: 25px 25px 16px;
             overflow-y: auto;
+            scrollbar-gutter: stable;
         }
         .help-modal-content .modal-buttons {
-            position: sticky;
-            bottom: -25px;
-            margin: 12px -25px -25px;
-            padding: 12px 25px 25px;
+            flex-shrink: 0;
+            padding: 12px 25px 18px;
             background: var(--surface-2);
             border-top: 1px solid var(--border-subtle);
-            box-shadow: 0 -8px 16px rgba(0,0,0,0.12);
+            box-shadow: 0 -6px 14px rgba(0,0,0,0.1);
         }
         .help-section + .help-section {
             margin-top: 16px;

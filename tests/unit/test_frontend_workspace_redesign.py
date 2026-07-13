@@ -337,10 +337,11 @@ def test_help_modal_resets_scroll_and_keeps_actions_visible() -> None:
     js = read_frontend_js()
     css = read_frontend_css()
 
-    assert "modal.querySelector('.modal-content').scrollTop = 0;" in js
+    assert "modal.querySelector('.help-modal-scroll').scrollTop = 0;" in js
+    assert ".help-modal-scroll" in css
+    assert "overflow-y: auto;" in css
     assert ".help-modal-content .modal-buttons" in css
-    assert "position: sticky;" in css
-    assert "bottom: -25px;" in css
+    assert "flex-shrink: 0;" in css
 
 
 def test_help_and_prompts_modals_close_on_backdrop_click() -> None:

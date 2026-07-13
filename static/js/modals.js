@@ -18,7 +18,7 @@ function showHelpModal() {
             const modal = document.getElementById('help-modal');
             modal.classList.add('active');
             _trapFocus(modal);
-            modal.querySelector('.modal-content').scrollTop = 0;
+            modal.querySelector('.help-modal-scroll').scrollTop = 0;
         }
 
 function hideHelpModal() {
