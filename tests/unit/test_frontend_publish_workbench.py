@@ -765,7 +765,7 @@ def test_publish_settings_rail_is_inset_inside_continuous_shell() -> None:
     body = _rule_body(css, ".publish-workbench-body")
     rail = _rule_body(css, ".publish-settings-rail")
     assert "background: var(--surface-1);" in body
-    assert "margin: 10px 0 10px 10px;" in rail
+    assert "margin: 10px 0 0 10px;" in rail
     assert "border: 1px solid var(--border-subtle);" in rail
     assert "border-radius: 6px;" in rail
 
@@ -990,3 +990,16 @@ def test_publish_preview_navigation_does_not_change_export_filename_set() -> Non
     assert "images.filter(img => selectedImages.has(img.name)).map(img => img.name)" in filenames
     assert "selectedImages" not in navigate
     assert "filenames" not in navigate
+
+
+def test_publish_settings_rail_bottom_margin_does_not_contribute_scroll_overflow() -> None:
+    """The settings rail bottom margin must be zero to prevent the grid item
+    margin from extending below the track and adding spurious scrollHeight
+    that creates a pointless vertical scrollbar in the workbench body."""
+    css = MODALS_CSS.read_text(encoding="utf-8")
+
+    rail = _rule_body(css, ".publish-settings-rail")
+    assert "margin: 10px 0 10px 10px;" not in rail, (
+        "Settings rail must not have 10px bottom margin; "
+        "it overflows the grid track and causes spurious scrollbar"
+    )
