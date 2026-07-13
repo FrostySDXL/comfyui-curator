@@ -37,6 +37,12 @@ def selectors_with_declaration(css: str, declaration: str) -> set[str]:
     return selectors
 
 
+def rule_body(css: str, selector: str) -> str:
+    match = re.search(rf"{re.escape(selector)}\s*\{{(?P<body>.*?)\}}", css, re.DOTALL)
+    assert match, selector
+    return match.group("body")
+
+
 def test_dark_theme_exposes_semantic_visual_tokens() -> None:
     base = read_base_css()
 
@@ -148,3 +154,89 @@ def test_visible_text_does_not_use_legacy_low_contrast_grays() -> None:
     css = read_frontend_css()
 
     assert not re.search(r"(?:^|[;{])\s*color:\s*#(?:555|666|777)\b", css, re.MULTILINE)
+
+
+def test_help_sticky_actions_share_the_modal_surface() -> None:
+    css = Path("static/css/modals.css").read_text(encoding="utf-8")
+    footer = rule_body(css, ".help-modal-content .modal-buttons")
+
+    assert "position: sticky;" in footer
+    assert "background: var(--surface-2);" in footer
+    assert "border-top: 1px solid var(--border-subtle);" in footer
+    assert "#252525" not in footer
+
+
+def test_prompt_history_uses_cohesive_semantic_surface_layers() -> None:
+    css = Path("static/css/prompts.css").read_text(encoding="utf-8")
+    expected_layers = {
+        ".prompts-modal-content": (
+            "background: var(--surface-1);",
+            "border-color: var(--border-strong);",
+        ),
+        ".prompts-controls": (
+            "background: var(--surface-2);",
+            "border: 1px solid var(--border-subtle);",
+        ),
+        ".prompts-batch-list": (
+            "background: var(--surface-raised);",
+            "border: 1px solid var(--border-strong);",
+        ),
+        ".prompts-entry": (
+            "background: var(--surface-2);",
+            "border: 1px solid var(--border-subtle);",
+        ),
+        ".prompts-action-chip": (
+            "background: var(--surface-raised);",
+            "color: var(--text-secondary);",
+        ),
+        ".prompts-negative": (
+            "background: var(--surface-canvas);",
+            "border: 1px solid var(--border-subtle);",
+        ),
+        ".prompts-image-groups": (
+            "background: var(--surface-canvas);",
+            "border: 1px solid var(--border-subtle);",
+        ),
+        ".prompts-empty-cta": ("background: var(--surface-2);", "color: var(--text-secondary);"),
+        ".prompts-footer": (
+            "border-top: 1px solid var(--border-subtle);",
+            "color: var(--text-muted);",
+        ),
+    }
+
+    for selector, declarations in expected_layers.items():
+        body = rule_body(css, selector)
+        for declaration in declarations:
+            assert declaration in body, selector
+
+
+def test_prompt_history_keyboard_option_focus_is_visually_distinct() -> None:
+    css = Path("static/css/prompts.css").read_text(encoding="utf-8")
+    list_body = rule_body(css, ".prompts-batch-list")
+    focus_body = rule_body(css, ".prompts-batch-option.focus")
+
+    list_background = re.search(r"background:\s*([^;]+);", list_body)
+    focus_background = re.search(r"background:\s*([^;]+);", focus_body)
+    assert list_background and focus_background
+    assert focus_background.group(1) != list_background.group(1)
+    assert "background: var(--accent-surface);" in focus_body
+    assert "box-shadow: inset 3px 0 0 var(--accent-primary);" in focus_body
+
+
+def test_prompt_history_primary_and_cancel_actions_use_control_tokens() -> None:
+    css = Path("static/css/prompts.css").read_text(encoding="utf-8")
+
+    for selector in (".prompts-empty-build-btn", "#prompts-build-all-confirm-btn"):
+        body = rule_body(css, selector)
+        assert "background: var(--button-accent-fill);" in body
+        assert "color: var(--button-accent-text);" in body
+
+    for selector in (".prompts-empty-build-btn:hover", "#prompts-build-all-confirm-btn:hover"):
+        hover = rule_body(css, selector)
+        assert "background: var(--button-accent-fill);" in hover
+        assert "filter: brightness(0.88);" in hover
+
+    cancel = rule_body(css, "#prompts-build-all-cancel-btn")
+    assert "background: var(--surface-raised);" in cancel
+    assert "border: 1px solid var(--border-strong);" in cancel
+    assert "color: var(--text-secondary);" in cancel

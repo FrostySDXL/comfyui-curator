@@ -25,7 +25,9 @@
             bottom: -25px;
             margin: 12px -25px -25px;
             padding: 12px 25px 25px;
-            background: linear-gradient(180deg, rgba(37,37,37,0), #252525 28%);
+            background: var(--surface-2);
+            border-top: 1px solid var(--border-subtle);
+            box-shadow: 0 -8px 16px rgba(0,0,0,0.12);
         }
         .help-section + .help-section {
             margin-top: 16px;
