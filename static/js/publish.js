@@ -7,16 +7,21 @@ let pendingPublicMoveConfirmDestination = null;
 let publicDestinationBrowserPath = '';
 let publishSubmitInflight = false;
 let publishPreviewToken = 0;
-const PUBLISH_PREVIEW_MIN_ZOOM = 1;
+const PUBLISH_PREVIEW_MIN_ZOOM = 0.5;
+const PUBLISH_PREVIEW_BASE_ZOOM = 1;
 const PUBLISH_PREVIEW_MAX_ZOOM = 4;
 const PUBLISH_PREVIEW_ZOOM_STEP = 0.25;
 let publishPreviewSources = [];
 let publishPreviewIndex = 0;
 let publishPreviewActive = false;
-let publishPreviewZoom = PUBLISH_PREVIEW_MIN_ZOOM;
+let publishPreviewZoom = PUBLISH_PREVIEW_BASE_ZOOM;
 let publishPreviewPanX = 0;
 let publishPreviewPanY = 0;
 let publishPreviewPanState = null;
+let publishPreviewGeometry = null;
+let publishPreviewMaxPanX = 0;
+let publishPreviewMaxPanY = 0;
+let publishPreviewRenderFrame = null;
 const PUBLIC_DESTINATION_HISTORY_KEY = 'imageCurator.publicDestinationHistory';
 const PUBLIC_DESTINATION_HISTORY_LIMIT = 10;
 const PUBLISH_PRESETS_KEY = 'imageCurator.publishPresets';
@@ -45,8 +50,7 @@ function showPublishModal() {
             updatePublishSourceSummary();
             syncPublishWatermarkFields();
             syncPublishMetadataNote();
-            const result = document.getElementById('publish-result');
-            if (result) result.classList.add('hidden');
+            setPublishResultVisible(false);
             syncPublishSubmitActivity(publishSubmitInflight);
              const submitBtn = document.getElementById('publish-submit-btn');
              if (submitBtn) submitBtn.disabled = publishSubmitInflight;
@@ -80,6 +84,7 @@ function showLightboxPublishModal() {
 
          function hidePublishModal() {
              publishPreviewToken += 1;
+             cancelPublishPreviewRender();
              resetPublishPreviewView(false);
              publishPreviewSources = [];
              publishPreviewIndex = 0;
@@ -186,6 +191,7 @@ function syncPublishPreviewNavigation() {
 
 function navigatePublishPreview(delta) {
              if (publishPreviewSources.length <= 1) return;
+             cancelPublishPreviewRender();
              const nextIndex = Math.min(
                  publishPreviewSources.length - 1,
                  Math.max(0, publishPreviewIndex + delta),
@@ -206,48 +212,87 @@ function clearPublishPreviewPan() {
              publishPreviewPanState = null;
          }
 
+function cancelPublishPreviewRender() {
+             if (publishPreviewRenderFrame === null) return;
+             cancelAnimationFrame(publishPreviewRenderFrame);
+             publishPreviewRenderFrame = null;
+         }
+
+function schedulePublishPreviewRender() {
+             if (publishPreviewRenderFrame !== null) return;
+             publishPreviewRenderFrame = requestAnimationFrame(() => {
+                 publishPreviewRenderFrame = null;
+                 applyPublishPreviewView();
+             });
+         }
+
+function updatePublishPreviewPanBounds() {
+             if (!publishPreviewGeometry) {
+                 publishPreviewMaxPanX = 0;
+                 publishPreviewMaxPanY = 0;
+             } else {
+                 publishPreviewMaxPanX = Math.max(
+                     0,
+                     ((publishPreviewGeometry.fitWidth * publishPreviewZoom) - publishPreviewGeometry.frameWidth) / 2,
+                 );
+                 publishPreviewMaxPanY = Math.max(
+                     0,
+                     ((publishPreviewGeometry.fitHeight * publishPreviewZoom) - publishPreviewGeometry.frameHeight) / 2,
+                 );
+             }
+             publishPreviewPanX = Math.min(publishPreviewMaxPanX, Math.max(-publishPreviewMaxPanX, publishPreviewPanX));
+             publishPreviewPanY = Math.min(publishPreviewMaxPanY, Math.max(-publishPreviewMaxPanY, publishPreviewPanY));
+             if (publishPreviewMaxPanX <= 0) publishPreviewPanX = 0;
+             if (publishPreviewMaxPanY <= 0) publishPreviewPanY = 0;
+         }
+
 function applyPublishPreviewView() {
              const frame = document.getElementById('publish-preview-frame');
              const wrap = document.getElementById('publish-preview-image-wrap');
              const activation = document.getElementById('publish-preview-activation');
              const level = document.getElementById('publish-preview-zoom-level');
+             const zoomOut = document.getElementById('publish-preview-zoom-out-btn');
+             const zoomIn = document.getElementById('publish-preview-zoom-in-btn');
              if (!frame || !wrap) return;
-             const maxX = Math.max(0, ((wrap.offsetWidth * publishPreviewZoom) - frame.clientWidth) / 2);
-             const maxY = Math.max(0, ((wrap.offsetHeight * publishPreviewZoom) - frame.clientHeight) / 2);
-             publishPreviewPanX = Math.min(maxX, Math.max(-maxX, publishPreviewPanX));
-             publishPreviewPanY = Math.min(maxY, Math.max(-maxY, publishPreviewPanY));
-             wrap.style.transform = `translate(${publishPreviewPanX}px, ${publishPreviewPanY}px) scale(${publishPreviewZoom})`;
+             wrap.style.transform = `translate3d(${publishPreviewPanX}px, ${publishPreviewPanY}px, 0) scale(${publishPreviewZoom})`;
              frame.classList.toggle('is-active', publishPreviewActive);
-             frame.classList.toggle('is-zoomed', publishPreviewZoom > PUBLISH_PREVIEW_MIN_ZOOM);
+             frame.classList.toggle('is-pannable', publishPreviewMaxPanX > 0 || publishPreviewMaxPanY > 0);
              if (activation) {
                  activation.textContent = publishPreviewActive ? 'Zoom and pan on' : 'Enable zoom and pan';
                  activation.setAttribute('aria-pressed', publishPreviewActive ? 'true' : 'false');
              }
              if (level) level.textContent = `${Math.round(publishPreviewZoom * 100)}%`;
+             if (zoomOut) zoomOut.disabled = publishPreviewZoom <= PUBLISH_PREVIEW_MIN_ZOOM;
+             if (zoomIn) zoomIn.disabled = publishPreviewZoom >= PUBLISH_PREVIEW_MAX_ZOOM;
          }
 
 function setPublishPreviewActive(active) {
+             cancelPublishPreviewRender();
              publishPreviewActive = active === true;
              if (!publishPreviewActive) {
                  clearPublishPreviewPan();
-                 publishPreviewZoom = PUBLISH_PREVIEW_MIN_ZOOM;
+                 publishPreviewZoom = PUBLISH_PREVIEW_BASE_ZOOM;
                  publishPreviewPanX = 0;
                  publishPreviewPanY = 0;
              }
+             updatePublishPreviewPanBounds();
              applyPublishPreviewView();
          }
 
 function resetPublishPreviewView(active = publishPreviewActive) {
+             cancelPublishPreviewRender();
              clearPublishPreviewPan();
              publishPreviewActive = active === true;
-             publishPreviewZoom = PUBLISH_PREVIEW_MIN_ZOOM;
+             publishPreviewZoom = PUBLISH_PREVIEW_BASE_ZOOM;
              publishPreviewPanX = 0;
              publishPreviewPanY = 0;
+             updatePublishPreviewPanBounds();
              applyPublishPreviewView();
          }
 
 function zoomPublishPreview(delta, anchorEvent = null) {
              if (!publishPreviewActive) setPublishPreviewActive(true);
+             cancelPublishPreviewRender();
              const currentZoom = publishPreviewZoom;
              const nextZoom = Math.min(
                  PUBLISH_PREVIEW_MAX_ZOOM,
@@ -264,6 +309,7 @@ function zoomPublishPreview(delta, anchorEvent = null) {
                  }
              }
              publishPreviewZoom = nextZoom;
+             updatePublishPreviewPanBounds();
              applyPublishPreviewView();
          }
 
@@ -281,7 +327,7 @@ function handlePublishPreviewKeydown(event) {
          }
 
 function startPublishPreviewPan(event) {
-             if (!publishPreviewActive || publishPreviewZoom <= PUBLISH_PREVIEW_MIN_ZOOM || event.button !== 0) return;
+             if (!publishPreviewActive || (publishPreviewMaxPanX <= 0 && publishPreviewMaxPanY <= 0) || event.button !== 0) return;
              const frame = document.getElementById('publish-preview-frame');
              if (!frame) return;
              publishPreviewPanState = {
@@ -298,9 +344,15 @@ function startPublishPreviewPan(event) {
 
 function movePublishPreviewPan(event) {
              if (!publishPreviewPanState || event.pointerId !== publishPreviewPanState.pointerId) return;
-             publishPreviewPanX = publishPreviewPanState.panX + event.clientX - publishPreviewPanState.startX;
-             publishPreviewPanY = publishPreviewPanState.panY + event.clientY - publishPreviewPanState.startY;
-             applyPublishPreviewView();
+             publishPreviewPanX = Math.min(
+                 publishPreviewMaxPanX,
+                 Math.max(-publishPreviewMaxPanX, publishPreviewPanState.panX + event.clientX - publishPreviewPanState.startX),
+             );
+             publishPreviewPanY = Math.min(
+                 publishPreviewMaxPanY,
+                 Math.max(-publishPreviewMaxPanY, publishPreviewPanState.panY + event.clientY - publishPreviewPanState.startY),
+             );
+             schedulePublishPreviewRender();
              event.preventDefault();
          }
 
@@ -351,17 +403,25 @@ function updatePublishWatermarkOverlay() {
             overlay.style.color = document.getElementById('publish-watermark-black')?.checked ? '#000' : '#fff';
         }
 
-        function syncPublishPreviewGeometry() {
+         function syncPublishPreviewGeometry() {
+            const frame = document.getElementById('publish-preview-frame');
             const img = document.getElementById('publish-preview-image');
             const wrap = document.getElementById('publish-preview-image-wrap');
-            if (!img || !wrap) return;
-            wrap.style.width = '';
-            wrap.style.height = '';
-            const w = img.clientWidth;
-            const h = img.clientHeight;
-            if (w <= 0 || h <= 0) return;
-             wrap.style.width = w + 'px';
-             wrap.style.height = h + 'px';
+            if (!frame || !img || !wrap) return;
+            const frameWidth = frame.clientWidth;
+            const frameHeight = frame.clientHeight;
+            const naturalWidth = img.naturalWidth;
+            const naturalHeight = img.naturalHeight;
+            if (frameWidth <= 0 || frameHeight <= 0 || naturalWidth <= 0 || naturalHeight <= 0) return;
+            const fitScale = Math.min(frameWidth / naturalWidth, frameHeight / naturalHeight);
+            const fitWidth = Math.min(frameWidth, naturalWidth * fitScale);
+            const fitHeight = Math.min(frameHeight, naturalHeight * fitScale);
+             img.style.width = `${fitWidth}px`;
+             img.style.height = `${fitHeight}px`;
+             wrap.style.width = `${fitWidth}px`;
+             wrap.style.height = `${fitHeight}px`;
+             publishPreviewGeometry = {frameWidth, frameHeight, fitWidth, fitHeight};
+             updatePublishPreviewPanBounds();
              updatePublishWatermarkOverlay();
              applyPublishPreviewView();
          }
@@ -372,7 +432,10 @@ function updatePublishWatermarkOverlay() {
              const wrap = document.getElementById('publish-preview-image-wrap');
              if (!img || !overlay) return;
              resetPublishPreviewView(false);
+             publishPreviewGeometry = null;
              if (wrap) { wrap.style.width = ''; wrap.style.height = ''; }
+             img.style.width = '';
+             img.style.height = '';
             publishPreviewToken += 1;
             const token = publishPreviewToken;
              const source = publishPreviewSources[publishPreviewIndex];
@@ -543,6 +606,16 @@ function renderPublishPresets() {
             });
         }
 
+function setPublishResultVisible(visible) {
+             const result = document.getElementById('publish-result');
+             const viewButton = document.getElementById('publish-view-public-btn');
+             if (!result) return;
+             const isVisible = visible === true;
+             result.classList.toggle('is-visible', isVisible);
+             result.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
+             if (viewButton) viewButton.disabled = !isVisible;
+         }
+
 function showPublishResult(data) {
             const result = document.getElementById('publish-result');
             const text = document.getElementById('publish-result-text');
@@ -552,7 +625,7 @@ function showPublishResult(data) {
             text.textContent = failed > 0
                 ? `Created ${exported}; ${failed} failed.`
                 : `Created ${exported} public cop${exported === 1 ? 'y' : 'ies'}.`;
-            result.classList.remove('hidden');
+            setPublishResultVisible(true);
         }
 
 async function viewCreatedPublicCopies() {

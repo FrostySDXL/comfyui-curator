@@ -402,8 +402,8 @@ def test_defect_5_image_wrapper_for_correct_watermark_geometry() -> None:
     # CSS: wrapper hugs the image, not filling the frame.
     wrap_rule = _rule_body(css, ".publish-preview-image-wrap")
     assert "position: relative;" in wrap_rule or "position:relative;" in wrap_rule
-    assert "max-width:" in wrap_rule
-    assert "max-height:" in wrap_rule
+    assert "max-width: none;" in wrap_rule
+    assert "max-height: none;" in wrap_rule
 
     # The preview frame image/styles no longer directly contain position-relative watermark anchoring.
     # The old frame-level img styles (max-width/max-height) move to the wrapper.
@@ -572,20 +572,30 @@ def test_delete_preset_reports_failure() -> None:
 
 
 def test_publish_geometry_sync_function_exists() -> None:
-    """A bounded geometry sync function sizes the image wrap to the actual rendered
-    img dimensions using clientWidth / clientHeight."""
+    """Geometry sync explicitly fits natural image dimensions to the frame client box."""
     source = PUBLISH_JS.read_text(encoding="utf-8")
 
     assert "function syncPublishPreviewGeometry(" in source
     geo_body = extract_function_body(source, "function syncPublishPreviewGeometry(")
+    assert "publish-preview-frame" in geo_body
     assert "publish-preview-image" in geo_body
+    assert "frame.clientWidth" in geo_body
+    assert "frame.clientHeight" in geo_body
+    assert "img.naturalWidth" in geo_body
+    assert "img.naturalHeight" in geo_body
+    assert "Math.min(" in geo_body
+    assert "frameWidth / naturalWidth" in geo_body
+    assert "frameHeight / naturalHeight" in geo_body
+    assert "fitWidth" in geo_body
+    assert "fitHeight" in geo_body
     assert "clientWidth" in geo_body
     assert "clientHeight" in geo_body
     assert "publish-preview-image-wrap" in geo_body
-    assert "wrap.style.width = ''" in geo_body
-    assert "wrap.style.height = ''" in geo_body
-    # Must set inline dimensions on the wrap.
-    assert "style.width" in geo_body or "style.height" in geo_body
+    assert "img.style.width" in geo_body
+    assert "img.style.height" in geo_body
+    assert "wrap.style.width" in geo_body
+    assert "wrap.style.height" in geo_body
+    assert "publishPreviewGeometry" in geo_body
 
 
 def test_geometry_sync_wired_into_preview_load_and_resize() -> None:
@@ -635,13 +645,18 @@ def test_publish_preview_keeps_the_full_image_inspectable() -> None:
 
     frame = _rule_body(css, ".publish-preview-frame")
     pane = _rule_body(css, ".publish-preview-pane")
+    wrap = _rule_body(css, ".publish-preview-image-wrap")
     image = _rule_body(css, ".publish-preview-image-wrap img")
     assert "overflow: hidden;" in frame
     assert "height: var(--publish-preview-height);" in frame
     assert "min-height: 0;" in pane
     assert "overflow: hidden;" in pane
-    assert "max-width: 100%;" in image
-    assert "max-height: var(--publish-preview-height);" in image
+    assert "max-width: none;" in wrap
+    assert "max-height: none;" in wrap
+    assert "max-width: none;" in image
+    assert "max-height: none;" in image
+    assert "width: 100%;" in image
+    assert "height: 100%;" in image
     assert "object-fit: contain;" in image
 
 
@@ -752,7 +767,7 @@ def test_publish_settings_rail_is_inset_inside_continuous_shell() -> None:
     assert "background: var(--surface-1);" in body
     assert "margin: 10px 0 10px 10px;" in rail
     assert "border: 1px solid var(--border-subtle);" in rail
-    assert "border-radius: 6px 0 0 6px;" in rail
+    assert "border-radius: 6px;" in rail
 
 
 def test_publish_preview_has_accessible_activation_zoom_and_guidance_markup() -> None:
@@ -786,19 +801,20 @@ def test_publish_preview_zoom_pan_state_is_bounded_and_applied_without_scrollbar
     image = _rule_body(css, ".publish-preview-image-wrap img")
     assert "overflow: hidden;" in frame
     assert "object-fit: contain;" in image
-    assert "max-width: 100%;" in image
-    assert "max-height: var(--publish-preview-height);" in image
-    assert "const PUBLISH_PREVIEW_MIN_ZOOM = 1;" in source
+    assert "max-width: none;" in image
+    assert "max-height: none;" in image
+    assert "const PUBLISH_PREVIEW_MIN_ZOOM = 0.5;" in source
+    assert "const PUBLISH_PREVIEW_BASE_ZOOM = 1;" in source
     assert "const PUBLISH_PREVIEW_MAX_ZOOM = 4;" in source
     assert "let publishPreviewActive = false;" in source
-    assert "let publishPreviewZoom = PUBLISH_PREVIEW_MIN_ZOOM;" in source
+    assert "let publishPreviewZoom = PUBLISH_PREVIEW_BASE_ZOOM;" in source
     assert "let publishPreviewPanX = 0;" in source
     assert "let publishPreviewPanY = 0;" in source
     apply_view = extract_function_body(source, "function applyPublishPreviewView()")
     zoom = extract_function_body(source, "function zoomPublishPreview(delta, anchorEvent = null)")
     assert "PUBLISH_PREVIEW_MAX_ZOOM" in zoom and "Math.min(" in zoom
     assert "PUBLISH_PREVIEW_MIN_ZOOM" in zoom and "Math.max(" in zoom
-    assert "translate(" in apply_view
+    assert "translate3d(" in apply_view
     assert "scale(" in apply_view
     assert "is-active" in apply_view
 
@@ -825,7 +841,7 @@ def test_publish_preview_activation_wheel_pointer_reset_and_cleanup_are_wired() 
     assert "if (!publishPreviewActive) return;" in wheel
     assert "event.preventDefault();" in wheel
     start_pan = extract_function_body(source, "function startPublishPreviewPan(event)")
-    assert "publishPreviewZoom <= PUBLISH_PREVIEW_MIN_ZOOM" in start_pan
+    assert "publishPreviewMaxPanX <= 0 && publishPreviewMaxPanY <= 0" in start_pan
     assert "setPointerCapture" in start_pan
     clear_pan = extract_function_body(source, "function clearPublishPreviewPan()")
     assert "hasPointerCapture" in clear_pan
@@ -841,6 +857,80 @@ def test_publish_preview_activation_wheel_pointer_reset_and_cleanup_are_wired() 
     update = extract_function_body(source, "function updatePublishPreview()")
     assert "resetPublishPreviewView(false);" in hide
     assert "resetPublishPreviewView(false);" in update
+
+
+def test_publish_pointermove_uses_cached_bounds_and_animation_frame_rendering() -> None:
+    source = PUBLISH_JS.read_text(encoding="utf-8")
+
+    move = extract_function_body(source, "function movePublishPreviewPan(event)")
+    assert "publishPreviewMaxPanX" in move
+    assert "publishPreviewMaxPanY" in move
+    assert "schedulePublishPreviewRender()" in move
+    for layout_read in (
+        "offsetWidth",
+        "offsetHeight",
+        "clientWidth",
+        "clientHeight",
+        "getBoundingClientRect",
+    ):
+        assert layout_read not in move
+    assert "applyPublishPreviewView()" not in move
+    schedule = extract_function_body(source, "function schedulePublishPreviewRender()")
+    cancel = extract_function_body(source, "function cancelPublishPreviewRender()")
+    assert "requestAnimationFrame" in schedule
+    assert "cancelAnimationFrame" in cancel
+    for signature in (
+        "function navigatePublishPreview(delta)",
+        "function resetPublishPreviewView(",
+        "function setPublishPreviewActive(active)",
+        "function hidePublishModal()",
+    ):
+        body = extract_function_body(source, signature)
+        assert "cancelPublishPreviewRender()" in body, signature
+
+
+def test_publish_zoom_updates_cached_pan_bounds_and_allows_sub_fit_scale() -> None:
+    source = PUBLISH_JS.read_text(encoding="utf-8")
+
+    bounds = extract_function_body(source, "function updatePublishPreviewPanBounds()")
+    zoom = extract_function_body(source, "function zoomPublishPreview(delta, anchorEvent = null)")
+    reset = extract_function_body(source, "function resetPublishPreviewView(")
+    assert "publishPreviewGeometry.fitWidth" in bounds
+    assert "publishPreviewGeometry.fitHeight" in bounds
+    assert "publishPreviewMaxPanX" in bounds
+    assert "publishPreviewMaxPanY" in bounds
+    assert bounds.count("Math.max(") >= 4
+    assert "updatePublishPreviewPanBounds()" in zoom
+    assert "PUBLISH_PREVIEW_MIN_ZOOM" in zoom
+    assert "PUBLISH_PREVIEW_BASE_ZOOM" in reset
+    assert "publishPreviewPanX = 0" in bounds
+    assert "publishPreviewPanY = 0" in bounds
+
+
+def test_publish_result_uses_a_reserved_visibility_controlled_slot() -> None:
+    markup = _publish_markup()
+    css = MODALS_CSS.read_text(encoding="utf-8")
+    source = PUBLISH_JS.read_text(encoding="utf-8")
+
+    result_tag = markup.split('id="publish-result"', 1)[1].split(">", 1)[0]
+    assert " hidden" not in result_tag
+    assert 'aria-hidden="true"' in result_tag
+    result = _rule_body(css, ".publish-result")
+    visible = _rule_body(css, ".publish-result.is-visible")
+    assert "box-sizing: border-box;" in result
+    assert "height:" in result
+    assert "visibility: hidden;" in result
+    assert "visibility: visible;" in visible
+    assert ".publish-result.hidden" not in css
+    assert "display: none" not in result
+    visibility = extract_function_body(source, "function setPublishResultVisible(visible)")
+    show = extract_function_body(source, "function showPublishResult(data)")
+    modal_show = extract_function_body(source, "function showPublishModal()")
+    assert "classList.toggle('is-visible'" in visibility
+    assert "aria-hidden" in visibility
+    assert "publish-view-public-btn" in visibility
+    assert "setPublishResultVisible(true)" in show
+    assert "setPublishResultVisible(false)" in modal_show
 
 
 def test_publish_preset_list_reserves_scrollbar_gutter_and_truncates_names() -> None:
