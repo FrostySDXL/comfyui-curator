@@ -387,40 +387,78 @@
 
     <div id="publish-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="publish-modal-title">
         <div class="modal-content publish-modal-content">
-            <h3 id="publish-modal-title">Prepare Public Copies</h3>
-            <div class="publish-scope">Selected images: <strong id="publish-selected-count">0</strong></div>
-            <div id="publish-source-summary" class="publish-summary">Output: this batch's public folder. Originals are not changed.</div>
-            <label class="publish-check"><input type="checkbox" id="publish-strip-metadata" checked> Strip metadata</label>
-            <label class="publish-check"><input type="checkbox" id="publish-watermark-enabled" checked> Add text watermark</label>
-            <div id="publish-watermark-options" class="publish-watermark-options">
-                <label class="publish-field">Text <input id="publish-watermark-text" type="text" value="FrostySDXL"></label>
-                <div id="publish-watermark-warning" class="publish-warning hidden">Watermark is enabled but the text is empty.</div>
-                <label class="publish-field">Position
-                    <select id="publish-watermark-position">
-                        <option value="bottom-right" selected>Bottom right</option>
-                        <option value="bottom-left">Bottom left</option>
-                        <option value="top-right">Top right</option>
-                        <option value="top-left">Top left</option>
-                        <option value="bottom-center">Bottom center</option>
-                        <option value="center">Center</option>
-                    </select>
-                </label>
-                <div class="publish-grid-fields">
-                    <label class="publish-field">Opacity % <input id="publish-watermark-opacity" type="number" min="0" max="100" value="55"></label>
-                    <label class="publish-field">Size % <input id="publish-watermark-size" type="number" min="1" max="20" value="4"></label>
-                    <label class="publish-field">Margin px <input id="publish-watermark-margin" type="number" min="0" value="32"></label>
-                </div>
-                <label class="publish-check"><input type="checkbox" id="publish-watermark-black"> Use black text</label>
-                <button class="modal-link-btn" id="publish-reset-watermark-btn" type="button">Reset watermark defaults</button>
+            <div class="publish-workbench-header">
+                <h3 id="publish-modal-title">Prepare Public Copies</h3>
+                <div class="publish-scope">Selected images: <strong id="publish-selected-count">0</strong></div>
+                <div id="publish-source-summary" class="publish-summary">Output: this batch's public folder. Originals are not changed.</div>
             </div>
-            <p>Generated copies are written to this batch's public folder. Originals are not changed.</p>
+            <div class="publish-workbench-body">
+                <aside class="publish-settings-rail" aria-label="Public copy settings">
+                    <div class="publish-presets">
+                        <div class="publish-presets-label">Presets</div>
+                        <div id="publish-preset-list" class="publish-preset-list" aria-live="polite"></div>
+                        <div class="publish-preset-save-row">
+                            <label class="publish-field publish-preset-name-field">Preset name
+                                <input id="publish-preset-name" type="text" placeholder="e.g. Bluesky watermark" autocomplete="off">
+                            </label>
+                            <button id="publish-preset-save-btn" type="button">Save preset</button>
+                        </div>
+                    </div>
+                    <label class="publish-check"><input type="checkbox" id="publish-strip-metadata" checked> Strip metadata</label>
+                    <label class="publish-check"><input type="checkbox" id="publish-watermark-enabled" checked> Add text watermark</label>
+                    <div id="publish-watermark-options" class="publish-watermark-options">
+                        <label class="publish-field">Text <input id="publish-watermark-text" type="text" value="FrostySDXL"></label>
+                        <div id="publish-watermark-warning" class="publish-warning hidden">Watermark is enabled but the text is empty.</div>
+                        <label class="publish-field">Position
+                            <select id="publish-watermark-position">
+                                <option value="bottom-right" selected>Bottom right</option>
+                                <option value="bottom-left">Bottom left</option>
+                                <option value="top-right">Top right</option>
+                                <option value="top-left">Top left</option>
+                                <option value="bottom-center">Bottom center</option>
+                                <option value="center">Center</option>
+                            </select>
+                        </label>
+                        <div class="publish-grid-fields">
+                            <label class="publish-field">Opacity % <input id="publish-watermark-opacity" type="number" min="0" max="100" value="55"></label>
+                            <label class="publish-field">Size % <input id="publish-watermark-size" type="number" min="1" max="20" value="4"></label>
+                            <label class="publish-field">Margin px <input id="publish-watermark-margin" type="number" min="0" value="32"></label>
+                        </div>
+                        <label class="publish-check"><input type="checkbox" id="publish-watermark-black"> Use black text</label>
+                        <button class="modal-link-btn" id="publish-reset-watermark-btn" type="button">Reset watermark defaults</button>
+                    </div>
+                </aside>
+                <section class="publish-preview-pane" aria-label="Watermark preview">
+                    <div id="publish-preview-frame" class="publish-preview-frame">
+                        <div id="publish-preview-image-wrap" class="publish-preview-image-wrap">
+                            <img id="publish-preview-image" alt="Selected source preview" />
+                            <span id="publish-preview-watermark" class="publish-preview-watermark" aria-hidden="true"></span>
+                        </div>
+                        <div id="publish-preview-loading" class="publish-preview-loading">
+                            <span class="publish-preview-spinner" aria-hidden="true"></span>
+                            <span>Loading preview…</span>
+                        </div>
+                        <div id="publish-preview-empty" class="publish-preview-empty">Select images to preview the watermark.</div>
+                        <div id="publish-preview-error" class="publish-preview-error hidden">Preview unavailable for this image.</div>
+                    </div>
+                    <p class="publish-preview-note">Approximate preview — the final watermark is rendered server-side.</p>
+                    <p id="publish-preview-metadata-note" class="publish-preview-metadata-note">Metadata will be stripped from generated copies.</p>
+                </section>
+            </div>
+            <p class="publish-safety-note">Generated copies are written to this batch's public folder. Originals are not changed.</p>
             <div id="publish-result" class="publish-result hidden">
                 <span id="publish-result-text"></span>
                 <button id="publish-view-public-btn" type="button">View Public Copies</button>
             </div>
-            <div class="modal-buttons">
-                <button class="cancel" type="button">Cancel</button>
-                <button class="create" id="publish-submit-btn" type="button">Create Public Copies</button>
+            <div class="publish-workbench-footer">
+                <div class="publish-submit-activity" id="publish-submit-activity" role="status" aria-live="polite" hidden>
+                    <span class="publish-spinner" aria-hidden="true"></span>
+                    <span id="publish-submit-text">Creating public copies…</span>
+                </div>
+                <div class="modal-buttons">
+                    <button class="cancel" type="button">Cancel</button>
+                    <button class="create" id="publish-submit-btn" type="button">Create Public Copies</button>
+                </div>
             </div>
         </div>
     </div>

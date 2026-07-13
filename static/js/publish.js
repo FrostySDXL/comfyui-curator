@@ -5,8 +5,16 @@ let lastPublishedPublicBatch = null;
 let pendingPublicDestinationAction = null;
 let pendingPublicMoveConfirmDestination = null;
 let publicDestinationBrowserPath = '';
+let publishSubmitInflight = false;
+let publishPreviewToken = 0;
 const PUBLIC_DESTINATION_HISTORY_KEY = 'imageCurator.publicDestinationHistory';
 const PUBLIC_DESTINATION_HISTORY_LIMIT = 10;
+const PUBLISH_PRESETS_KEY = 'imageCurator.publishPresets';
+const PUBLISH_PRESETS_VERSION = 1;
+const PUBLISH_PRESET_LIMIT = 20;
+const PUBLISH_WATERMARK_POSITIONS = new Set([
+    'bottom-right', 'bottom-left', 'top-right', 'top-left', 'bottom-center', 'center',
+]);
 
 function showPublishModal() {
             if (!currentBatch || isVirtualCollectionView() || isPublicView() || selectedImages.size === 0) {
@@ -18,12 +26,18 @@ function showPublishModal() {
             if (count) count.textContent = String(selectedImages.size);
             updatePublishSourceSummary();
             syncPublishWatermarkFields();
+            syncPublishMetadataNote();
             const result = document.getElementById('publish-result');
             if (result) result.classList.add('hidden');
+            const activity = document.getElementById('publish-submit-activity');
+            if (activity) activity.hidden = !publishSubmitInflight;
+            const submitBtn = document.getElementById('publish-submit-btn');
+            if (submitBtn) submitBtn.disabled = publishSubmitInflight;
+            renderPublishPresets();
             modal.classList.add('active');
-            _trapFocus(modal);
-            const textInput = document.getElementById('publish-watermark-text');
-            if (textInput) textInput.focus();
+            updatePublishPreview();
+            const closeButton = modal.querySelector('.publish-workbench-footer .cancel');
+            _trapFocus(modal, closeButton);
         }
 
 function showLightboxPublishModal() {
@@ -43,7 +57,23 @@ function showLightboxPublishModal() {
             showPublishModal();
         }
 
-function hidePublishModal() {
+        function hidePublishModal() {
+            publishPreviewToken += 1;
+            const img = document.getElementById('publish-preview-image');
+            if (img) {
+                img.onload = null;
+                img.onerror = null;
+                img.removeAttribute('src');
+                img.style.display = 'none';
+            }
+            const overlay = document.getElementById('publish-preview-watermark');
+            if (overlay) {
+                overlay.textContent = '';
+                overlay.style.display = 'none';
+            }
+            const wrap = document.getElementById('publish-preview-image-wrap');
+            if (wrap) { wrap.style.width = ''; wrap.style.height = ''; }
+            setPublishPreviewState('empty');
             document.getElementById('publish-modal').classList.remove('active');
             _releaseFocusTrap();
         }
@@ -72,6 +102,15 @@ function syncPublishWatermarkFields() {
             });
             const text = document.getElementById('publish-watermark-text')?.value.trim() || '';
             if (warning) warning.classList.toggle('hidden', !enabled || text.length > 0);
+        }
+
+function syncPublishMetadataNote() {
+            const note = document.getElementById('publish-preview-metadata-note');
+            if (!note) return;
+            const strip = document.getElementById('publish-strip-metadata')?.checked === true;
+            note.textContent = strip
+                ? 'Metadata will be stripped from generated copies.'
+                : 'Metadata stripping is off for generated copies.';
         }
 
 function resetPublishWatermarkDefaults() {
@@ -105,6 +144,243 @@ function buildPublishWatermarkOptions() {
             };
         }
 
+function getFirstSelectedSourceImage() {
+            const selected = images.filter(img => selectedImages.has(img.name));
+            if (!selected.length) return null;
+            // Prefer a non-public review-folder image; public views are blocked upstream.
+            return selected.find(img => !img.public) || selected[0];
+        }
+
+function setPublishPreviewState(state) {
+            const frame = document.getElementById('publish-preview-frame');
+            if (!frame) return;
+            frame.classList.toggle('is-loading', state === 'loading');
+            frame.classList.toggle('is-error', state === 'error');
+            frame.classList.toggle('is-empty', state === 'empty');
+            const empty = document.getElementById('publish-preview-empty');
+            const error = document.getElementById('publish-preview-error');
+            if (empty) empty.classList.toggle('hidden', state !== 'empty');
+            if (error) error.classList.toggle('hidden', state !== 'error');
+        }
+
+function updatePublishWatermarkOverlay() {
+            const overlay = document.getElementById('publish-preview-watermark');
+            const img = document.getElementById('publish-preview-image');
+            if (!overlay || !img) return;
+            const enabled = document.getElementById('publish-watermark-enabled')?.checked === true;
+            const text = document.getElementById('publish-watermark-text')?.value.trim() || '';
+            if (!enabled || !text) {
+                overlay.textContent = '';
+                overlay.style.display = 'none';
+                return;
+            }
+            overlay.textContent = text;
+            overlay.style.display = '';
+            const position = document.getElementById('publish-watermark-position')?.value || 'bottom-right';
+            overlay.dataset.position = position;
+            const opacity = Math.max(0, Math.min(100, Number(document.getElementById('publish-watermark-opacity')?.value || 55))) / 100;
+            overlay.style.opacity = String(opacity);
+            const sizePercent = Math.max(1, Math.min(20, Number(document.getElementById('publish-watermark-size')?.value || 4)));
+            const rawMargin = Math.max(0, Number(document.getElementById('publish-watermark-margin')?.value || 32));
+            const displayedWidth = img.clientWidth || img.naturalWidth || 320;
+            const naturalWidth = img.naturalWidth || displayedWidth;
+            const scale = naturalWidth > 0 ? displayedWidth / naturalWidth : 1;
+            const margin = rawMargin * scale;
+            overlay.style.fontSize = `${(displayedWidth * sizePercent) / 100}px`;
+            overlay.style.margin = `${margin}px`;
+            overlay.style.color = document.getElementById('publish-watermark-black')?.checked ? '#000' : '#fff';
+        }
+
+        function syncPublishPreviewGeometry() {
+            const img = document.getElementById('publish-preview-image');
+            const wrap = document.getElementById('publish-preview-image-wrap');
+            if (!img || !wrap) return;
+            wrap.style.width = '';
+            wrap.style.height = '';
+            const w = img.clientWidth;
+            const h = img.clientHeight;
+            if (w <= 0 || h <= 0) return;
+            wrap.style.width = w + 'px';
+            wrap.style.height = h + 'px';
+            updatePublishWatermarkOverlay();
+        }
+
+        function updatePublishPreview() {
+            const img = document.getElementById('publish-preview-image');
+            const overlay = document.getElementById('publish-preview-watermark');
+            const wrap = document.getElementById('publish-preview-image-wrap');
+            if (!img || !overlay) return;
+            if (wrap) { wrap.style.width = ''; wrap.style.height = ''; }
+            publishPreviewToken += 1;
+            const token = publishPreviewToken;
+            const source = getFirstSelectedSourceImage();
+            if (!source || !currentBatch || !currentFolder) {
+                img.removeAttribute('src');
+                img.style.display = 'none';
+                overlay.style.display = 'none';
+                setPublishPreviewState('empty');
+                return;
+            }
+            setPublishPreviewState('loading');
+            img.style.display = '';
+            img.onload = () => {
+                if (token !== publishPreviewToken) return;
+                setPublishPreviewState('loaded');
+                syncPublishPreviewGeometry();
+            };
+            img.onerror = () => {
+                if (token !== publishPreviewToken) return;
+                img.style.display = 'none';
+                overlay.style.display = 'none';
+                setPublishPreviewState('error');
+            };
+            img.src = ccImageUrl(currentBatch, currentFolder, source.name);
+        }
+
+function _clampPublishWatermarkNumber(value, fallback, min, max) {
+            const num = Number(value);
+            if (!Number.isFinite(num)) return fallback;
+            if (min !== undefined && num < min) return min;
+            if (max !== undefined && num > max) return max;
+            return num;
+        }
+
+        function normalizePublishPresets(raw) {
+            const safeName = (value) => (typeof value === 'string' ? value.trim().slice(0, 60) : '');
+            const safeBool = (value) => value === true;
+            const safeColor = (value) => (value === 'black' ? 'black' : 'white');
+            const safePosition = (value) =>
+                (typeof value === 'string' && PUBLISH_WATERMARK_POSITIONS.has(value)) ? value : 'bottom-right';
+            const normalizePreset = (entry) => {
+                if (!entry || typeof entry !== 'object') return null;
+                const name = safeName(entry.name);
+                if (!name) return null;
+                const watermark = entry.watermark && typeof entry.watermark === 'object' ? entry.watermark : {};
+                return {
+                    name,
+                    strip_metadata: safeBool(entry.strip_metadata),
+                    watermark: {
+                        enabled: safeBool(watermark.enabled),
+                        text: (typeof watermark.text === 'string' ? watermark.text.slice(0, 120) : 'FrostySDXL') || 'FrostySDXL',
+                        position: safePosition(watermark.position),
+                        opacity: _clampPublishWatermarkNumber(watermark.opacity, 0.55, 0, 1),
+                        size_percent: _clampPublishWatermarkNumber(watermark.size_percent, 4, 1, 20),
+                        margin: _clampPublishWatermarkNumber(watermark.margin, 32, 0, 500),
+                        color: safeColor(watermark.color),
+                    },
+                };
+            };
+            let presets = [];
+            if (raw && typeof raw === 'object' && raw.version === PUBLISH_PRESETS_VERSION && Array.isArray(raw.presets)) {
+                presets = raw.presets.map(normalizePreset).filter(Boolean);
+            }
+            return {
+                version: PUBLISH_PRESETS_VERSION,
+                presets: presets.slice(0, PUBLISH_PRESET_LIMIT),
+            };
+        }
+
+function getPublishPresets() {
+            try {
+                const raw = localStorage.getItem(PUBLISH_PRESETS_KEY);
+                const parsed = raw ? JSON.parse(raw) : null;
+                return normalizePublishPresets(parsed);
+            } catch {
+                return { version: PUBLISH_PRESETS_VERSION, presets: [] };
+            }
+        }
+
+function savePublishPreset(name) {
+            const trimmed = (typeof name === 'string' ? name.trim() : '').slice(0, 60);
+            if (!trimmed) {
+                showToast('Enter a preset name');
+                return false;
+            }
+            const stored = getPublishPresets();
+            const presets = stored.presets.filter(p => p.name !== trimmed);
+            presets.unshift({
+                name: trimmed,
+                strip_metadata: document.getElementById('publish-strip-metadata')?.checked === true,
+                watermark: buildPublishWatermarkOptions(),
+            });
+            try {
+                localStorage.setItem(
+                    PUBLISH_PRESETS_KEY,
+                    JSON.stringify({ version: PUBLISH_PRESETS_VERSION, presets: presets.slice(0, PUBLISH_PRESET_LIMIT) }),
+                );
+                renderPublishPresets();
+                showToast(`Saved preset \u201c${trimmed}\u201d`);
+                return true;
+            } catch {
+                showToast('Could not save preset \u2014 storage unavailable');
+                return false;
+            }
+        }
+
+function applyPublishPreset(preset) {
+            if (!preset || !preset.watermark) return;
+            const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value; };
+            const check = (id, value) => { const el = document.getElementById(id); if (el) el.checked = value; };
+            check('publish-strip-metadata', !!preset.strip_metadata);
+            check('publish-watermark-enabled', !!preset.watermark.enabled);
+            set('publish-watermark-text', preset.watermark.text || 'FrostySDXL');
+            set('publish-watermark-position', preset.watermark.position || 'bottom-right');
+            set('publish-watermark-opacity', String(Math.round((preset.watermark.opacity ?? 0.55) * 100)));
+            set('publish-watermark-size', String(preset.watermark.size_percent ?? 4));
+            set('publish-watermark-margin', String(preset.watermark.margin ?? 32));
+            check('publish-watermark-black', preset.watermark.color === 'black');
+            syncPublishWatermarkFields();
+            updatePublishWatermarkOverlay();
+            syncPublishMetadataNote();
+        }
+
+function deletePublishPreset(name) {
+            const stored = getPublishPresets();
+            const presets = stored.presets.filter(p => p.name !== name);
+            try {
+                localStorage.setItem(
+                    PUBLISH_PRESETS_KEY,
+                    JSON.stringify({ version: PUBLISH_PRESETS_VERSION, presets }),
+                );
+                renderPublishPresets();
+            } catch {
+                showToast('Could not delete preset \u2014 storage unavailable');
+            }
+        }
+
+function renderPublishPresets() {
+            const container = document.getElementById('publish-preset-list');
+            if (!container) return;
+            const stored = getPublishPresets();
+            container.replaceChildren();
+            if (!stored.presets.length) {
+                const empty = document.createElement('div');
+                empty.className = 'publish-preset-empty';
+                empty.textContent = 'No saved presets. Current settings stay usable without one.';
+                container.append(empty);
+                return;
+            }
+            stored.presets.forEach(preset => {
+                const row = document.createElement('div');
+                row.className = 'publish-preset-row';
+                const applyBtn = document.createElement('button');
+                applyBtn.type = 'button';
+                applyBtn.className = 'publish-preset-apply';
+                applyBtn.textContent = preset.name;
+                applyBtn.title = 'Apply preset';
+                applyBtn.addEventListener('click', () => applyPublishPreset(preset));
+                const deleteBtn = document.createElement('button');
+                deleteBtn.type = 'button';
+                deleteBtn.className = 'publish-preset-delete';
+                deleteBtn.textContent = 'Delete';
+                deleteBtn.title = `Delete preset “${preset.name}”`;
+                deleteBtn.setAttribute('aria-label', `Delete preset ${preset.name}`);
+                deleteBtn.addEventListener('click', () => deletePublishPreset(preset.name));
+                row.append(applyBtn, deleteBtn);
+                container.append(row);
+            });
+        }
+
 function showPublishResult(data) {
             const result = document.getElementById('publish-result');
             const text = document.getElementById('publish-result-text');
@@ -123,13 +399,17 @@ async function viewCreatedPublicCopies() {
         }
 
 async function submitPublicExport() {
+            if (publishSubmitInflight) return;
             const filenames = getSelectedSourceFilenames();
             if (!filenames.length) {
                 showToast('Select images first');
                 return;
             }
+            publishSubmitInflight = true;
             const submitBtn = document.getElementById('publish-submit-btn');
+            const activity = document.getElementById('publish-submit-activity');
             if (submitBtn) submitBtn.disabled = true;
+            if (activity) activity.hidden = false;
             try {
                 const resp = await apiPublishExport({
                     batch: currentBatch,
@@ -151,7 +431,9 @@ async function submitPublicExport() {
             } catch {
                 showToast('Public export failed');
             } finally {
+                publishSubmitInflight = false;
                 if (submitBtn) submitBtn.disabled = false;
+                if (activity) activity.hidden = true;
             }
         }
 

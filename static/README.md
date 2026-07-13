@@ -139,7 +139,7 @@
 | **Batch Management** | `loadBatches`, `selectBatch`, `setActiveBatch`, `createBatch`, `saveBatchState`, `restoreBatchState` | `#batch-list`, `#active-batch-custom` |
 | **Grid Rendering** | `loadCurrentFolderImages`, `updateGrid`, `createThumbElement`, `updateThumbElement`, `getDisplayImages`, `showGridLoadingPlaceholders` | `#grid` |
 | **Favorites** | `toggleFavorite`, `toggleFavoritesFilter`, `toggleLightboxFavorite`, `updateLightboxFavorite`, `loadUniversalFavorites` | `.favorite-star`, `#favorites-filter-btn`, `#batch-list` |
-| **Public output** | `showPublishModal`, `submitPublicExport`, `loadBatchPublic`, `loadAllPublic`, `copySelectedPublicCopies`, `moveSelectedPublicCopies`, `deleteSelectedPublicCopies` | `#publish-modal`, `#batch-list`, `#action-bar` |
+| **Public output** | `showPublishModal`, `updatePublishPreview`, `syncPublishPreviewGeometry`, `renderPublishPresets`, `savePublishPreset`, `applyPublishPreset`, `submitPublicExport`, `loadBatchPublic`, `loadAllPublic`, `copySelectedPublicCopies`, `moveSelectedPublicCopies`, `deleteSelectedPublicCopies` | `#publish-modal`, `#batch-list`, `#action-bar` |
 | **Thumbnail Caching** | `resolveThumbnailBlobUrl`, `setThumbnailImageSrc` | Thumb `<img>` elements (blob URLs) |
 | **Keyboard Shortcuts** | `keyboard.js` document `keydown` handler | `document` |
 | **Drag/Drop** | `onDragStart`, `onDragOver`, `onDrop`, `moveBatch` | `.thumb`, `.folder-tab` |

@@ -149,15 +149,34 @@ function _bindDelegatedEvents() {
             const publishSubmitBtn = document.getElementById('publish-submit-btn');
             if (publishSubmitBtn) publishSubmitBtn.addEventListener('click', submitPublicExport);
             const publishWatermarkToggle = document.getElementById('publish-watermark-enabled');
-            if (publishWatermarkToggle) publishWatermarkToggle.addEventListener('change', syncPublishWatermarkFields);
+            if (publishWatermarkToggle) publishWatermarkToggle.addEventListener('change', () => { syncPublishWatermarkFields(); updatePublishWatermarkOverlay(); });
             ['publish-watermark-text', 'publish-watermark-position', 'publish-watermark-opacity', 'publish-watermark-size', 'publish-watermark-margin'].forEach(id => {
                 const input = document.getElementById(id);
-                if (input) input.addEventListener('input', syncPublishWatermarkFields);
+                if (input) input.addEventListener('input', () => { syncPublishWatermarkFields(); updatePublishWatermarkOverlay(); });
+            });
+            const publishWatermarkBlack = document.getElementById('publish-watermark-black');
+            if (publishWatermarkBlack) publishWatermarkBlack.addEventListener('change', updatePublishWatermarkOverlay);
+            window.addEventListener('resize', () => {
+                if (document.getElementById('publish-modal').classList.contains('active')) syncPublishPreviewGeometry();
             });
             const publishResetWatermarkBtn = document.getElementById('publish-reset-watermark-btn');
-            if (publishResetWatermarkBtn) publishResetWatermarkBtn.addEventListener('click', resetPublishWatermarkDefaults);
+            if (publishResetWatermarkBtn) publishResetWatermarkBtn.addEventListener('click', () => { resetPublishWatermarkDefaults(); updatePublishWatermarkOverlay(); });
+            const publishStripMetadata = document.getElementById('publish-strip-metadata');
+            if (publishStripMetadata) publishStripMetadata.addEventListener('change', syncPublishMetadataNote);
             const publishViewPublicBtn = document.getElementById('publish-view-public-btn');
             if (publishViewPublicBtn) publishViewPublicBtn.addEventListener('click', viewCreatedPublicCopies);
+            const publishPresetSaveBtn = document.getElementById('publish-preset-save-btn');
+            if (publishPresetSaveBtn) publishPresetSaveBtn.addEventListener('click', () => {
+                const nameInput = document.getElementById('publish-preset-name');
+                if (savePublishPreset(nameInput?.value || '') && nameInput) nameInput.value = '';
+            });
+            const publishPresetNameInput = document.getElementById('publish-preset-name');
+            if (publishPresetNameInput) publishPresetNameInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (savePublishPreset(publishPresetNameInput.value)) publishPresetNameInput.value = '';
+                }
+            });
 
             document.querySelectorAll('#public-destination-modal .cancel').forEach(btn => {
                 btn.addEventListener('click', hidePublicDestinationModal);
