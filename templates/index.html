@@ -540,8 +540,9 @@
                     <li><strong>Build Index</strong> scans PNG metadata for the selected batch. <strong>Build All Indexes</strong> asks for confirmation.</li>
                     <li><strong>Stale badge</strong> means the cached image count changed; click <strong>Rebuild Index</strong>.</li>
                     <li>Search prompts, negative prompts, and batch labels; refine the search to narrow large result sets.</li>
-                    <li>Use <strong>copy positive</strong>, <strong>copy pair</strong>, and <strong>copy negative</strong> to reuse prompts.</li>
-                    <li><strong>show images</strong> lists image references grouped by review folder.</li>
+                    <li>Select a prompt row, then use the rail to show its full positive prompt, negative prompt, or image names.</li>
+                    <li>Selected-prompt view options stay active as you select other rows; image references remain display-only.</li>
+                    <li>Use <strong>copy positive</strong>, <strong>copy negative</strong>, and <strong>copy pair</strong> to reuse prompts.</li>
                 </ul>
             </div>
             </div>
@@ -571,11 +572,10 @@
                                     <input id="prompts-batch-filter" type="text" placeholder="All Batches" autocomplete="off" spellcheck="false" aria-haspopup="listbox" aria-expanded="false" aria-autocomplete="list" aria-label="Filter prompt history by batch">
                                     <ul id="prompts-batch-list" class="prompts-batch-list" role="listbox" tabindex="-1"></ul>
                                 </div>
-                                <button id="prompts-all-batches-btn" class="prompts-all-batches-btn" aria-pressed="true" aria-label="Show all batches">All Batches</button>
                             </div>
                         </section>
                         <section class="prompts-rail-section" aria-labelledby="prompts-order-label">
-                            <div id="prompts-order-label" class="prompts-control-label">Order and grouping</div>
+                            <div id="prompts-order-label" class="prompts-control-label">Order and prompt length</div>
                             <label class="prompts-control-field" for="prompts-sort">Sort
                                 <select id="prompts-sort" class="prompts-sort" aria-label="Sort prompts">
                                     <option value="count">Most used</option>
@@ -583,8 +583,16 @@
                                     <option value="length">Longest</option>
                                 </select>
                             </label>
-                            <button id="prompts-group-toggle" type="button" class="prompts-toggle-btn" aria-pressed="false">Group by batch</button>
-                            <button id="prompts-collapse-all" type="button">Collapse all</button>
+                            <button id="prompts-collapse-all" type="button">Collapse positive prompts</button>
+                        </section>
+                        <section class="prompts-rail-section prompts-selection-controls" aria-labelledby="prompts-selection-label">
+                            <div id="prompts-selection-label" class="prompts-control-label">Selected prompt view</div>
+                            <p id="prompts-selection-status" class="prompts-selection-status" aria-live="polite">Select a prompt row to inspect its full text and image references.</p>
+                            <div class="prompts-view-controls" role="group" aria-label="Selected prompt details">
+                                <button id="prompts-view-positive" type="button" aria-pressed="false" disabled>Full positive prompt</button>
+                                <button id="prompts-view-negative" type="button" aria-pressed="false" disabled>Negative prompt</button>
+                                <button id="prompts-view-images" type="button" aria-pressed="false" disabled>Image names</button>
+                            </div>
                         </section>
                     </div>
                 </aside>

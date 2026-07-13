@@ -259,7 +259,7 @@ function _bindDelegatedEvents() {
                         case 'Enter':
                             e.preventDefault();
                             const focused = document.querySelector('#prompts-batch-list .prompts-batch-option.focus');
-                            if (focused && focused.dataset.value) {
+                            if (focused && focused.hasAttribute('data-value')) {
                                 clearTimeout(_promptBlurTimer);
                                 _commitPromptSelection(focused.dataset.value);
                             }
@@ -273,8 +273,6 @@ function _bindDelegatedEvents() {
                     }
                 });
             }
-            const promptsAllBatchesBtn = document.getElementById('prompts-all-batches-btn');
-            if (promptsAllBatchesBtn) promptsAllBatchesBtn.addEventListener('click', () => _commitPromptSelection(''));
             const promptsSearch = document.getElementById('prompts-search');
             if (promptsSearch) promptsSearch.addEventListener('input', _schedulePromptsRender);
             const promptsSortSelect = document.getElementById('prompts-sort');
@@ -285,24 +283,19 @@ function _bindDelegatedEvents() {
                     renderPromptsList();
                 });
             }
-            const promptsGroupToggle = document.getElementById('prompts-group-toggle');
-            if (promptsGroupToggle) {
-                promptsGroupToggle.setAttribute('aria-pressed', promptsGroupByBatch ? 'true' : 'false');
-                promptsGroupToggle.addEventListener('click', function() {
-                    _setPromptsGroupByBatch(!promptsGroupByBatch);
-                    this.setAttribute('aria-pressed', promptsGroupByBatch ? 'true' : 'false');
-                    renderPromptsList();
-                });
-            }
             const promptsCollapseBtn = document.getElementById('prompts-collapse-all');
             if (promptsCollapseBtn) {
-                promptsCollapseBtn.textContent = promptsCollapseAll ? 'Expand all' : 'Collapse all';
+                promptsCollapseBtn.textContent = promptsCollapseAll ? 'Expand positive prompts' : 'Collapse positive prompts';
                 promptsCollapseBtn.addEventListener('click', function() {
                     _setPromptsCollapse(!promptsCollapseAll);
-                    this.textContent = promptsCollapseAll ? 'Expand all' : 'Collapse all';
+                    this.textContent = promptsCollapseAll ? 'Expand positive prompts' : 'Collapse positive prompts';
                     renderPromptsList();
                 });
             }
+            [['prompts-view-positive', 'positive'], ['prompts-view-negative', 'negative'], ['prompts-view-images', 'images']].forEach(([id, mode]) => {
+                const button = document.getElementById(id);
+                if (button) button.addEventListener('click', () => _setPromptDetailMode(mode, !promptsDetailModes[mode]));
+            });
 
             // Close prompt batch dropdown when clicking outside
             document.addEventListener('mousedown', (e) => {

@@ -58,8 +58,9 @@ def test_prompt_history_frontend_functions_exist():
         "buildPromptIndex",
         "_setPromptsCollapse",
         "_setPromptsSort",
-        "_setPromptsGroupByBatch",
         "_schedulePromptsRender",
+        "_selectPromptEntry",
+        "_syncPromptSelectionControls",
         "updateScopeChip",
         "updateBuildBtn",
     ):
@@ -108,9 +109,9 @@ def test_prompt_history_keyboard_shortcut_and_aria_wiring():
     # The batch filter input must be normally tabbable (no tabindex="-1").
     assert 'id="prompts-batch-filter"' in html
     assert 'id="prompts-batch-filter" type="text" placeholder="All Batches"' in html
-    # Sort selector and group toggle are rendered in the modal.
+    # Sort selector is rendered; aggregate grouping is scope-driven.
     assert 'id="prompts-sort"' in html
-    assert 'id="prompts-group-toggle"' in html
+    assert 'id="prompts-group-toggle"' not in html
     # Scope chip is rendered.
     assert 'id="prompts-scope-chip"' in html
     # Stale badge has aria-live for screen reader announcements.
@@ -125,7 +126,7 @@ def test_prompt_history_keyboard_shortcut_and_aria_wiring():
     assert "case 'End':" in source
     assert "case 'PageDown':" in source
     assert "case 'PageUp':" in source
-    # ARIA on the All Batches toggle.
+    # ARIA on selected-prompt controls and committed combobox options.
     assert "aria-pressed" in source
     assert "aria-selected" in source
     # aria-activedescendant wiring for combobox active option.

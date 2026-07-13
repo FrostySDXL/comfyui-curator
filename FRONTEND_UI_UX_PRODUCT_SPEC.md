@@ -459,7 +459,8 @@ The visual direction should follow `tmp/ui-concepts/03-prompt-publish-workbench.
 - Scope
 - Batch filter
 - Search facets
-- Sort and grouping controls
+- Sort and positive-prompt length controls
+- Contextual views for the single selected prompt
 - Index status
 
 **Main panel**
@@ -472,11 +473,14 @@ The visual direction should follow `tmp/ui-concepts/03-prompt-publish-workbench.
 
 - Show a concise preview first.
 - Visually separate positive and negative prompts.
-- Use one primary Copy menu:
+- Keep a consistent direct copy group:
   - Copy positive
   - Copy negative
   - Copy pair
-  - Copy as AI elements
+- Make each prompt row selectable through a native keyboard control and mouse row selection.
+- Apply independently combinable full-positive, negative, and image-reference views only to the selected row.
+- Preserve active contextual views when selection moves to another prompt.
+- Group aggregate All Batches results by batch automatically; render a flat list for one selected batch.
 - Make image references actionable:
   - Show in grid
   - Open first

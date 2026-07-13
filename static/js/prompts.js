@@ -17,7 +17,12 @@
             const stored = localStorage.getItem(PROMPTS_SORT_KEY);
             return PROMPTS_SORT_OPTIONS.includes(stored) ? stored : PROMPTS_DEFAULT_SORT;
         })();
-        let promptsGroupByBatch = (localStorage.getItem(PROMPTS_GROUP_KEY) === 'true');
+        let promptsSelectedEntryKey = null;
+        const promptsDetailModes = {
+            positive: false,
+            negative: false,
+            images: false,
+        };
         let promptsRequestToken = 0;
         let promptsBuilding = false;
         let _promptPrevValue = '';
@@ -39,11 +44,6 @@
             if (!PROMPTS_SORT_OPTIONS.includes(value)) return;
             promptsSort = value;
             _promptsLocalSet(PROMPTS_SORT_KEY, value);
-        }
-
-        function _setPromptsGroupByBatch(value) {
-            promptsGroupByBatch = !!value;
-            _promptsLocalSet(PROMPTS_GROUP_KEY, promptsGroupByBatch ? 'true' : 'false');
         }
 
         // --- Modal lifecycle ---
@@ -68,7 +68,6 @@
                 promptsCurrentBatch = '';
             }
             _syncPromptDisplay();
-            updateAllBatchesBtn();
             updateScopeChip();
             updateBuildBtn();
             loadPromptsData();
@@ -105,16 +104,7 @@
                 input.value = promptsCurrentBatch || '';
                 input.placeholder = promptsCurrentBatch ? '' : 'All Batches';
             }
-            updateAllBatchesBtn();
             updateScopeChip();
-        }
-
-        function updateAllBatchesBtn() {
-            const btn = document.getElementById('prompts-all-batches-btn');
-            if (!btn) return;
-            const active = promptsCurrentBatch === '';
-            btn.classList.toggle('active', active);
-            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
         }
 
         function updateScopeChip() {
@@ -145,9 +135,10 @@
             const q = filter.toLowerCase();
             dropdown.replaceChildren();
             const matches = [];
-            promptsBatchList.forEach(batch => {
-                if (q && !batch.toLowerCase().includes(q)) return;
-                matches.push({ batch, startsWith: batch.toLowerCase().startsWith(q) });
+            [{batch: '', label: 'All Batches'}, ...promptsBatchList.map(batch => ({batch, label: batch}))].forEach(option => {
+                const normalized = option.label.toLowerCase();
+                if (q && !normalized.includes(q)) return;
+                matches.push({...option, startsWith: normalized.startsWith(q)});
             });
             if (q) {
                 matches.sort((a, b) => {
@@ -164,12 +155,12 @@
                 return;
             }
             const activeValue = promptsCurrentBatch;
-            matches.forEach(({ batch }, index) => {
+            matches.forEach(({ batch, label }, index) => {
                 const li = document.createElement('li');
                 li.className = 'prompts-batch-option';
                 li.dataset.value = batch;
                 li.id = `prompts-batch-option-${index}`;
-                li.textContent = batch;
+                li.textContent = label;
                 li.setAttribute('role', 'option');
                 li.setAttribute('aria-selected', batch === activeValue ? 'true' : 'false');
                 if (batch === activeValue) li.classList.add('selected');
@@ -185,6 +176,7 @@
         function _commitPromptSelection(batch) {
             const input = document.getElementById('prompts-batch-filter');
             promptsCurrentBatch = batch;
+            promptsSelectedEntryKey = null;
             if (input) {
                 input.value = batch;
                 input.blur();
@@ -193,6 +185,7 @@
             _promptCloseDropdown();
             _syncPromptDisplay();
             updateBuildBtn();
+            _syncPromptSelectionControls();
             loadPromptsData();
         }
 
@@ -336,6 +329,63 @@
             return groups;
         }
 
+        function _promptEntryKey(entry) {
+            const identity = entry.hash || entry.normalized || entry.prompt || '';
+            return JSON.stringify([entry.batch || '', identity]);
+        }
+
+        function _selectedPromptEntry() {
+            if (!promptsSelectedEntryKey) return null;
+            return getPromptEntries().find(entry => _promptEntryKey(entry) === promptsSelectedEntryKey) || null;
+        }
+
+        function _syncPromptSelectionControls() {
+            const selected = _selectedPromptEntry();
+            const globalPositiveExpanded = !promptsCollapseAll;
+            const status = document.getElementById('prompts-selection-status');
+            if (status) {
+                if (!selected) {
+                    status.textContent = 'Select a prompt row to inspect its full text and image references.';
+                } else if (globalPositiveExpanded) {
+                    status.textContent = `Selected prompt from ${selected.batch || 'current scope'}. All positive prompts are expanded; collapse them to use the selected-only override.`;
+                } else {
+                    status.textContent = `Selected prompt from ${selected.batch || 'current scope'}. View options transfer to the next selected row.`;
+                }
+            }
+            const controls = {
+                positive: document.getElementById('prompts-view-positive'),
+                negative: document.getElementById('prompts-view-negative'),
+                images: document.getElementById('prompts-view-images'),
+            };
+            Object.entries(controls).forEach(([mode, button]) => {
+                if (!button) return;
+                const available = !!selected && (
+                    mode === 'positive'
+                    || (mode === 'negative' && !!selected.negative_prompt)
+                    || (mode === 'images' && (selected.images || []).length > 0)
+                );
+                const pressed = mode === 'positive' && selected
+                    ? globalPositiveExpanded || promptsDetailModes.positive
+                    : promptsDetailModes[mode];
+                button.disabled = !available || (mode === 'positive' && globalPositiveExpanded);
+                button.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+            });
+        }
+
+        function _selectPromptEntry(key, restoreFocus = false) {
+            promptsSelectedEntryKey = key;
+            renderPromptsList();
+            if (!restoreFocus) return;
+            const selectedButton = document.querySelector('#prompts-list .prompts-entry.selected .prompts-select-entry');
+            if (selectedButton) selectedButton.focus();
+        }
+
+        function _setPromptDetailMode(mode, value) {
+            if (!(mode in promptsDetailModes)) return;
+            promptsDetailModes[mode] = !!value;
+            renderPromptsList();
+        }
+
         // --- Render ---
 
         function _highlightMatchNode(text, query) {
@@ -443,69 +493,31 @@
             return wrap;
         }
 
-        function _buildNegativeDisclosure(negText) {
-            if (!negText) return { el: null, btn: null };
-            const el = createTextElement('div', 'prompts-negative hidden', '');
-            el.hidden = true;
+        function _buildNegativeDisclosure(negText, visible) {
+            if (!negText || !visible) return null;
+            const el = createTextElement('div', 'prompts-negative', '');
             el.appendChild(createTextElement('div', 'prompts-field-label', 'Negative prompt'));
             const text = createTextElement('div', 'prompts-negative-text', '');
             text.appendChild(_highlightMatchNode(negText, _currentSearchQuery()));
             el.appendChild(text);
-            const btn = _buildActionChip('show negative', 'prompts-toggle-neg', () => {
-                const hidden = el.classList.toggle('hidden');
-                el.hidden = hidden;
-                btn.textContent = hidden ? 'show negative' : 'hide negative';
-                btn.setAttribute('aria-expanded', hidden ? 'false' : 'true');
-            });
-            btn.setAttribute('aria-expanded', 'false');
-            return { el, btn };
+            return el;
         }
 
-        function _buildImageDisclosure(images) {
-            if (!images || images.length === 0) return { el: null, btn: null };
+        function _buildImageDisclosure(images, visible) {
+            if (!visible || !images || images.length === 0) return null;
             const list = _buildImageChipList(images);
-            if (!list) return { el: null, btn: null };
-            const total = images.length;
-            const shown = Math.min(total, PROMPTS_IMAGES_CAP);
-            const truncated = total > shown;
-            const label = truncated ? `show images (${shown} of ${total})` : `show images (${total})`;
-            const btn = _buildActionChip(label, 'prompts-toggle-images', () => {
-                const hidden = list.classList.toggle('hidden');
-                list.hidden = hidden;
-                if (hidden) {
-                    btn.textContent = truncated ? `show images (${shown} of ${total})` : `show images (${total})`;
-                } else {
-                    btn.textContent = 'hide images';
-                }
-                btn.setAttribute('aria-expanded', hidden ? 'false' : 'true');
-            });
-            btn.setAttribute('aria-expanded', 'false');
-            list.hidden = true;
-            return { el: list, btn };
+            if (!list) return null;
+            list.classList.remove('hidden');
+            return list;
         }
 
-        function _buildFullDisclosure(promptText) {
-            if (promptText.length <= PROMPTS_TRUNCATE_LEN) return { el: null, btn: null };
+        function _buildFullDisclosure(promptText, expanded) {
             const truncated = `${promptText.slice(0, PROMPTS_TRUNCATE_LEN)}...`;
             const wrap = document.createElement('div');
             wrap.className = 'prompts-prompt-text';
-            // Explicit per-entry state so the toggle cannot desync from the rendered
-            // text (a previous endsWith('...') heuristic broke when prompts ended with
-            // an actual ellipsis).
-            let isExpanded = !promptsCollapseAll;
-            const render = () => {
-                wrap.textContent = '';
-                wrap.appendChild(_highlightMatchNode(isExpanded ? promptText : truncated, _currentSearchQuery()));
-            };
-            render();
-            const btn = _buildActionChip(isExpanded ? 'collapse' : 'show full', 'prompts-toggle-full', () => {
-                isExpanded = !isExpanded;
-                render();
-                btn.textContent = isExpanded ? 'collapse' : 'show full';
-                btn.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
-            });
-            btn.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
-            return { el: wrap, btn };
+            const text = promptText.length > PROMPTS_TRUNCATE_LEN && !expanded ? truncated : promptText;
+            wrap.appendChild(_highlightMatchNode(text, _currentSearchQuery()));
+            return wrap;
         }
 
         function _buildEntry(entry, query) {
@@ -513,45 +525,54 @@
             card.className = 'prompts-entry';
             card.dataset.batch = entry.batch || '';
             card.dataset.hash = entry.hash || '';
+            const entryKey = _promptEntryKey(entry);
+            const isSelected = entryKey === promptsSelectedEntryKey;
+            card.dataset.entryKey = entryKey;
+            if (isSelected) card.classList.add('selected');
+            card.addEventListener('click', event => {
+                if (!event.target.closest('button')) _selectPromptEntry(entryKey);
+            });
 
             const header = document.createElement('div');
             header.className = 'prompts-entry-header';
             header.appendChild(_buildCountChip(entry.count || 0));
             const batchChip = _buildBatchChip(entry.batch);
             if (batchChip) header.appendChild(batchChip);
+            const selectButton = _buildActionChip(isSelected ? 'Selected' : 'Select prompt', 'prompts-select-entry', event => {
+                event.stopPropagation();
+                _selectPromptEntry(entryKey, true);
+            });
+            selectButton.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+            selectButton.setAttribute('aria-label', `${isSelected ? 'Selected' : 'Select'} prompt from ${entry.batch || 'current batch'}`);
+            header.appendChild(selectButton);
 
             const textWrap = document.createElement('div');
             textWrap.className = 'prompts-entry-main';
             const promptText = String(entry.normalized || entry.prompt || '');
-            const full = _buildFullDisclosure(promptText);
-            const neg = _buildNegativeDisclosure(entry.negative_prompt || '');
-            const imgs = _buildImageDisclosure(entry.images || []);
+            const positiveExpanded = (isSelected && promptsDetailModes.positive) || !promptsCollapseAll;
+            const full = _buildFullDisclosure(promptText, positiveExpanded);
+            const neg = _buildNegativeDisclosure(entry.negative_prompt || '', isSelected && promptsDetailModes.negative);
+            const imgs = _buildImageDisclosure(entry.images || [], isSelected && promptsDetailModes.images);
 
             const actions = document.createElement('div');
             actions.className = 'prompts-entry-actions';
-
-            actions.appendChild(_buildActionChip('copy positive', 'prompts-copy-prompt', () => copyMetadataText(promptText, 'positive prompt')));
-            if (neg.btn) actions.appendChild(neg.btn);
-            const copyPairText = _formatCopyPair(promptText, entry.negative_prompt || '');
-            actions.appendChild(_buildActionChip('copy pair', 'prompts-copy-pair', () => copyMetadataText(copyPairText, 'prompt pair')));
-            if (full.btn) actions.appendChild(full.btn);
-            if (imgs.btn) actions.appendChild(imgs.btn);
+            const copyActions = document.createElement('div');
+            copyActions.className = 'prompts-copy-actions';
+            copyActions.appendChild(_buildActionChip('copy positive', 'prompts-copy-prompt', () => copyMetadataText(promptText, 'positive prompt')));
             if (entry.negative_prompt) {
-                actions.appendChild(_buildActionChip('copy negative', 'prompts-copy-neg', () => copyMetadataText(entry.negative_prompt, 'negative prompt')));
+                copyActions.appendChild(_buildActionChip('copy negative', 'prompts-copy-neg', () => copyMetadataText(entry.negative_prompt, 'negative prompt')));
+            } else {
+                copyActions.appendChild(createTextElement('span', 'prompts-copy-placeholder', ''));
             }
+            const copyPairText = _formatCopyPair(promptText, entry.negative_prompt || '');
+            copyActions.appendChild(_buildActionChip('copy pair', 'prompts-copy-pair', () => copyMetadataText(copyPairText, 'prompt pair')));
+            actions.appendChild(copyActions);
 
             textWrap.appendChild(createTextElement('div', 'prompts-field-label', 'Positive prompt'));
-            if (full.el) {
-                textWrap.appendChild(full.el);
-            } else {
-                const plain = document.createElement('div');
-                plain.className = 'prompts-prompt-text';
-                plain.appendChild(_highlightMatchNode(promptText, query));
-                textWrap.appendChild(plain);
-            }
+            textWrap.appendChild(full);
 
-            if (neg.el) textWrap.appendChild(neg.el);
-            if (imgs.el) textWrap.appendChild(imgs.el);
+            if (neg) textWrap.appendChild(neg);
+            if (imgs) textWrap.appendChild(imgs);
 
             card.appendChild(header);
             card.appendChild(textWrap);
@@ -591,6 +612,8 @@
 
             // --- Empty / unbuilt states ---
             if (promptsBuilding) {
+                promptsSelectedEntryKey = null;
+                _syncPromptSelectionControls();
                 _setPromptsResultStatus('Building index...');
                 const status = createTextElement('div', 'prompts-building-status', '');
                 const spinner = document.createElement('span');
@@ -603,6 +626,8 @@
             }
 
             if (!promptsData) {
+                promptsSelectedEntryKey = null;
+                _syncPromptSelectionControls();
                 _setPromptsResultStatus(promptsCurrentBatch ? 'Index not built' : 'No indexes found');
                 if (promptsCurrentBatch) {
                     list.appendChild(_buildEmptyCta(promptsCurrentBatch, /* hasExisting */ false));
@@ -624,6 +649,8 @@
                 : `${allEntries.length} prompt${allEntries.length === 1 ? '' : 's'}`);
 
             if (filtered.length === 0) {
+                promptsSelectedEntryKey = null;
+                _syncPromptSelectionControls();
                 list.appendChild(_buildNoMatchesState(query, allEntries.length));
                 return;
             }
@@ -631,13 +658,17 @@
             const sorted = _sortedEntries(filtered);
             const truncated = sorted.length > PROMPTS_RENDER_CAP;
             const visible = truncated ? sorted.slice(0, PROMPTS_RENDER_CAP) : sorted;
+            if (promptsSelectedEntryKey && !visible.some(entry => _promptEntryKey(entry) === promptsSelectedEntryKey)) {
+                promptsSelectedEntryKey = null;
+            }
+            _syncPromptSelectionControls();
 
             if (truncated) {
                 const cap = createTextElement('div', 'prompts-render-cap', `Showing first ${PROMPTS_RENDER_CAP} of ${sorted.length}. Refine your search to narrow results.`);
                 list.appendChild(cap);
             }
 
-            if (promptsGroupByBatch) {
+            if (!promptsCurrentBatch) {
                 const groups = _entriesByBatch(visible);
                 groups.forEach((entries, batch) => {
                     const header = document.createElement('div');

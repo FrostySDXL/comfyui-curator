@@ -211,11 +211,11 @@ def test_prompt_history_uses_cohesive_semantic_surface_layers() -> None:
             "color: var(--text-secondary);",
         ),
         ".prompts-negative": (
-            "background: var(--surface-canvas);",
+            "background: var(--surface-2);",
             "border: 1px solid var(--border-subtle);",
         ),
         ".prompts-image-groups": (
-            "background: var(--surface-canvas);",
+            "background: var(--surface-2);",
             "border: 1px solid var(--border-subtle);",
         ),
         ".prompts-empty-cta": ("background: var(--surface-2);", "color: var(--text-secondary);"),

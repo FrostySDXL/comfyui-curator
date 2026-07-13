@@ -63,7 +63,7 @@
 | `moves.js` | Multi-select, drag/drop, move, undo, Empty Rejects modal |
 | `lightbox.js` | Lightbox open/close, navigation, zoom, scored navigation, lightbox favorite UI |
 | `metadata.js` | PNG metadata loading/cache/rendering and prompt copy helpers |
-| `prompts.js` | Prompt History modal state, selector, labeled row rendering, build/rebuild controls |
+| `prompts.js` | Prompt History modal state, scope selector, selected-row detail modes, labeled row rendering, build/rebuild controls |
 | `ai-state.js` | Shared AI globals, storage keys, and sidebar constants |
 | `ai-sidebar.js` | AI sidebar open/width state and resize behavior |
 | `ai-panel.js` | AI sidebar tabs, optional elements, quality flags, element history |
@@ -129,6 +129,8 @@
 | `promptsData` | `object\|null` | Current Prompt History modal payload |
 | `promptsCurrentBatch` | `string` | Batch selected in the Prompt History modal; empty means all batches |
 | `promptsCollapseAll` | `boolean` | Forces long prompt rows to collapsed text |
+| `promptsSelectedEntryKey` | `string\|null` | Stable batch-plus-prompt identity for the single selected Prompt History row |
+| `promptsDetailModes` | `object` | Independent full-positive, negative, and image-name modes applied only to the selected prompt row |
 
 ### Key Function Groups
 
@@ -148,7 +150,7 @@
 | **AI Grid Overlay** | `aiToggleOverlays`, `aiScoreGradient`, `aiShouldShowImage`, `aiSortImages`, `aiShowHeaderControls` | `.ai-score-badge`, `#ai-display-controls` |
 | **Polling** | `pollForChanges` (5s interval), `isInteractionBusy`, `aiPollJobStatus` (2s interval) | `setInterval` |
 | **Batch Search** | `setBatchFilter`, `filterBatches`, `clearBatchSearch` | `#batch-search` |
-| **Modals** | `showHelpModal`, `hideHelpModal`, `showPromptsModal`, `hidePromptsModal`, `loadPromptsData`, `renderPromptsList`, `updatePromptsFooter`, `updateBuildBtn`, `updateScopeChip`, `updateAllBatchesBtn`, `buildPromptIndex`, `_setPromptsCollapse`, `_setPromptsSort`, `_setPromptsGroupByBatch`, `_schedulePromptsRender`, `_trapFocus`, `_releaseFocusTrap` | `#help-modal`, `#prompts-modal`, `#new-batch-modal`, `#delete-modal` |
+| **Modals** | `showHelpModal`, `hideHelpModal`, `showPromptsModal`, `hidePromptsModal`, `loadPromptsData`, `renderPromptsList`, `updatePromptsFooter`, `updateBuildBtn`, `updateScopeChip`, `buildPromptIndex`, `_setPromptsCollapse`, `_setPromptsSort`, `_selectPromptEntry`, `_setPromptDetailMode`, `_schedulePromptsRender`, `_trapFocus`, `_releaseFocusTrap` | `#help-modal`, `#prompts-modal`, `#new-batch-modal`, `#delete-modal` |
 | **Custom Combobox** | `_openCustomDropdown`, `_populateCustomDropdown`, `_commitCustomSelectSelection` | `#active-batch-custom` |
 
 ### Frontend API Calls
@@ -204,7 +206,6 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 | `imageCurator.aiSidebarOpen` | AI sidebar visibility ('true'/'false') |
 | `imageCurator.promptsCollapseAll` | Prompt History collapse-all preference |
 | `imageCurator.promptsSort` | Prompt History sort mode (`count`, `alpha`, `length`) |
-| `imageCurator.promptsGroupByBatch` | Prompt History "Group by batch" toggle |
 | `imageCurator.publicDestinationHistory` | Recent public copy/move destinations under the configured export root |
 
 ### Operator-Facing UI Behavior
@@ -284,8 +285,8 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **`getDisplayImages()` centralizes filtering:** Favorites filtering and AI score sorting compose there; update image counts through `updateImageCountLabel()`.
 - **Prompt history cache is manual:** The modal loads cached JSON until the operator clicks Build/Rebuild; staleness is count-based only.
 - **Prompt History request token (`promptsRequestToken`):** Mirrors the `folderRequestToken` pattern. `loadPromptsData` and `buildPromptIndex` increment it before each fetch and check it before assigning the response, so superseded requests (e.g. rapid batch switches) cannot overwrite newer state.
-- **Prompt History is keyboard-first:** `P` opens the modal and focuses the search field outside the lightbox. A persistent desktop control rail holds scope, sort, grouping, and collapse controls while the dominant results pane holds search and prompt rows; the layout collapses to one column below 760px. Search input is debounced (~180ms) and capped at 200 rendered rows to keep large aggregate views responsive. Matches in prompt, negative prompt, and batch label are highlighted with `mark.prompts-match`.
-- **Prompt History entry actions are compact row controls:** Each prompt row exposes `copy pair`, `show full`/`collapse`, `show negative`/`hide negative`, `copy negative` (when a negative prompt exists), and `show images`/`hide images` (grouped by folder). Image chips are display-only -- grid-jump click wiring is intentionally deferred so it can land with the lightbox/grid state work.
+- **Prompt History is keyboard-first:** `P` opens the modal and focuses the search field outside the lightbox. A persistent desktop control rail holds the batch scope combobox, sort, global positive-length control, and contextual selected-prompt views while the dominant results pane holds search and prompt rows; the layout collapses to one column below 760px. All Batches is the first combobox option and automatically groups results by batch. Single-batch scope renders a flat sorted list. Search input is debounced (~180ms) and capped at 200 rendered rows to keep large aggregate views responsive. Matches in prompt, negative prompt, and batch label are highlighted with `mark.prompts-match`.
+- **Prompt History has one selected row:** Rows expose a native selection button and support mouse selection outside direct actions. Button activation restores focus to the newly rendered selected-row button; ordinary row clicks remain focus-neutral. Full positive, negative, and image-name rail modes are independent and transfer to the next selected row. Global positive expansion owns the effective Full positive state while preserving its selected-only override for a later global collapse. Filtering or scope changes clear selection when its stable batch-plus-hash identity is no longer visible; sorting and positive-length rerenders preserve it. Copy positive, copy negative when available, and copy pair remain a fixed horizontal row action group. Image chips are display-only -- grid-jump click wiring is intentionally deferred so it can land with the lightbox/grid state work.
 - **Prompt History scope chip:** The `Scope:` chip at the top of the modal reflects the current `promptsCurrentBatch` and updates on every batch change. The batch filter input is normally tabbable; the listbox uses `aria-selected` and `aria-activedescendant` for active-option state.
 
 **Completion Standard:** For any task in this directory, include files changed, manual browser verification performed (state the browser and interactions tested), and any updates to the Help modal, README keyboard shortcuts, or `test_frontend_*.py` invariants.

@@ -64,11 +64,13 @@ def test_prompt_workbench_preserves_unique_control_contracts() -> None:
         "prompts-scope-chip",
         "prompts-batch-filter",
         "prompts-batch-list",
-        "prompts-all-batches-btn",
         "prompts-search",
         "prompts-sort",
-        "prompts-group-toggle",
         "prompts-collapse-all",
+        "prompts-selection-status",
+        "prompts-view-positive",
+        "prompts-view-negative",
+        "prompts-view-images",
         "prompts-list",
         "prompts-stale-warning",
         "prompts-rebuild-btn",
@@ -90,6 +92,7 @@ def test_prompt_results_render_as_labeled_rows_with_display_only_image_reference
     assert "prompts-field-label" in entry
     assert "Positive prompt" in entry
     assert "prompts-entry-actions" in entry
+    assert "prompts-copy-actions" in entry
     assert "prompts-copy-pair" in entry
     assert "prompts-image-references-label" in images
     assert "Image references" in images
@@ -99,17 +102,57 @@ def test_prompt_results_render_as_labeled_rows_with_display_only_image_reference
     assert "open first image" not in source.lower()
 
 
-def test_prompt_disclosures_remain_native_keyboard_controls() -> None:
+def test_prompt_selection_uses_a_dedicated_keyboard_button_without_option_semantics() -> None:
     source = PROMPTS_JS.read_text(encoding="utf-8")
-    action = extract_function_body(source, "function _buildActionChip(label, className, onClick)")
-    negative = extract_function_body(source, "function _buildNegativeDisclosure(negText)")
-    images = extract_function_body(source, "function _buildImageDisclosure(images)")
-    full = extract_function_body(source, "function _buildFullDisclosure(promptText)")
+    entry = extract_function_body(source, "function _buildEntry(entry, query)")
+    select = extract_function_body(source, "function _selectPromptEntry(")
 
-    assert "document.createElement('button')" in action
-    assert "btn.type = 'button'" in action
-    for disclosure in (negative, images, full):
-        assert "aria-expanded" in disclosure
+    assert "prompts-select-entry" in entry
+    assert "aria-pressed" in entry
+    assert "prompts-entry selected" in source or "classList.add('selected')" in entry
+    assert "promptsSelectedEntryKey" in select
+    assert "role', 'option" not in entry
+    assert "role', 'button" not in entry
+
+
+def test_prompt_button_selection_restores_focus_without_row_click_focus_theft() -> None:
+    source = PROMPTS_JS.read_text(encoding="utf-8")
+    entry = extract_function_body(source, "function _buildEntry(entry, query)")
+    select = extract_function_body(source, "function _selectPromptEntry(")
+
+    assert "_selectPromptEntry(entryKey);" in entry
+    assert "_selectPromptEntry(entryKey, true);" in entry
+    assert "restoreFocus = false" in select
+    assert "if (!restoreFocus) return;" in select
+    assert "#prompts-list .prompts-entry.selected .prompts-select-entry" in select
+    assert "selectedButton.focus()" in select
+    assert "data-entry-key" not in select
+
+
+def test_contextual_detail_modes_are_independent_and_survive_positive_rerenders() -> None:
+    source = PROMPTS_JS.read_text(encoding="utf-8")
+    render = extract_function_body(source, "function renderPromptsList()")
+    sync = extract_function_body(source, "function _syncPromptSelectionControls()")
+
+    assert "promptsDetailModes" in source
+    for mode in ("positive", "negative", "images"):
+        assert mode in sync
+    assert "promptsSelectedEntryKey" in render
+    assert "_syncPromptSelectionControls()" in render
+    assert "promptsDetailModes.negative" in source
+    assert "promptsDetailModes.images" in source
+
+
+def test_full_positive_control_reports_effective_global_and_selected_state() -> None:
+    source = PROMPTS_JS.read_text(encoding="utf-8")
+    sync = extract_function_body(source, "function _syncPromptSelectionControls()")
+    collapse = extract_function_body(source, "function _setPromptsCollapse(value)")
+
+    assert "const globalPositiveExpanded = !promptsCollapseAll;" in sync
+    assert "globalPositiveExpanded || promptsDetailModes.positive" in sync
+    assert "mode === 'positive' && globalPositiveExpanded" in sync
+    assert "All positive prompts are expanded" in sync
+    assert "promptsDetailModes.positive" not in collapse
 
 
 def test_prompt_workbench_collapses_without_horizontal_overflow() -> None:
@@ -137,6 +180,39 @@ def test_prompt_workbench_uses_semantic_surfaces_and_accessible_primary_pair() -
     assert "background: var(--button-accent-fill);" in copy_pair
     assert "color: var(--button-accent-text);" in copy_pair
 
+    for selector in (".prompts-negative", ".prompts-image-groups"):
+        disclosure = _rule_body(css, selector)
+        assert "background: var(--surface-2);" in disclosure
+        assert "var(--surface-canvas)" not in disclosure
+
+
+def test_prompt_copy_actions_have_stable_horizontal_geometry() -> None:
+    css = PROMPTS_CSS.read_text(encoding="utf-8")
+    entry = _rule_body(css, ".prompts-entry")
+    actions = _rule_body(css, ".prompts-entry-actions")
+    copies = _rule_body(css, ".prompts-copy-actions")
+
+    assert "264px" in entry
+    assert "flex-direction: column" not in actions
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr));" in copies
+    assert "width: 264px;" in copies
+    assert ".prompts-copy-placeholder" in css
+
+
+def test_prompt_scope_drives_grouping_and_all_batches_is_a_combobox_option() -> None:
+    markup = _prompt_markup()
+    source = PROMPTS_JS.read_text(encoding="utf-8")
+    dropdown = extract_function_body(source, "function _populatePromptDropdown(filter = '')")
+    render = extract_function_body(source, "function renderPromptsList()")
+
+    assert "prompts-all-batches-btn" not in markup
+    assert "prompts-group-toggle" not in markup
+    assert "PROMPTS_GROUP_KEY" not in source
+    assert "promptsGroupByBatch" not in source
+    assert "All Batches" in dropdown
+    assert "promptsCurrentBatch === ''" in render or "!promptsCurrentBatch" in render
+    assert "_entriesByBatch(visible)" in render
+
 
 def test_prompt_build_feedback_is_truthful_and_indeterminate() -> None:
     source = PROMPTS_JS.read_text(encoding="utf-8")
@@ -161,7 +237,7 @@ def test_prompt_state_performance_and_focus_contracts_remain_explicit() -> None:
     assert "promptsRequestToken" in prompts
     assert "localStorage.getItem(PROMPTS_COLLAPSE_KEY)" in prompts
     assert "localStorage.getItem(PROMPTS_SORT_KEY)" in prompts
-    assert "localStorage.getItem(PROMPTS_GROUP_KEY)" in prompts
+    assert "PROMPTS_GROUP_KEY" not in prompts
     assert "search.focus()" in prompts
     assert "_trapFocus(modal)" in prompts
     assert "_releaseFocusTrap()" in prompts
@@ -178,6 +254,39 @@ def test_prompt_copy_pair_contract_remains_exact() -> None:
     assert "if (!negative) return prompt;" in formatter
     assert "return `${prompt}\\n\\nNegative: ${negative}`;" in formatter
     assert "copy negative" in source
+
+
+def test_prompt_selection_is_preserved_when_visible_and_cleared_when_absent() -> None:
+    source = PROMPTS_JS.read_text(encoding="utf-8")
+    render = extract_function_body(source, "function renderPromptsList()")
+    commit = extract_function_body(source, "function _commitPromptSelection(batch)")
+
+    assert "promptsSelectedEntryKey" in render
+    assert "visible" in render
+    assert "promptsSelectedEntryKey = null" in render
+    assert "promptsSelectedEntryKey = null" in commit
+
+
+def test_positive_expansion_label_is_explicit_and_context_details_are_not_reset() -> None:
+    markup = _prompt_markup()
+    events = EVENTS_JS.read_text(encoding="utf-8")
+    collapse_binding = events.split(
+        "const promptsCollapseBtn = document.getElementById('prompts-collapse-all');", 1
+    )[1].split("[['prompts-view-positive'", 1)[0]
+
+    assert "positive prompts" in markup.lower()
+    assert "positive prompts" in collapse_binding.lower()
+    assert "promptsDetailModes" not in collapse_binding
+
+
+def test_prompt_responsive_layout_keeps_copy_actions_and_context_controls_usable() -> None:
+    css = PROMPTS_CSS.read_text(encoding="utf-8")
+
+    assert "@media (max-width: 760px)" in css
+    assert ".prompts-entry-actions { grid-column: 2;" in css
+    assert ".prompts-copy-actions { width: 100%;" in css
+    assert "@media (max-width: 480px)" in css
+    assert ".prompts-entry-actions { grid-column: 1;" in css
 
 
 def test_prompt_template_keeps_exact_native_two_transform_parity() -> None:
