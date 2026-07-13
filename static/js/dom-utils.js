@@ -47,14 +47,14 @@ function _modalKey(e) {
             }
         }
 
-function _trapFocus(modal) {
+function _trapFocus(modal, initialFocus = null) {
             _activeModal = modal;
             _modalFocusRestore = document.activeElement;
             const all = modal.querySelectorAll(
                 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
             );
             const focusable = [...all].filter(el => el.tabIndex !== -1 && !el.disabled && el.offsetParent !== null);
-            const first = focusable[0];
+            const first = initialFocus && focusable.includes(initialFocus) ? initialFocus : focusable[0];
             modal.addEventListener('keydown', _modalKey);
             if (first) first.focus();
         }

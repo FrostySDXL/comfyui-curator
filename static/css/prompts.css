@@ -284,6 +284,7 @@
     flex-wrap: wrap;
     gap: 12px;
 }
+.prompts-entry-heading > .prompts-field-label { padding-top: 5px; }
 .prompts-prompt-text {
     color: var(--text-primary);
     font-size: var(--type-body);
@@ -523,6 +524,7 @@
     .prompts-entry-header { grid-row: auto; flex-direction: row; align-items: baseline; }
     .prompts-entry-main { grid-column: 1; }
     .prompts-entry-heading { flex-direction: column; align-items: stretch; gap: 6px; }
+    .prompts-entry-heading > .prompts-field-label { padding-top: 0; }
     .prompts-copy-actions { width: 100%; }
     .prompts-image-folder { flex-basis: 100%; }
 }

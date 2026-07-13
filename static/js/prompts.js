@@ -51,7 +51,8 @@
         async function showPromptsModal() {
             const modal = document.getElementById('prompts-modal');
             modal.classList.add('active');
-            _trapFocus(modal);
+            const closeButton = modal.querySelector('.prompts-workbench-footer .cancel');
+            _trapFocus(modal, closeButton);
             // Always refetch the batch list on open so newly created batches appear.
             try {
                 const resp = await fetch(ccApiPath('/api/batches'));
@@ -71,12 +72,6 @@
             updateScopeChip();
             updateBuildBtn();
             loadPromptsData();
-            // Focus the search input so operators can refine without an extra click.
-            const search = document.getElementById('prompts-search');
-            if (search) {
-                // Defer focus past the focus trap's first-focus to avoid a fight.
-                setTimeout(() => { try { search.focus(); } catch { /* noop */ } }, 0);
-            }
         }
 
         function hidePromptsModal() {

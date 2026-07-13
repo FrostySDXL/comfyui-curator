@@ -8,6 +8,7 @@ INDEX_HTML = Path("templates/index.html")
 CURATOR_HTML = Path("templates/curator.html")
 PROMPTS_JS = Path("static/js/prompts.js")
 PROMPTS_CSS = Path("static/css/prompts.css")
+DOM_UTILS_JS = Path("static/js/dom-utils.js")
 EVENTS_JS = Path("static/js/events.js")
 KEYBOARD_JS = Path("static/js/keyboard.js")
 
@@ -237,6 +238,14 @@ def test_prompt_copy_actions_have_stable_horizontal_geometry() -> None:
     assert ".prompts-copy-placeholder" in css
 
 
+def test_prompt_positive_label_is_lowered_without_moving_copy_actions() -> None:
+    css = PROMPTS_CSS.read_text(encoding="utf-8")
+    label = _rule_body(css, ".prompts-entry-heading > .prompts-field-label")
+
+    assert "padding-top: 5px;" in label
+    assert ".prompts-entry-heading > .prompts-field-label { padding-top: 0; }" in css
+
+
 def test_prompt_copy_actions_share_the_positive_heading_above_all_disclosures() -> None:
     source = PROMPTS_JS.read_text(encoding="utf-8")
     entry = extract_function_body(source, "function _buildEntry(entry, query)")
@@ -313,13 +322,28 @@ def test_prompt_state_performance_and_focus_contracts_remain_explicit() -> None:
     assert "localStorage.getItem(PROMPTS_COLLAPSE_KEY)" in prompts
     assert "localStorage.getItem(PROMPTS_SORT_KEY)" in prompts
     assert "PROMPTS_GROUP_KEY" not in prompts
-    assert "search.focus()" in prompts
-    assert "_trapFocus(modal)" in prompts
+    assert "_trapFocus(modal" in prompts
     assert "_releaseFocusTrap()" in prompts
     for key in ("ArrowDown", "ArrowUp", "Home", "End", "PageDown", "PageUp", "Enter"):
         assert f"case '{key}':" in events
     assert "case 'Escape':" in events
     assert "hidePromptsModal();" in keyboard
+
+
+def test_prompt_modal_initial_focus_is_stable_non_input_without_autofocus_flash() -> None:
+    prompts = PROMPTS_JS.read_text(encoding="utf-8")
+    dom_utils = DOM_UTILS_JS.read_text(encoding="utf-8")
+    markup = _prompt_markup()
+    show = extract_function_body(prompts, "async function showPromptsModal()")
+    trap = extract_function_body(dom_utils, "function _trapFocus(")
+
+    assert '<button class="cancel" type="button">Close</button>' in markup
+    assert "const closeButton = modal.querySelector('.prompts-workbench-footer .cancel');" in show
+    assert "_trapFocus(modal, closeButton);" in show
+    assert "search.focus()" not in show
+    assert "document.getElementById('prompts-search')" not in show
+    assert "initialFocus" in trap
+    assert "first.focus()" in trap
 
 
 def test_prompt_copy_pair_contract_remains_exact() -> None:
