@@ -19,7 +19,11 @@ def _publish_markup() -> str:
 
 
 def _rule_body(css: str, selector: str) -> str:
-    match = re.search(rf"{re.escape(selector)}\s*\{{(?P<body>.*?)\}}", css, re.DOTALL)
+    match = re.search(
+        rf"^\s*{re.escape(selector)}\s*\{{(?P<body>.*?)\}}",
+        css,
+        re.DOTALL | re.MULTILINE,
+    )
     assert match, selector
     return match.group("body")
 
@@ -480,11 +484,8 @@ def test_defect_8_inflight_submission_not_reset_on_reopen() -> None:
         or "disabled=publishSubmitInflight" in show_body
     ), "Submit button disabled must be derived from publishSubmitInflight"
 
-    # Activity visibility derived from the flag.
-    assert (
-        "hidden = !publishSubmitInflight" in show_body
-        or "hidden=!publishSubmitInflight" in show_body
-    ), "Activity visibility must be derived from publishSubmitInflight"
+    # Activity visibility and accessibility state derive from the flag.
+    assert "syncPublishSubmitActivity(publishSubmitInflight);" in show_body
 
 
 def test_publish_template_keeps_exact_native_two_transform_parity() -> None:
@@ -627,3 +628,110 @@ def test_metadata_note_truthful_unchecked_wording() -> None:
     # The unchecked wording must not overclaim.
     assert "Metadata will be included in generated copies." not in sync_body
     assert "stripping is off" in sync_body or "Stripping is off" in sync_body
+
+
+def test_publish_preview_keeps_the_full_image_inspectable() -> None:
+    css = MODALS_CSS.read_text(encoding="utf-8")
+
+    frame = _rule_body(css, ".publish-preview-frame")
+    pane = _rule_body(css, ".publish-preview-pane")
+    image = _rule_body(css, ".publish-preview-image-wrap img")
+    assert "overflow: auto;" in frame
+    assert "height: var(--publish-preview-height);" in frame
+    assert "min-height: 0;" in pane
+    assert "overflow: hidden;" in pane
+    assert "max-width: 100%;" in image
+    assert "max-height: var(--publish-preview-height);" in image
+    assert "object-fit: contain;" in image
+
+
+def test_publish_settings_rail_only_scrolls_the_capped_saved_preset_list() -> None:
+    css = MODALS_CSS.read_text(encoding="utf-8")
+
+    rail = _rule_body(css, ".publish-settings-rail")
+    presets = _rule_body(css, ".publish-preset-list")
+    assert "overflow-y: auto;" not in rail
+    assert "overflow: visible;" in rail
+    assert "max-height:" in presets
+    assert "overflow-y: auto;" in presets
+    assert "scrollbar-gutter: stable;" in presets
+
+
+def test_publish_shell_is_continuous_bounded_and_surface_consistent() -> None:
+    css = MODALS_CSS.read_text(encoding="utf-8")
+
+    modal = _rule_body(css, ".publish-modal-content")
+    header = _rule_body(css, ".publish-workbench-header")
+    body = _rule_body(css, ".publish-workbench-body")
+    preview = _rule_body(css, ".publish-preview-pane")
+    summary = _rule_body(css, ".publish-summary")
+    footer = _rule_body(css, ".publish-workbench-footer")
+    assert "padding: 0;" in modal
+    assert "border: 1px solid var(--border-strong);" in modal
+    assert "border-radius:" in modal
+    assert "border-left: 1px solid var(--border-subtle);" in body
+    assert "border-right: 1px solid var(--border-subtle);" in body
+    assert "background: var(--surface-1);" in header
+    assert "background: var(--surface-1);" in preview
+    assert "background: var(--surface-2);" in summary
+    assert "background: var(--surface-1);" in footer
+    assert "padding: 14px 18px 10px;" in header
+
+
+def test_publish_preset_save_row_has_aligned_controls_and_narrow_wrap() -> None:
+    css = MODALS_CSS.read_text(encoding="utf-8")
+    responsive = RESPONSIVE_CSS.read_text(encoding="utf-8")
+
+    row = _rule_body(css, ".publish-preset-save-row")
+    button = _rule_body(css, ".publish-preset-save-row button")
+    input_rule = _rule_body(css, ".publish-preset-name-field input")
+    assert "display: grid;" in row
+    assert "align-items: end;" in row
+    assert "grid-template-columns: minmax(0, 1fr) auto;" in row
+    assert "height: 34px;" in button
+    assert "height: 34px;" in input_rule
+    assert ".publish-preset-save-row" in responsive
+    assert "grid-template-columns: minmax(0, 1fr);" in responsive
+
+
+def test_publish_footer_reserves_inline_activity_geometry() -> None:
+    css = MODALS_CSS.read_text(encoding="utf-8")
+    markup = _publish_markup()
+    source = PUBLISH_JS.read_text(encoding="utf-8")
+
+    footer = _rule_body(css, ".publish-workbench-footer")
+    activity = _rule_body(css, ".publish-submit-activity")
+    active_activity = _rule_body(css, ".publish-submit-activity.is-active")
+    activity_tag = markup.split('id="publish-submit-activity"', 1)[1].split(">", 1)[0]
+    show = extract_function_body(source, "function showPublishModal()")
+    submit = extract_function_body(source, "async function submitPublicExport()")
+    assert "display: flex;" in footer
+    assert "align-items: center;" in footer
+    assert "justify-content: space-between;" in footer
+    assert "min-height:" in footer
+    assert "margin-bottom:" not in activity
+    assert "visibility: hidden;" in activity
+    assert "visibility: visible;" in active_activity
+    assert " hidden" not in activity_tag
+    assert 'aria-hidden="true"' in activity_tag
+    assert 'role="status"' in markup
+    assert 'aria-live="polite"' in markup
+    assert "syncPublishSubmitActivity(publishSubmitInflight);" in show
+    assert "syncPublishSubmitActivity(true);" in submit
+    assert "syncPublishSubmitActivity(false);" in submit
+    assert ".hidden =" not in submit
+    assert ".hidden =" not in show
+
+
+def test_publish_success_preserves_source_selection_for_repeat_export() -> None:
+    source = PUBLISH_JS.read_text(encoding="utf-8")
+    submit = extract_function_body(source, "async function submitPublicExport()")
+    filenames = extract_function_body(source, "function getSelectedSourceFilenames()")
+
+    assert "resetSelectionState();" not in submit
+    assert "clearSelection();" not in submit
+    assert "setSelectionMode(false);" not in submit
+    assert "const filenames = getSelectedSourceFilenames();" in submit
+    assert "selectedImages.has(img.name)" in filenames
+    assert "selectedImages.clear()" not in filenames
+    assert "selectedImages =" not in filenames

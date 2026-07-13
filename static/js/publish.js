@@ -16,6 +16,14 @@ const PUBLISH_WATERMARK_POSITIONS = new Set([
     'bottom-right', 'bottom-left', 'top-right', 'top-left', 'bottom-center', 'center',
 ]);
 
+function syncPublishSubmitActivity(active) {
+            const activity = document.getElementById('publish-submit-activity');
+            if (!activity) return;
+            const isActive = active === true;
+            activity.classList.toggle('is-active', isActive);
+            activity.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+        }
+
 function showPublishModal() {
             if (!currentBatch || isVirtualCollectionView() || isPublicView() || selectedImages.size === 0) {
                 showToast('Select source images in a review folder first');
@@ -29,8 +37,7 @@ function showPublishModal() {
             syncPublishMetadataNote();
             const result = document.getElementById('publish-result');
             if (result) result.classList.add('hidden');
-            const activity = document.getElementById('publish-submit-activity');
-            if (activity) activity.hidden = !publishSubmitInflight;
+            syncPublishSubmitActivity(publishSubmitInflight);
             const submitBtn = document.getElementById('publish-submit-btn');
             if (submitBtn) submitBtn.disabled = publishSubmitInflight;
             renderPublishPresets();
@@ -407,9 +414,8 @@ async function submitPublicExport() {
             }
             publishSubmitInflight = true;
             const submitBtn = document.getElementById('publish-submit-btn');
-            const activity = document.getElementById('publish-submit-activity');
             if (submitBtn) submitBtn.disabled = true;
-            if (activity) activity.hidden = false;
+            syncPublishSubmitActivity(true);
             try {
                 const resp = await apiPublishExport({
                     batch: currentBatch,
@@ -424,7 +430,6 @@ async function submitPublicExport() {
                     return;
                 }
                 lastPublishedPublicBatch = currentBatch;
-                resetSelectionState();
                 showToast(`Created ${data.exported || 0} public cop${data.exported === 1 ? 'y' : 'ies'}`);
                 showPublishResult(data);
                 await loadBatches();
@@ -433,7 +438,7 @@ async function submitPublicExport() {
             } finally {
                 publishSubmitInflight = false;
                 if (submitBtn) submitBtn.disabled = false;
-                if (activity) activity.hidden = true;
+                syncPublishSubmitActivity(false);
             }
         }
 

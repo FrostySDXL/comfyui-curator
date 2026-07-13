@@ -77,7 +77,17 @@
         @media (max-width: 760px) {
             .publish-workbench-body { grid-template-columns: minmax(0, 1fr); }
             .publish-settings-rail { border-right: 0; border-bottom: 1px solid var(--border-subtle); }
+            .publish-preview-pane { --publish-preview-height: min(44vh, 360px); }
             .publish-preview-frame { min-height: 180px; }
+            .publish-preset-save-row { grid-template-columns: minmax(0, 1fr); }
+            .publish-preset-save-row button { width: 100%; }
+            .publish-workbench-footer {
+                align-items: stretch;
+                flex-direction: column;
+                gap: 6px;
+            }
+            .publish-workbench-footer .modal-buttons { justify-content: stretch; }
+            .publish-workbench-footer .modal-buttons button { flex: 1; }
         }
 
         @media (max-width: 700px) {
