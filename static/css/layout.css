@@ -7,8 +7,8 @@
         }
         .header {
             padding: 9px 18px 8px;
-            background: #1a1a1a;
-            border-bottom: 1px solid #2a2a2a;
+            background: var(--surface-0);
+            border-bottom: 1px solid var(--border-subtle);
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -21,15 +21,15 @@
             min-width: 0;
         }
         .context-kicker {
-            font-size: 9px;
-            color: #666;
+            font-size: var(--type-label);
+            color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 1.4px;
             font-weight: 700;
         }
         .header h1 { font-size: 15px; font-weight: 600; line-height: 1.2; }
-        .header .path { color: #0066cc; }
-        .header .img-count { font-size: 12px; color: #555; margin-left: 10px; }
+        .header .path { color: var(--accent-primary); }
+        .header .img-count { font-size: var(--type-secondary); color: var(--text-muted); margin-left: 10px; }
         .header-actions {
             display: flex;
             align-items: center;
@@ -70,8 +70,8 @@
             align-items: center;
             gap: 12px;
             padding: 8px 18px;
-            background: #1d1d1d;
-            border-bottom: 1px solid #2a2a2a;
+            background: var(--surface-1);
+            border-bottom: 1px solid var(--border-subtle);
             min-height: 48px;
         }
 
@@ -107,8 +107,8 @@
         .folder-tab[data-folder="rejects"].active { border-color: #dc3545; box-shadow: inset 0 0 0 1px rgba(220,53,69,0.25); }
         .folder-tab[data-folder="public"].active { border-color: #7c6cff; box-shadow: inset 0 0 0 1px rgba(124,108,255,0.25); }
         .folder-tab-label {
-            font-size: 9px;
-            color: #666;
+            font-size: var(--type-label);
+            color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 1.2px;
             font-weight: 700;
@@ -160,8 +160,8 @@
             margin-left: auto;
         }
         .sort-label {
-            font-size: 10px;
-            color: #777;
+            font-size: var(--type-label);
+            color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 1.5px;
             font-weight: 600;
@@ -176,7 +176,7 @@
             padding: 5px 10px;
             background: transparent;
             border: none;
-            color: #666;
+            color: var(--text-muted);
             font-size: 11px;
             font-family: inherit;
             cursor: pointer;
@@ -185,14 +185,14 @@
         }
         .sort-btn:last-child { border-right: none; }
         .sort-btn:hover { color: #bbb; background: #252525; }
-        .sort-btn.active { color: #fff; background: #0066cc; }
+        .sort-btn.active { color: var(--button-accent-text); background: var(--button-accent-fill); }
         .sort-dir {
             width: 28px; height: 28px;
             display: flex; align-items: center; justify-content: center;
             background: transparent;
             border: 1px solid #333;
             border-radius: 4px;
-            color: #666;
+            color: var(--text-muted);
             cursor: pointer;
             transition: all 0.15s;
             padding: 0;
@@ -210,7 +210,7 @@
             background: transparent;
             border: 1px solid #333;
             border-radius: 4px;
-            color: #666;
+            color: var(--text-muted);
             cursor: pointer;
             transition: all 0.15s;
             padding: 0;
@@ -227,7 +227,7 @@
             padding: 5px 10px;
             border: 1px solid #333;
             background: transparent;
-            color: #666;
+            color: var(--text-muted);
             border-radius: 4px;
             font-size: 11px;
             font-family: inherit;
@@ -254,7 +254,7 @@
             background: transparent;
             border: none;
             border-right: 1px solid #333;
-            color: #666;
+            color: var(--text-muted);
             font-size: 11px;
             font-family: inherit;
             cursor: pointer;

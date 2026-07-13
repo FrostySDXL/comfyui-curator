@@ -3,8 +3,8 @@
             width: var(--ai-sidebar-width);
             min-width: 0;
             display: flex;
-            background: #181818;
-            border-left: 1px solid #262626;
+            background: var(--surface-canvas);
+            border-left: 1px solid var(--border-subtle);
             flex-shrink: 0;
             transition: width 0.2s ease;
         }
@@ -27,7 +27,7 @@
             display: none;
         }
         .ai-curate-panel {
-            background: #1c1c1c;
+            background: var(--surface-1);
             border-bottom: 1px solid #2a2a2a;
             padding: 0;
             position: relative;
@@ -47,12 +47,12 @@
         .ai-curate-header h3 {
             font-size: 13px;
             font-weight: 600;
-            color: #ccc;
+            color: var(--text-secondary);
             margin: 0;
         }
         .ai-curate-advisory {
-            font-size: 10px;
-            color: #555;
+            font-size: var(--type-label);
+            color: var(--text-muted);
             font-style: italic;
             margin-top: 3px;
         }
@@ -80,7 +80,7 @@
             border: 0;
             border-radius: 6px;
             background: transparent;
-            color: #777;
+            color: var(--text-muted);
             font-size: 11px;
             font-weight: 700;
             cursor: pointer;
@@ -101,8 +101,8 @@
         }
         .ai-section-heading {
             margin-bottom: 8px;
-            color: #888;
-            font-size: 10px;
+            color: var(--text-muted);
+            font-size: var(--type-label);
             font-weight: 700;
             letter-spacing: 0.9px;
             text-transform: uppercase;
@@ -114,7 +114,7 @@
             color: #aaa;
         }
         .ai-image-inspector-empty {
-            color: #777;
+            color: var(--text-muted);
         }
         .ai-inspector-empty-title {
             color: #aaa;
@@ -122,7 +122,7 @@
             font-weight: 600;
         }
         .ai-inspector-empty-detail {
-            color: #777;
+            color: var(--text-muted);
             font-size: 11px;
             line-height: 1.4;
         }
@@ -138,8 +138,8 @@
         }
         .ai-inspector-subtitle {
             margin-top: 2px;
-            color: #777;
-            font-size: 10px;
+            color: var(--text-muted);
+            font-size: var(--type-label);
         }
         .ai-inspector-score {
             align-self: flex-start;
@@ -238,8 +238,8 @@
             border-radius: 0;
         }
         .ai-label {
-            font-size: 10px;
-            color: #999;
+            font-size: var(--type-label);
+            color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 1px;
             font-weight: 600;
@@ -250,7 +250,7 @@
         .ai-optional {
             text-transform: none;
             font-weight: 400;
-            color: #555;
+            color: var(--text-disabled);
             letter-spacing: 0;
         }
         .ai-textarea {
@@ -264,9 +264,8 @@
             font-family: inherit;
             resize: vertical;
         }
-        .ai-textarea:focus {
-            outline: none;
-            border-color: #0066cc;
+        .ai-textarea:focus-visible {
+            border-color: var(--focus-ring);
         }
         .ai-select {
             width: 100%;
@@ -295,8 +294,8 @@
         .ai-hint {
             display: block;
             margin-top: 3px;
-            font-size: 10px;
-            color: #888;
+            font-size: var(--type-label);
+            color: var(--text-muted);
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -326,7 +325,7 @@
             cursor: pointer;
         }
         .ai-checkbox-label input[type="checkbox"] {
-            accent-color: #0066cc;
+            accent-color: var(--accent-primary);
         }
         .ai-btn {
             padding: 7px 14px;
@@ -337,8 +336,8 @@
             font-weight: 600;
         }
         .ai-btn-primary {
-            background: #0066cc;
-            color: white;
+            background: var(--button-accent-fill);
+            color: var(--button-accent-text);
         }
         .ai-btn-primary:hover { background: #0055aa; }
         .ai-btn-primary:disabled {
@@ -383,7 +382,7 @@
         }
         .ai-optional-header:hover { color: #aaa; }
         .ai-optional-arrow {
-            font-size: 10px;
+            font-size: var(--type-label);
             transition: transform 0.15s ease;
         }
         .ai-optional-body {
@@ -436,19 +435,19 @@
             gap: 8px;
             font-size: 12px;
         }
-        .ai-job-label { color: #666; }
+        .ai-job-label { color: var(--text-muted); }
         .ai-job-state {
             font-weight: 600;
             text-transform: uppercase;
             font-size: 11px;
             letter-spacing: 0.5px;
         }
-        .ai-job-state.running { color: #5ba3f5; }
-        .ai-job-state.queued { color: #e8a33d; }
-        .ai-job-state.completed { color: #28a745; }
-        .ai-job-state.cancelling { color: #e8a33d; }
+        .ai-job-state.running { color: var(--accent-primary); }
+        .ai-job-state.queued { color: var(--warning); }
+        .ai-job-state.completed { color: var(--success); }
+        .ai-job-state.cancelling { color: var(--warning); }
         .ai-job-state.cancelled { color: #888; }
-        .ai-job-state.failed { color: #dc3545; }
+        .ai-job-state.failed { color: var(--danger); }
         .ai-job-progress {
             flex: 1;
             color: #888;
@@ -467,8 +466,8 @@
             background: #5ba3f5;
             box-shadow: 0 0 0 4px rgba(91,163,245,0.12);
         }
-        .ai-status-dot.completed { background: #28a745; }
-        .ai-status-dot.failed { background: #dc3545; }
+        .ai-status-dot.completed { background: var(--success); }
+        .ai-status-dot.failed { background: var(--danger); }
         .ai-history-section {
             margin-top: 10px;
         }
@@ -530,8 +529,8 @@
         }
         .ai-run-kpi { min-width: 0; }
         .ai-stat-label {
-            font-size: 10px;
-            color: #777;
+            font-size: var(--type-label);
+            color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 0.8px;
             margin-bottom: 4px;
@@ -554,8 +553,8 @@
             padding: 8px 10px;
         }
         .ai-meta-label {
-            font-size: 10px;
-            color: #777;
+            font-size: var(--type-label);
+            color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 0.8px;
             margin-bottom: 3px;
@@ -652,7 +651,7 @@
             font-weight: 700;
         }
         .ai-header-toggle input[type="checkbox"] {
-            accent-color: #0066cc;
+            accent-color: var(--accent-primary);
         }
 
         /* AI score badge on thumbnails */

@@ -1,27 +1,59 @@
         :root {
+            color-scheme: dark;
             --sidebar-width: 240px;
             --sidebar-effective-width: 240px;
             --ai-sidebar-width: 360px;
+            --surface-canvas: #111315;
+            --surface-0: #17191c;
+            --surface-1: #1d2024;
+            --surface-2: #24282d;
+            --surface-raised: #2b3036;
+            --surface-overlay: rgba(12, 14, 17, 0.94);
+            --text-primary: #f2f4f7;
+            --text-secondary: #c4cad2;
+            --text-muted: #929ba7;
+            --text-disabled: #6f7883;
+            --border-subtle: #30353b;
+            --border-strong: #454c55;
+            --accent-primary: #4d9cf5;
+            --accent-hover: #6baff8;
+            --accent-surface: rgba(77, 156, 245, 0.14);
+            --focus-ring: #7cb8ff;
+            --focus-ring-width: 2px;
+            --focus-ring-offset: 2px;
+            --success: #45bd68;
+            --warning: #e9a94b;
+            --danger: #ed5b69;
+            --button-accent-fill: #0066cc;
+            --button-accent-text: #ffffff;
+            --button-success-fill: #247a3d;
+            --button-success-text: #ffffff;
+            --button-warning-fill: #8a5a00;
+            --button-warning-text: #ffffff;
+            --button-danger-fill: #b52a38;
+            --button-danger-text: #ffffff;
+            --type-body: 13px;
+            --type-secondary: 12px;
+            --type-label: 11px;
+            --control-radius: 5px;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         .hidden { display: none; }
         body {
-            background: #1a1a1a;
-            color: #eee;
-            font-family: system-ui, -apple-system, sans-serif;
+            background: var(--surface-0);
+            color: var(--text-primary);
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-size: var(--type-body);
+            line-height: 1.4;
             display: flex;
             height: 100vh;
             overflow: hidden;
         }
 
         /* Accessibility: visible focus indicators for keyboard navigation */
-        button:focus-visible,
-        input:focus-visible,
-        select:focus-visible,
-        textarea:focus-visible,
-        [tabindex]:focus-visible {
-            outline: 2px solid #5ba3f5;
-            outline-offset: 2px;
+        :where(button, input, select, textarea, [tabindex]):focus-visible {
+            outline: var(--focus-ring-width) solid var(--focus-ring);
+            outline-offset: var(--focus-ring-offset);
         }
 
         /* Respect user motion preferences */

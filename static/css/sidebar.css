@@ -1,10 +1,10 @@
         /* Sidebar */
         .sidebar {
             width: var(--sidebar-effective-width);
-            background: #202020;
+            background: var(--surface-1);
             display: flex;
             flex-direction: column;
-            border-right: 1px solid #2a2a2a;
+            border-right: 1px solid var(--border-subtle);
             flex-shrink: 0;
             transition: width 0.2s ease;
         }
@@ -36,8 +36,8 @@
             border-top: 1px solid #2a2a2a;
         }
         .sidebar h2 {
-            font-size: 10px;
-            color: #888;
+            font-size: var(--type-label);
+            color: var(--text-muted);
             margin-bottom: 10px;
             text-transform: uppercase;
             letter-spacing: 1.5px;
@@ -69,18 +69,16 @@
             font-family: inherit;
             caret-color: #5ba3f5;
         }
-        .custom-select-input:focus {
-            outline: none;
-            border-color: #0066cc;
-            box-shadow: 0 0 0 1px rgba(0, 102, 204, 0.3);
+        .custom-select-input:focus-visible {
+            border-color: var(--focus-ring);
         }
         .custom-select-arrow {
             position: absolute;
             top: 50%;
             right: 8px;
             transform: translateY(-50%);
-            font-size: 10px;
-            color: #666;
+            font-size: var(--type-label);
+            color: var(--text-muted);
             pointer-events: none;
             transition: transform 0.18s ease;
         }
@@ -122,7 +120,6 @@
         }
         .custom-select-option.focus {
             background: #333;
-            outline: none;
         }
         .custom-select-option.selected {
             background: #0066cc;
@@ -143,7 +140,7 @@
             color: #ccc;
             border-radius: 3px;
             cursor: pointer;
-            font-size: 10px;
+            font-size: var(--type-label);
             margin-left: auto;
         }
         .pending-bar .import-btn:hover { background: #444; }
@@ -182,8 +179,8 @@
             white-space: nowrap;
         }
         .sidebar-subtitle {
-            color: #666;
-            font-size: 11px;
+            color: var(--text-muted);
+            font-size: var(--type-label);
             line-height: 1.2;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -214,10 +211,8 @@
             border-radius: 4px;
             font-size: 12px;
         }
-        .batch-search:focus {
-            outline: none;
-            border-color: #0066cc;
-            box-shadow: 0 0 0 1px rgba(0, 102, 204, 0.3);
+        .batch-search:focus-visible {
+            border-color: var(--focus-ring);
         }
         .batch-search-clear {
             width: 24px;
@@ -248,7 +243,7 @@
             justify-content: space-between;
             align-items: flex-start;
             font-size: 13px;
-            color: #aaa;
+            color: var(--text-secondary);
             border: 1px solid transparent;
             transition: color 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
             min-width: 0;
@@ -284,14 +279,14 @@
             min-width: 0;
         }
         .batch-breakdown {
-            color: #666;
-            font-size: 10px;
+            color: var(--text-muted);
+            font-size: var(--type-label);
             line-height: 1.2;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
-        .batch-name:hover { background: #2a2a2a; color: #ddd; }
+        .batch-name:hover { background: var(--surface-2); color: var(--text-primary); }
         .batch-name:hover .batch-breakdown { color: #999; }
         .batch-name.selected {
             background: #24282e;
@@ -301,7 +296,7 @@
         .batch-name.selected .batch-breakdown { color: #9fb8d7; }
         .batch-count {
             font-size: 11px;
-            color: #555;
+            color: var(--text-disabled);
             background: #2a2a2a;
             padding: 1px 6px;
             border-radius: 8px;
@@ -333,7 +328,7 @@
         }
         .batch-empty {
             padding: 10px;
-            color: #777;
+            color: var(--text-muted);
             font-size: 12px;
         }
         .batch-item-favorites {
@@ -383,7 +378,7 @@
             margin-top: 0;
             background: transparent;
             border: 1px dashed #333;
-            color: #555;
+            color: var(--text-muted);
             cursor: pointer;
             border-radius: 4px;
             font-size: 12px;

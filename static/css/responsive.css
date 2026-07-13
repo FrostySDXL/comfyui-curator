@@ -35,7 +35,7 @@
             .ai-sidebar-shell {
                 width: 100%;
                 border-left: none;
-                border-top: 1px solid #262626;
+                border-top: 1px solid var(--border-subtle);
             }
             .ai-history-controls,
             .ai-form-row {

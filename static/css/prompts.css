@@ -47,12 +47,10 @@
             font-size: 12px;
             line-height: 1.4;
             font-family: inherit;
-            caret-color: #5ba3f5;
+            caret-color: var(--accent-primary);
         }
-        .prompts-batch-select input:focus {
-            outline: none;
-            border-color: #0066cc;
-            box-shadow: 0 0 0 1px rgba(0, 102, 204, 0.3);
+        .prompts-batch-select input:focus-visible {
+            border-color: var(--focus-ring);
         }
         .prompts-batch-list {
             position: absolute;
@@ -73,7 +71,7 @@
             box-shadow: 0 6px 20px rgba(0,0,0,0.45);
         }
         .prompts-batch-wrap.open .prompts-batch-list { display: block; }
-        .prompts-batch-empty { padding: 8px; font-size: 12px; color: #666; text-align: center; }
+        .prompts-batch-empty { padding: 8px; font-size: 12px; color: var(--text-muted); text-align: center; }
         .prompts-batch-option {
             padding: 6px 8px;
             font-size: 12px;
@@ -84,8 +82,8 @@
             white-space: nowrap;
         }
         .prompts-batch-option:hover { background: #333; }
-        .prompts-batch-option.focus { background: #333; outline: none; }
-        .prompts-batch-option.selected { color: #5ba3f5; }
+        .prompts-batch-option.focus { background: var(--surface-raised); }
+        .prompts-batch-option.selected { color: var(--accent-primary); }
 
         .prompts-all-batches-btn {
             display: block;
@@ -190,7 +188,7 @@
 
         .prompts-entry-text { display: flex; flex-direction: column; gap: 6px; }
         .prompts-prompt-text {
-            color: #ddd;
+            color: var(--text-primary);
             font-size: 13px;
             word-break: break-word;
             line-height: 1.45;
@@ -244,7 +242,7 @@
         .prompts-image-groups.hidden { display: none; }
         .prompts-image-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
         .prompts-image-folder {
-            font-size: 10px;
+            font-size: var(--type-label);
             text-transform: uppercase;
             letter-spacing: 0.6px;
             color: #888;
@@ -311,7 +309,7 @@
         @keyframes promptsSpin { to { transform: rotate(360deg); } }
         @media (prefers-reduced-motion: reduce) { .prompts-spinner { animation: none; border-top-color: #e8a33d; } }
 
-        .prompts-footer { display: flex; align-items: center; gap: 10px; margin: 10px 0; color: #777; font-size: 11px; flex-wrap: wrap; }
+        .prompts-footer { display: flex; align-items: center; gap: 10px; margin: 10px 0; color: var(--text-muted); font-size: 11px; flex-wrap: wrap; }
         #prompts-built-at { margin-left: auto; }
         #prompts-built-at[title] { cursor: help; border-bottom: 1px dotted #555; }
         .prompts-stale {
