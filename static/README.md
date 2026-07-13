@@ -43,7 +43,7 @@
 | `grid.css` | Workspace/grid/thumb styling, density modes, inspected/selected states, favorite stars, thumb metadata, multi-select action bar |
 | `lightbox.css` | Lightbox viewer, metadata panel, lightbox controls and key hints |
 | `modals.css` | Base modal styles, Help modal, new-batch/delete modal buttons |
-| `prompts.css` | Prompt History modal controls, batch picker, entries, footer, stale warning |
+| `prompts.css` | Prompt History split workbench, control rail, result rows, footer, stale warning |
 | `toast.css` | Undo toast styling |
 | `ai.css` | AI sidebar, image inspector, AI form/history/run comparison, AI thumb badges and filtering |
 | `responsive.css` | `900px` responsive breakpoint rules; loads last |
@@ -63,7 +63,7 @@
 | `moves.js` | Multi-select, drag/drop, move, undo, Empty Rejects modal |
 | `lightbox.js` | Lightbox open/close, navigation, zoom, scored navigation, lightbox favorite UI |
 | `metadata.js` | PNG metadata loading/cache/rendering and prompt copy helpers |
-| `prompts.js` | Prompt History modal state, selector, rendering, build/rebuild controls |
+| `prompts.js` | Prompt History modal state, selector, labeled row rendering, build/rebuild controls |
 | `ai-state.js` | Shared AI globals, storage keys, and sidebar constants |
 | `ai-sidebar.js` | AI sidebar open/width state and resize behavior |
 | `ai-panel.js` | AI sidebar tabs, optional elements, quality flags, element history |
@@ -128,7 +128,7 @@
 | `universalPublicCount` | `number` | Sidebar count for the All Public virtual collection |
 | `promptsData` | `object\|null` | Current Prompt History modal payload |
 | `promptsCurrentBatch` | `string` | Batch selected in the Prompt History modal; empty means all batches |
-| `promptsCollapseAll` | `boolean` | Forces long prompt cards to collapsed text |
+| `promptsCollapseAll` | `boolean` | Forces long prompt rows to collapsed text |
 
 ### Key Function Groups
 
@@ -284,8 +284,8 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **`getDisplayImages()` centralizes filtering:** Favorites filtering and AI score sorting compose there; update image counts through `updateImageCountLabel()`.
 - **Prompt history cache is manual:** The modal loads cached JSON until the operator clicks Build/Rebuild; staleness is count-based only.
 - **Prompt History request token (`promptsRequestToken`):** Mirrors the `folderRequestToken` pattern. `loadPromptsData` and `buildPromptIndex` increment it before each fetch and check it before assigning the response, so superseded requests (e.g. rapid batch switches) cannot overwrite newer state.
-- **Prompt History is keyboard-first:** `P` opens the modal and focuses the search field outside the lightbox. Search input is debounced (~180ms) and capped at 200 rendered cards to keep large aggregate views responsive. Matches in prompt, negative prompt, and batch label are highlighted with `mark.prompts-match`.
-- **Prompt History entry actions are chip rows:** Each card exposes `copy pair`, `show full`/`collapse`, `show negative`/`hide negative`, `copy negative` (when a negative prompt exists), and `show images`/`hide images` (grouped by folder). Image chips are display-only -- grid-jump click wiring is intentionally deferred so it can land with the lightbox/grid state work.
+- **Prompt History is keyboard-first:** `P` opens the modal and focuses the search field outside the lightbox. A persistent desktop control rail holds scope, sort, grouping, and collapse controls while the dominant results pane holds search and prompt rows; the layout collapses to one column below 760px. Search input is debounced (~180ms) and capped at 200 rendered rows to keep large aggregate views responsive. Matches in prompt, negative prompt, and batch label are highlighted with `mark.prompts-match`.
+- **Prompt History entry actions are compact row controls:** Each prompt row exposes `copy pair`, `show full`/`collapse`, `show negative`/`hide negative`, `copy negative` (when a negative prompt exists), and `show images`/`hide images` (grouped by folder). Image chips are display-only -- grid-jump click wiring is intentionally deferred so it can land with the lightbox/grid state work.
 - **Prompt History scope chip:** The `Scope:` chip at the top of the modal reflects the current `promptsCurrentBatch` and updates on every batch change. The batch filter input is normally tabbable; the listbox uses `aria-selected` and `aria-activedescendant` for active-option state.
 
 **Completion Standard:** For any task in this directory, include files changed, manual browser verification performed (state the browser and interactions tested), and any updates to the Help modal, README keyboard shortcuts, or `test_frontend_*.py` invariants.

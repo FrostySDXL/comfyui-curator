@@ -193,9 +193,10 @@ def test_prompt_history_uses_cohesive_semantic_surface_layers() -> None:
             "background: var(--surface-1);",
             "border-color: var(--border-strong);",
         ),
-        ".prompts-controls": (
+        ".prompts-controls": ("background: var(--surface-2);",),
+        ".prompts-control-rail": (
             "background: var(--surface-2);",
-            "border: 1px solid var(--border-subtle);",
+            "border-right: 1px solid var(--border-subtle);",
         ),
         ".prompts-batch-list": (
             "background: var(--surface-raised);",
@@ -203,7 +204,7 @@ def test_prompt_history_uses_cohesive_semantic_surface_layers() -> None:
         ),
         ".prompts-entry": (
             "background: var(--surface-2);",
-            "border: 1px solid var(--border-subtle);",
+            "border-bottom: 1px solid var(--border-subtle);",
         ),
         ".prompts-action-chip": (
             "background: var(--surface-raised);",
@@ -218,10 +219,11 @@ def test_prompt_history_uses_cohesive_semantic_surface_layers() -> None:
             "border: 1px solid var(--border-subtle);",
         ),
         ".prompts-empty-cta": ("background: var(--surface-2);", "color: var(--text-secondary);"),
-        ".prompts-footer": (
+        ".prompts-workbench-footer": (
             "border-top: 1px solid var(--border-subtle);",
-            "color: var(--text-muted);",
+            "background: var(--surface-2);",
         ),
+        ".prompts-footer": ("color: var(--text-muted);",),
     }
 
     for selector, declarations in expected_layers.items():
@@ -246,15 +248,13 @@ def test_prompt_history_keyboard_option_focus_is_visually_distinct() -> None:
 def test_prompt_history_primary_and_cancel_actions_use_control_tokens() -> None:
     css = Path("static/css/prompts.css").read_text(encoding="utf-8")
 
-    for selector in (".prompts-empty-build-btn", "#prompts-build-all-confirm-btn"):
-        body = rule_body(css, selector)
-        assert "background: var(--button-accent-fill);" in body
-        assert "color: var(--button-accent-text);" in body
+    body = rule_body(css, ".prompts-primary-action")
+    assert "background: var(--button-accent-fill);" in body
+    assert "color: var(--button-accent-text);" in body
 
-    for selector in (".prompts-empty-build-btn:hover", "#prompts-build-all-confirm-btn:hover"):
-        hover = rule_body(css, selector)
-        assert "background: var(--button-accent-fill);" in hover
-        assert "filter: brightness(0.88);" in hover
+    hover = rule_body(css, ".prompts-primary-action:hover")
+    assert "background: var(--button-accent-fill);" in hover
+    assert "filter: brightness(0.88);" in hover
 
     cancel = rule_body(css, "#prompts-build-all-cancel-btn")
     assert "background: var(--surface-raised);" in cancel

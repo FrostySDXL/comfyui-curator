@@ -553,42 +553,67 @@
 
     <div id="prompts-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="prompts-modal-title">
         <div class="modal-content prompts-modal-content">
-            <h3 id="prompts-modal-title">Prompt History</h3>
-            <div class="prompts-modal-top">
+            <header class="prompts-workbench-header">
+                <div class="prompts-heading-group">
+                    <div class="prompts-kicker">Prompt library</div>
+                    <h3 id="prompts-modal-title">Prompt History</h3>
+                    <p>Search and reuse prompt text from manually built batch indexes.</p>
+                </div>
                 <span id="prompts-scope-chip" class="prompts-scope-chip is-all" aria-live="polite">Scope: All Batches</span>
-            </div>
-            <div class="prompts-controls">
-                <div id="prompts-batch-wrap" class="prompts-batch-wrap">
-                    <div class="prompts-batch-select">
-                        <input id="prompts-batch-filter" type="text" placeholder="All Batches" autocomplete="off" spellcheck="false" aria-haspopup="listbox" aria-expanded="false" aria-autocomplete="list">
-                        <ul id="prompts-batch-list" class="prompts-batch-list" role="listbox" tabindex="-1"></ul>
+            </header>
+            <div class="prompts-workbench-body">
+                <aside class="prompts-control-rail" aria-label="Prompt history controls">
+                    <div class="prompts-controls">
+                        <section class="prompts-rail-section" aria-labelledby="prompts-scope-label">
+                            <div id="prompts-scope-label" class="prompts-control-label">Scope</div>
+                            <div id="prompts-batch-wrap" class="prompts-batch-wrap">
+                                <div class="prompts-batch-select">
+                                    <input id="prompts-batch-filter" type="text" placeholder="All Batches" autocomplete="off" spellcheck="false" aria-haspopup="listbox" aria-expanded="false" aria-autocomplete="list" aria-label="Filter prompt history by batch">
+                                    <ul id="prompts-batch-list" class="prompts-batch-list" role="listbox" tabindex="-1"></ul>
+                                </div>
+                                <button id="prompts-all-batches-btn" class="prompts-all-batches-btn" aria-pressed="true" aria-label="Show all batches">All Batches</button>
+                            </div>
+                        </section>
+                        <section class="prompts-rail-section" aria-labelledby="prompts-order-label">
+                            <div id="prompts-order-label" class="prompts-control-label">Order and grouping</div>
+                            <label class="prompts-control-field" for="prompts-sort">Sort
+                                <select id="prompts-sort" class="prompts-sort" aria-label="Sort prompts">
+                                    <option value="count">Most used</option>
+                                    <option value="alpha">A-Z</option>
+                                    <option value="length">Longest</option>
+                                </select>
+                            </label>
+                            <button id="prompts-group-toggle" type="button" class="prompts-toggle-btn" aria-pressed="false">Group by batch</button>
+                            <button id="prompts-collapse-all" type="button">Collapse all</button>
+                        </section>
                     </div>
-                    <button id="prompts-all-batches-btn" class="prompts-all-batches-btn" aria-pressed="true" aria-label="Show all batches">All Batches</button>
+                </aside>
+                <section class="prompts-results-pane" aria-label="Prompt history results">
+                    <div class="prompts-results-toolbar">
+                        <label class="prompts-search-field" for="prompts-search">
+                            <span>Search index</span>
+                            <input id="prompts-search" type="text" placeholder="Search prompts, negatives, or batches..." autocomplete="off" aria-label="Search prompts">
+                        </label>
+                        <span id="prompts-total" class="prompts-results-status" aria-live="polite"></span>
+                    </div>
+                    <div id="prompts-list" class="prompts-list">Select a batch and build an index.</div>
+                </section>
+            </div>
+            <footer class="prompts-workbench-footer">
+                <div id="prompts-footer" class="prompts-footer">
+                    <span id="prompts-stale-warning" class="prompts-stale hidden" aria-live="polite">Index may be stale. <button id="prompts-rebuild-btn" type="button" aria-label="Rebuild prompt index">Rebuild Index</button></span>
+                    <span id="prompts-built-at" aria-live="polite"></span>
+                    <div id="prompts-build-all-confirm" class="prompts-build-all-confirm hidden" hidden>
+                        <span>Build prompt indexes for all batches? This can take a while on large libraries.</span>
+                        <button id="prompts-build-all-confirm-btn" class="prompts-primary-action" type="button">Build All Indexes</button>
+                        <button id="prompts-build-all-cancel-btn" type="button">Cancel</button>
+                    </div>
                 </div>
-                <input id="prompts-search" type="text" placeholder="Search prompts..." autocomplete="off" aria-label="Search prompts">
-                <select id="prompts-sort" class="prompts-sort" aria-label="Sort prompts">
-                    <option value="count">Most used</option>
-                    <option value="alpha">A-Z</option>
-                    <option value="length">Longest</option>
-                </select>
-                <button id="prompts-group-toggle" type="button" class="prompts-toggle-btn" aria-pressed="false">Group by batch</button>
-                <button id="prompts-collapse-all" type="button">Collapse all</button>
-            </div>
-            <div id="prompts-list" class="prompts-list">Select a batch and build an index.</div>
-            <div id="prompts-footer" class="prompts-footer">
-                <span id="prompts-stale-warning" class="prompts-stale hidden" aria-live="polite">Index may be stale. <button id="prompts-rebuild-btn" type="button" aria-label="Rebuild prompt index">Rebuild Index</button></span>
-                <span id="prompts-total"></span>
-                <span id="prompts-built-at" aria-live="polite"></span>
-                <div id="prompts-build-all-confirm" class="prompts-build-all-confirm hidden" hidden>
-                    <span>Build prompt indexes for all batches? This can take a while on large libraries.</span>
-                    <button id="prompts-build-all-confirm-btn" type="button">Build All Indexes</button>
-                    <button id="prompts-build-all-cancel-btn" type="button">Cancel</button>
+                <div class="modal-buttons">
+                    <button id="prompts-build-btn" class="create" type="button">Build Index</button>
+                    <button class="cancel" type="button">Close</button>
                 </div>
-            </div>
-            <div class="modal-buttons">
-                <button id="prompts-build-btn" class="create" type="button">Build Index</button>
-                <button class="cancel" type="button">Close</button>
-            </div>
+            </footer>
         </div>
     </div>
 

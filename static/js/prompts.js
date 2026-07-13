@@ -262,6 +262,7 @@
         async function loadPromptsData() {
             const list = document.getElementById('prompts-list');
             if (list) list.textContent = 'Loading prompt history...';
+            _setPromptsResultStatus('Loading index...');
             const token = ++promptsRequestToken;
             const url = promptsCurrentBatch
                 ? ccApiPath(`/api/prompt-history/${encodeURIComponent(promptsCurrentBatch)}?check_stale=true`)
@@ -287,6 +288,7 @@
                 if (token !== promptsRequestToken) return;
                 promptsData = null;
                 if (list) list.textContent = 'Failed to load prompt history.';
+                _setPromptsResultStatus('Load failed');
                 updatePromptsFooter();
                 updateBuildBtn();
             }
@@ -403,6 +405,8 @@
             if (!images || images.length === 0) return null;
             const wrap = document.createElement('div');
             wrap.className = 'prompts-image-groups hidden';
+            const heading = createTextElement('div', 'prompts-image-references-label', 'Image references');
+            wrap.appendChild(heading);
             const total = images.length;
             let remaining = PROMPTS_IMAGES_CAP;
             const byFolder = new Map();
@@ -443,7 +447,10 @@
             if (!negText) return { el: null, btn: null };
             const el = createTextElement('div', 'prompts-negative hidden', '');
             el.hidden = true;
-            el.appendChild(_highlightMatchNode(negText, _currentSearchQuery()));
+            el.appendChild(createTextElement('div', 'prompts-field-label', 'Negative prompt'));
+            const text = createTextElement('div', 'prompts-negative-text', '');
+            text.appendChild(_highlightMatchNode(negText, _currentSearchQuery()));
+            el.appendChild(text);
             const btn = _buildActionChip('show negative', 'prompts-toggle-neg', () => {
                 const hidden = el.classList.toggle('hidden');
                 el.hidden = hidden;
@@ -502,7 +509,7 @@
         }
 
         function _buildEntry(entry, query) {
-            const card = document.createElement('div');
+            const card = document.createElement('article');
             card.className = 'prompts-entry';
             card.dataset.batch = entry.batch || '';
             card.dataset.hash = entry.hash || '';
@@ -514,7 +521,7 @@
             if (batchChip) header.appendChild(batchChip);
 
             const textWrap = document.createElement('div');
-            textWrap.className = 'prompts-entry-text';
+            textWrap.className = 'prompts-entry-main';
             const promptText = String(entry.normalized || entry.prompt || '');
             const full = _buildFullDisclosure(promptText);
             const neg = _buildNegativeDisclosure(entry.negative_prompt || '');
@@ -533,7 +540,7 @@
                 actions.appendChild(_buildActionChip('copy negative', 'prompts-copy-neg', () => copyMetadataText(entry.negative_prompt, 'negative prompt')));
             }
 
-            textWrap.appendChild(actions);
+            textWrap.appendChild(createTextElement('div', 'prompts-field-label', 'Positive prompt'));
             if (full.el) {
                 textWrap.appendChild(full.el);
             } else {
@@ -544,10 +551,11 @@
             }
 
             if (neg.el) textWrap.appendChild(neg.el);
+            if (imgs.el) textWrap.appendChild(imgs.el);
 
             card.appendChild(header);
             card.appendChild(textWrap);
-            if (imgs.el) card.appendChild(imgs.el);
+            card.appendChild(actions);
             return card;
         }
 
@@ -569,6 +577,11 @@
             }, 180);
         }
 
+        function _setPromptsResultStatus(text) {
+            const status = document.getElementById('prompts-total');
+            if (status) status.textContent = text;
+        }
+
         function renderPromptsList() {
             const list = document.getElementById('prompts-list');
             if (!list) return;
@@ -578,6 +591,7 @@
 
             // --- Empty / unbuilt states ---
             if (promptsBuilding) {
+                _setPromptsResultStatus('Building index...');
                 const status = createTextElement('div', 'prompts-building-status', '');
                 const spinner = document.createElement('span');
                 spinner.className = 'prompts-spinner';
@@ -589,6 +603,7 @@
             }
 
             if (!promptsData) {
+                _setPromptsResultStatus(promptsCurrentBatch ? 'Index not built' : 'No indexes found');
                 if (promptsCurrentBatch) {
                     list.appendChild(_buildEmptyCta(promptsCurrentBatch, /* hasExisting */ false));
                 } else {
@@ -604,6 +619,9 @@
                 const haystack = `${entry.prompt || ''} ${entry.negative_prompt || ''} ${entry.batch || ''}`.toLowerCase();
                 return haystack.includes(query);
             });
+            _setPromptsResultStatus(query
+                ? `${filtered.length} of ${allEntries.length} prompts`
+                : `${allEntries.length} prompt${allEntries.length === 1 ? '' : 's'}`);
 
             if (filtered.length === 0) {
                 list.appendChild(_buildNoMatchesState(query, allEntries.length));
@@ -641,7 +659,7 @@
             const body = createTextElement('p', 'prompts-empty-body', 'Build the index to search every prompt text in this batch and see which prompts get reused the most.');
             const cta = document.createElement('button');
             cta.type = 'button';
-            cta.className = 'prompts-empty-build-btn';
+            cta.className = 'prompts-empty-build-btn prompts-primary-action';
             cta.textContent = `Build Index for ${batch}`;
             cta.addEventListener('click', buildPromptIndex);
             wrap.append(title, body, cta);
@@ -694,17 +712,8 @@
         }
 
         function updatePromptsFooter() {
-            const total = document.getElementById('prompts-total');
             const built = document.getElementById('prompts-built-at');
             const stale = document.getElementById('prompts-stale-warning');
-            if (total) {
-                if (!promptsCurrentBatch && promptsData) {
-                    const batchCount = Object.keys(promptsData.batches || {}).length;
-                    total.textContent = `${promptsData.total_prompts || 0} prompts across ${batchCount} batch${batchCount !== 1 ? 'es' : ''}`;
-                } else {
-                    total.textContent = '';
-                }
-            }
             if (built) {
                 const builtAt = promptsData?.built_at || (promptsCurrentBatch ? null : '');
                 if (builtAt) {
