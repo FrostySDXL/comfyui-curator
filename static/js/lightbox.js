@@ -4,6 +4,7 @@
  */
 let lightboxZoom = 1;
 const _prefetchRegistry = new Map();
+const _pendingCompareLoaders = [null, null];
 let lightboxImageToken = 0;
 let lightboxAiOpen = false;
 let lightboxBaseWidth = 0;
@@ -107,6 +108,8 @@ function getLightboxImages() {
 
 function closeLightbox() {
             _cleanupPrefetch();
+            _cancelComparePaneLoader(0);
+            _cancelComparePaneLoader(1);
             document.getElementById('lightbox').classList.remove('active');
             resetLightboxZoom();
             resetCompareZoom();
@@ -432,38 +435,74 @@ function resetCompareZoom() {
         }
 
 function updateComparePaneImage(paneIndex, img, preserveZoom = false) {
-            const token = ++lightboxCompareImageToken;
+            ++lightboxCompareImageToken;
             const {pane, wrap, img: imgEl, label} = getComparePaneElements(paneIndex);
             if (!imgEl || !img) return;
+            _cancelComparePaneLoader(paneIndex);
             if (pane) pane.classList.toggle('active', paneIndex === lightboxCompareActivePane);
-            if (label) {
-                const side = lightboxStickyCompareMode && paneIndex === lightboxStickyPinnedPane
-                    ? 'Pinned'
-                    : (paneIndex === 0 ? 'Left' : 'Right');
-                label.textContent = `${side} · ${img.name}`;
-            }
             if (wrap) {
                 wrap.scrollTop = 0;
                 wrap.scrollLeft = 0;
             }
             if (!preserveZoom) lightboxCompareViewState[paneIndex] = {zoom: 1, baseWidth: 0, baseHeight: 0};
             imgEl.draggable = false;
-            imgEl.dataset.compareLoadToken = String(token);
-            imgEl.style.opacity = '0';
-            imgEl.classList.add('loading');
-            imgEl.onload = function() {
-                if (imgEl.dataset.compareLoadToken !== String(token)) return;
-                imgEl.classList.remove('loading');
-                imgEl.style.opacity = '';
-                captureComparePaneBaseSize(paneIndex);
-                updateCompareInfo();
-            };
-            imgEl.onerror = function() {
-                imgEl.classList.remove('loading');
-                imgEl.style.opacity = '';
-            };
+            imgEl.onload = null;
+            imgEl.onerror = null;
             const source = getImageBatchAndFolder(img);
-            imgEl.src = ccImageUrl(source.batch, source.folder, img.name);
+            const newSrc = ccImageUrl(source.batch, source.folder, img.name);
+            const loader = new Image();
+            const entry = {img: loader};
+            _pendingCompareLoaders[paneIndex] = entry;
+            function commitSwap() {
+                if (_pendingCompareLoaders[paneIndex] !== entry) return;
+                imgEl.onload = function() {
+                    imgEl.onload = null;
+                    imgEl.onerror = null;
+                    captureComparePaneBaseSize(paneIndex);
+                    updateCompareInfo();
+                };
+                imgEl.onerror = function() {
+                    imgEl.onload = null;
+                    imgEl.onerror = null;
+                };
+                if (label) {
+                    const side = lightboxStickyCompareMode && paneIndex === lightboxStickyPinnedPane
+                        ? 'Pinned'
+                        : (paneIndex === 0 ? 'Left' : 'Right');
+                    label.textContent = `${side} \u00B7 ${img.name}`;
+                }
+                imgEl.src = newSrc;
+                _pendingCompareLoaders[paneIndex] = null;
+            }
+            function failLoad() {
+                if (_pendingCompareLoaders[paneIndex] !== entry) return;
+                _pendingCompareLoaders[paneIndex] = null;
+            }
+            loader.onload = function() {
+                if (_pendingCompareLoaders[paneIndex] !== entry) return;
+                if (loader.decode) {
+                    loader.decode().then(function() {
+                        commitSwap();
+                    }).catch(function() {
+                        failLoad();
+                    });
+                } else {
+                    commitSwap();
+                }
+            };
+            loader.onerror = function() {
+                failLoad();
+            };
+            loader.src = newSrc;
+        }
+
+function _cancelComparePaneLoader(paneIndex) {
+            const entry = _pendingCompareLoaders[paneIndex];
+            if (!entry) return;
+            entry.img.onload = null;
+            entry.img.onerror = null;
+            entry.img.src = '';
+            _pendingCompareLoaders[paneIndex] = null;
         }
 
 function enableStickyCompareFromCurrentPanes() {

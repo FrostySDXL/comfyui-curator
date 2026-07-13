@@ -1,4 +1,5 @@
-"""Source-invariant tests for lightbox adjacent-image prefetch.
+"""Source-invariant tests for lightbox adjacent-image prefetch and
+sticky-compare candidate-replacement smoothness.
 
 Verifies a bounded Map-based registry with:
 - Reconciliation against the desired adjacent URL set (max two candidates)
@@ -7,7 +8,14 @@ Verifies a bounded Map-based registry with:
 - Image-object retention for cancellation
 - closeLightbox cleanup that detaches handlers and clears registry
 - Display-order adjacency, wrapping, compare skip, URL helper usage,
-  no current-image mutation, and onload integration.
+  no current-image mutation, and onload integration
+
+Also verifies compare-pane replacement uses off-DOM load-then-swap:
+- Replacement loaded via new Image() off-DOM, not by mutating visible imgEl.src
+- Visible imgEl is never blanked (no opacity:0, no loading class)
+- Token guard on swap; per-pane bounded pending-loader registry
+- Cleanup on close and on superseding navigation
+- Error path preserves old visible image
 """
 
 from tests.unit.frontend_source import extract_function_body, read_frontend_js
@@ -205,3 +213,69 @@ def test_prefetch_called_from_show_current_image_onload() -> None:
     """Prefetch triggers after the current full-resolution image loads."""
     show_body = extract_function_body(read_frontend_js(), "function showCurrentImage(")
     assert "_prefetchAdjacentImages(" in show_body
+
+
+# ── Sticky compare candidate-replacement smoothness ──────────────────────────
+# The original updateComparePaneImage mutated the visible imgEl directly
+# (opacity=0, loading class, imgEl.src assignment), blanking the old
+# candidate before the replacement was loaded.  The fix loads the
+# replacement off-DOM via new Image(), calls loader.decode() for decode
+# readiness, and swaps imgEl.src + label only after the decode promise
+# resolves and the per-pane registry entry is still identity-current.
+# Errors leave the old image visible and do not update the label.
+
+
+def test_compare_pane_uses_off_dom_loader() -> None:
+    """Replacement must be loaded via new Image() off-DOM."""
+    body = extract_function_body(read_frontend_js(), "function updateComparePaneImage(")
+    assert "new Image()" in body
+
+
+def test_compare_pane_does_not_blank_visible_image() -> None:
+    """Visible imgEl must never be hidden: no opacity=0, no loading class."""
+    body = extract_function_body(read_frontend_js(), "function updateComparePaneImage(")
+    assert "imgEl.style.opacity = '0'" not in body
+    assert "imgEl.classList.add('loading')" not in body
+
+
+def test_compare_pane_pending_loader_registry_exists() -> None:
+    """Per-pane bounded pending-loader storage must exist."""
+    js = read_frontend_js()
+    assert "_pendingCompareLoaders" in js
+
+
+def test_compare_pane_loader_identity_safe() -> None:
+    """Swap and error paths must use identity comparison against the stored
+    registry entry, not a bare token check, so a stale completion cannot
+    act on a replacement entry."""
+    body = extract_function_body(read_frontend_js(), "function updateComparePaneImage(")
+    assert "!== entry" in body or "=== entry" in body
+
+
+def test_compare_pane_loader_calls_decode() -> None:
+    """After loader.onload, call loader.decode() before committing the swap
+    so the image is fully decoded when painted."""
+    body = extract_function_body(read_frontend_js(), "function updateComparePaneImage(")
+    assert ".decode()" in body
+
+
+def test_compare_pane_loader_cancel_function_exists() -> None:
+    """A cancel/detach function must exist for pending compare loaders."""
+    js = read_frontend_js()
+    assert "function _cancelComparePaneLoader(" in js
+
+
+def test_compare_pane_cleanup_on_close() -> None:
+    """closeLightbox must cancel pending compare loaders."""
+    body = extract_function_body(read_frontend_js(), "function closeLightbox(")
+    assert "_cancelComparePaneLoader" in body or "_cleanupCompareLoaders" in body
+
+
+def test_compare_pane_error_path_avoids_visible_mutation() -> None:
+    """The error/load-failure path must NOT assign imgEl.src or
+    label.textContent.  Only the successful swap path may do so.
+    Count occurrences: exactly one imgEl.src = and one label.textContent =
+    proves the error path (which has neither) is clean."""
+    body = extract_function_body(read_frontend_js(), "function updateComparePaneImage(")
+    assert body.count("imgEl.src =") == 1
+    assert body.count("label.textContent") == 1
