@@ -12,6 +12,42 @@ function aiToggleMoveMode() {
                 destField.style.display = 'none';
                 submitBtn.textContent = 'Score only';
             }
+            aiUpdateScoreSummary();
+        }
+
+function aiUpdateScoreSummary() {
+            const elementsInput = document.getElementById('ai-elements');
+            const capStatus = document.getElementById('ai-element-cap-status');
+            const summary = document.getElementById('ai-score-summary');
+            const submitBtn = document.getElementById('ai-submit-btn');
+            if (!elementsInput || !capStatus || !summary || !submitBtn) return;
+
+            const manualElements = elementsInput.value.split('\n').map(value => value.trim()).filter(Boolean);
+            const qualityFlags = aiCollectQualityFlags();
+            const totalChecks = manualElements.length + qualityFlags.length;
+            capStatus.classList.toggle('limit-exceeded', totalChecks > AI_ELEMENT_CAP);
+            if (manualElements.length === 0) {
+                capStatus.textContent = `Add at least one element check. The total run limit is ${AI_ELEMENT_CAP}.`;
+            } else if (totalChecks > AI_ELEMENT_CAP) {
+                capStatus.textContent = `${totalChecks} checks configured. Only the first ${AI_ELEMENT_CAP} checks will be scored.`;
+            } else if (totalChecks > 0) {
+                capStatus.textContent = `${totalChecks} of ${AI_ELEMENT_CAP} checks configured.`;
+            } else {
+                capStatus.textContent = `Add checks to score. The run limit is ${AI_ELEMENT_CAP}.`;
+            }
+
+            const source = document.getElementById('ai-source-folder').value;
+            const model = document.getElementById('ai-model').value.trim();
+            const moveEnabled = document.getElementById('ai-move-toggle').checked;
+            const topN = document.getElementById('ai-top-n').value || '15';
+            const destination = document.getElementById('ai-dest-folder').value;
+            const scopeLine = createTextElement('div', 'ai-score-summary-primary', `Score ${source} with ${model || 'a configured model'}.`);
+            const checksLine = createTextElement('div', '', `${totalChecks} checks configured; ${Math.min(totalChecks, AI_ELEMENT_CAP)} will be scored.`);
+            const outcomeLine = createTextElement('div', '', moveEnabled
+                ? `After scoring, move the top ${topN} to ${destination}.`
+                : 'Results will be saved. Files will not be moved.');
+            summary.replaceChildren(scopeLine, checksLine, outcomeLine);
+            submitBtn.disabled = !currentBatch || manualElements.length === 0 || !model;
         }
 
 async function aiPreviewElements() {
@@ -112,6 +148,7 @@ async function aiSubmitJob() {
 
 function aiShowJobStatus(job) {
             const section = document.getElementById('ai-job-section');
+            const statusRegion = document.querySelector('#ai-job-section .ai-job-status');
             const stateEl = document.getElementById('ai-job-state');
             const progressEl = document.getElementById('ai-job-progress');
             const cancelBtn = document.getElementById('ai-cancel-btn');
@@ -119,12 +156,22 @@ function aiShowJobStatus(job) {
 
             section.style.display = 'block';
             section.classList.remove('hidden');
-            stateEl.textContent = job.status;
             stateEl.className = 'ai-job-state ' + job.status;
             if (statusDot) statusDot.className = `ai-status-dot ${job.status}`;
 
             const isActive = job.status === 'running' || job.status === 'queued' || job.status === 'cancelling';
-            progressEl.textContent = isActive ? 'Scoring in progress' : '';
+            const statusCopy = {
+                queued: ['Queued', 'Waiting for the active run'],
+                running: ['Running', 'Scoring images'],
+                cancelling: ['Cancelling', 'Cancellation requested'],
+                completed: ['Completed', 'Run saved'],
+                cancelled: ['Cancelled', 'Run cancelled'],
+                failed: ['Error', job.error || job.error_message || 'Run failed'],
+            };
+            const [stateLabel, detail] = statusCopy[job.status] || [job.status, 'Status updated'];
+            stateEl.textContent = stateLabel;
+            progressEl.textContent = detail;
+            statusRegion.setAttribute('aria-busy', String(isActive));
 
             // Show cancel button for queued or running jobs
             cancelBtn.style.display = (job.status === 'queued' || job.status === 'running') ? 'inline-block' : 'none';
@@ -147,6 +194,21 @@ function aiShowJobStatus(job) {
             aiSetPanelTab(aiActivePanelTab);
         }
 
+function aiShowJobStatusError(message) {
+            const section = document.getElementById('ai-job-section');
+            const statusRegion = document.querySelector('#ai-job-section .ai-job-status');
+            const stateEl = document.getElementById('ai-job-state');
+            const progressEl = document.getElementById('ai-job-progress');
+            const statusDot = document.getElementById('ai-status-dot');
+            section.classList.remove('hidden');
+            statusRegion.setAttribute('aria-busy', 'true');
+            stateEl.textContent = 'Retrying';
+            stateEl.className = 'ai-job-state queued';
+            progressEl.textContent = message;
+            if (statusDot) statusDot.className = 'ai-status-dot queued';
+            aiSetPanelTab(aiActivePanelTab);
+        }
+
 function aiStartPolling() {
             aiStopPolling();
             aiPollTimer = setInterval(aiPollJobStatus, 2000);
@@ -164,13 +226,15 @@ async function aiPollJobStatus() {
                 aiStopPolling();
                 return;
             }
-            const resp = await fetch(ccApiPath(`/api/ai-curate/jobs/${aiCurrentJobId}`));
-            if (!resp.ok) {
-                aiStopPolling();
-                return;
+            try {
+                const resp = await fetch(ccApiPath(`/api/ai-curate/jobs/${aiCurrentJobId}`));
+                if (!resp.ok) throw new Error(`Job status request failed: ${resp.status}`);
+                const job = await resp.json();
+                aiShowJobStatus(job);
+            } catch (error) {
+                console.warn('aiPollJobStatus failed', error);
+                aiShowJobStatusError('Status update failed. Retrying...');
             }
-            const job = await resp.json();
-            aiShowJobStatus(job);
         }
 
 async function aiCancelJob() {

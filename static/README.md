@@ -11,7 +11,7 @@
 - **Keyboard-first navigation:** 15+ shortcuts for search, selection, AI toggles, lightbox, undo.
 - **Drag/drop curation:** HTML5 drag from grid to folder tabs for single or multi-select moves.
 - **Lightbox viewer:** Full-image review with zoom, scored-image navigation, PNG metadata inspection, and two-image compare mode.
-- **AI score integration:** Overlay badges, score gradient coloring, filter/sort by score, Inspect / Score / Runs sidebar tabs, contextual image inspector, job submission/status/history UI.
+- **AI score integration:** Overlay badges, score gradient coloring, filter/sort by score, accessible Inspect / Score / Runs tabs, contextual image and batch inspection, guided scoring with a visible 12-check cap, and truthful job/history states.
 - **Public output workflow:** selected-image export modal, batch Public folder view, virtual All Public view, and derivative-only public copy/move/delete actions.
 - **Background polling:** 5-second interval for batches, images, and AI runs, with interaction-aware skip logic.
 - **Local storage persistence:** Sidebar widths, open states, last batch/folder, grid density, and batch sort.
@@ -220,8 +220,10 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - AI badges and score filtering reset when switching to a batch with no active
   run.
 - The AI review inspector shows selected-image details, multi-select summaries,
-  and active-run score evidence when available; the lightbox has its own AI
-  review panel.
+  latest-run context, and active-run score evidence when available. The Score
+  tab sequences checklist, scope/model, and outcome choices and reports the
+  combined 12-check cap before submission. The lightbox has its own AI review
+  panel.
 - Favorite toggles update both the current batch and the universal favorites
   list; the All Favorites sidebar count refreshes during batch polling.
 - The All Favorites view is virtual: thumbnails show batch labels and lightbox

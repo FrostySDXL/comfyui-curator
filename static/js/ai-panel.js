@@ -7,12 +7,16 @@ function showAiCuratePanel() {
             aiRefreshRunData().catch(() => {});
             aiLoadElementHistory();
             aiPopulateOptionalElements();
+            aiUpdateScoreSummary();
         }
 
 function aiSetPanelTab(tabName) {
             aiActivePanelTab = ['inspect', 'score', 'runs'].includes(tabName) ? tabName : 'inspect';
             document.querySelectorAll('.ai-panel-tab').forEach(tab => {
-                tab.classList.toggle('active', tab.dataset.aiTab === aiActivePanelTab);
+                const isActive = tab.dataset.aiTab === aiActivePanelTab;
+                tab.classList.toggle('active', isActive);
+                tab.setAttribute('aria-selected', String(isActive));
+                tab.tabIndex = isActive ? 0 : -1;
             });
             document.querySelectorAll('.ai-panel-section').forEach(section => {
                 if (section.classList.contains('hidden')) return;
@@ -20,6 +24,20 @@ function aiSetPanelTab(tabName) {
             });
             const reviewSection = document.getElementById('ai-review-section');
             if (reviewSection) reviewSection.style.display = aiActivePanelTab === 'inspect' ? '' : 'none';
+        }
+
+function aiHandlePanelTabKeydown(event) {
+            const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+            if (!keys.includes(event.key)) return;
+            const tabs = [...document.querySelectorAll('.ai-panel-tab')];
+            const currentIndex = tabs.indexOf(event.currentTarget);
+            if (currentIndex < 0) return;
+            event.preventDefault();
+            let nextIndex = event.key === 'Home' ? 0 : tabs.length - 1;
+            if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+            if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+            aiSetPanelTab(tabs[nextIndex].dataset.aiTab);
+            tabs[nextIndex].focus();
         }
 
 function toggleAiOptionalSection() {
@@ -102,6 +120,7 @@ function _renderOptionalCheckboxes(body, qualityElements) {
                 label.appendChild(document.createTextNode(' ' + text));
                 body.appendChild(label);
             });
+            aiUpdateScoreSummary();
         }
 
 async function aiLoadElementHistory() {

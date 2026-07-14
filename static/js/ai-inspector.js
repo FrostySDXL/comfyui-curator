@@ -25,9 +25,11 @@ function aiRenderImageInspector(img = null) {
             const inspector = document.getElementById('ai-image-inspector');
             if (!inspector) return;
             if (selectedImages.size === 0) {
+                const target = img || aiGetInspectedImage();
                 inspector.replaceChildren();
                 inspector.className = 'ai-image-inspector';
-                aiAppendImageInspectorContent(inspector, null);
+                if (target) aiAppendImageInspectorContent(inspector, target);
+                else aiAppendBatchInspectorOverview(inspector);
                 return;
             }
             if (selectedImages.size > 1) {
@@ -40,6 +42,34 @@ function aiRenderImageInspector(img = null) {
             inspector.replaceChildren();
             inspector.className = 'ai-image-inspector';
             aiAppendImageInspectorContent(inspector, target);
+        }
+
+function aiAppendBatchInspectorOverview(inspector) {
+            if (!currentBatch) {
+                aiAppendImageInspectorContent(inspector, null);
+                return;
+            }
+            inspector.classList.add('ai-image-inspector-empty');
+            if (!aiActiveRun) {
+                inspector.appendChild(createTextElement('div', 'ai-inspector-empty-title', 'No scored run yet'));
+                inspector.appendChild(createTextElement('div', 'ai-inspector-empty-detail', 'Open Score to configure the first advisory run for this batch.'));
+                return;
+            }
+
+            const totals = aiActiveRun.totals || {};
+            const runContext = aiActiveRun.run_id === aiLatestRun?.run_id ? 'Latest run' : 'Selected run';
+            inspector.appendChild(createTextElement('div', 'ai-inspector-kicker', runContext));
+            inspector.appendChild(createTextElement('div', 'ai-inspector-title', formatAiRunLabel(aiActiveRun)));
+            const stats = document.createElement('div');
+            stats.className = 'ai-overview-stats';
+            [['Scored', totals.scored || 0], ['Failed', totals.failed || 0], ['Unscored', Math.max(0, (totals.images || 0) - (totals.scored || 0) - (totals.failed || 0))]].forEach(([label, value]) => {
+                const stat = document.createElement('div');
+                stat.append(createTextElement('span', 'ai-stat-value', String(value)), createTextElement('span', 'ai-stat-label', label));
+                stats.appendChild(stat);
+            });
+            inspector.appendChild(stats);
+            const filterLabel = aiFilterMode === 'all' ? 'All images' : aiFilterMode;
+            inspector.appendChild(createTextElement('div', 'ai-inspector-empty-detail', `Current AI filter: ${filterLabel}. Select or click an image for evidence.`));
         }
 
 function aiRenderSelectionInspector() {
@@ -119,8 +149,11 @@ function aiRenderSelectionInspector() {
                 const button = document.createElement('button');
                 button.className = 'ai-selection-image-toggle';
                 button.type = 'button';
-                button.textContent = img.name;
+                button.setAttribute('aria-expanded', 'false');
                 button.title = img.name;
+                const result = aiGetImageScore(img.name);
+                const resultLabel = !result ? 'Unscored' : result.failed ? 'Failed' : `${result.score}/${result.total}`;
+                button.append(createTextElement('span', 'ai-selection-image-name', img.name), createTextElement('span', 'ai-selection-image-score', resultLabel));
                 button.addEventListener('click', () => toggleAiSelectionImageCard(card, img));
                 const body = document.createElement('div');
                 body.className = 'ai-selection-image-body hidden';
@@ -135,6 +168,7 @@ function toggleAiSelectionImageCard(card, img) {
             if (!body) return;
             const isExpanded = card.classList.toggle('expanded');
             body.classList.toggle('hidden', !isExpanded);
+            card.querySelector('.ai-selection-image-toggle')?.setAttribute('aria-expanded', String(isExpanded));
             if (!isExpanded) return;
             body.replaceChildren();
             aiAppendImageInspectorContent(body, img);

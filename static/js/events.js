@@ -360,6 +360,7 @@ function _bindDelegatedEvents() {
 
             document.querySelectorAll('.ai-panel-tab').forEach(tab => {
                 tab.addEventListener('click', function() { aiSetPanelTab(this.dataset.aiTab); });
+                tab.addEventListener('keydown', aiHandlePanelTabKeydown);
             });
 
             // AI overlay toggle
@@ -379,6 +380,14 @@ function _bindDelegatedEvents() {
             if (aiOptionalHeader) {
                 aiOptionalHeader.addEventListener('click', toggleAiOptionalSection);
             }
+            const aiOptionalBody = document.getElementById('ai-optional-body');
+            if (aiOptionalBody) aiOptionalBody.addEventListener('change', aiUpdateScoreSummary);
+
+            ['ai-elements', 'ai-source-folder', 'ai-top-n', 'ai-model', 'ai-dest-folder'].forEach(id => {
+                const control = document.getElementById(id);
+                if (!control) return;
+                control.addEventListener(control.tagName === 'SELECT' ? 'change' : 'input', aiUpdateScoreSummary);
+            });
 
             // Element history select
             const aiHistorySelect = document.getElementById('ai-history-select');
@@ -387,6 +396,7 @@ function _bindDelegatedEvents() {
                     if (this.value) {
                         document.getElementById('ai-elements').value = this.value;
                         this.selectedIndex = 0; // reset display to placeholder
+                        aiUpdateScoreSummary();
                     }
                 });
             }
@@ -414,6 +424,8 @@ function _bindDelegatedEvents() {
             if (aiCompareRunSelect) aiCompareRunSelect.addEventListener('change', function() {
                 aiSetCompareRun(this.value);
             });
+
+            aiUpdateScoreSummary();
 
             // Delete rejects button
             const deleteRejectsBtn = document.getElementById('delete-rejects-btn');

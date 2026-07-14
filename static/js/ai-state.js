@@ -25,3 +25,4 @@ let isAiSidebarResizing = false;
 let _aiSidebarResizePending = false;
 let _aiSidebarResizeLastEvent = null;
 let aiQualityChecksCache = null;
+const AI_ELEMENT_CAP = 12;

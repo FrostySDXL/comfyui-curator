@@ -179,90 +179,108 @@
                     </div>
                     <div class="ai-curate-body" id="ai-curate-body">
                         <div class="ai-panel-tabs" role="tablist" aria-label="AI Curate sections">
-                            <button class="ai-panel-tab active" id="ai-panel-tab-inspect" data-ai-tab="inspect" type="button">Inspect</button>
-                            <button class="ai-panel-tab" id="ai-panel-tab-score" data-ai-tab="score" type="button">Score</button>
-                            <button class="ai-panel-tab" id="ai-panel-tab-runs" data-ai-tab="runs" type="button">Runs</button>
+                            <button class="ai-panel-tab active" id="ai-panel-tab-inspect" data-ai-tab="inspect" type="button" role="tab" aria-controls="ai-review-section" aria-selected="true" tabindex="0">Inspect</button>
+                            <button class="ai-panel-tab" id="ai-panel-tab-score" data-ai-tab="score" type="button" role="tab" aria-controls="ai-score-section" aria-selected="false" tabindex="-1">Score</button>
+                            <button class="ai-panel-tab" id="ai-panel-tab-runs" data-ai-tab="runs" type="button" role="tab" aria-controls="ai-history-section" aria-selected="false" tabindex="-1">Runs</button>
                         </div>
-                        <div class="ai-review-section" id="ai-review-section">
+                        <div class="ai-review-section" id="ai-review-section" role="tabpanel" aria-labelledby="ai-panel-tab-inspect">
                             <div class="ai-section-heading">AI Review</div>
                             <div id="ai-image-inspector" class="ai-image-inspector ai-image-inspector-empty">
                                 Select an image to inspect AI score details.
                             </div>
                         </div>
 
-                        <div class="ai-curate-form ai-panel-section" data-ai-panel-section="score">
-                            <label class="ai-label" for="ai-elements">Elements</label>
-                            <textarea id="ai-elements" class="ai-textarea" rows="3" placeholder="One element per line, e.g.:&#10;blushing&#10;blonde hair&#10;black dress"></textarea>
-
-                            <div class="ai-element-history hidden" id="ai-element-history">
-                                <label class="ai-label" for="ai-history-select">Previous elements</label>
-                                <select id="ai-history-select" class="ai-select">
-                                    <option value="">-- Select a previous set --</option>
-                                </select>
+                        <div class="ai-curate-form ai-panel-section" id="ai-score-section" data-ai-panel-section="score" role="tabpanel" aria-labelledby="ai-panel-tab-score">
+                            <div class="ai-panel-intro">
+                                <div class="ai-section-heading">Guided scoring</div>
+                                <p>Choose the evidence, scope, and file outcome before starting a run.</p>
                             </div>
-
-                            <div class="ai-optional-section" id="ai-optional-section">
-                                <div class="ai-optional-header" id="ai-optional-header" role="button" tabindex="0" aria-expanded="false">
-                                    Optional elements <span class="ai-optional-arrow">&#9662;</span>
+                            <section class="ai-score-step" aria-labelledby="ai-score-checks-heading">
+                                <div class="ai-score-step-heading">
+                                    <span class="ai-score-step-number">1</span>
+                                    <div><h4 id="ai-score-checks-heading">Checks</h4><p>One visible criterion per line, plus optional quality checks.</p></div>
                                 </div>
-                                <div class="ai-optional-body hidden" id="ai-optional-body">
-                                    <!-- Checkboxes populated dynamically -->
-                                </div>
-                            </div>
-
-                            <button class="ai-btn ai-btn-secondary">Preview elements</button>
-                            <div id="ai-elements-preview" class="ai-elements-preview hidden"></div>
-
-                            <div class="ai-form-row">
-                                <div class="ai-form-field">
-                                    <label class="ai-label" for="ai-source-folder">Source folder</label>
-                                    <select id="ai-source-folder" class="ai-select">
-                                        <option value="inbox" selected>inbox</option>
-                                        <option value="shortlisted">shortlisted</option>
-                                        <option value="finals">finals</option>
-                                        <option value="rejects">rejects</option>
+                                <label class="ai-label" for="ai-elements">Element checklist</label>
+                                <textarea id="ai-elements" class="ai-textarea" rows="4" placeholder="e.g.&#10;blushing&#10;blonde hair&#10;black dress"></textarea>
+                                <div class="ai-element-history hidden" id="ai-element-history">
+                                    <label class="ai-label" for="ai-history-select">Reuse previous checklist</label>
+                                    <select id="ai-history-select" class="ai-select">
+                                        <option value="">-- Select a previous set --</option>
                                     </select>
                                 </div>
-                                <div class="ai-form-field">
-                                    <label class="ai-label" for="ai-top-n">Top N</label>
-                                    <input id="ai-top-n" class="ai-input" type="number" value="15" min="1" max="100">
+                                <div class="ai-optional-section" id="ai-optional-section">
+                                    <button class="ai-optional-header" id="ai-optional-header" type="button" aria-expanded="false" aria-controls="ai-optional-body">
+                                        Quality checks <span class="ai-optional-arrow" aria-hidden="true">&#9662;</span>
+                                    </button>
+                                    <div class="ai-optional-body hidden" id="ai-optional-body">
+                                        <!-- Checkboxes populated dynamically -->
+                                    </div>
                                 </div>
-                                <div class="ai-form-field">
-                                    <label class="ai-label" for="ai-model">Model</label>
-                                    {% if available_models %}
-                                    <select id="ai-model" class="ai-select">
-                                        {% for model in available_models %}
-                                        <option value="{{ model }}"{% if model == default_model %} selected{% endif %}>{{ model }}</option>
-                                        {% endfor %}
-                                    </select>
-                                    {% else %}
-                                    <input id="ai-model" class="ai-input" type="text" placeholder="model name (required)">
-                                    <small class="ai-hint" title="Set IMAGE_CURATOR_MODEL in .env">Set IMAGE_CURATOR_MODEL.</small>
-                                    {% endif %}
+                                <div id="ai-element-cap-status" class="ai-element-cap-status" role="status" aria-live="polite">Up to 12 total checks will be scored.</div>
+                                <button class="ai-btn ai-btn-secondary" type="button">Preview checklist</button>
+                                <div id="ai-elements-preview" class="ai-elements-preview hidden"></div>
+                            </section>
+                            <section class="ai-score-step" aria-labelledby="ai-score-scope-heading">
+                                <div class="ai-score-step-heading">
+                                    <span class="ai-score-step-number">2</span>
+                                    <div><h4 id="ai-score-scope-heading">Scope and model</h4><p>Choose the review folder and configured vision model.</p></div>
                                 </div>
-                            </div>
-
-                            <div class="ai-form-row">
-                                <div class="ai-form-field ai-toggle-field">
-                                    <label class="ai-checkbox-label">
-                                        <input type="checkbox" id="ai-move-toggle">
-                                        Move top-N after scoring
-                                    </label>
+                                <div class="ai-form-row">
+                                    <div class="ai-form-field">
+                                        <label class="ai-label" for="ai-source-folder">Source folder</label>
+                                        <select id="ai-source-folder" class="ai-select">
+                                            <option value="inbox" selected>inbox</option>
+                                            <option value="shortlisted">shortlisted</option>
+                                            <option value="finals">finals</option>
+                                            <option value="rejects">rejects</option>
+                                        </select>
+                                    </div>
+                                    <div class="ai-form-field">
+                                        <label class="ai-label" for="ai-model">Model</label>
+                                        {% if available_models %}
+                                        <select id="ai-model" class="ai-select">
+                                            {% for model in available_models %}
+                                            <option value="{{ model }}"{% if model == default_model %} selected{% endif %}>{{ model }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        {% else %}
+                                        <input id="ai-model" class="ai-input" type="text" placeholder="model name (required)">
+                                        <small class="ai-hint" title="Set IMAGE_CURATOR_MODEL in .env">Set IMAGE_CURATOR_MODEL.</small>
+                                        {% endif %}
+                                    </div>
                                 </div>
-                                <div class="ai-form-field hidden" id="ai-dest-field">
-                                    <label class="ai-label" for="ai-dest-folder">Destination</label>
-                                    <select id="ai-dest-folder" class="ai-select">
-                                        <option value="shortlisted">shortlisted</option>
-                                        <option value="finals">finals</option>
-                                    </select>
+                            </section>
+                            <section class="ai-score-step" aria-labelledby="ai-score-outcome-heading">
+                                <div class="ai-score-step-heading">
+                                    <span class="ai-score-step-number">3</span>
+                                    <div><h4 id="ai-score-outcome-heading">Outcome</h4><p>Results are saved. Moving files remains optional.</p></div>
                                 </div>
-                            </div>
-
+                                <div class="ai-form-row">
+                                    <div class="ai-form-field">
+                                        <label class="ai-label" for="ai-top-n">Top N</label>
+                                        <input id="ai-top-n" class="ai-input" type="number" value="15" min="1" max="100">
+                                    </div>
+                                    <div class="ai-form-field ai-toggle-field">
+                                        <label class="ai-checkbox-label">
+                                            <input type="checkbox" id="ai-move-toggle">
+                                            Move top-N after scoring
+                                        </label>
+                                    </div>
+                                    <div class="ai-form-field hidden" id="ai-dest-field">
+                                        <label class="ai-label" for="ai-dest-folder">Destination</label>
+                                        <select id="ai-dest-folder" class="ai-select">
+                                            <option value="shortlisted">shortlisted</option>
+                                            <option value="finals">finals</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </section>
+                            <div id="ai-score-summary" class="ai-score-summary"></div>
                             <button class="ai-btn ai-btn-primary" id="ai-submit-btn">Score only</button>
                         </div>
 
                         <div class="ai-job-section hidden ai-panel-section" id="ai-job-section" data-ai-panel-section="score">
-                            <div class="ai-job-status">
+                            <div class="ai-job-status" role="status" aria-live="polite">
                                 <span class="ai-status-dot" id="ai-status-dot" aria-hidden="true"></span>
                                 <span class="ai-job-label">Job status:</span>
                                 <span class="ai-job-state" id="ai-job-state">--</span>
@@ -271,7 +289,12 @@
                             <button class="ai-btn ai-btn-danger hidden" id="ai-cancel-btn">Cancel</button>
                         </div>
 
-                        <div class="ai-history-section hidden ai-panel-section" id="ai-history-section" data-ai-panel-section="runs">
+                        <div class="ai-history-section ai-panel-section" id="ai-history-section" data-ai-panel-section="runs" role="tabpanel" aria-labelledby="ai-panel-tab-runs">
+                            <div class="ai-panel-intro">
+                                <div class="ai-section-heading">Run history</div>
+                                <p>Review saved outcomes or compare two runs from this batch.</p>
+                            </div>
+                            <div id="ai-runs-state" class="ai-runs-state" role="status" aria-live="polite">Loading runs...</div>
                             <div class="ai-history-controls">
                                 <div class="ai-form-field">
                                     <label class="ai-label" for="ai-run-select">View run</label>
@@ -571,7 +594,7 @@
                 <h4>AI Curate</h4>
                 <ul class="help-list">
                     <li><strong>Inspect</strong> shows selected-image AI details, or a multi-select summary with expandable image rows.</li>
-                    <li><strong>Score</strong> sends the chosen source folder, elements, Top N, and model to the configured vision endpoint.</li>
+                    <li><strong>Score</strong> guides checklist, scope/model, and outcome setup before submission. Up to 12 total element and quality checks are scored.</li>
                     <li><strong>Runs</strong> shows saved batch runs and can compare one run against another run from the same batch.</li>
                     <li>AI badges, score sorting, and filters are batch-scoped and reset when no active run is available.</li>
                     <li>Manual moves remain authoritative; AI scores are advisory evidence only.</li>

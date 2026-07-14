@@ -84,14 +84,28 @@ function aiGetPreviousRunId() {
             return aiRunIds.find(id => id !== aiActiveRun.run_id) || null;
         }
 
+function aiSetRunsState(message, kind = '') {
+            const state = document.getElementById('ai-runs-state');
+            if (!state) return;
+            state.textContent = message;
+            state.className = `ai-runs-state${kind ? ` ${kind}` : ''}`;
+            state.classList.toggle('hidden', !message);
+        }
+
 function aiUpdateRunHistoryUi() {
             const historySection = document.getElementById('ai-history-section');
             if (!historySection) return;
+            const controls = historySection.querySelector('.ai-history-controls');
             if (aiRunIds.length === 0) {
-                historySection.classList.add('hidden');
+                historySection.classList.remove('hidden');
+                if (controls) controls.classList.add('hidden');
+                aiSetRunsState('No runs saved for this batch. Configure one in Score.');
+                aiSetPanelTab(aiActivePanelTab);
                 return;
             }
             historySection.classList.remove('hidden');
+            if (controls) controls.classList.remove('hidden');
+            aiSetRunsState('');
             const runOptions = aiRunIds.map(id => ({
                 value: id,
                 label: formatAiRunLabel(aiRunDetails[id] || {run_id: id}),
@@ -120,11 +134,19 @@ async function aiRenderCurrentRunUi() {
 
 async function aiRefreshRunData(existingRuns = null) {
             if (!currentBatch) return;
+            aiSetRunsState('Loading runs...');
             try {
-                const runs = existingRuns || (await fetch(ccApiPath(`/api/ai-curate/batches/${currentBatch}/runs`)).then(resp => resp.json()).then(data => data.runs || []));
-                aiRunIds = runs;
+                let runs = existingRuns;
+                if (runs === null) {
+                    const resp = await fetch(ccApiPath(`/api/ai-curate/batches/${currentBatch}/runs`));
+                    if (!resp.ok) throw new Error(`Run list request failed: ${resp.status}`);
+                    const data = await resp.json();
+                    runs = data.runs || [];
+                }
                 if (runs.length > 0) {
-                    await Promise.all(runs.map(aiFetchRun));
+                    const runDetails = await Promise.all(runs.map(aiFetchRun));
+                    if (runDetails.some(run => !run)) throw new Error('One or more run details could not be loaded');
+                    aiRunIds = runs;
                     const latestId = runs[runs.length - 1];
                     aiLatestRun = aiRunDetails[latestId] || null;
                     if (!aiActiveRun || !runs.includes(aiActiveRun.run_id) || aiActiveRun.run_id === latestId) {
@@ -133,15 +155,25 @@ async function aiRefreshRunData(existingRuns = null) {
                     await aiRenderCurrentRunUi();
                 } else {
                     const historySection = document.getElementById('ai-history-section');
-                    if (historySection) historySection.classList.add('hidden');
+                    if (historySection) historySection.classList.remove('hidden');
                     aiRunIds = [];
                     aiRunDetails = {};
                     aiLatestRun = null;
                     aiActiveRun = null;
                     aiCompareRunId = 'previous';
                     await aiRenderCurrentRunUi();
+                    aiUpdateRunHistoryUi();
                 }
-            } catch { console.warn('aiRefreshRunData failed'); }
+            } catch {
+                console.warn('aiRefreshRunData failed');
+                if (aiActiveRun) {
+                    aiSetRunsState('Run history refresh failed. The last loaded run remains available.', 'error');
+                } else {
+                    const controls = document.querySelector('#ai-history-section .ai-history-controls');
+                    if (controls) controls.classList.add('hidden');
+                    aiSetRunsState('Run history could not be loaded. Switch batches and return, or reload the page to retry.', 'error');
+                }
+            }
         }
 
 function resetAiBatchState(refreshGrid = true) {
@@ -161,6 +193,7 @@ function resetAiBatchState(refreshGrid = true) {
             if (runSelect) runSelect.value = '';
             const compareSelect = document.getElementById('ai-compare-run-select');
             if (compareSelect) compareSelect.value = 'previous';
+            aiSetRunsState('Loading runs...');
             if (refreshGrid) updateGrid();
         }
 
