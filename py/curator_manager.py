@@ -59,6 +59,7 @@ class CuratorManager:
             html = template.render(
                 available_models=list(settings.available_models),
                 default_model=settings.default_model,
+                curator_native=True,
             )
             return web.Response(text=html, content_type="text/html")
 

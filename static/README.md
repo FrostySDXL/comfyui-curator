@@ -220,7 +220,9 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - AI badges and score filtering reset when switching to a batch with no active
   run.
 - The AI review inspector shows selected-image details, multi-select summaries,
-  latest-run context, and active-run score evidence when available. The Score
+  and active-run score evidence when available. A compact Run selector defaults
+  to the latest saved run and lets the operator review any loaded run; selecting
+  a run in Inspect synchronizes the Runs tab selector and vice versa. The Score
   tab sequences checklist, scope/model, and outcome choices and reports the
   combined 12-check cap before submission. The lightbox has its own AI review
   panel.

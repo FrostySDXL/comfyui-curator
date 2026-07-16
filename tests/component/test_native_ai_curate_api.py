@@ -1225,6 +1225,109 @@ class TestLifecycle:
         finally:
             lifecycle._launch_worker = original
 
+    # ---- model invariant tests ----
+
+    def test_direct_submit_rejects_model_not_in_configured_list(self, tmp_path, monkeypatch):
+        """Lifecycle.submit_job rejects when model not in available_models."""
+        from ai_curate.native_lifecycle import ModelNotAllowedError
+
+        router, _, lifecycle = _make_router_and_lifecycle(tmp_path, monkeypatch)
+        # Suppress worker launch
+        original = lifecycle._launch_worker
+        lifecycle._launch_worker = lambda rid: None
+        try:
+            jobs_before = lifecycle.queue.list_jobs()
+            with pytest.raises(ModelNotAllowedError, match="model is not configured"):
+                lifecycle.submit_job(
+                    {"batch": "test-batch", "elements": ["test"], "model": "unknown-model"}
+                )
+            jobs_after = lifecycle.queue.list_jobs()
+            assert len(jobs_after) == len(jobs_before), "Queue must not be mutated on rejection"
+        finally:
+            lifecycle._launch_worker = original
+
+    def test_direct_submit_rejects_when_configured_list_is_empty(self, tmp_path, monkeypatch):
+        """Lifecycle.submit_job rejects any model when available_models is empty."""
+        from ai_curate.native_lifecycle import ModelNotAllowedError
+
+        router, _, lifecycle = _make_router_and_lifecycle(tmp_path, monkeypatch)
+        lifecycle.settings.available_models = ()
+        lifecycle.settings.default_model = ""
+        original = lifecycle._launch_worker
+        lifecycle._launch_worker = lambda rid: None
+        try:
+            jobs_before = lifecycle.queue.list_jobs()
+            with pytest.raises(ModelNotAllowedError, match="model is not configured"):
+                lifecycle.submit_job(
+                    {"batch": "test-batch", "elements": ["test"], "model": "any-model"}
+                )
+            jobs_after = lifecycle.queue.list_jobs()
+            assert len(jobs_after) == len(jobs_before), "Queue must not be mutated on rejection"
+        finally:
+            lifecycle._launch_worker = original
+
+    def test_direct_submit_accepts_configured_model(self, tmp_path, monkeypatch):
+        """Lifecycle.submit_job accepts a model in the configured list."""
+        router, _, lifecycle = _make_router_and_lifecycle(tmp_path, monkeypatch)
+        original = lifecycle._launch_worker
+        launch_count = {"n": 0}
+        lifecycle._launch_worker = lambda rid: launch_count.update({"n": launch_count["n"] + 1})
+        try:
+            jobs_before = len(lifecycle.queue.list_jobs())
+            run = lifecycle.submit_job(
+                {"batch": "test-batch", "elements": ["test"], "model": "vl-scorer"}
+            )
+            assert run.status in (JobState.RUNNING, JobState.QUEUED)
+            assert len(lifecycle.queue.list_jobs()) == jobs_before + 1
+        finally:
+            lifecycle._launch_worker = original
+
+    def test_route_rejects_model_not_in_configured_list(self, tmp_path, monkeypatch):
+        """Native route returns 400 for a model not in the configured list, no queue mutation."""
+        router, _, lifecycle = _make_router_and_lifecycle(tmp_path, monkeypatch)
+        original = lifecycle._launch_worker
+        lifecycle._launch_worker = lambda rid: None
+        try:
+            jobs_before = lifecycle.queue.list_jobs()
+            status, data = asyncio.run(
+                _invoke(
+                    router,
+                    "POST",
+                    "/api/curator/ai-curate/jobs",
+                    {"batch": "test-batch", "elements": ["test"], "model": "unknown-model"},
+                )
+            )
+            assert status == 400, f"Expected 400, got {status}: {data}"
+            assert "model is not configured" in data.get("error", "")
+            jobs_after = lifecycle.queue.list_jobs()
+            assert len(jobs_after) == len(jobs_before), "Queue must not be mutated"
+        finally:
+            lifecycle._launch_worker = original
+
+    def test_route_rejects_when_configured_list_is_empty(self, tmp_path, monkeypatch):
+        """Native route returns 400 when available_models is empty, no queue mutation."""
+        router, _, lifecycle = _make_router_and_lifecycle(tmp_path, monkeypatch)
+        lifecycle.settings.available_models = ()
+        lifecycle.settings.default_model = ""
+        original = lifecycle._launch_worker
+        lifecycle._launch_worker = lambda rid: None
+        try:
+            jobs_before = lifecycle.queue.list_jobs()
+            status, data = asyncio.run(
+                _invoke(
+                    router,
+                    "POST",
+                    "/api/curator/ai-curate/jobs",
+                    {"batch": "test-batch", "elements": ["test"], "model": "any-model"},
+                )
+            )
+            assert status == 400, f"Expected 400, got {status}: {data}"
+            assert "model is not configured" in data.get("error", "")
+            jobs_after = lifecycle.queue.list_jobs()
+            assert len(jobs_after) == len(jobs_before), "Queue must not be mutated"
+        finally:
+            lifecycle._launch_worker = original
+
 
 # ---------------------------------------------------------------------------
 # Test: run history storage containment

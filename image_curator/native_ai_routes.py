@@ -22,7 +22,7 @@ if __package__ and "." in __package__:
         ALLOWED_SOURCE_FOLDERS,
         ALLOWED_DEST_FOLDERS,
     )
-    from ..ai_curate.native_lifecycle import LifecycleShutdownError
+    from ..ai_curate.native_lifecycle import LifecycleShutdownError, ModelNotAllowedError
 else:
     from ai_curate.elements import build_element_list, extract_elements
     from ai_curate.job_validation import validate_ai_curate_request
@@ -33,7 +33,7 @@ else:
         ALLOWED_SOURCE_FOLDERS,
         ALLOWED_DEST_FOLDERS,
     )
-    from ai_curate.native_lifecycle import LifecycleShutdownError
+    from ai_curate.native_lifecycle import LifecycleShutdownError, ModelNotAllowedError
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,7 @@ def register_native_ai_routes(app, service, lifecycle) -> None:
     async def submit_job(request):
         data = await _json_body(request)
         default_model = lifecycle.settings.default_model
+        allowed = list(lifecycle.settings.available_models)
         params, error = validate_ai_curate_request(
             data,
             get_batches=lambda: [b for b in service.batches_payload()["batches"]],
@@ -93,6 +94,7 @@ def register_native_ai_routes(app, service, lifecycle) -> None:
             element_cap=ELEMENT_CAP,
             allowed_source_folders=ALLOWED_SOURCE_FOLDERS,
             allowed_dest_folders=ALLOWED_DEST_FOLDERS,
+            allowed_models=allowed,
         )
         if error:
             return web.json_response(error[0], status=error[1])
@@ -106,6 +108,8 @@ def register_native_ai_routes(app, service, lifecycle) -> None:
             return web.json_response(
                 {"error": "AI curation is shutting down; no new jobs accepted"}, status=503
             )
+        except ModelNotAllowedError:
+            return web.json_response({"error": "model is not configured"}, status=400)
 
         return web.json_response(run.to_dict(), status=201)
 

@@ -53,6 +53,16 @@ def test_ai_sidebar_tabs_expose_complete_semantics_and_keyboard_navigation() -> 
 def test_ai_inspector_renders_score_details_without_api_calls() -> None:
     js = read_frontend_js()
     css = read_frontend_css()
+    html = read_index_html()
+
+    # Inspect run selector present and hidden initially
+    assert 'id="ai-inspect-controls"' in html
+    assert 'id="ai-inspect-run-select"' in html
+    assert 'class="ai-history-controls ai-inspect-controls hidden"' in html
+
+    assert "function aiSyncRunSelects()" in js
+    assert "ai-inspect-run-select" in js
+    assert "aiPopulateRunSelect('ai-inspect-run-select'" in js
 
     assert "let aiInspectedImageName = null;" in js
     assert "function aiSetInspectedImage(img)" in js
@@ -399,3 +409,18 @@ aiRefreshRunData().then(() => {{
     assert state["runIds"] == ["cached-run"]
     assert "refresh failed" in state["finalState"]["message"]
     assert "last loaded run remains available" in state["finalState"]["message"]
+
+
+def test_ai_load_run_failure_restores_selector_sync() -> None:
+    """On fetch failure, aiLoadRun must sync selectors back to active run."""
+    js = read_frontend_js()
+    load_body = extract_function_body(js, "async function aiLoadRun(runId)")
+
+    # Find the failure branch
+    assert "showToast('Failed to load run');" in load_body
+    # After showing toast, must sync selectors before returning
+    fail_idx = load_body.index("showToast('Failed to load run');")
+    sync_idx = load_body.index("aiSyncRunSelects();", fail_idx)
+    return_idx = load_body.index("return;", sync_idx)
+    # The sync call must appear after toast and before return in the failure path
+    assert fail_idx < sync_idx < return_idx

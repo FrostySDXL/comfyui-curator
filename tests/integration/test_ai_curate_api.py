@@ -110,8 +110,9 @@ class TestPreviewElements:
 
 
 class TestSubmitJob:
-    def test_submit_valid_job(self, client, app_module):
+    def test_submit_valid_job(self, client, app_module, monkeypatch):
         """POST /api/ai-curate/jobs with valid data returns 201."""
+        monkeypatch.setattr(app_module, "AVAILABLE_MODELS", ["vl-scorer"])
         with patch.object(app_module, "_run_scoring_worker"):
             resp = client.post(
                 "/api/ai-curate/jobs",
@@ -207,8 +208,9 @@ class TestSubmitJob:
         )
         assert resp.status_code == 400
 
-    def test_submit_defaults_applied(self, client, app_module):
+    def test_submit_defaults_applied(self, client, app_module, monkeypatch):
         """POST with minimal data gets default values."""
+        monkeypatch.setattr(app_module, "AVAILABLE_MODELS", ["vl-scorer"])
         with patch.object(app_module, "_run_scoring_worker"):
             resp = client.post(
                 "/api/ai-curate/jobs",
@@ -226,10 +228,51 @@ class TestSubmitJob:
         assert data["model"] == "vl-scorer"
         assert data["destination_folder"] is None
 
+    def test_submit_empty_configured_list_rejects_model(self, client, app_module, monkeypatch):
+        """POST with empty AVAILABLE_MODELS returns 400 and does not add a queue job."""
+        monkeypatch.setattr(app_module, "AVAILABLE_MODELS", [])
+        monkeypatch.setattr(app_module, "DEFAULT_MODEL", "")
+        with patch.object(app_module, "_run_scoring_worker"):
+            jobs_before = len(app_module._ai_queue.list_jobs())
+            resp = client.post(
+                "/api/ai-curate/jobs",
+                json={
+                    "batch": "test-batch",
+                    "elements": ["test"],
+                    "model": "any-model",
+                },
+            )
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "model is not configured" in data.get("error", "")
+        jobs_after = len(app_module._ai_queue.list_jobs())
+        assert jobs_after == jobs_before, "Queue must not be mutated"
+
+    def test_submit_unknown_configured_model_rejected(self, client, app_module, monkeypatch):
+        """POST with model not in configured list returns 400, no queue job."""
+        monkeypatch.setattr(app_module, "AVAILABLE_MODELS", ["vl-scorer"])
+        monkeypatch.setattr(app_module, "DEFAULT_MODEL", "vl-scorer")
+        with patch.object(app_module, "_run_scoring_worker"):
+            jobs_before = len(app_module._ai_queue.list_jobs())
+            resp = client.post(
+                "/api/ai-curate/jobs",
+                json={
+                    "batch": "test-batch",
+                    "elements": ["test"],
+                    "model": "other-model",
+                },
+            )
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "model is not configured" in data.get("error", "")
+        jobs_after = len(app_module._ai_queue.list_jobs())
+        assert jobs_after == jobs_before, "Queue must not be mutated"
+
 
 class TestGetJob:
-    def test_get_existing_job(self, client, app_module):
+    def test_get_existing_job(self, client, app_module, monkeypatch):
         """GET /api/ai-curate/jobs/<id> returns the job."""
+        monkeypatch.setattr(app_module, "AVAILABLE_MODELS", ["vl-scorer"])
         with patch.object(app_module, "_run_scoring_worker"):
             submit_resp = client.post(
                 "/api/ai-curate/jobs",
@@ -262,8 +305,9 @@ class TestListJobs:
 
 
 class TestCancelJob:
-    def test_cancel_queued_job(self, client, app_module):
+    def test_cancel_queued_job(self, client, app_module, monkeypatch):
         """POST /api/ai-curate/jobs/<id>/cancel cancels a queued job."""
+        monkeypatch.setattr(app_module, "AVAILABLE_MODELS", ["vl-scorer"])
         with patch.object(app_module, "_run_scoring_worker"):
             # Submit two jobs so second is queued
             client.post(

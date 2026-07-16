@@ -242,6 +242,7 @@ def test_validate_ai_curate_missing_model(app_module, monkeypatch):
 def test_validate_ai_curate_valid_minimal_request(app_module, monkeypatch):
     app_module.create_batch("alpha")
     monkeypatch.setattr(app_module, "DEFAULT_MODEL", "vl-scorer")
+    monkeypatch.setattr(app_module, "AVAILABLE_MODELS", ["vl-scorer"])
     params, err = app_module._validate_ai_curate_request(
         {"batch": "alpha", "elements": ["test"], "model": "vl-scorer"}
     )
@@ -258,6 +259,7 @@ def test_validate_ai_curate_valid_minimal_request(app_module, monkeypatch):
 def test_validate_ai_curate_valid_with_elements_and_move(app_module, monkeypatch):
     app_module.create_batch("alpha")
     monkeypatch.setattr(app_module, "DEFAULT_MODEL", "vl-scorer")
+    monkeypatch.setattr(app_module, "AVAILABLE_MODELS", ["vl-scorer"])
     params, err = app_module._validate_ai_curate_request(
         {
             "batch": "alpha",
@@ -275,3 +277,36 @@ def test_validate_ai_curate_valid_with_elements_and_move(app_module, monkeypatch
     assert params["top_n"] == 5
     assert params["move_enabled"] is True
     assert params["destination_folder"] == "shortlisted"
+
+
+# ---------------------------------------------------------------------------
+# _validate_ai_curate_request -- model-config regression coverage
+# ---------------------------------------------------------------------------
+
+
+def test_validate_ai_curate_empty_list_rejects_any_model(app_module, monkeypatch):
+    """With AVAILABLE_MODELS=[], any explicit model must be rejected with 400."""
+    app_module.create_batch("alpha")
+    monkeypatch.setattr(app_module, "AVAILABLE_MODELS", [])
+    monkeypatch.setattr(app_module, "DEFAULT_MODEL", "")
+    params, err = app_module._validate_ai_curate_request(
+        {"batch": "alpha", "elements": ["test"], "model": "any-model"}
+    )
+    assert params is None
+    assert err is not None
+    assert err[1] == 400
+    assert "model is not configured" in err[0]["error"]
+
+
+def test_validate_ai_curate_configured_list_rejects_unknown_model(app_module, monkeypatch):
+    """With AVAILABLE_MODELS=['vl-scorer'], a different model must be rejected."""
+    app_module.create_batch("alpha")
+    monkeypatch.setattr(app_module, "AVAILABLE_MODELS", ["vl-scorer"])
+    monkeypatch.setattr(app_module, "DEFAULT_MODEL", "vl-scorer")
+    params, err = app_module._validate_ai_curate_request(
+        {"batch": "alpha", "elements": ["test"], "model": "other-model"}
+    )
+    assert params is None
+    assert err is not None
+    assert err[1] == 400
+    assert "model is not configured" in err[0]["error"]

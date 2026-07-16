@@ -94,26 +94,43 @@ function aiSetRunsState(message, kind = '') {
 
 function aiUpdateRunHistoryUi() {
             const historySection = document.getElementById('ai-history-section');
-            if (!historySection) return;
-            const controls = historySection.querySelector('.ai-history-controls');
+            const inspectControls = document.getElementById('ai-inspect-controls');
+            if (!historySection && !inspectControls) return;
+
             if (aiRunIds.length === 0) {
-                historySection.classList.remove('hidden');
-                if (controls) controls.classList.add('hidden');
-                aiSetRunsState('No runs saved for this batch. Configure one in Score.');
+                if (historySection) {
+                    historySection.classList.remove('hidden');
+                    const controls = historySection.querySelector('.ai-history-controls');
+                    if (controls) controls.classList.add('hidden');
+                    aiSetRunsState('No runs saved for this batch. Configure one in Score.');
+                }
+                if (inspectControls) {
+                    inspectControls.classList.add('hidden');
+                    inspectControls.querySelector('select').innerHTML = '';
+                }
                 aiSetPanelTab(aiActivePanelTab);
                 return;
             }
-            historySection.classList.remove('hidden');
-            if (controls) controls.classList.remove('hidden');
-            aiSetRunsState('');
+            if (historySection) {
+                historySection.classList.remove('hidden');
+                const controls = historySection.querySelector('.ai-history-controls');
+                if (controls) controls.classList.remove('hidden');
+                aiSetRunsState('');
+            }
             const runOptions = aiRunIds.map(id => ({
                 value: id,
                 label: formatAiRunLabel(aiRunDetails[id] || {run_id: id}),
             }));
+            // Populate Runs tab selector
             aiPopulateRunSelect('ai-run-select', runOptions, aiActiveRun?.run_id || '', {
                 value: '',
                 label: '-- Active run --',
             });
+            // Populate Inspect tab selector (no placeholder — always has a value)
+            if (inspectControls) {
+                inspectControls.classList.remove('hidden');
+                aiPopulateRunSelect('ai-inspect-run-select', runOptions, aiActiveRun?.run_id || '', null);
+            }
             aiSyncCompareSelect();
             aiSetPanelTab(aiActivePanelTab);
         }
@@ -191,6 +208,10 @@ function resetAiBatchState(refreshGrid = true) {
             aiRenderImageInspector();
             const runSelect = document.getElementById('ai-run-select');
             if (runSelect) runSelect.value = '';
+            const inspectSelect = document.getElementById('ai-inspect-run-select');
+            if (inspectSelect) inspectSelect.value = '';
+            const inspectControls = document.getElementById('ai-inspect-controls');
+            if (inspectControls) inspectControls.classList.add('hidden');
             const compareSelect = document.getElementById('ai-compare-run-select');
             if (compareSelect) compareSelect.value = 'previous';
             aiSetRunsState('Loading runs...');
@@ -251,16 +272,19 @@ async function aiLoadRun(runId) {
                 document.getElementById('ai-run-diff').classList.add('hidden');
                     aiShowHeaderControls(false);
                 }
+                aiSyncRunSelects();
                 updateGrid();
                 return;
             }
             const run = await aiFetchRun(runId);
             if (!run) {
                 showToast('Failed to load run');
+                aiSyncRunSelects();
                 return;
             }
             aiActiveRun = run;
             await aiRenderCurrentRunUi();
+            aiSyncRunSelects();
             updateGrid();
         }
 
@@ -339,4 +363,16 @@ async function aiShowRunDiff(run) {
             diffEl.classList.remove('hidden');
             diffEl.style.display = 'block';
             aiSyncCompareSelect();
+        }
+
+function aiSyncRunSelects() {
+            const runSelect = document.getElementById('ai-run-select');
+            const inspectSelect = document.getElementById('ai-inspect-run-select');
+            const activeId = aiActiveRun?.run_id || '';
+            if (runSelect && runSelect.value !== activeId) {
+                runSelect.value = activeId;
+            }
+            if (inspectSelect && inspectSelect.value !== activeId) {
+                inspectSelect.value = activeId;
+            }
         }

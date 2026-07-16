@@ -77,7 +77,7 @@ routes.py ──(Flask Blueprint)──> app.py-injected queue/storage/lifecycle
 | `queue.py` | `QueueManager`: `submit`, `cancel`, `complete_job`, `fail_job`, `finalize_cancelled`, `prune`, `is_cancel_requested`, `_promote_next`. FIFO deque, single running job, thread-safe. |
 | `storage.py` | `RunStorage`: `save_run`, `load_run`, `list_runs`, `load_latest`. Atomic writes (`.tmp` + `os.replace`), thread-safe via `RLock`, path-traversal validation, filesystem containment (symlink rejection, resolved path escapes, non-regular file rejection, no-mutation-on-failure). |
 | `routes.py` | `create_ai_curate_blueprint()` and `AiCurateRouteContext`; owns `/api/ai-curate/*` Flask routes while app lifecycle globals stay in `app.py`. |
-| `job_validation.py` | `validate_ai_curate_request()` validates Flask AI job payloads with injected app dependencies and preserves API error shapes. |
+| `job_validation.py` | `validate_ai_curate_request()` validates AI job payloads. Production Flask and native submissions accept only configured model names and reject submissions when no models are configured. The native lifecycle also enforces this invariant before queue submission. |
 | `worker.py` | `run_scoring_worker_inner()` orchestrates element expansion, image enumeration, scoring, cancellation, optional top-N moves, and queue completion with injected dependencies. |
 | `native_lifecycle.py` | `NativeAiLifecycle`: ComfyUI-native AI lifecycle manager with candidate-first transactional reconfiguration, submission gate, worker tracking, and batch-folder containment. |
 

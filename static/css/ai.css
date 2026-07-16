@@ -400,6 +400,20 @@
             text-overflow: ellipsis;
             white-space: nowrap;
         }
+        .ai-model-unavailable {
+            padding: 6px 8px;
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            background: #1a1a1a;
+        }
+        .ai-model-unavailable-text {
+            display: block;
+            font-size: var(--type-label);
+            color: #8b8b8b;
+        }
+        .ai-model-unavailable .ai-hint {
+            margin-top: 4px;
+        }
         .ai-form-row {
             display: flex;
             flex-wrap: wrap;

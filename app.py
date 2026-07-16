@@ -741,6 +741,7 @@ def _validate_ai_curate_request(data):
         element_cap=ELEMENT_CAP,
         allowed_source_folders=ALLOWED_SOURCE_FOLDERS,
         allowed_dest_folders=ALLOWED_DEST_FOLDERS,
+        allowed_models=AVAILABLE_MODELS,
     )
 
 

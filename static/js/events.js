@@ -419,6 +419,12 @@ function _bindDelegatedEvents() {
                 aiLoadRun(this.value || null);
             });
 
+            // AI Inspect run selector
+            const aiInspectRunSelect = document.getElementById('ai-inspect-run-select');
+            if (aiInspectRunSelect) aiInspectRunSelect.addEventListener('change', function() {
+                aiLoadRun(this.value || null);
+            });
+
             // AI compare run selector
             const aiCompareRunSelect = document.getElementById('ai-compare-run-select');
             if (aiCompareRunSelect) aiCompareRunSelect.addEventListener('change', function() {

@@ -185,6 +185,11 @@
                         </div>
                         <div class="ai-review-section" id="ai-review-section" role="tabpanel" aria-labelledby="ai-panel-tab-inspect">
                             <div class="ai-section-heading">AI Review</div>
+                            <div class="ai-history-controls ai-inspect-controls hidden" id="ai-inspect-controls">
+                                <label class="ai-label" for="ai-inspect-run-select">Run</label>
+                                <select id="ai-inspect-run-select" class="ai-select ai-select-sm">
+                                </select>
+                            </div>
                             <div id="ai-image-inspector" class="ai-image-inspector ai-image-inspector-empty">
                                 Select an image to inspect AI score details.
                             </div>
@@ -244,8 +249,15 @@
                                             {% endfor %}
                                         </select>
                                         {% else %}
-                                        <input id="ai-model" class="ai-input" type="text" placeholder="model name (required)">
-                                        <small class="ai-hint" title="Set IMAGE_CURATOR_MODEL in .env">Set IMAGE_CURATOR_MODEL.</small>
+                                        <div class="ai-model-unavailable">
+                                            <span class="ai-model-unavailable-text">No models configured.</span>
+                                            {% if curator_native %}
+                                            <small class="ai-hint">Open Settings to configure AI models before scoring.</small>
+                                            {% else %}
+                                            <small class="ai-hint">Set IMAGE_CURATOR_MODEL to enable AI scoring.</small>
+                                            {% endif %}
+                                        </div>
+                                        <input id="ai-model" type="hidden" value="">
                                         {% endif %}
                                     </div>
                                 </div>

@@ -13,8 +13,15 @@ def validate_ai_curate_request(
     element_cap: int,
     allowed_source_folders: set[str],
     allowed_dest_folders: set[str],
+    allowed_models: list[str] | None = None,
 ) -> tuple[dict | None, tuple[dict[str, str], int] | None]:
-    """Validate an AI curation job submission payload."""
+    """Validate an AI curation job submission payload.
+
+    ``allowed_models``, when not None, is the list of configured model
+    names the operator may select.  When ``None`` (default) every non-empty
+    model string is permitted, which preserves backward compatibility for
+    callers that deliberately opt out of the model-list gate.
+    """
     batch_value = data.get("batch", "")
     if not isinstance(batch_value, str):
         return None, ({"error": "batch must be a string"}, 400)
@@ -84,6 +91,9 @@ def validate_ai_curate_request(
             {"error": "model is required — set IMAGE_CURATOR_MODEL or pass model in request"},
             400,
         )
+
+    if allowed_models is not None and model not in allowed_models:
+        return None, ({"error": "model is not configured"}, 400)
 
     params = {
         "batch": batch,

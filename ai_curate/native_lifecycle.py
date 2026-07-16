@@ -61,6 +61,10 @@ class LifecycleShutdownError(RuntimeError):
     """Raised when a submission is attempted after shutdown has started."""
 
 
+class ModelNotAllowedError(ValueError):
+    """Raised when a submitted model is not in the configured model list."""
+
+
 class NativeAiLifecycle:
     """Owns the AI scoring queue, client, and worker lifecycle for native mode.
 
@@ -137,12 +141,21 @@ class NativeAiLifecycle:
 
         Raises:
             LifecycleShutdownError: if the lifecycle has started shutdown.
+            ModelNotAllowedError: if the model is not in the configured list
+                or the configured list is empty.
         """
         with self._state_lock:
             if not self._accepting_submissions:
                 raise LifecycleShutdownError("AI curation is shutting down; no new jobs accepted")
             if self._queue is None:
                 raise LifecycleShutdownError("AI queue not available")
+
+            # --- model invariant: must be in configured list ---
+            model = str(params.get("model", "")).strip()
+            allowed = list(self.settings.available_models)
+            if not allowed or model not in allowed:
+                raise ModelNotAllowedError("model is not configured")
+
             run = self._queue.submit(params)
             # Register and start the worker before releasing the lifecycle gate,
             # preventing shutdown from interleaving between submit and launch.
