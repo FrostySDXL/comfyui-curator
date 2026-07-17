@@ -41,6 +41,7 @@ JS_FILES = [
     "sidebar.js",
     "batches.js",
     "grid.js",
+    "viewport-loader.js",
     "favorites.js",
     "publish.js",
     "moves.js",

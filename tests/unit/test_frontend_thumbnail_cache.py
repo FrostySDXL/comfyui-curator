@@ -11,5 +11,5 @@ def test_thumbnail_grid_uses_blob_url_cache():
     assert "function getThumbnailCacheKey(imageSrc, img)" in source
     assert "async function resolveThumbnailBlobUrl(imageSrc, cacheKey)" in source
     assert "function setThumbnailImageSrc(imageEl, imageSrc, cacheKey)" in source
-    assert "setThumbnailImageSrc(imageEl, imageSrc, getThumbnailCacheKey(imageSrc, img));" in source
+    assert "setThumbnailImageSrc(imgEl," in source
     assert "imageEl.src = imageSrc;" not in source

@@ -58,6 +58,7 @@
 | `sidebar.js` | Left sidebar width/open state and resize behavior |
 | `batches.js` | Batch list/search/sort, active-batch combobox, batch/folder selection, import/create batch |
 | `grid.js` | Thumbnail cache, image loading, sort controls, display filtering, grid rendering |
+| `viewport-loader.js` | Viewport-aware thumbnail load-start scheduling: 3-tier priority (visible/near/deferred), concurrency 8, single rAF pump, idle background drain, no-unload invariants |
 | `favorites.js` | Favorites filter/toggle and All Favorites view/count |
 | `publish.js` | Public export modal, batch Public view, All Public view/count, public copy/move/delete actions |
 | `moves.js` | Multi-select, drag/drop, move, undo, Empty Rejects modal |
@@ -98,6 +99,7 @@
 | `gridThumbMap` | `Map<filename, Element>` | Persistent thumb DOM elements keyed by filename |
 | `thumbnailBlobUrlCache` | `Map<cacheKey, blobUrl>` | FIFO cache (max 1000) of thumbnail blob URLs (evicts oldest-inserted) |
 | `thumbnailBlobInflight` | `Map<cacheKey, Promise>` | Dedup map for in-flight thumbnail fetch requests |
+| `THUMBNAIL_LOAD_CONCURRENCY` | `const` (8) | Maximum simultaneous thumbnail loads via viewport scheduler |
 | `folderCountSnapshot` | `object` | Snapshot of folder counts from last poll, used for pulse animation |
 | `_initialLoadDone` | `boolean` | Whether the initial batch+folder load has completed |
 | `_lastBatchListKey` | `string` | Hash of last batch list for skip-shortcut in polling |
@@ -141,6 +143,7 @@
 | **Favorites** | `toggleFavorite`, `toggleFavoritesFilter`, `toggleLightboxFavorite`, `updateLightboxFavorite`, `loadUniversalFavorites` | `.favorite-star`, `#favorites-filter-btn`, `#batch-list` |
 | **Public output** | `showPublishModal`, `updatePublishPreview`, `syncPublishPreviewGeometry`, `renderPublishPresets`, `savePublishPreset`, `applyPublishPreset`, `submitPublicExport`, `loadBatchPublic`, `loadAllPublic`, `copySelectedPublicCopies`, `moveSelectedPublicCopies`, `deleteSelectedPublicCopies` | `#publish-modal`, `#batch-list`, `#action-bar` |
 | **Thumbnail Caching** | `resolveThumbnailBlobUrl`, `setThumbnailImageSrc` | Thumb `<img>` elements (blob URLs) |
+| **Thumbnail Viewport Scheduling** | `scheduleThumbnailLoad`, `unscheduleThumbnailLoad`, `cancelScheduledViewportLoads` | Thumb `.thumb` elements, `IntersectionObserver` |
 | **Keyboard Shortcuts** | `keyboard.js` document `keydown` handler | `document` |
 | **Drag/Drop** | `onDragStart`, `onDragOver`, `onDrop`, `moveBatch` | `.thumb`, `.folder-tab` |
 | **Multi-Select** | `toggleSelect`, `clearSelection`, `updateActionBar` | `#action-bar`, `.thumb-select` |
@@ -274,6 +277,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **`folderRequestToken` prevents stale renders:** When switching batches/folders rapidly, old fetch responses are discarded by checking a monotonically incrementing token. Any new async operation targeting the same data must follow this pattern.
 - **Polling skips during interaction:** `isInteractionBusy()` returns true during lightbox, drag, or resize. This prevents API responses from overwriting DOM elements the operator is actively interacting with.
 - **`_gridChildrenMatchDesiredOrder()` optimization:** The grid is only rebuilt if the order of thumb elements actually changed. Removing this check causes visible flicker on every poll cycle.
+- **Viewport-aware loading controls start only:** `viewport-loader.js` uses `IntersectionObserver` to decide WHEN to start a thumbnail load, but never clears or reassigns an already-displayed `src` on viewport exit. `_admitAndLoad()` unconditionally unobserves from both observers before loading, so each thumb is observed exactly once. `scheduleThumbnailLoad()` does not drain immediately; observer promotion and `_requestPriorityPump()` settle ordering before the rAF pump runs. Background drain (`requestIdleCallback`/`setTimeout`) only re-arms when capacity is below `THUMBNAIL_LOAD_CONCURRENCY` (8), preventing callback spin at cap.
 - **Score gradient is hardcoded:** `aiScoreGradient()` uses a fixed dark-red-to-dark-yellow-to-green gradient. There is no configuration for color thresholds.
 - **AI inspector is frontend-only:** `aiRenderImageInspector()` reads the active run already loaded in `aiActiveRun`; do not add per-image API calls for inspector refresh unless the run-history contract changes.
 - **AI sidebar tabs are presentation state:** `aiActivePanelTab` switches Inspect / Score / Runs without changing backend state. Keep hidden run/job sections owned by `aiSetPanelTab()`.

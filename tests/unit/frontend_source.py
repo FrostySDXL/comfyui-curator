@@ -9,6 +9,7 @@ JS_FILES = [
     Path("static/js/sidebar.js"),
     Path("static/js/batches.js"),
     Path("static/js/grid.js"),
+    Path("static/js/viewport-loader.js"),
     Path("static/js/favorites.js"),
     Path("static/js/publish.js"),
     Path("static/js/moves.js"),

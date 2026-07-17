@@ -47,7 +47,7 @@
 
         function setThumbnailImageSrc(imageEl, imageSrc, cacheKey) {
             imageEl.dataset.thumbnailCacheKey = cacheKey;
-            resolveThumbnailBlobUrl(imageSrc, cacheKey).then(resolvedSrc => {
+            return resolveThumbnailBlobUrl(imageSrc, cacheKey).then(resolvedSrc => {
                 if (imageEl.dataset.thumbnailCacheKey !== cacheKey) return;
                 if (imageEl.getAttribute('src') !== resolvedSrc) {
                     imageEl.setAttribute('src', resolvedSrc);
@@ -348,7 +348,8 @@ function updateThumbElement(thumb, img, index) {
 
             if (imageEl && imageEl.dataset.thumbnailCacheKey !== thumbnailCacheKey) {
                 imageEl.classList.remove('loaded');
-                setThumbnailImageSrc(imageEl, imageSrc, getThumbnailCacheKey(imageSrc, img));
+                imageEl.dataset.thumbnailCacheKey = thumbnailCacheKey;
+                scheduleThumbnailLoad(thumb, imageSrc, thumbnailCacheKey);
             }
             if (metaName) metaName.textContent = img.name;
             if (metaSize) metaSize.textContent = isVirtualCollectionView()
@@ -366,6 +367,7 @@ function updateThumbElement(thumb, img, index) {
         }
 
 function showGridLoadingPlaceholders(batch, folder) {
+            cancelScheduledViewportLoads();
             const grid = document.getElementById('grid');
             const expectedCount = allCounts[batch]?.[folder] || 0;
             gridThumbMap.clear();
@@ -394,6 +396,7 @@ function updateGrid() {
             currentDisplayImages = displayImages;
 
             if (images.length === 0 || displayImages.length === 0) {
+                cancelScheduledViewportLoads();
                 grid.classList.add('is-empty');
                 grid.replaceChildren(createGridEmptyState(getGridEmptyStateMessage()));
                 gridThumbMap.clear();
@@ -405,6 +408,7 @@ function updateGrid() {
             const activeNames = new Set(displayImages.map(img => img.name));
             for (const [name, element] of gridThumbMap.entries()) {
                 if (!activeNames.has(name)) {
+                    unscheduleThumbnailLoad(element);
                     element.remove();
                     gridThumbMap.delete(name);
                 }

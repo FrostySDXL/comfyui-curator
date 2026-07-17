@@ -89,6 +89,7 @@ def test_javascript_checks_use_ordered_split_file_list():
         "sidebar.js",
         "batches.js",
         "grid.js",
+        "viewport-loader.js",
         "favorites.js",
         "publish.js",
         "moves.js",
