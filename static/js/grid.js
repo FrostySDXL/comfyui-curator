@@ -45,8 +45,22 @@
             return request;
         }
 
-        function setThumbnailImageSrc(imageEl, imageSrc, cacheKey) {
+        function assignThumbnailSrcIfCached(imageEl, imageSrc, cacheKey) {
             imageEl.dataset.thumbnailCacheKey = cacheKey;
+            const cached = thumbnailBlobUrlCache.get(cacheKey);
+            if (cached) {
+                if (imageEl.getAttribute('src') !== cached) {
+                    imageEl.setAttribute('src', cached);
+                }
+                return true;
+            }
+            return false;
+        }
+
+        function setThumbnailImageSrc(imageEl, imageSrc, cacheKey) {
+            if (assignThumbnailSrcIfCached(imageEl, imageSrc, cacheKey)) {
+                return Promise.resolve();
+            }
             return resolveThumbnailBlobUrl(imageSrc, cacheKey).then(resolvedSrc => {
                 if (imageEl.dataset.thumbnailCacheKey !== cacheKey) return;
                 if (imageEl.getAttribute('src') !== resolvedSrc) {

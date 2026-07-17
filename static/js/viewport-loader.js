@@ -92,6 +92,14 @@ function _startViewportLoad(info) {
         return;
     }
 
+    /* Cache-hit fast path: a synchronous blobjectURL lookup in grid.js
+       assigns the src immediately without consuming a concurrency slot.
+       __target__: viewport-loader.js -> grid.js */
+    if (assignThumbnailSrcIfCached(imgEl, info.imageSrc, info.cacheKey)) {
+        return;
+    }
+
+    /* Network-miss path: consumes a concurrency slot */
     _viewportActiveFetches++;
     var loadPromise = setThumbnailImageSrc(imgEl, info.imageSrc, info.cacheKey);
 

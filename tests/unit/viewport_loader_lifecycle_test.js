@@ -90,6 +90,10 @@ var loadCalls = [];
 var loadPromises = [];
 var _loadSerial = 0;
 global.setThumbnailImageSrc = function(imgEl, imageSrc, cacheKey) {
+    if (assignThumbnailSrcIfCached(imgEl, imageSrc, cacheKey)) {
+        return Promise.resolve('blob:cached');
+    }
+    /* Network miss path */
     var callId = ++_loadSerial;
     loadCalls.push({ id: callId, imageSrc: imageSrc, cacheKey: cacheKey });
     var thenCallbacks = [];
@@ -112,6 +116,24 @@ global.setThumbnailImageSrc = function(imgEl, imageSrc, cacheKey) {
 };
 
 global.thumbnailBlobInflight = new Map();
+
+var thumbnailBlobUrlCache = new Map();
+global.thumbnailBlobUrlCache = thumbnailBlobUrlCache;
+
+/* Clone grid.js helpers the viewport-loader depends on.
+   In production these live in grid.js; for the deterministic test
+   we inject them into the module scope. */
+global.assignThumbnailSrcIfCached = function(imageEl, imageSrc, cacheKey) {
+    imageEl.dataset.thumbnailCacheKey = cacheKey;
+    var cached = thumbnailBlobUrlCache.get(cacheKey);
+    if (cached) {
+        if (imageEl.getAttribute('src') !== cached) {
+            imageEl.setAttribute('src', cached);
+        }
+        return true;
+    }
+    return false;
+};
 
 var rafQueue = [];
 var idleQueue = [];
@@ -207,6 +229,8 @@ function resetState() {
     _visibleObserverCb = null;
     _nearObserverCb = null;
     _loadSerial = 0;
+    thumbnailBlobUrlCache.clear();
+    global.thumbnailBlobInflight.clear();
 
     /* Reset let bindings via vm.runInContext */
     _evalInCtx('_viewportGeneration = 0');
@@ -498,9 +522,126 @@ function test9_no_background_spin_at_cap() {
     assert(loadCalls.length === 12, 'T9h: all 12 items eventually admitted (got ' + loadCalls.length + ')');
 }
 
+function test10a_cache_hits_bypass_slot_accounting() {
+    resetState();
+
+    /* Pre-populate cache for 500 entries */
+    for (var i = 0; i < 500; i++) {
+        thumbnailBlobUrlCache.set('key-' + i, 'blob:cached-' + i);
+    }
+
+    /* Schedule and promote 500 elements */
+    var elements = [];
+    for (var i = 0; i < 500; i++) {
+        var el = makeElement(true);
+        elements.push(el);
+        scheduleThumbnailLoad(el, '/thumb/' + i + '.png', 'key-' + i);
+    }
+    for (var j = 0; j < elements.length; j++) {
+        _visibleObserverCb([{ isIntersecting: true, target: elements[j] }]);
+    }
+
+    /* Single pump should admit all 500 without incrementing active fetches
+       because every entry is a cache hit */
+    flushRaf();
+
+    /* No network loads -- all cache hits */
+    assert(loadCalls.length === 0, 'T10a1: 0 network loads for cache-hit entries (got ' + loadCalls.length + ')');
+    assert(getActiveFetches() === 0, 'T10a2: active fetches 0 after cache hits (got ' + getActiveFetches() + ')');
+
+    /* All 500 src attributes must have been assigned */
+    var assignedCount = 0;
+    for (var k = 0; k < elements.length; k++) {
+        if (elements[k]._src) assignedCount++;
+    }
+    assert(assignedCount === 500, 'T10a3: all 500 elements have src assigned (got ' + assignedCount + ')');
+
+    /* All cleaned from info map and queues */
+    assert(getInfoMapSize() === 0, 'T10a4: info map empty after admission (got ' + getInfoMapSize() + ')');
+    assert(getVisibleQueueLen() === 0, 'T10a5: visible queue empty');
+    assert(getDeferredQueueLen() === 0, 'T10a6: deferred queue empty');
+}
+
+function test10b_mixed_cache_hits_and_misses() {
+    resetState();
+
+    /* Pre-populate cache for first 50 entries (cache hits) */
+    for (var i = 0; i < 50; i++) {
+        thumbnailBlobUrlCache.set('key-' + i, 'blob:cached-' + i);
+    }
+    /* Remaining 50 have no cache entry (misses) */
+
+    /* Schedule 100 elements */
+    var elements = [];
+    for (var i = 0; i < 100; i++) {
+        var el = makeElement(true);
+        elements.push(el);
+        scheduleThumbnailLoad(el, '/thumb/' + i + '.png', 'key-' + i);
+    }
+    for (var j = 0; j < elements.length; j++) {
+        _visibleObserverCb([{ isIntersecting: true, target: elements[j] }]);
+    }
+
+    flushRaf();
+
+    /* All 50 cache hits should be assigned (no network) */
+    var hitsAssigned = 0;
+    for (var k = 0; k < 50; k++) {
+        if (elements[k]._src) hitsAssigned++;
+    }
+    assert(hitsAssigned === 50, 'T10b1: 50 cache-hit elements assigned (got ' + hitsAssigned + ')');
+
+    /* Network misses capped at 8 */
+    assert(loadCalls.length === 8, 'T10b2: network misses at cap 8 (got ' + loadCalls.length + ')');
+    assert(getActiveFetches() === 8, 'T10b3: active fetches exactly 8 (got ' + getActiveFetches() + ')');
+
+    /* Remaining 42 misses still in visible queue (50 misses - 8 admitted) */
+    assert(getVisibleQueueLen() === 42, 'T10b4: 42 misses remain queued (got ' + getVisibleQueueLen() + ')');
+
+    /* Resolve all and drain in cycles until complete */
+    for (var cycle = 0; cycle < 10 && loadCalls.length < 50; cycle++) {
+        resolveAllLoads();
+        flushRaf();
+        flushIdle();
+        flushTimeouts();
+    }
+
+    assert(loadCalls.length === 50, 'T10b5: all 50 misses eventually loaded (got ' + loadCalls.length + ')');
+    assert(getInfoMapSize() === 0, 'T10b6: info map empty after all admissions');
+}
+
+function test10c_stale_guard_in_cache_hit_path() {
+    resetState();
+
+    /* Pre-populate cache */
+    thumbnailBlobUrlCache.set('key-new', 'blob:new-value');
+
+    var el = makeElement(true);
+    /* Simulate a stale key already set on the element */
+    var imgEl = el.querySelector('img');
+    imgEl.dataset.thumbnailCacheKey = 'key-old';
+    imgEl.setAttribute('src', 'blob:old-value');
+
+    /* Cache hit: src differs from cached value, should assign */
+    var result1 = assignThumbnailSrcIfCached(imgEl, '/thumb/x.png', 'key-new');
+    assert(result1 === true, 'T10c1: cache hit returns true');
+    assert(imgEl.getAttribute('src') === 'blob:new-value', 'T10c2: src updated from stale to cached (got ' + imgEl.getAttribute('src') + ')');
+    assert(imgEl.dataset.thumbnailCacheKey === 'key-new', 'T10c3: cache key updated');
+
+    /* Second call with same key: src already matches cached value */
+    var callCount = _loadSerial;
+    var result2 = assignThumbnailSrcIfCached(imgEl, '/thumb/x.png', 'key-new');
+    assert(result2 === true, 'T10c4: second hit returns true');
+    /* No src reassignment triggered */
+    assert(_loadSerial === callCount, 'T10c5: no new network request triggered');
+}
+
 /* ── Run all tests ─────────────────────────────────────────────────────── */
 
 try {
+    test10a_cache_hits_bypass_slot_accounting();
+    test10b_mixed_cache_hits_and_misses();
+    test10c_stale_guard_in_cache_hit_path();
     test9_no_background_spin_at_cap();
     test8_no_immediate_drain_in_schedule();
     test1_disconnected_elements_not_immediately_drained();
