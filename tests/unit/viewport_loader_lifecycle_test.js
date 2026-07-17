@@ -243,6 +243,10 @@ function getDrainTimerId() {
     return _evalInCtx('_viewportDrainTimerId');
 }
 
+function getConcurrency() {
+    return _evalInCtx('THUMBNAIL_LOAD_CONCURRENCY');
+}
+
 function resetState() {
     loadCalls = [];
     loadPromises = [];
@@ -358,7 +362,7 @@ function test3_concurrency_cap() {
     }
     flushRaf();
 
-    assert(loadCalls.length <= 8, 'T3a: at most 8 loads active (got ' + loadCalls.length + ')');
+    assert(loadCalls.length <= getConcurrency(), 'T3a: at most cap loads active (got ' + loadCalls.length + ')');
 
     resolveAllLoads();
     var loadsBefore = loadCalls.length;
@@ -499,25 +503,27 @@ function test8_no_immediate_drain_in_schedule() {
 function test9_no_background_spin_at_cap() {
     resetState();
 
-    /* Schedule 12 elements, don't promote any via observer */
+    var scheduleCount = getConcurrency() + 4;
+
+    /* Schedule enough elements to exceed cap, don't promote any via observer */
     var elements = [];
-    for (var i = 0; i < 12; i++) {
+    for (var i = 0; i < scheduleCount; i++) {
         var el = makeElement(true); /* connected */
         elements.push(el);
         scheduleThumbnailLoad(el, '/thumb/' + i + '.png', 'key-' + i);
     }
 
-    /* All 12 items are in deferred queue, no observer has fired */
-    assert(getDeferredQueueLen() === 12, 'T9a: all items in deferred queue (got ' + getDeferredQueueLen() + ')');
+    /* All items are in deferred queue, no observer has fired */
+    assert(getDeferredQueueLen() === scheduleCount, 'T9a: all items in deferred queue (got ' + getDeferredQueueLen() + ')');
 
     /* Background drain was armed by scheduleThumbnailLoad */
     /* Run the background drain (idle callback) */
     flushIdle();
     flushTimeouts();
 
-    /* After drain, 8 admitted (cap), 4 remain deferred */
-    assert(loadCalls.length === 8, 'T9b: 8 loads admitted at cap (got ' + loadCalls.length + ')');
-    assert(getActiveFetches() === 8, 'T9c: active fetches at cap');
+    /* After drain, cap admitted, 4 remain deferred */
+    assert(loadCalls.length === getConcurrency(), 'T9b: cap loads admitted at cap (got ' + loadCalls.length + ')');
+    assert(getActiveFetches() === getConcurrency(), 'T9c: active fetches at cap');
     assert(getDeferredQueueLen() === 4, 'T9d: 4 items remain in deferred (got ' + getDeferredQueueLen() + ')');
 
     /* Capture timer state after first drain */
@@ -543,7 +549,7 @@ function test9_no_background_spin_at_cap() {
     flushTimeouts();
 
     var totalAdmitted = loadCalls.length;
-    assert(totalAdmitted >= 9, 'T9g: work advances after load completes (got ' + totalAdmitted + ' admitted)');
+    assert(totalAdmitted >= getConcurrency() + 1, 'T9g: work advances after load completes (got ' + totalAdmitted + ' admitted)');
 
     /* All items eventually load */
     resolveAllLoads();
@@ -552,7 +558,7 @@ function test9_no_background_spin_at_cap() {
     flushIdle();
     flushTimeouts();
 
-    assert(loadCalls.length === 12, 'T9h: all 12 items eventually admitted (got ' + loadCalls.length + ')');
+    assert(loadCalls.length === scheduleCount, 'T9h: all items eventually admitted (got ' + loadCalls.length + ')');
 }
 
 function test10a_cache_hits_bypass_slot_accounting() {
@@ -624,12 +630,12 @@ function test10b_mixed_cache_hits_and_misses() {
     }
     assert(hitsAssigned === 50, 'T10b1: 50 cache-hit elements assigned (got ' + hitsAssigned + ')');
 
-    /* Network misses capped at 8 */
-    assert(loadCalls.length === 8, 'T10b2: network misses at cap 8 (got ' + loadCalls.length + ')');
-    assert(getActiveFetches() === 8, 'T10b3: active fetches exactly 8 (got ' + getActiveFetches() + ')');
+    /* Network misses capped at concurrency */
+    assert(loadCalls.length === getConcurrency(), 'T10b2: network misses at cap ' + getConcurrency() + ' (got ' + loadCalls.length + ')');
+    assert(getActiveFetches() === getConcurrency(), 'T10b3: active fetches exactly ' + getConcurrency() + ' (got ' + getActiveFetches() + ')');
 
-    /* Remaining 42 misses still in visible queue (50 misses - 8 admitted) */
-    assert(getVisibleQueueLen() === 42, 'T10b4: 42 misses remain queued (got ' + getVisibleQueueLen() + ')');
+    /* Remaining misses still in visible queue */
+    assert(getVisibleQueueLen() === 50 - getConcurrency(), 'T10b4: ' + (50 - getConcurrency()) + ' misses remain queued (got ' + getVisibleQueueLen() + ')');
 
     /* Resolve all and drain in cycles until complete */
     for (var cycle = 0; cycle < 10 && loadCalls.length < 50; cycle++) {
@@ -686,22 +692,21 @@ function test11a_fast_resolve_advances_without_rAF() {
         _visibleObserverCb([{ isIntersecting: true, target: elements[j] }]);
     }
 
-    /* Single rAF pump admits first 8 */
+    /* Single rAF pump admits first wave at cap */
     var rafCount = rafQueue.length;
     flushRaf();
-    var rafFlashedCount = rafCount; /* rAF queue drained, no more scheduled */
 
     var firstBatch = loadCalls.length;
-    assert(firstBatch === 8, 'T11a1: first rAF admits 8 (got ' + firstBatch + ')');
-    assert(getActiveFetches() === 8, 'T11a2: active fetches at cap after first wave');
+    assert(firstBatch === getConcurrency(), 'T11a1: first rAF admits cap (got ' + firstBatch + ')');
+    assert(getActiveFetches() === getConcurrency(), 'T11a2: active fetches at cap after first wave');
 
-    /* Resolve all 8 and drain ONLY microtasks, NOT rAF */
+    /* Resolve all and drain ONLY microtasks, NOT rAF */
     resolveAllLoads();
 
-    /* At this point: decrementAndDrain was called 8 times, but the guard
+    /* At this point: decrementAndDrain was called getConcurrency() times, but the guard
        ensures only one completion microtask is scheduled */
     var microtaskQuedCount = microtaskQueue.length;
-    assert(microtaskQuedCount === 1, 'T11a3: single completion microtask queued for 8 completions (got ' + microtaskQuedCount + ')');
+    assert(microtaskQuedCount === 1, 'T11a3: single completion microtask queued for cap completions (got ' + microtaskQuedCount + ')');
 
     flushMicrotasks();
 
@@ -737,12 +742,12 @@ function test11b_concurrency_never_exceeds_8() {
         _visibleObserverCb([{ isIntersecting: true, target: elements[j] }]);
     }
 
-    /* Initial rAF admits 8 */
+    /* Initial rAF admits cap */
     flushRaf();
-    assert(getActiveFetches() === 8, 'T11b1: first wave at concurrency 8');
+    assert(getActiveFetches() === getConcurrency(), 'T11b1: first wave at concurrency ' + getConcurrency());
 
     /* Track maximum active fetches across all drain cycles */
-    var maxActive = 8;
+    var maxActive = getConcurrency();
     for (var cycle = 0; cycle < 50 && loadCalls.length < 100; cycle++) {
         resolveAllLoads();
         flushMicrotasks();
@@ -752,16 +757,17 @@ function test11b_concurrency_never_exceeds_8() {
         if (getActiveFetches() > maxActive) maxActive = getActiveFetches();
     }
 
-    assert(maxActive <= 8, 'T11b2: active fetches never exceed 8 (max was ' + maxActive + ')');
+    assert(maxActive <= getConcurrency(), 'T11b2: active fetches never exceed cap (max was ' + maxActive + ')');
     assert(loadCalls.length === 100, 'T11b3: all 100 admitted');
 }
 
 function test11c_burst_completions_single_microtask() {
     resetState();
 
-    /* Schedule 20 elements, promote to visible */
+    /* Schedule 2 × cap elements, promote to visible */
+    var scheduleCount = getConcurrency() * 2;
     var elements = [];
-    for (var i = 0; i < 20; i++) {
+    for (var i = 0; i < scheduleCount; i++) {
         var el = makeElement(true);
         elements.push(el);
         scheduleThumbnailLoad(el, '/thumb/bt-' + i + '.png', 'key-bt-' + i);
@@ -771,15 +777,15 @@ function test11c_burst_completions_single_microtask() {
     }
 
     flushRaf();
-    assert(loadCalls.length === 8, 'T11c1: initial 8 admitted via rAF');
+    assert(loadCalls.length === getConcurrency(), 'T11c1: initial cap admitted via rAF');
 
     var microBefore = microtaskQueue.length;
-    resolveAllLoads(); /* all 8 complete simultaneously */
-    assert(microtaskQueue.length === 1, 'T11c2: exactly one microtask queued for 8-burst (got ' + microtaskQueue.length + ')');
+    resolveAllLoads(); /* all cap completions simultaneously */
+    assert(microtaskQueue.length === 1, 'T11c2: exactly one microtask queued for cap-burst (got ' + microtaskQueue.length + ')');
 
     flushMicrotasks();
-    /* After microtask, next 8 should be admitted */
-    assert(loadCalls.length === 16, 'T11c3: second wave of 8 admitted after single microtask (got ' + loadCalls.length + ')');
+    /* After microtask, next wave should be admitted */
+    assert(loadCalls.length === getConcurrency() * 2, 'T11c3: second wave of ' + getConcurrency() + ' admitted after single microtask (got ' + loadCalls.length + ')');
 }
 
 function test11d_priority_ordering_via_completion() {
@@ -855,11 +861,11 @@ function test11e_cancellation_before_microtask() {
         _visibleObserverCb([{ isIntersecting: true, target: elements[j] }]);
     }
 
-    /* Admit first 8 via rAF */
+    /* Admit first wave via rAF */
     flushRaf();
-    assert(loadCalls.length === 8, 'T11e1: 8 admitted before cancel');
+    assert(loadCalls.length === getConcurrency(), 'T11e1: cap admitted before cancel');
 
-    /* Resolve all 8 completions → queues completion microtask */
+    /* Resolve all completions → queues completion microtask */
     resolveAllLoads();
     var queuedMicrotask = microtaskQueue.length > 0;
     assert(queuedMicrotask, 'T11e2: microtask queued after completions');
@@ -871,15 +877,16 @@ function test11e_cancellation_before_microtask() {
     flushMicrotasks();
 
     /* No new loads should have been admitted */
-    assert(loadCalls.length === 8, 'T11e3: no stale admissions after cancel (got ' + loadCalls.length + ')');
+    assert(loadCalls.length === getConcurrency(), 'T11e3: no stale admissions after cancel (got ' + loadCalls.length + ')');
 }
 
 function test11f_no_hot_microtask_loop() {
     resetState();
 
-    /* Schedule 16 elements, promote to visible */
+    /* Schedule 2 × cap elements, promote to visible */
+    var scheduleCount = getConcurrency() * 2;
     var elements = [];
-    for (var i = 0; i < 16; i++) {
+    for (var i = 0; i < scheduleCount; i++) {
         var el = makeElement(true);
         elements.push(el);
         scheduleThumbnailLoad(el, '/thumb/hot-' + i + '.png', 'key-hot-' + i);
@@ -889,9 +896,9 @@ function test11f_no_hot_microtask_loop() {
     }
 
     flushRaf();
-    assert(loadCalls.length === 8, 'T11f1: 8 admitted (at cap)');
+    assert(loadCalls.length === getConcurrency(), 'T11f1: cap admitted (at cap)');
 
-    /* Resolve all 8 - should queue ONE microtask */
+    /* Resolve all - should queue ONE microtask */
     resolveAllLoads();
     var afterResolve = microtaskQueue.length;
     assert(afterResolve === 1, 'T11f2: exactly 1 microtask queued');
@@ -899,12 +906,12 @@ function test11f_no_hot_microtask_loop() {
     /* Flush that microtask */
     flushMicrotasks();
 
-    /* After the completion pump ran, it drained next 8 (hit cap). */
+    /* After the completion pump ran, it drained next wave (hit cap). */
     /* Now verify no ADDITIONAL microtask was queued by the pump itself (no hot loop) */
     assert(microtaskQueue.length === 0, 'T11f3: no self-rescheduling microtask after pump (got ' + microtaskQueue.length + ')');
-    assert(loadCalls.length === 16, 'T11f4: next 8 admitted by single completion pump');
+    assert(loadCalls.length === getConcurrency() * 2, 'T11f4: next ' + getConcurrency() + ' admitted by single completion pump');
 
-    /* Now resolve these 8 and check again: single microtask, no loop */
+    /* Now resolve these and check again: single microtask, no loop */
     resolveAllLoads();
     assert(microtaskQueue.length === 1, 'T11f5: single microtask after second wave resolution (got ' + microtaskQueue.length + ')');
 

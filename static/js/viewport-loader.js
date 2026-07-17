@@ -1,6 +1,6 @@
 /* Ordered classic script.
  * Defines: viewport-aware thumbnail load scheduling with three-tier priority,
- *          bounded concurrency (8), promotion without duplication, eventual
+ *          bounded concurrency (16), promotion without duplication, eventual
  *          background drain (no-spin at capacity), and safe unschedule/cancellation.
  *          Uses a single rAF priority pump and a single idle background drain.
  * Relies on: grid.js (setThumbnailImageSrc), state.js (folderRequestToken).
@@ -9,7 +9,7 @@
  * unloaded, or re-shimmered on viewport exit.
  */
 
-const THUMBNAIL_LOAD_CONCURRENCY = 8;
+const THUMBNAIL_LOAD_CONCURRENCY = 16;
 
 const VIEWPORT_PRIORITY_VISIBLE = 0;
 const VIEWPORT_PRIORITY_NEAR = 1;

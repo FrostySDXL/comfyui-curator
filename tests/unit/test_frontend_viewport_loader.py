@@ -86,11 +86,20 @@ def test_two_intersection_observers_for_separate_priorities():
 
 
 def test_bounded_concurrency_constant():
-    """A named THUMBNAIL_LOAD_CONCURRENCY constant set to 8."""
+    """A named THUMBNAIL_LOAD_CONCURRENCY constant set to a value within the
+    accepted experimental range 6--20. The current value (16) was selected
+    from cross-browser benchmark evidence showing underutilization of the
+    local HTTP/cache path at 8 for cold and warm-reload phases."""
     source = read_frontend_js()
-    assert (
-        "THUMBNAIL_LOAD_CONCURRENCY = 8;" in source or "THUMBNAIL_LOAD_CONCURRENCY=8" in source
-    ), "Expected THUMBNAIL_LOAD_CONCURRENCY = 8"
+    match = re.search(r"THUMBNAIL_LOAD_CONCURRENCY\s*=\s*(\d+)", source)
+    assert match, "Expected THUMBNAIL_LOAD_CONCURRENCY constant with numeric value"
+    value = int(match.group(1))
+    assert 6 <= value <= 20, (
+        f"THUMBNAIL_LOAD_CONCURRENCY ({value}) must be within accepted range 6--20"
+    )
+    assert value == 16, (
+        f"THUMBNAIL_LOAD_CONCURRENCY expected 16 from benchmark evidence, got {value}"
+    )
 
 
 # ── eventual background loading ───────────────────────────────────────────
