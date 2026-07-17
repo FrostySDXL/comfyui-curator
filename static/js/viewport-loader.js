@@ -3,7 +3,10 @@
  *          bounded concurrency (16), promotion without duplication, eventual
  *          background drain (no-spin at capacity), and safe unschedule/cancellation.
  *          Uses a single rAF priority pump and a single idle background drain.
- * Relies on: grid.js (setThumbnailImageSrc), state.js (folderRequestToken).
+ *          Passes priority + resolved source-batch metadata to the cache layer
+ *          for scope/priority-aware LRU eviction (Stage 2).
+ * Relies on: grid.js (setThumbnailImageSrc, assignThumbnailSrcIfCached), state.js (folderRequestToken).
+ * Note: _resolveSourceBatch is defined in grid.js and consumed by grid.js, not here.
  * After this stage, IntersectionObserver controls load START only.
  * Thumbnails that are already displayed NEVER have their src cleared, replaced,
  * unloaded, or re-shimmered on viewport exit.
@@ -93,16 +96,20 @@ function _startViewportLoad(info) {
         return;
     }
 
+    /* Build metadata for cache-layer admission with priority and
+       resolved source-batch scope (Stage 2). */
+    var meta = { priority: info.priority, scopeBatch: info.scopeBatch || null };
+
     /* Cache-hit fast path: a synchronous blobjectURL lookup in grid.js
        assigns the src immediately without consuming a concurrency slot.
        __target__: viewport-loader.js -> grid.js */
-    if (assignThumbnailSrcIfCached(imgEl, info.imageSrc, info.cacheKey)) {
+    if (assignThumbnailSrcIfCached(imgEl, info.imageSrc, info.cacheKey, meta)) {
         return;
     }
 
     /* Network-miss path: consumes a concurrency slot */
     _viewportActiveFetches++;
-    var loadPromise = setThumbnailImageSrc(imgEl, info.imageSrc, info.cacheKey);
+    var loadPromise = setThumbnailImageSrc(imgEl, info.imageSrc, info.cacheKey, meta);
 
     function decrementAndDrain() {
         _viewportActiveFetches--;
@@ -208,7 +215,7 @@ function _cancelBackgroundDrain() {
     _viewportDrainTimerId = null;
 }
 
-function scheduleThumbnailLoad(element, imageSrc, cacheKey) {
+function scheduleThumbnailLoad(element, imageSrc, cacheKey, priority, scopeBatch) {
     _ensureViewportObservers();
 
     var info = {
@@ -216,7 +223,8 @@ function scheduleThumbnailLoad(element, imageSrc, cacheKey) {
         imageSrc: imageSrc,
         cacheKey: cacheKey,
         generation: _viewportGeneration,
-        priority: VIEWPORT_PRIORITY_DEFERRED
+        priority: typeof priority === 'number' ? priority : VIEWPORT_PRIORITY_DEFERRED,
+        scopeBatch: scopeBatch || null
     };
 
     _viewportInfoMap.set(element, info);

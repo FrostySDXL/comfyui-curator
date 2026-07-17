@@ -97,7 +97,7 @@
 | `sidebarWidth` | `number` | Left sidebar width (px), persisted in localStorage |
 | `sidebarOpen` | `boolean` | Left sidebar visibility, persisted in localStorage |
 | `gridThumbMap` | `Map<filename, Element>` | Persistent thumb DOM elements keyed by filename |
-| `thumbnailBlobUrlCache` | `Map<cacheKey, blobUrl>` | FIFO cache (max 1000) of thumbnail blob URLs (evicts oldest-inserted) |
+| `thumbnailBlobUrlCache` | `Map<cacheKey, blobUrl>` | LRU metadata-aware cache (max 1000) with scope/priority eviction (Stage 2) |
 | `thumbnailBlobInflight` | `Map<cacheKey, Promise>` | Dedup map for in-flight thumbnail fetch requests |
 | `THUMBNAIL_LOAD_CONCURRENCY` | `const` (16) | Maximum simultaneous thumbnail loads via viewport scheduler |
 | `folderCountSnapshot` | `object` | Snapshot of folder counts from last poll, used for pulse animation |
@@ -269,7 +269,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - When adding a new API call, route it through `ccApiPath()` and add it to the API Call Inventory table above.
 - The `test_frontend_*.py` files in `tests/unit/` regex-scan the ordered split JS/CSS sources via `tests/unit/frontend_source.py` for function names and invariants. They are NOT browser tests. After JS changes, run them to avoid regressions on the invariants they check, but always also test manually in a browser.
 - `gridThumbMap` is the key optimization -- it preserves DOM elements across re-renders. `_gridChildrenMatchDesiredOrder()` avoids `replaceChildren()` when order is already correct.
-- Thumbnail blob URLs must be revoked on `beforeunload` to prevent memory leaks -- the `thumbnailBlobUrlCache` FIFO eviction and the `beforeunload` handler manage this.
+- Thumbnail blob URLs must be revoked on `beforeunload` to prevent memory leaks -- the `thumbnailBlobUrlCache` uses Stage 2 scope/priority-aware LRU eviction (see gotchas below) with metadata cleanup in the `beforeunload` handler.
 
 ## Gotchas & Common Pitfalls
 
@@ -278,6 +278,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **Polling skips during interaction:** `isInteractionBusy()` returns true during lightbox, drag, or resize. This prevents API responses from overwriting DOM elements the operator is actively interacting with.
 - **`_gridChildrenMatchDesiredOrder()` optimization:** The grid is only rebuilt if the order of thumb elements actually changed. Removing this check causes visible flicker on every poll cycle.
 - **Viewport-aware loading controls start only:** `viewport-loader.js` uses `IntersectionObserver` to decide WHEN to start a thumbnail load, but never clears or reassigns an already-displayed `src` on viewport exit. `_admitAndLoad()` unconditionally unobserves from both observers before loading, so each thumb is observed exactly once. `scheduleThumbnailLoad()` does not drain immediately; observer promotion and `_requestPriorityPump()` settle ordering before the rAF pump runs. Background drain (`requestIdleCallback`/`setTimeout`) only re-arms when capacity is below `THUMBNAIL_LOAD_CONCURRENCY` (16, selected from cross-browser benchmark evidence as a bounded scheduler value), preventing callback spin at cap.
+- **Stage 2 metadata-aware LRU cache:** The thumbnail blob URL cache (`thumbnailBlobUrlCache`) is augmented with a parallel metadata map (`_thumbnailMetadata`) that tracks per-entry strongest-observed priority (visible=0, near=1, deferred=2), real source-batch scope, and a monotonic `_lruTouch` counter. Every cache hit in `resolveThumbnailBlobUrl` or `assignThumbnailSrcIfCached` touches LRU recency without revoking or recreating the blob URL. Overflow eviction (`_evictIfNeeded`) selects victims by scope class first (other-batch < previous-batch < current-batch), then priority class (deferred < near < visible), then LRU order as final tie-break. The hard cap remains 1,000. Current and immediately-previous real batch are tracked by `_updateRealBatchTracking()`; virtual views (`__favorites__`, `__public__`) do not rotate real-batch history. Inflight metadata aggregation (`_mergeInflightMetadata`/`_takeInflightMetadata`) ensures a visible requester joining an existing deferred inflight fetch promotes the eventual cached entry's metadata while using exactly one fetch/object URL. Blob URL revocation happens exactly once per evicted entry. Eviction never mutates a displayed `<img>` element's `src`, `loaded` class, or `thumbnailCacheKey` dataset attribute. Metadata maps are cleaned up in the `beforeunload` handler alongside the blob URL cache.
 - **Score gradient is hardcoded:** `aiScoreGradient()` uses a fixed dark-red-to-dark-yellow-to-green gradient. There is no configuration for color thresholds.
 - **AI inspector is frontend-only:** `aiRenderImageInspector()` reads the active run already loaded in `aiActiveRun`; do not add per-image API calls for inspector refresh unless the run-history contract changes.
 - **AI sidebar tabs are presentation state:** `aiActivePanelTab` switches Inspect / Score / Runs without changing backend state. Keep hidden run/job sections owned by `aiSetPanelTab()`.

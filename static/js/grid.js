@@ -1,28 +1,187 @@
 /* Ordered classic script.
- * Defines: thumbnail cache, image loading, sort controls, display filtering, grid rendering.
+ * Defines: metadata-aware LRU thumbnail cache with scope/priority eviction,
+ *          image loading, sort controls, display filtering, grid rendering.
  * Later-file globals called at runtime: aiGetImageScore, aiShouldShowImage, aiSortImages, aiScoreGradient.
  */
+
+        /* ── Stage 2 cache metadata ──────────────────────────────────────
+         * _thumbnailMetadata: Map<cacheKey, {priority, scopeBatch, _lruTouch}>
+         *   - priority: strongest observed request priority (0=visible, 1=near, 2=deferred)
+         *   - scopeBatch: real source batch for scope-aware eviction
+         *   - _lruTouch: monotonic recency counter; higher = more recently used
+         * _lruTouchNext: monotonic counter incremented on every touch
+         * _inflightMetadataPriority: Map<cacheKey, meta> for metadata aggregation
+         *   during inflight fetch dedup; taken when fetch completes
+         * _realBatchCurrent / _realBatchPrev: tracked by _updateRealBatchTracking()
+         */
+        const _thumbnailMetadata = new Map();
+        const _inflightMetadataPriority = new Map();
+        let _lruTouchNext = 0;
+        let _realBatchCurrent = null;
+        let _realBatchPrev = null;
+
+        function _touchCacheEntry(cacheKey) {
+            const meta = _thumbnailMetadata.get(cacheKey);
+            if (meta) {
+                meta._lruTouch = ++_lruTouchNext;
+            }
+        }
+
+        function _updateCacheMetadata(cacheKey, meta) {
+            /* Creates or promotes metadata (priority, scope).
+               Bumps LRU recency only when the entry is first created.
+               _touchCacheEntry is the sole LRU touch point for cache reuse. */
+            if (!meta) return;
+            let existing = _thumbnailMetadata.get(cacheKey);
+            if (!existing) {
+                _thumbnailMetadata.set(cacheKey, { priority: 2, scopeBatch: null, _lruTouch: ++_lruTouchNext });
+                existing = _thumbnailMetadata.get(cacheKey);
+            }
+            /* Monotonic priority promotion: visible(0) > near(1) > deferred(2).
+               Lower numeric value is stronger. Only promote, never demote. */
+            if (typeof meta.priority === 'number' && meta.priority < existing.priority) {
+                existing.priority = meta.priority;
+            }
+            /* Scope batch: always overwrite with the latest (real source batch or
+               the newly resolved scope). Virtual views resolve the real batch
+               from the image record before calling this. */
+            if (meta.scopeBatch !== undefined && meta.scopeBatch !== null) {
+                existing.scopeBatch = meta.scopeBatch;
+            }
+        }
+
+        function _getScopeClass(scopeBatch) {
+            if (!scopeBatch) return 0; /* unknown scope = weakest */
+            if (_realBatchCurrent === scopeBatch) return 2;
+            if (_realBatchPrev === scopeBatch) return 1;
+            return 0; /* other batch */
+        }
+
+        function _getPriorityClass(priority) {
+            /* Lower numeric priority = stronger. Invert for protection score:
+               visible(0)->2, near(1)->1, deferred(2)->0 */
+            if (typeof priority !== 'number') return 0;
+            if (priority <= 0) return 2;
+            if (priority === 1) return 1;
+            return 0;
+        }
+
+        function _evictIfNeeded() {
+            while (thumbnailBlobUrlCache.size > THUMBNAIL_BLOB_CACHE_MAX) {
+                let weakestKey = null;
+                let weakestScopeProtection = Infinity;
+                let weakestPriorityProtection = Infinity;
+                let weakestLruTouch = Infinity;
+
+                for (const [key, blobUrl] of thumbnailBlobUrlCache) {
+                    const meta = _thumbnailMetadata.get(key);
+                    const scopeClass = _getScopeClass(meta ? meta.scopeBatch : null);
+                    const priorityClass = _getPriorityClass(meta ? meta.priority : undefined);
+                    const lruTouch = meta ? meta._lruTouch : 0;
+
+                    /* Eviction ranking (lower = evict first):
+                       1. scopeClass (0=other, 1=previous, 2=current)
+                       2. priorityClass (0=deferred, 1=near, 2=visible)
+                       3. lruTouch (lower = older = evict first)
+                    */
+                    if (scopeClass < weakestScopeProtection ||
+                        (scopeClass === weakestScopeProtection && priorityClass < weakestPriorityProtection) ||
+                        (scopeClass === weakestScopeProtection && priorityClass === weakestPriorityProtection && lruTouch < weakestLruTouch)) {
+                        weakestKey = key;
+                        weakestScopeProtection = scopeClass;
+                        weakestPriorityProtection = priorityClass;
+                        weakestLruTouch = lruTouch;
+                    }
+                }
+
+                if (weakestKey) {
+                    const evictedUrl = thumbnailBlobUrlCache.get(weakestKey);
+                    if (evictedUrl) URL.revokeObjectURL(evictedUrl);
+                    thumbnailBlobUrlCache.delete(weakestKey);
+                    _thumbnailMetadata.delete(weakestKey);
+                } else {
+                    /* Safety: fallback FIFO if no metadata */
+                    const oldestKey = thumbnailBlobUrlCache.keys().next().value;
+                    const oldestUrl = thumbnailBlobUrlCache.get(oldestKey);
+                    if (oldestUrl) URL.revokeObjectURL(oldestUrl);
+                    thumbnailBlobUrlCache.delete(oldestKey);
+                    _thumbnailMetadata.delete(oldestKey);
+                }
+            }
+        }
+
+        function _mergeInflightMetadata(cacheKey, meta) {
+            if (!meta || !cacheKey) return;
+            let existing = _inflightMetadataPriority.get(cacheKey);
+            if (!existing) {
+                existing = { priority: 2, scopeBatch: null };
+                _inflightMetadataPriority.set(cacheKey, existing);
+            }
+            /* Promote priority (lower is stronger) */
+            if (typeof meta.priority === 'number' && meta.priority < existing.priority) {
+                existing.priority = meta.priority;
+            }
+            /* Overwrite scopeBatch with the latest */
+            if (meta.scopeBatch !== undefined && meta.scopeBatch !== null) {
+                existing.scopeBatch = meta.scopeBatch;
+            }
+        }
+
+        function _takeInflightMetadata(cacheKey) {
+            const meta = _inflightMetadataPriority.get(cacheKey);
+            _inflightMetadataPriority.delete(cacheKey);
+            return meta || null;
+        }
+
+        function _updateRealBatchTracking(newBatch) {
+            /* Accept only non-empty string batch names. Reject null, undefined,
+               empty strings, numbers, objects, and virtual sentinels. */
+            if (typeof newBatch !== 'string' || newBatch === '' ||
+                newBatch === '__favorites__' || newBatch === '__public__') {
+                return;
+            }
+            /* Same batch: no rotation */
+            if (_realBatchCurrent === newBatch) {
+                return;
+            }
+            _realBatchPrev = _realBatchCurrent;
+            _realBatchCurrent = newBatch;
+        }
+
+        function _resolveSourceBatch(img) {
+            /* For virtual views, extract real batch from image record.
+               For real batch views, use currentBatch. */
+            if (typeof isVirtualCollectionView === 'function' && isVirtualCollectionView()) {
+                return img && img.batch ? img.batch : null;
+            }
+            return currentBatch || null;
+        }
         function getThumbnailCacheKey(imageSrc, img) {
             return `${imageSrc}|${img.size || 0}`;
         }
 
-        function rememberThumbnailBlobUrl(cacheKey, blobUrl) {
+        function rememberThumbnailBlobUrl(cacheKey, blobUrl, meta) {
             const existing = thumbnailBlobUrlCache.get(cacheKey);
             if (existing && existing !== blobUrl) URL.revokeObjectURL(existing);
             thumbnailBlobUrlCache.set(cacheKey, blobUrl);
-            while (thumbnailBlobUrlCache.size > THUMBNAIL_BLOB_CACHE_MAX) {
-                const oldestKey = thumbnailBlobUrlCache.keys().next().value;
-                const oldestBlobUrl = thumbnailBlobUrlCache.get(oldestKey);
-                if (oldestBlobUrl) URL.revokeObjectURL(oldestBlobUrl);
-                thumbnailBlobUrlCache.delete(oldestKey);
-            }
+            if (meta) _updateCacheMetadata(cacheKey, meta);
+            _evictIfNeeded();
         }
 
-        async function resolveThumbnailBlobUrl(imageSrc, cacheKey) {
+        async function resolveThumbnailBlobUrl(imageSrc, cacheKey, meta) {
             const cachedBlobUrl = thumbnailBlobUrlCache.get(cacheKey);
-            if (cachedBlobUrl) return cachedBlobUrl;
+            if (cachedBlobUrl) {
+                if (meta) _updateCacheMetadata(cacheKey, meta);
+                _touchCacheEntry(cacheKey);
+                return cachedBlobUrl;
+            }
 
-            if (thumbnailBlobInflight.has(cacheKey)) return thumbnailBlobInflight.get(cacheKey);
+            if (thumbnailBlobInflight.has(cacheKey)) {
+                if (meta) _mergeInflightMetadata(cacheKey, meta);
+                return thumbnailBlobInflight.get(cacheKey);
+            }
+
+            if (meta) _mergeInflightMetadata(cacheKey, meta);
 
             const request = fetch(imageSrc, {cache: 'force-cache'})
                 .then(resp => {
@@ -31,11 +190,13 @@
                 })
                 .then(blob => {
                     const blobUrl = URL.createObjectURL(blob);
-                    rememberThumbnailBlobUrl(cacheKey, blobUrl);
+                    const mergedMeta = _takeInflightMetadata(cacheKey);
+                    rememberThumbnailBlobUrl(cacheKey, blobUrl, mergedMeta);
                     return blobUrl;
                 })
                 .catch(error => {
                     console.warn(`Thumbnail blob cache fallback for ${imageSrc}:`, error);
+                    _takeInflightMetadata(cacheKey);
                     return imageSrc;
                 })
                 .finally(() => {
@@ -45,23 +206,25 @@
             return request;
         }
 
-        function assignThumbnailSrcIfCached(imageEl, imageSrc, cacheKey) {
+        function assignThumbnailSrcIfCached(imageEl, imageSrc, cacheKey, meta) {
             imageEl.dataset.thumbnailCacheKey = cacheKey;
             const cached = thumbnailBlobUrlCache.get(cacheKey);
             if (cached) {
                 if (imageEl.getAttribute('src') !== cached) {
                     imageEl.setAttribute('src', cached);
                 }
+                if (meta) _updateCacheMetadata(cacheKey, meta);
+                _touchCacheEntry(cacheKey);
                 return true;
             }
             return false;
         }
 
-        function setThumbnailImageSrc(imageEl, imageSrc, cacheKey) {
-            if (assignThumbnailSrcIfCached(imageEl, imageSrc, cacheKey)) {
+        function setThumbnailImageSrc(imageEl, imageSrc, cacheKey, meta) {
+            if (assignThumbnailSrcIfCached(imageEl, imageSrc, cacheKey, meta)) {
                 return Promise.resolve();
             }
-            return resolveThumbnailBlobUrl(imageSrc, cacheKey).then(resolvedSrc => {
+            return resolveThumbnailBlobUrl(imageSrc, cacheKey, meta).then(resolvedSrc => {
                 if (imageEl.dataset.thumbnailCacheKey !== cacheKey) return;
                 if (imageEl.getAttribute('src') !== resolvedSrc) {
                     imageEl.setAttribute('src', resolvedSrc);
@@ -73,6 +236,8 @@
             for (const blobUrl of thumbnailBlobUrlCache.values()) URL.revokeObjectURL(blobUrl);
             thumbnailBlobUrlCache.clear();
             thumbnailBlobInflight.clear();
+            _thumbnailMetadata.clear();
+            _inflightMetadataPriority.clear();
         });
 
 async function loadCurrentFolderImages() {
@@ -363,7 +528,9 @@ function updateThumbElement(thumb, img, index) {
             if (imageEl && imageEl.dataset.thumbnailCacheKey !== thumbnailCacheKey) {
                 imageEl.classList.remove('loaded');
                 imageEl.dataset.thumbnailCacheKey = thumbnailCacheKey;
-                scheduleThumbnailLoad(thumb, imageSrc, thumbnailCacheKey);
+                /* Stage 2: pass resolved source batch for scope-aware eviction.
+                   Priority starts deferred; observers promote it in the viewport loader. */
+                scheduleThumbnailLoad(thumb, imageSrc, thumbnailCacheKey, 2 /* DEFERRED */, _resolveSourceBatch(img));
             }
             if (metaName) metaName.textContent = img.name;
             if (metaSize) metaSize.textContent = isVirtualCollectionView()

@@ -472,6 +472,12 @@ function selectBatch(batch) {
                 loadAllPublic();
                 return;
             }
+            /* Stage 2: track real batch transitions for cache scope awareness.
+               Must run before batchChanged check so the first real batch
+               is registered. */
+            if (typeof _updateRealBatchTracking === 'function') {
+                _updateRealBatchTracking(batch);
+            }
             const batchChanged = currentBatch !== batch;
             currentBatch = batch;
             saveBatchState();

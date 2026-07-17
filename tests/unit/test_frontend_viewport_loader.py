@@ -42,7 +42,7 @@ def test_no_eager_set_thumbnail_image_src_in_update_thumb():
 def test_set_thumbnail_image_src_preserved_for_viewport_loader():
     """setThumbnailImageSrc must still exist for the viewport loader to call it."""
     source = read_frontend_js()
-    assert "function setThumbnailImageSrc(imageEl, imageSrc, cacheKey)" in source
+    assert "function setThumbnailImageSrc(imageEl, imageSrc, cacheKey" in source
 
 
 # ── three-tier priority architecture ──────────────────────────────────────
@@ -247,7 +247,7 @@ def test_set_thumbnail_image_src_returns_promise():
     """setThumbnailImageSrc must return the load promise for slot accounting."""
     source = read_frontend_js()
     setsrc_body = extract_function_body(
-        source, "function setThumbnailImageSrc(imageEl, imageSrc, cacheKey)"
+        source, "function setThumbnailImageSrc(imageEl, imageSrc, cacheKey"
     )
     assert "return resolveThumbnailBlobUrl(" in setsrc_body, (
         "setThumbnailImageSrc must return resolveThumbnailBlobUrl promise"
