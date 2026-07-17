@@ -1,0 +1,1549 @@
+"""Run repeatable Firefox-first thumbnail and cache benchmarks.
+
+This is an optional operator harness. It injects measurement code at runtime and
+does not alter Curator's production thumbnail loading behavior.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib
+import json
+import math
+import os
+import re
+import shutil
+import statistics
+import sys
+import time
+import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
+
+from PIL import Image, ImageDraw, PngImagePlugin
+
+
+HARNESS_VERSION = "1.0"
+REPORT_SCHEMA = "comfyui-curator.thumbnail-benchmark-report.v1"
+MANIFEST_SCHEMA = "comfyui-curator.thumbnail-benchmark-manifest.v1"
+MARKER_SCHEMA = "comfyui-curator.thumbnail-benchmark-owner.v1"
+OWNERSHIP_MARKER = ".curator-thumbnail-benchmark-owner.json"
+BATCH_FOLDERS = ("inbox", "shortlisted", "finals", "rejects")
+DEFAULT_OUTPUT_ROOT = Path("tmp") / "thumbnail-benchmarks"
+DEFAULT_FIREFOX_BINARY = Path(r"C:\Program Files\Mozilla Firefox\firefox.exe")
+DEFAULT_CHROME_BINARY = Path(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe")
+DEFAULT_URL = "http://127.0.0.1:8188/curator"
+DEFAULT_TIMEOUT = 45.0
+BRIDGE_ID = "curator-thumbnail-benchmark-bridge-v1"
+BLOB_METHODOLOGY = (
+    "Exact Blob.size sum published through the benchmark DOM bridge for page-realm Blob URLs "
+    "created after instrumentation; revoked URLs and companion pre-instrumentation blobs are excluded"
+)
+SENSITIVE_REPORT_KEYS = {
+    "profile",
+    "profile_path",
+    "profile_dir",
+    "settings",
+    "settings_payload",
+    "driver_path",
+    "firefox_driver",
+    "chrome_driver",
+    "api_key",
+    "credentials",
+}
+
+
+class BenchmarkError(RuntimeError):
+    """Actionable harness failure."""
+
+
+class CleanupRefused(BenchmarkError):
+    """Raised when ownership cannot be proven before deletion."""
+
+
+@dataclass(frozen=True)
+class RuntimePaths:
+    settings: str | None
+    batches: str
+    active_batch: str
+    thumbnail_prefix: str
+
+
+@dataclass(frozen=True)
+class RuntimeContext:
+    origin: str
+    page_url: str
+    paths: RuntimePaths
+    batch_root: Path
+    active_batch: str | None
+
+
+@dataclass(frozen=True)
+class FixtureSpec:
+    run_id: str
+    browser: str
+    size: int
+    primary_batch: str
+    companion_batch: str
+    companion_size: int
+
+    @property
+    def batches(self) -> tuple[str, str]:
+        return self.primary_batch, self.companion_batch
+
+
+@dataclass(frozen=True)
+class OptionalDependencies:
+    webdriver: Any
+    firefox_options: Any
+    firefox_service: Any
+    chrome_options: Any
+    chrome_service: Any
+    psutil: Any
+
+
+def runtime_paths(mode: str) -> RuntimePaths:
+    if mode == "native":
+        return RuntimePaths(
+            settings="/api/curator/settings",
+            batches="/api/curator/batches",
+            active_batch="/api/curator/active-batch",
+            thumbnail_prefix="/curator/thumb/",
+        )
+    if mode == "standalone":
+        return RuntimePaths(
+            settings=None,
+            batches="/api/batches",
+            active_batch="/api/active-batch",
+            thumbnail_prefix="/thumb/",
+        )
+    raise BenchmarkError(f"Unsupported runtime mode: {mode}")
+
+
+def _resolved_descendant(path: Path, root: Path) -> Path:
+    resolved_root = root.resolve()
+    resolved_path = path.resolve()
+    try:
+        resolved_path.relative_to(resolved_root)
+    except ValueError as exc:
+        raise BenchmarkError(f"Path must be under --output-root: {resolved_path}") from exc
+    if resolved_path == resolved_root:
+        raise BenchmarkError("Batch root must be a child directory under --output-root")
+    return resolved_path
+
+
+def validate_standalone_root(batch_root: Path | None, output_root: Path) -> Path:
+    if batch_root is None:
+        raise BenchmarkError("Standalone mode requires an explicit --batch-root")
+    try:
+        return _resolved_descendant(Path(batch_root), Path(output_root))
+    except BenchmarkError as exc:
+        raise BenchmarkError(
+            "Standalone --batch-root must be under --output-root so it is explicitly temporary "
+            "and benchmark-owned"
+        ) from exc
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--browser", choices=("firefox", "chrome", "all"), default="firefox")
+    parser.add_argument("--sizes", nargs="+", type=int, default=[100, 500, 2000])
+    parser.add_argument("--url", default=DEFAULT_URL)
+    parser.add_argument("--mode", choices=("native", "standalone"), default="native")
+    parser.add_argument("--batch-root", type=Path)
+    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    parser.add_argument("--headless", action="store_true")
+    parser.add_argument("--keep-fixtures", action="store_true")
+    parser.add_argument(
+        "--cleanup",
+        action="store_true",
+        help="Recover benchmark batches listed by manifests and proven by ownership markers",
+    )
+    parser.add_argument("--firefox-binary", type=Path, default=DEFAULT_FIREFOX_BINARY)
+    parser.add_argument("--chrome-binary", type=Path, default=DEFAULT_CHROME_BINARY)
+    parser.add_argument("--firefox-driver", type=Path)
+    parser.add_argument("--chrome-driver", type=Path)
+    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
+    args = parser.parse_args(argv)
+    if any(size <= 0 for size in args.sizes):
+        parser.error("--sizes values must be positive integers")
+    if args.timeout <= 0:
+        parser.error("--timeout must be positive")
+    return args
+
+
+def build_fixture_specs(run_id: str, sizes: list[int], browsers: list[str]) -> list[FixtureSpec]:
+    safe_run = "".join(character for character in run_id.lower() if character.isalnum())[-12:]
+    specs = []
+    for browser in browsers:
+        for size in sizes:
+            prefix = f"thumb-bench-{safe_run}-{browser}-{size}"
+            specs.append(
+                FixtureSpec(
+                    run_id=run_id,
+                    browser=browser,
+                    size=size,
+                    primary_batch=f"{prefix}-a",
+                    companion_batch=f"{prefix}-b",
+                    companion_size=max(3, min(25, math.ceil(size / 20))),
+                )
+            )
+    return specs
+
+
+def _marker_payload(run_id: str, batch: str) -> dict[str, str]:
+    return {"schema": MARKER_SCHEMA, "run_id": run_id, "batch": batch}
+
+
+def _write_marker(batch_dir: Path, run_id: str, batch: str) -> None:
+    (batch_dir / OWNERSHIP_MARKER).write_text(
+        json.dumps(_marker_payload(run_id, batch), indent=2), encoding="utf-8"
+    )
+
+
+def _write_seed_png(path: Path, index: int) -> None:
+    colors = ((44, 88, 150), (136, 66, 108), (55, 125, 89))
+    color = colors[index % len(colors)]
+    metadata = PngImagePlugin.PngInfo()
+    metadata.add_text(
+        "parameters", f"deterministic benchmark fixture {index}, Seed: {7000 + index}"
+    )
+    image = Image.new("RGB", (384, 256), color=color)
+    draw = ImageDraw.Draw(image)
+    for stripe in range(0, 384, 32):
+        shade = tuple(min(255, channel + ((stripe // 32) % 4) * 8) for channel in color)
+        draw.rectangle((stripe, 0, stripe + 15, 256), fill=shade)
+    draw.rectangle((20, 176, 364, 236), fill=(16, 18, 24))
+    draw.text((32, 194), f"Thumbnail benchmark seed {index + 1}", fill=(238, 241, 246))
+    image.save(path, pnginfo=metadata, optimize=False)
+
+
+def _link_or_copy(source: Path, destination: Path) -> None:
+    try:
+        os.link(source, destination)
+    except OSError:
+        shutil.copy2(source, destination)
+
+
+def _create_one_fixture_batch(
+    batch_root: Path, seed_paths: list[Path], run_id: str, batch: str, image_count: int
+) -> None:
+    batch_dir = batch_root / batch
+    if batch_dir.exists():
+        raise BenchmarkError(f"Refusing to reuse existing benchmark batch: {batch}")
+    batch_dir.mkdir(parents=False)
+    _write_marker(batch_dir, run_id, batch)
+    for folder in BATCH_FOLDERS:
+        (batch_dir / folder).mkdir()
+    for index in range(image_count):
+        destination = batch_dir / "inbox" / f"benchmark-{index:06d}.png"
+        _link_or_copy(seed_paths[index % len(seed_paths)], destination)
+
+
+def create_fixture_batches(batch_root: Path, seed_dir: Path, specs: list[FixtureSpec]) -> None:
+    batch_root.mkdir(parents=True, exist_ok=True)
+    seed_dir.mkdir(parents=True, exist_ok=True)
+    seed_paths = [seed_dir / f"seed-{index + 1}.png" for index in range(3)]
+    for index, seed_path in enumerate(seed_paths):
+        if not seed_path.exists():
+            _write_seed_png(seed_path, index)
+    for spec in specs:
+        _create_one_fixture_batch(
+            batch_root, seed_paths, spec.run_id, spec.primary_batch, spec.size
+        )
+        _create_one_fixture_batch(
+            batch_root,
+            seed_paths,
+            spec.run_id,
+            spec.companion_batch,
+            spec.companion_size,
+        )
+
+
+def _validate_direct_batch_child(batch_root: Path, batch_path: Path, batch: str) -> Path:
+    if batch_path.is_symlink():
+        raise CleanupRefused(f"Refusing symlinked benchmark batch: {batch}")
+    resolved_root = batch_root.resolve()
+    resolved_batch = batch_path.resolve()
+    if resolved_batch.parent != resolved_root or resolved_batch.name != batch:
+        raise CleanupRefused(f"Refusing path outside resolved benchmark batch root: {batch}")
+    return resolved_batch
+
+
+def remove_owned_batch(batch_root: Path, batch_path: Path, run_id: str, batch: str) -> None:
+    resolved_batch = _validate_direct_batch_child(batch_root, batch_path, batch)
+    marker_path = resolved_batch / OWNERSHIP_MARKER
+    if marker_path.is_symlink() or not marker_path.is_file():
+        raise CleanupRefused(f"Refusing {batch}: ownership marker is missing or unsafe")
+    try:
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CleanupRefused(f"Refusing {batch}: ownership marker is unreadable") from exc
+    if marker != _marker_payload(run_id, batch):
+        raise CleanupRefused(f"Refusing {batch}: ownership marker does not match manifest")
+    shutil.rmtree(resolved_batch)
+
+
+def summarize_thumbnail_resources(
+    entries: list[dict[str, Any]], thumbnail_prefix: str
+) -> dict[str, Any]:
+    thumbnail_entries = [
+        entry for entry in entries if thumbnail_prefix in str(entry.get("name", ""))
+    ]
+    encoded_values = [entry.get("encodedBodySize") for entry in thumbnail_entries]
+    transfer_values = [entry.get("transferSize") for entry in thumbnail_entries]
+    byte_sizes_available = all(
+        isinstance(value, (int, float)) for value in encoded_values + transfer_values
+    )
+    heuristic: dict[str, Any] = {
+        "available": byte_sizes_available,
+        "value": None,
+        "reason": None,
+        "methodology": "transferSize == 0 and encodedBodySize > 0",
+    }
+    if byte_sizes_available:
+        hits = sum(
+            1
+            for encoded, transfer in zip(encoded_values, transfer_values, strict=True)
+            if transfer == 0 and encoded > 0
+        )
+        heuristic["value"] = {
+            "candidate_hits": hits,
+            "candidate_misses": len(thumbnail_entries) - hits,
+            "ratio": round(hits / len(thumbnail_entries), 4) if thumbnail_entries else None,
+        }
+    else:
+        heuristic["reason"] = (
+            "Resource Timing byte sizes were unavailable for one or more thumbnails"
+        )
+    return {
+        "request_count": len(thumbnail_entries),
+        "duration_ms": round(
+            sum(float(entry.get("duration") or 0) for entry in thumbnail_entries), 3
+        ),
+        "encoded_body_bytes": int(sum(encoded_values)) if byte_sizes_available else None,
+        "transfer_bytes": int(sum(transfer_values)) if byte_sizes_available else None,
+        "cache_hit_heuristic": heuristic,
+        "methodology": "Resource Timing entries whose URL contains the runtime thumbnail prefix",
+    }
+
+
+def unavailable(reason: str, methodology: str | None = None) -> dict[str, Any]:
+    result: dict[str, Any] = {"available": False, "value": None, "reason": reason}
+    if methodology:
+        result["methodology"] = methodology
+    return result
+
+
+def available(value: Any, methodology: str) -> dict[str, Any]:
+    return {"available": True, "value": value, "reason": None, "methodology": methodology}
+
+
+def sanitize_report(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: sanitize_report(item)
+            for key, item in value.items()
+            if key.lower() not in SENSITIVE_REPORT_KEYS
+        }
+    if isinstance(value, list):
+        return [sanitize_report(item) for item in value]
+    return value
+
+
+def sanitize_exception_message(exc: Exception) -> str:
+    first_line = str(exc).splitlines()[0].strip() if str(exc) else "no message"
+    first_line = re.sub(r"(https?://)(?:[^/@\s]+)@", r"\1<redacted>@", first_line)
+    first_line = re.sub(r"(?i)\b[a-z]:[\\/].*$", "<path>", first_line)
+    return first_line[:300]
+
+
+def browser_stage_error(stage: str, exc: Exception) -> BenchmarkError:
+    return BenchmarkError(
+        f"Browser stage '{stage}' failed ({type(exc).__name__}): {sanitize_exception_message(exc)}"
+    )
+
+
+def _summary_metric(metric: Any) -> str:
+    if isinstance(metric, dict) and "available" in metric:
+        if not metric["available"]:
+            return f"Unavailable: {metric.get('reason') or 'reason not supplied'}"
+        return str(metric.get("value"))
+    return str(metric)
+
+
+def render_markdown_summary(report: dict[str, Any]) -> str:
+    lines = [
+        "# Thumbnail Benchmark Summary",
+        "",
+        f"- Schema: `{report['schema']}`",
+        f"- Run: `{report['run_id']}`",
+        f"- Mode: `{report['mode']}`",
+        f"- Active batch: {report.get('active_batch_restore', {}).get('status', 'unknown')}",
+        f"- Cleanup: {report.get('cleanup', {}).get('status', 'unknown')}",
+        f"- Profiles: {report.get('profile_cleanup', {}).get('status', 'unknown')}",
+        "",
+        "| Browser | Size | Phase | Class | Requests | Grid ready | Long tasks | Status |",
+        "|---|---:|---|---|---:|---|---|---|",
+    ]
+    for result in report.get("browser_results", []):
+        if result.get("status") != "ok":
+            lines.append(
+                f"| {result.get('browser', 'unknown')} | {result.get('size', '-')} | - | - | - | - | - | Failed: {result.get('error', 'unknown')} |"
+            )
+            continue
+        for phase in result.get("phases", []):
+            metrics = phase.get("cross_browser_metrics", phase.get("metrics", {}))
+            resources = metrics.get("thumbnail_resources", {})
+            lines.append(
+                "| {browser} {version} | {size} | {phase} | {classification} | {requests} | "
+                "{ready} | {long_tasks} | ok |".format(
+                    browser=result["browser"],
+                    version=result.get("version", "unknown"),
+                    size=result["size"],
+                    phase=phase["phase"],
+                    classification=phase["classification"],
+                    requests=resources.get("request_count", "-"),
+                    ready=_summary_metric(
+                        metrics.get("grid_readiness", unavailable("not measured"))
+                    ),
+                    long_tasks=_summary_metric(
+                        metrics.get("long_tasks", unavailable("not measured"))
+                    ),
+                )
+            )
+    warnings = report.get("warnings", [])
+    if warnings:
+        lines.extend(["", "## Warnings", ""])
+        lines.extend(f"- {warning}" for warning in warnings)
+    lines.extend(
+        [
+            "",
+            "## Method Notes",
+            "",
+            "- Cache hits are a Resource Timing heuristic, not a browser cache guarantee.",
+            "- Blob bytes come from page-realm create/revoke events published through a JSON DOM bridge.",
+            "- Process memory is browser-process RSS/working set measured through psutil.",
+            "- Unsupported metrics remain unavailable with a reason in the JSON report.",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
+def report_safe_url(url: str) -> str:
+    parsed = urlsplit(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise BenchmarkError("--url must be an absolute HTTP or HTTPS URL")
+    if parsed.username is not None or parsed.password is not None:
+        raise BenchmarkError("--url must not contain credentials")
+    if parsed.query or parsed.fragment:
+        raise BenchmarkError("--url must not contain query data or a fragment")
+    return url
+
+
+def _origin(url: str) -> str:
+    parsed = urlsplit(report_safe_url(url))
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _request_json(
+    origin: str, path: str, *, method: str = "GET", body: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    headers = {"Content-Type": "application/json"} if data is not None else {}
+    request = Request(origin + path, data=data, headers=headers, method=method)
+    try:
+        with urlopen(request, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        raise BenchmarkError(f"Runtime request {path} failed with HTTP {exc.code}") from exc
+    except URLError as exc:
+        raise BenchmarkError(
+            f"Runtime unavailable at {origin}; start Curator and verify --url/--mode"
+        ) from exc
+    except (OSError, json.JSONDecodeError) as exc:
+        raise BenchmarkError(f"Runtime request {path} returned unusable data") from exc
+    if not isinstance(payload, dict):
+        raise BenchmarkError(f"Runtime request {path} did not return a JSON object")
+    return payload
+
+
+def resolve_runtime(args: argparse.Namespace) -> RuntimeContext:
+    paths = runtime_paths(args.mode)
+    origin = _origin(args.url)
+    batches_payload = _request_json(origin, paths.batches)
+    if not isinstance(batches_payload.get("batches"), list):
+        raise BenchmarkError("Runtime batches endpoint did not return a batches list")
+    active_batch = batches_payload.get("active_batch")
+    if active_batch is not None and not isinstance(active_batch, str):
+        raise BenchmarkError("Runtime batches endpoint returned an invalid active batch")
+    if args.mode == "native":
+        assert paths.settings is not None
+        settings_payload = _request_json(origin, paths.settings)
+        batch_root_value = settings_payload.get("batch_root")
+        if not isinstance(batch_root_value, str) or not batch_root_value:
+            raise BenchmarkError("Native settings endpoint did not provide a usable batch root")
+        batch_root = Path(batch_root_value).resolve()
+    else:
+        batch_root = validate_standalone_root(args.batch_root, args.output_root)
+    if not batch_root.is_dir():
+        raise BenchmarkError(f"Resolved benchmark batch root does not exist: {batch_root}")
+    return RuntimeContext(origin, args.url, paths, batch_root, active_batch)
+
+
+def set_active_batch(runtime: RuntimeContext, batch: str | None) -> None:
+    _request_json(
+        runtime.origin,
+        runtime.paths.active_batch,
+        method="POST",
+        body={"batch": batch if batch is not None else ""},
+    )
+
+
+class ActiveBatchSession:
+    """Arm restoration before each switch because response loss can follow mutation."""
+
+    def __init__(self, runtime: RuntimeContext) -> None:
+        self.runtime = runtime
+        self._switch_attempted = False
+        self._restored = False
+
+    def switch(self, batch: str) -> None:
+        self._switch_attempted = True
+        set_active_batch(self.runtime, batch)
+
+    @property
+    def switch_attempted(self) -> bool:
+        return self._switch_attempted
+
+    def restore(self) -> None:
+        if not self._switch_attempted or self._restored:
+            return
+        set_active_batch(self.runtime, self.runtime.active_batch)
+        self._restored = True
+
+
+def load_optional_dependencies() -> OptionalDependencies:
+    try:
+        webdriver = importlib.import_module("selenium.webdriver")
+        firefox_options = importlib.import_module("selenium.webdriver.firefox.options").Options
+        firefox_service = importlib.import_module("selenium.webdriver.firefox.service").Service
+        chrome_options = importlib.import_module("selenium.webdriver.chrome.options").Options
+        chrome_service = importlib.import_module("selenium.webdriver.chrome.service").Service
+    except ImportError as exc:
+        raise BenchmarkError(
+            "Selenium is unavailable. Install optional dependencies with "
+            "`.venv\\Scripts\\python.exe -m pip install -e .[benchmark]`"
+        ) from exc
+    try:
+        psutil = importlib.import_module("psutil")
+    except ImportError as exc:
+        raise BenchmarkError(
+            "psutil is unavailable. Install optional dependencies with "
+            "`.venv\\Scripts\\python.exe -m pip install -e .[benchmark]`"
+        ) from exc
+    return OptionalDependencies(
+        webdriver,
+        firefox_options,
+        firefox_service,
+        chrome_options,
+        chrome_service,
+        psutil,
+    )
+
+
+def requested_browsers(browser: str) -> list[str]:
+    return ["firefox", "chrome"] if browser == "all" else [browser]
+
+
+def browser_availability(args: argparse.Namespace, browser: str) -> str | None:
+    binary = args.firefox_binary if browser == "firefox" else args.chrome_binary
+    driver = args.firefox_driver if browser == "firefox" else args.chrome_driver
+    if not binary.is_file():
+        return f"{browser.title()} binary not found at the configured path; use --{browser}-binary"
+    if driver is not None and not driver.is_file():
+        return f"Explicit {browser} driver not found; correct --{browser}-driver or omit it for Selenium Manager"
+    return None
+
+
+def create_driver(
+    dependencies: OptionalDependencies,
+    browser: str,
+    args: argparse.Namespace,
+    profile_dir: Path,
+) -> Any:
+    profile_dir.mkdir(parents=True, exist_ok=False)
+    try:
+        if browser == "firefox":
+            options = dependencies.firefox_options()
+            options.binary_location = str(args.firefox_binary)
+            options.add_argument("-profile")
+            options.add_argument(str(profile_dir))
+            if args.headless:
+                options.add_argument("-headless")
+            service = dependencies.firefox_service(
+                executable_path=str(args.firefox_driver) if args.firefox_driver else None
+            )
+            driver = dependencies.webdriver.Firefox(options=options, service=service)
+        else:
+            options = dependencies.chrome_options()
+            options.binary_location = str(args.chrome_binary)
+            options.add_argument(f"--user-data-dir={profile_dir}")
+            options.add_argument("--no-first-run")
+            options.add_argument("--no-default-browser-check")
+            if args.headless:
+                options.add_argument("--headless=new")
+            service = dependencies.chrome_service(
+                executable_path=str(args.chrome_driver) if args.chrome_driver else None
+            )
+            driver = dependencies.webdriver.Chrome(options=options, service=service)
+    except Exception as exc:
+        raise browser_stage_error("WebDriver startup", exc) from exc
+    driver.set_page_load_timeout(args.timeout)
+    driver.set_script_timeout(max(args.timeout, 60))
+    driver.set_window_size(1440, 1000)
+    return driver
+
+
+INSTALL_INSTRUMENTATION = r"""
+const expectedThumbnailCount = Number(arguments[0]) || 0;
+if (typeof performance.setResourceTimingBufferSize === 'function') {
+    performance.setResourceTimingBufferSize(Math.max(5000, expectedThumbnailCount * 3 + 1000));
+}
+performance.clearResourceTimings();
+
+const bridgeId = 'curator-thumbnail-benchmark-bridge-v1';
+let bridge = document.getElementById(bridgeId);
+if (!bridge) {
+    bridge = document.createElement('div');
+    bridge.id = bridgeId;
+    bridge.hidden = true;
+    bridge.setAttribute('data-thumbnail-benchmark-bridge', 'v1');
+    (document.body || document.documentElement).appendChild(bridge);
+}
+bridge.textContent = JSON.stringify({
+    schema: 'comfyui-curator.thumbnail-benchmark-bridge.v1',
+    available: false,
+    reason: 'Main-realm instrumentation did not execute'
+});
+
+const installInPageRealm = function(expectedThumbnailCount, bridgeId) {
+    const bridge = document.getElementById(bridgeId);
+    if (!bridge) return;
+    let state = window.__thumbnailBenchmark;
+    if (!state || state.schema !== 'comfyui-curator.thumbnail-benchmark-state.v1') {
+        state = {
+            schema: 'comfyui-curator.thumbnail-benchmark-state.v1',
+            longTasks: [],
+            longTaskSupported: false,
+            longTaskObserverInstalled: false,
+            blobUrls: new Map(),
+            objectUrlWrapperInstalled: false,
+            phaseStart: performance.now()
+        };
+        window.__thumbnailBenchmark = state;
+    }
+    state.publishSnapshot = function() {
+        const blobSizes = Array.from(state.blobUrls.values());
+        bridge.textContent = JSON.stringify({
+            schema: 'comfyui-curator.thumbnail-benchmark-bridge.v1',
+            available: true,
+            reason: null,
+            longTaskSupported: state.longTaskSupported,
+            longTasks: state.longTasks.slice(),
+            phaseStart: state.phaseStart,
+            blobCount: blobSizes.length,
+            blobBytes: blobSizes.reduce((sum, size) => sum + size, 0)
+        });
+    };
+    if (!state.longTaskObserverInstalled) {
+        const supported = window.PerformanceObserver &&
+            PerformanceObserver.supportedEntryTypes &&
+            PerformanceObserver.supportedEntryTypes.includes('longtask');
+        state.longTaskSupported = Boolean(supported);
+        if (supported) {
+            const observer = new PerformanceObserver(list => {
+                for (const entry of list.getEntries()) {
+                    if (entry.startTime >= state.phaseStart) {
+                        state.longTasks.push({startTime: entry.startTime, duration: entry.duration});
+                        state.publishSnapshot();
+                    }
+                }
+            });
+            observer.observe({type: 'longtask', buffered: true});
+            state.longTaskObserver = observer;
+        }
+        state.longTaskObserverInstalled = true;
+    }
+    if (!state.objectUrlWrapperInstalled) {
+        const originalCreateObjectURL = URL.createObjectURL;
+        const originalRevokeObjectURL = URL.revokeObjectURL;
+        URL.createObjectURL = function(object) {
+            const blobUrl = Reflect.apply(originalCreateObjectURL, URL, [object]);
+            if (object instanceof Blob) {
+                state.blobUrls.set(blobUrl, object.size);
+                state.publishSnapshot();
+            }
+            return blobUrl;
+        };
+        URL.revokeObjectURL = function(url) {
+            const result = Reflect.apply(originalRevokeObjectURL, URL, [url]);
+            state.blobUrls.delete(String(url));
+            state.publishSnapshot();
+            return result;
+        };
+        state.objectUrlWrapperInstalled = true;
+    }
+    state.longTasks = [];
+    state.phaseStart = performance.now();
+    if (typeof performance.setResourceTimingBufferSize === 'function') {
+        performance.setResourceTimingBufferSize(Math.max(5000, expectedThumbnailCount * 3 + 1000));
+    }
+    performance.clearResourceTimings();
+    state.publishSnapshot();
+};
+
+const script = document.createElement('script');
+script.textContent = `(${installInPageRealm.toString()})(${JSON.stringify(expectedThumbnailCount)}, ${JSON.stringify(bridgeId)});`;
+try {
+    (document.head || document.documentElement).appendChild(script);
+} catch (error) {
+    bridge.textContent = JSON.stringify({
+        schema: 'comfyui-curator.thumbnail-benchmark-bridge.v1',
+        available: false,
+        reason: 'Main-realm inline script injection failed'
+    });
+} finally {
+    script.remove();
+}
+try {
+    return JSON.parse(bridge.textContent);
+} catch (error) {
+    return {available: false, reason: 'Benchmark DOM bridge did not contain valid JSON'};
+}
+"""
+
+
+SELECT_BATCH = r"""
+const done = arguments[arguments.length - 1];
+const batch = arguments[0];
+try {
+    if (typeof selectBatch !== 'function') throw new Error('selectBatch is unavailable');
+    selectBatch(batch);
+    done({ok: true});
+} catch (error) {
+    done({ok: false, error: String(error && error.message || error)});
+}
+"""
+
+
+SCROLL_GRID = r"""
+const done = arguments[arguments.length - 1];
+const content = document.querySelector('.content');
+if (!content) { done({available: false, reason: 'Grid scroll container not found'}); return; }
+const original = content.scrollTop;
+const intervals = [];
+const started = performance.now();
+let previous = started;
+let frames = 0;
+function step(now) {
+    if (frames > 0) intervals.push(now - previous);
+    previous = now;
+    frames += 1;
+    const bottom = Math.max(0, content.scrollHeight - content.clientHeight);
+    if (content.scrollTop >= bottom || frames >= 2000) {
+        content.scrollTop = original;
+        done({available: true, elapsedMs: performance.now() - started, intervals, frameCapReached: frames >= 2000});
+        return;
+    }
+    content.scrollTop = Math.min(bottom, content.scrollTop + Math.max(80, content.clientHeight * 0.65));
+    requestAnimationFrame(step);
+}
+requestAnimationFrame(step);
+"""
+
+
+SIDEBAR_WIDTH_PHASE = r"""
+const done = arguments[arguments.length - 1];
+if (typeof applySidebarWidth !== 'function' || typeof applyAiSidebarWidth !== 'function') {
+    done({available: false, reason: 'Sidebar width functions unavailable'});
+    return;
+}
+function readObservableWidths() {
+    const styles = getComputedStyle(document.documentElement);
+    const left = Number.parseFloat(styles.getPropertyValue('--sidebar-width'));
+    const right = Number.parseFloat(styles.getPropertyValue('--ai-sidebar-width'));
+    if (!Number.isFinite(left) || !Number.isFinite(right)) return null;
+    return {left, right};
+}
+const originalWidths = readObservableWidths();
+if (!originalWidths) {
+    done({available: false, reason: 'Computed sidebar CSS widths are unavailable'});
+    return;
+}
+const intervals = [];
+const widths = [[240, 320], [360, 420], [500, 300], [280, 480]];
+let index = 0;
+let previous = performance.now();
+const started = previous;
+function step(now) {
+    intervals.push(now - previous);
+    previous = now;
+    if (index < widths.length) {
+        const pair = widths[index++];
+        applySidebarWidth(pair[0], false);
+        applyAiSidebarWidth(pair[1], false);
+        requestAnimationFrame(step);
+        return;
+    }
+    applySidebarWidth(originalWidths.left, false);
+    applyAiSidebarWidth(originalWidths.right, false);
+    requestAnimationFrame(() => {
+        const restoredWidths = readObservableWidths();
+        const restored = Boolean(restoredWidths) &&
+            Math.abs(restoredWidths.left - originalWidths.left) < 0.01 &&
+            Math.abs(restoredWidths.right - originalWidths.right) < 0.01;
+        done({
+            available: true,
+            elapsedMs: performance.now() - started,
+            intervals,
+            restored,
+            originalWidths,
+            restoredWidths
+        });
+    });
+}
+requestAnimationFrame(step);
+"""
+
+
+RESOURCE_ENTRIES = r"""
+return performance.getEntriesByType('resource').map(entry => ({
+    name: entry.name,
+    duration: entry.duration,
+    transferSize: Number.isFinite(entry.transferSize) ? entry.transferSize : null,
+    encodedBodySize: Number.isFinite(entry.encodedBodySize) ? entry.encodedBodySize : null,
+    responseEnd: entry.responseEnd
+}));
+"""
+
+
+PAGE_METRICS = r"""
+function readBridgeSnapshot() {
+    const bridge = document.getElementById('curator-thumbnail-benchmark-bridge-v1');
+    if (!bridge) return {available: false, reason: 'Benchmark DOM bridge element is unavailable'};
+    try {
+        const snapshot = JSON.parse(bridge.textContent);
+        if (!snapshot || snapshot.schema !== 'comfyui-curator.thumbnail-benchmark-bridge.v1') {
+            return {available: false, reason: 'Benchmark DOM bridge schema is invalid'};
+        }
+        if (!snapshot.available) {
+            return {available: false, reason: snapshot.reason || 'Main-realm instrumentation is unavailable'};
+        }
+        return {available: true, snapshot};
+    } catch (error) {
+        return {available: false, reason: 'Benchmark DOM bridge JSON is invalid'};
+    }
+}
+const bridgeResult = readBridgeSnapshot();
+const longTasks = bridgeResult.available && bridgeResult.snapshot.longTaskSupported
+    ? {available: true, entries: bridgeResult.snapshot.longTasks || []}
+    : {
+        available: false,
+        reason: bridgeResult.available
+            ? 'Long Tasks API unavailable in this browser/context'
+            : bridgeResult.reason
+    };
+return {
+    domNodeCount: document.getElementsByTagName('*').length,
+    blobCacheEntryCount: bridgeResult.available ? bridgeResult.snapshot.blobCount : null,
+    blobObservation: bridgeResult.available
+        ? {available: true, reason: null}
+        : {available: false, reason: bridgeResult.reason},
+    longTasks,
+    navigation: performance.getEntriesByType('navigation')[0] ? {
+        domContentLoadedMs: performance.getEntriesByType('navigation')[0].domContentLoadedEventEnd,
+        loadEventMs: performance.getEntriesByType('navigation')[0].loadEventEnd
+    } : null
+};
+"""
+
+
+BLOB_BYTES = r"""
+const done = arguments[arguments.length - 1];
+const bridge = document.getElementById('curator-thumbnail-benchmark-bridge-v1');
+if (!bridge) {
+    done({available: false, reason: 'Benchmark DOM bridge element is unavailable'});
+    return;
+}
+try {
+    const snapshot = JSON.parse(bridge.textContent);
+    if (!snapshot || snapshot.schema !== 'comfyui-curator.thumbnail-benchmark-bridge.v1') {
+        done({available: false, reason: 'Benchmark DOM bridge schema is invalid'});
+    } else if (!snapshot.available) {
+        done({available: false, reason: snapshot.reason || 'Main-realm instrumentation is unavailable'});
+    } else if (!Number.isFinite(snapshot.blobCount) || !Number.isFinite(snapshot.blobBytes)) {
+        done({available: false, reason: 'Benchmark DOM bridge blob measurements are invalid'});
+    } else {
+        done({available: true, count: snapshot.blobCount, bytes: snapshot.blobBytes});
+    }
+} catch (error) {
+    done({available: false, reason: 'Benchmark DOM bridge JSON is invalid'});
+}
+"""
+
+
+def _percentile(values: list[float], fraction: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, math.ceil(len(ordered) * fraction) - 1))
+    return round(ordered[index], 3)
+
+
+def _install_instrumentation(driver: Any, expected_thumbnail_count: int) -> None:
+    driver.execute_script(INSTALL_INSTRUMENTATION, expected_thumbnail_count)
+
+
+def summarize_frames(raw: dict[str, Any]) -> dict[str, Any]:
+    if not raw.get("available"):
+        return unavailable(str(raw.get("reason") or "Frame timing unavailable"))
+    intervals = [float(value) for value in raw.get("intervals", []) if float(value) >= 0]
+    value = {
+        "elapsed_ms": round(float(raw.get("elapsedMs") or 0), 3),
+        "frame_count": len(intervals),
+        "mean_interval_ms": round(statistics.fmean(intervals), 3) if intervals else None,
+        "p50_interval_ms": _percentile(intervals, 0.5),
+        "p95_interval_ms": _percentile(intervals, 0.95),
+        "max_interval_ms": round(max(intervals), 3) if intervals else None,
+        "intervals_over_50ms": sum(value > 50 for value in intervals),
+        "jank_ratio_over_50ms": round(sum(value > 50 for value in intervals) / len(intervals), 4)
+        if intervals
+        else None,
+        "frame_cap_reached": bool(raw.get("frameCapReached", False)),
+    }
+    return available(value, "requestAnimationFrame intervals during the scripted operation")
+
+
+def _wait_for_grid(driver: Any, expected_count: int, timeout: float) -> dict[str, Any]:
+    started = time.perf_counter()
+    first_viewport_ms = None
+    last_state: dict[str, Any] = {}
+    while time.perf_counter() - started < timeout:
+        state = driver.execute_script(
+            """
+const thumbs = Array.from(document.querySelectorAll('#grid .thumb:not(.loading-placeholder)'));
+const images = thumbs.map(thumb => thumb.querySelector('img')).filter(Boolean);
+const visible = images.filter(image => {
+    const rect = image.getBoundingClientRect();
+    return rect.bottom > 0 && rect.top < window.innerHeight;
+});
+return {
+    count: thumbs.length,
+    loaded: images.filter(image => image.classList.contains('loaded')).length,
+    visibleCount: visible.length,
+    visibleLoaded: visible.filter(image => image.classList.contains('loaded')).length,
+    currentBatch: typeof currentBatch === 'undefined' ? null : currentBatch
+};
+"""
+        )
+        last_state = state
+        if (
+            first_viewport_ms is None
+            and state["visibleCount"] > 0
+            and state["visibleLoaded"] == state["visibleCount"]
+        ):
+            first_viewport_ms = (time.perf_counter() - started) * 1000
+        if state["count"] == expected_count and state["loaded"] == expected_count:
+            return {
+                "ready": True,
+                "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
+                "first_viewport_ms": round(first_viewport_ms, 3)
+                if first_viewport_ms is not None
+                else None,
+                "state": state,
+            }
+        time.sleep(0.05)
+    return {
+        "ready": False,
+        "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
+        "first_viewport_ms": round(first_viewport_ms, 3) if first_viewport_ms is not None else None,
+        "state": last_state,
+    }
+
+
+def _select_and_wait(driver: Any, batch: str, count: int, timeout: float) -> dict[str, Any]:
+    response = driver.execute_async_script(SELECT_BATCH, batch)
+    if not response.get("ok"):
+        raise BenchmarkError(f"Could not select benchmark batch {batch}: {response.get('error')}")
+    return _wait_for_grid(driver, count, timeout)
+
+
+def prepare_cold_phase(
+    driver: Any,
+    active_batch_session: ActiveBatchSession,
+    runtime: RuntimeContext,
+    spec: FixtureSpec,
+    timeout: float,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    active_batch_session.switch(spec.companion_batch)
+    driver.get(runtime.page_url)
+    companion_ready = _select_and_wait(driver, spec.companion_batch, spec.companion_size, timeout)
+    _install_instrumentation(driver, spec.size)
+    primary_ready = _select_and_wait(driver, spec.primary_batch, spec.size, timeout)
+    return companion_ready, primary_ready
+
+
+def _thumbnail_disk_metrics(batch_root: Path, batch: str) -> dict[str, int]:
+    thumbnail_dir = batch_root / batch / ".thumbs"
+    if not thumbnail_dir.is_dir():
+        return {"file_count": 0, "disk_bytes": 0}
+    files = [path for path in thumbnail_dir.iterdir() if path.is_file() and not path.is_symlink()]
+    return {"file_count": len(files), "disk_bytes": sum(path.stat().st_size for path in files)}
+
+
+def _browser_process_memory(
+    dependencies: OptionalDependencies, driver: Any, browser: str
+) -> dict[str, Any]:
+    process = getattr(getattr(driver, "service", None), "process", None)
+    pid = getattr(process, "pid", None)
+    if not pid:
+        return unavailable("WebDriver service PID unavailable")
+    expected = "firefox" if browser == "firefox" else "chrome"
+    try:
+        root = dependencies.psutil.Process(pid)
+        candidates = [root, *root.children(recursive=True)]
+        browser_processes = [item for item in candidates if expected in item.name().lower()]
+        if not browser_processes:
+            return unavailable("No browser processes found below the WebDriver service process")
+        rss = sum(item.memory_info().rss for item in browser_processes)
+    except Exception as exc:
+        return unavailable(f"psutil could not read the browser process tree: {type(exc).__name__}")
+    return available(
+        {"rss_bytes": rss, "process_count": len(browser_processes)},
+        "Sum of psutil RSS/working-set values for browser-named descendants of WebDriver",
+    )
+
+
+def _phase_metrics(
+    driver: Any,
+    dependencies: OptionalDependencies,
+    runtime: RuntimeContext,
+    browser: str,
+    batch: str,
+    readiness: dict[str, Any] | None = None,
+    frame_data: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], list[str]]:
+    entries = driver.execute_script(RESOURCE_ENTRIES)
+    page = driver.execute_script(PAGE_METRICS)
+    resources = summarize_thumbnail_resources(entries, runtime.paths.thumbnail_prefix)
+    blob_raw = driver.execute_async_script(BLOB_BYTES)
+    if blob_raw.get("available"):
+        blob_bytes = available(
+            {"entry_count": blob_raw["count"], "compressed_bytes": blob_raw["bytes"]},
+            BLOB_METHODOLOGY,
+        )
+    else:
+        blob_bytes = unavailable(str(blob_raw.get("reason") or "Blob byte measurement failed"))
+    if page["longTasks"].get("available"):
+        tasks = page["longTasks"]["entries"]
+        long_tasks = available(
+            {
+                "count": len(tasks),
+                "duration_ms": round(sum(float(task["duration"]) for task in tasks), 3),
+            },
+            "PerformanceObserver longtask entries captured after harness instrumentation",
+        )
+    else:
+        long_tasks = unavailable(str(page["longTasks"].get("reason")))
+    warnings = []
+    if readiness is not None and not readiness["ready"]:
+        warnings.append(
+            f"Grid readiness timed out with {readiness.get('state', {}).get('loaded', 0)} loaded "
+            f"of {readiness.get('state', {}).get('count', 0)} rendered thumbnails"
+        )
+    metrics = {
+        "thumbnail_resources": resources,
+        "grid_readiness": available(
+            {
+                "ready": readiness["ready"],
+                "elapsed_ms": readiness["elapsed_ms"],
+                "first_viewport_ms": readiness["first_viewport_ms"],
+            },
+            "Harness wall clock from batch selection until all expected thumbnail elements reached loaded/error state",
+        )
+        if readiness is not None
+        else unavailable("This phase does not perform grid loading"),
+        "blob_cache_entries": available(
+            page["blobCacheEntryCount"],
+            "Live page-realm Blob URLs observed after instrumentation and published through the benchmark DOM bridge",
+        )
+        if page["blobCacheEntryCount"] is not None
+        else unavailable(
+            str(
+                page.get("blobObservation", {}).get("reason")
+                or "Benchmark DOM bridge blob observation is unavailable"
+            )
+        ),
+        "blob_compressed_bytes": blob_bytes,
+        "dom_node_count": available(
+            page["domNodeCount"], "document.getElementsByTagName('*').length"
+        ),
+        "long_tasks": long_tasks,
+        "frame_timing": summarize_frames(frame_data)
+        if frame_data is not None
+        else unavailable("This phase does not perform a frame-timed scripted operation"),
+        "browser_process_memory": _browser_process_memory(dependencies, driver, browser),
+        "thumbnail_disk": available(
+            _thumbnail_disk_metrics(runtime.batch_root, batch),
+            "Regular-file count and logical file bytes in the benchmark batch .thumbs directory",
+        ),
+        "navigation_timing": available(page["navigation"], "Navigation Timing Level 2")
+        if page["navigation"] is not None
+        else unavailable("Navigation Timing entry unavailable"),
+    }
+    return metrics, warnings
+
+
+def _browser_specific_metrics(browser: str) -> dict[str, Any]:
+    if browser == "firefox":
+        return {
+            "firefox_only": unavailable(
+                "No stable Firefox-only metric is used; shared Resource Timing and psutil metrics are reported"
+            ),
+            "chromium_only": unavailable("Not a Chromium session"),
+        }
+    return {
+        "firefox_only": unavailable("Not a Firefox session"),
+        "chromium_only": unavailable(
+            "Chrome DevTools-only values are not substituted for cross-browser metrics"
+        ),
+    }
+
+
+def _phase(
+    name: str,
+    classification: str,
+    metrics: dict[str, Any],
+    warnings: list[str],
+) -> dict[str, Any]:
+    return {
+        "phase": name,
+        "classification": classification,
+        "cross_browser_metrics": metrics,
+        "warnings": warnings,
+        "noisy_run": bool(warnings),
+    }
+
+
+def benchmark_case(
+    dependencies: OptionalDependencies,
+    args: argparse.Namespace,
+    runtime: RuntimeContext,
+    spec: FixtureSpec,
+    profile_dir: Path,
+    active_batch_session: ActiveBatchSession,
+) -> dict[str, Any]:
+    driver = create_driver(dependencies, spec.browser, args, profile_dir)
+    phases: list[dict[str, Any]] = []
+    stage = "cold companion and primary preparation"
+    phase_failed = False
+    try:
+        companion_ready, readiness = prepare_cold_phase(
+            driver, active_batch_session, runtime, spec, args.timeout
+        )
+        stage = "cold metric collection"
+        metrics, warnings = _phase_metrics(
+            driver,
+            dependencies,
+            runtime,
+            spec.browser,
+            spec.primary_batch,
+            readiness,
+        )
+        if metrics["thumbnail_resources"]["request_count"] != spec.size:
+            warnings.append(
+                f"Cold thumbnail request count was {metrics['thumbnail_resources']['request_count']}, expected {spec.size}"
+            )
+        if not companion_ready["ready"]:
+            warnings.append("Initial companion batch did not become ready before cold measurement")
+        phases.append(_phase("cold_initial_load", "cold", metrics, warnings))
+
+        stage = "controlled scroll"
+        _install_instrumentation(driver, spec.size)
+        scroll_data = driver.execute_async_script(SCROLL_GRID)
+        stage = "controlled scroll metric collection"
+        metrics, warnings = _phase_metrics(
+            driver,
+            dependencies,
+            runtime,
+            spec.browser,
+            spec.primary_batch,
+            frame_data=scroll_data,
+        )
+        if scroll_data.get("frameCapReached"):
+            warnings.append("Controlled scroll reached its frame cap")
+        phases.append(_phase("controlled_scroll", "warm", metrics, warnings))
+
+        stage = "warm reload"
+        driver.execute_script(
+            "localStorage.removeItem('imageCurator.lastBatch'); localStorage.removeItem('imageCurator.lastFolder');"
+        )
+        driver.refresh()
+        _install_instrumentation(driver, spec.size)
+        readiness = _select_and_wait(driver, spec.primary_batch, spec.size, args.timeout)
+        stage = "warm reload metric collection"
+        metrics, warnings = _phase_metrics(
+            driver,
+            dependencies,
+            runtime,
+            spec.browser,
+            spec.primary_batch,
+            readiness,
+        )
+        phases.append(_phase("warm_reload", "warm", metrics, warnings))
+
+        stage = "batch A-B-A switch"
+        _install_instrumentation(driver, spec.size + spec.companion_size)
+        switch_started = time.perf_counter()
+        companion_ready = _select_and_wait(
+            driver, spec.companion_batch, spec.companion_size, args.timeout
+        )
+        primary_ready = _select_and_wait(driver, spec.primary_batch, spec.size, args.timeout)
+        primary_ready["elapsed_ms"] = round((time.perf_counter() - switch_started) * 1000, 3)
+        stage = "batch A-B-A metric collection"
+        metrics, warnings = _phase_metrics(
+            driver,
+            dependencies,
+            runtime,
+            spec.browser,
+            spec.primary_batch,
+            primary_ready,
+        )
+        if not companion_ready["ready"]:
+            warnings.append("Companion batch did not become ready during A -> B -> A switch")
+        phases.append(_phase("batch_a_b_a_switch", "warm-refetch", metrics, warnings))
+
+        stage = "sidebar width changes"
+        _install_instrumentation(driver, spec.size)
+        width_data = driver.execute_async_script(SIDEBAR_WIDTH_PHASE)
+        stage = "sidebar width metric collection"
+        metrics, warnings = _phase_metrics(
+            driver,
+            dependencies,
+            runtime,
+            spec.browser,
+            spec.primary_batch,
+            frame_data=width_data,
+        )
+        if width_data.get("available") and not width_data.get("restored"):
+            warnings.append("Sidebar widths did not restore to their pre-phase values")
+        phases.append(_phase("sidebar_width_changes", "warm-layout", metrics, warnings))
+
+        stage = "browser result assembly"
+        capabilities = driver.capabilities or {}
+        return {
+            "browser": spec.browser,
+            "version": str(capabilities.get("browserVersion") or "unknown"),
+            "fixture_size": spec.size,
+            "size": spec.size,
+            "status": "ok",
+            "phases": phases,
+            "browser_specific_metrics": _browser_specific_metrics(spec.browser),
+        }
+    except BenchmarkError:
+        phase_failed = True
+        raise
+    except Exception as exc:
+        phase_failed = True
+        raise browser_stage_error(stage, exc) from exc
+    finally:
+        try:
+            driver.quit()
+        except Exception as exc:
+            if not phase_failed:
+                raise browser_stage_error("WebDriver shutdown", exc) from exc
+
+
+def _manifest_payload(
+    run_id: str, runtime: RuntimeContext, specs: list[FixtureSpec]
+) -> dict[str, Any]:
+    return {
+        "schema": MANIFEST_SCHEMA,
+        "run_id": run_id,
+        "batch_root": str(runtime.batch_root),
+        "batches": [
+            {"name": batch, "run_id": spec.run_id} for spec in specs for batch in spec.batches
+        ],
+        "status": "planned",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _load_recovery_manifest(manifest_path: Path) -> dict[str, Any]:
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise CleanupRefused(f"Unsafe recovery manifest: {manifest_path.name}")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CleanupRefused(f"Unreadable recovery manifest: {manifest_path.name}") from exc
+    if manifest.get("schema") != MANIFEST_SCHEMA or not isinstance(manifest.get("run_id"), str):
+        raise CleanupRefused(f"Unsupported recovery manifest: {manifest_path.name}")
+    return manifest
+
+
+def cleanup_owned_profiles(output_root: Path, manifest_path: Path) -> dict[str, Any]:
+    resolved_output_root = output_root.resolve()
+    run_dir = manifest_path.parent
+    if run_dir.is_symlink():
+        raise CleanupRefused("Refusing profile cleanup from a symlinked run directory")
+    resolved_run_dir = run_dir.resolve()
+    if resolved_run_dir.parent != resolved_output_root:
+        raise CleanupRefused("Refusing profile cleanup outside the output root")
+    manifest = _load_recovery_manifest(manifest_path)
+    if resolved_run_dir.name != manifest["run_id"]:
+        raise CleanupRefused("Manifest run identity does not match its run directory")
+
+    profiles = run_dir / "profiles"
+    if not profiles.exists() and not profiles.is_symlink():
+        outcome = {"status": "not-found", "removed": False, "reason": None}
+    elif profiles.is_symlink():
+        raise CleanupRefused("Refusing profile cleanup from a symlinked profiles directory")
+    else:
+        resolved_profiles = profiles.resolve()
+        if resolved_profiles.parent != resolved_run_dir or resolved_profiles.name != "profiles":
+            raise CleanupRefused("Refusing escaping profiles directory")
+        try:
+            shutil.rmtree(resolved_profiles)
+        except OSError as exc:
+            outcome = {
+                "status": "failed",
+                "removed": False,
+                "reason": f"Could not remove profiles directory: {type(exc).__name__}",
+            }
+        else:
+            outcome = {"status": "removed", "removed": True, "reason": None}
+    manifest["profile_cleanup"] = outcome
+    _write_json(manifest_path, manifest)
+    return outcome
+
+
+def cleanup_manifest(manifest_path: Path, resolved_batch_root: Path) -> dict[str, Any]:
+    manifest = _load_recovery_manifest(manifest_path)
+    manifest_root = Path(str(manifest.get("batch_root", ""))).resolve()
+    if manifest_root != resolved_batch_root.resolve():
+        raise CleanupRefused(f"Manifest {manifest_path.name} does not match the runtime batch root")
+    removed = []
+    refused = []
+    for item in manifest.get("batches", []):
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+            refused.append("invalid manifest batch entry")
+            continue
+        batch = item["name"]
+        batch_path = resolved_batch_root / batch
+        if not batch_path.exists():
+            continue
+        try:
+            remove_owned_batch(resolved_batch_root, batch_path, manifest["run_id"], batch)
+            removed.append(batch)
+        except CleanupRefused as exc:
+            refused.append(str(exc))
+    manifest["status"] = "cleaned" if not refused else "cleanup-refused"
+    manifest["cleanup"] = {"removed": removed, "refused": refused}
+    _write_json(manifest_path, manifest)
+    return manifest["cleanup"]
+
+
+def recovery_cleanup(output_root: Path, runtime: RuntimeContext) -> int:
+    manifests = sorted(output_root.glob("*/recovery-manifest.json"))
+    if not manifests:
+        print("No thumbnail benchmark recovery manifests found")
+        return 0
+    refused = []
+    removed = 0
+    profiles_removed = 0
+    for manifest in manifests:
+        try:
+            result = cleanup_manifest(manifest, runtime.batch_root)
+            removed += len(result["removed"])
+            refused.extend(result["refused"])
+        except CleanupRefused as exc:
+            refused.append(str(exc))
+        try:
+            profile_result = cleanup_owned_profiles(output_root, manifest)
+            profiles_removed += int(profile_result["removed"])
+            if profile_result["status"] == "failed":
+                refused.append(str(profile_result["reason"]))
+        except CleanupRefused as exc:
+            refused.append(str(exc))
+    print(
+        f"Recovery cleanup removed {removed} owned benchmark batches and "
+        f"{profiles_removed} profile directories"
+    )
+    for message in refused:
+        print(f"Cleanup refused: {message}", file=sys.stderr)
+    return 1 if refused else 0
+
+
+def _new_run_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"{timestamp}-{uuid.uuid4().hex[:8]}"
+
+
+def run(args: argparse.Namespace) -> int:
+    output_root = args.output_root.resolve()
+    runtime = resolve_runtime(args)
+    if args.cleanup:
+        return recovery_cleanup(output_root, runtime)
+
+    dependencies = load_optional_dependencies()
+    browsers = requested_browsers(args.browser)
+    availability_failures = {
+        browser: reason
+        for browser in browsers
+        if (reason := browser_availability(args, browser)) is not None
+    }
+    available_browsers = [browser for browser in browsers if browser not in availability_failures]
+    if not available_browsers:
+        raise BenchmarkError("; ".join(availability_failures.values()))
+
+    run_id = _new_run_id()
+    run_dir = output_root / run_id
+    run_dir.mkdir(parents=True, exist_ok=False)
+    specs = build_fixture_specs(run_id, args.sizes, available_browsers)
+    manifest_path = run_dir / "recovery-manifest.json"
+    manifest = _manifest_payload(run_id, runtime, specs)
+    _write_json(manifest_path, manifest)
+
+    results = [
+        {
+            "browser": browser,
+            "version": "unavailable",
+            "size": None,
+            "status": "failed",
+            "error": reason,
+            "phases": [],
+        }
+        for browser, reason in availability_failures.items()
+    ]
+    warnings = list(availability_failures.values())
+    cleanup = {"status": "not-started", "removed": [], "refused": []}
+    active_batch_session = ActiveBatchSession(runtime)
+    active_batch_restore = {"status": "not-needed", "error": None}
+    profile_cleanup = {"status": "not-started", "removed": False, "reason": None}
+    try:
+        create_fixture_batches(runtime.batch_root, run_dir / "fixtures" / "seeds", specs)
+        manifest["status"] = "created"
+        _write_json(manifest_path, manifest)
+        for spec in specs:
+            try:
+                profile_dir = run_dir / "profiles" / f"{spec.browser}-{spec.size}"
+                results.append(
+                    benchmark_case(
+                        dependencies,
+                        args,
+                        runtime,
+                        spec,
+                        profile_dir,
+                        active_batch_session,
+                    )
+                )
+            except Exception as exc:
+                message = str(exc) if isinstance(exc, BenchmarkError) else type(exc).__name__
+                results.append(
+                    {
+                        "browser": spec.browser,
+                        "version": "unknown",
+                        "size": spec.size,
+                        "status": "failed",
+                        "error": message,
+                        "phases": [],
+                    }
+                )
+                warnings.append(f"{spec.browser} size {spec.size} failed: {message}")
+    finally:
+        try:
+            active_batch_session.restore()
+            if active_batch_session.switch_attempted:
+                active_batch_restore["status"] = "restored"
+        except BenchmarkError as exc:
+            active_batch_restore = {"status": "failed", "error": str(exc)}
+            warnings.append(f"Active batch restoration failed: {exc}")
+        if args.keep_fixtures:
+            cleanup = {"status": "kept", "removed": [], "refused": []}
+            manifest["status"] = "kept"
+            _write_json(manifest_path, manifest)
+        else:
+            try:
+                cleanup_result = cleanup_manifest(manifest_path, runtime.batch_root)
+                cleanup = {
+                    "status": "completed" if not cleanup_result["refused"] else "refused",
+                    **cleanup_result,
+                }
+            except CleanupRefused as exc:
+                cleanup = {"status": "refused", "removed": [], "refused": [str(exc)]}
+                warnings.append(str(exc))
+        try:
+            profile_cleanup = cleanup_owned_profiles(output_root, manifest_path)
+            if profile_cleanup["status"] == "failed":
+                warnings.append(str(profile_cleanup["reason"]))
+        except CleanupRefused as exc:
+            profile_cleanup = {"status": "refused", "removed": False, "reason": str(exc)}
+            warnings.append(str(exc))
+
+    report = sanitize_report(
+        {
+            "schema": REPORT_SCHEMA,
+            "harness_version": HARNESS_VERSION,
+            "run_id": run_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "mode": args.mode,
+            "page_url": runtime.page_url,
+            "requested_browsers": browsers,
+            "requested_sizes": args.sizes,
+            "headless": args.headless,
+            "browser_results": results,
+            "active_batch_restore": active_batch_restore,
+            "cleanup": cleanup,
+            "profile_cleanup": profile_cleanup,
+            "warnings": warnings,
+            "all_browser_failure_policy": (
+                "Any requested browser failure makes the command exit nonzero; other available "
+                "requested browsers still run."
+            ),
+        }
+    )
+    _write_json(run_dir / "report.json", report)
+    (run_dir / "summary.md").write_text(render_markdown_summary(report), encoding="utf-8")
+    print(f"Thumbnail benchmark report: {run_dir / 'summary.md'}")
+    failures = any(result.get("status") != "ok" for result in results)
+    return (
+        1
+        if failures
+        or cleanup["status"] == "refused"
+        or active_batch_restore["status"] == "failed"
+        or profile_cleanup["status"] in ("failed", "refused")
+        else 0
+    )
+
+
+def main() -> int:
+    args = parse_args()
+    try:
+        return run(args)
+    except BenchmarkError as exc:
+        print(f"Thumbnail benchmark error: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
