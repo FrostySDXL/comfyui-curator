@@ -23,6 +23,7 @@ let _viewportVisibleObserver = null;
 let _viewportNearObserver = null;
 let _viewportDrainTimerId = null;
 let _viewportPumpRafId = null;
+let _viewportCompletionScheduled = false;
 let _viewportVisibleQueue = [];
 let _viewportNearQueue = [];
 let _viewportDeferredQueue = [];
@@ -105,13 +106,13 @@ function _startViewportLoad(info) {
 
     function decrementAndDrain() {
         _viewportActiveFetches--;
-        _requestPriorityPump();
+        _scheduleCompletionPump();
     }
     if (loadPromise && typeof loadPromise.then === 'function') {
         loadPromise.then(decrementAndDrain, decrementAndDrain);
     } else {
         _viewportActiveFetches--;
-        Promise.resolve().then(_requestPriorityPump);
+        _scheduleCompletionPump();
     }
 }
 
@@ -128,6 +129,27 @@ function _cancelPriorityPump() {
         cancelAnimationFrame(_viewportPumpRafId);
         _viewportPumpRafId = null;
     }
+}
+
+function _scheduleCompletionPump() {
+    if (_viewportCompletionScheduled) return;
+    _viewportCompletionScheduled = true;
+    var gen = _viewportGeneration;
+    Promise.resolve().then(function () {
+        _viewportCompletionScheduled = false;
+        if (_viewportGeneration !== gen) return;
+        _runCompletionPump();
+    });
+}
+
+function _cancelCompletionPump() {
+    _viewportCompletionScheduled = false;
+}
+
+function _runCompletionPump() {
+    _drainNext(VIEWPORT_PRIORITY_VISIBLE);
+    _drainNext(VIEWPORT_PRIORITY_NEAR);
+    _drainNext(VIEWPORT_PRIORITY_DEFERRED);
 }
 
 function _runPriorityPump() {
@@ -223,6 +245,7 @@ function unscheduleThumbnailLoad(element) {
 function cancelScheduledViewportLoads() {
     _viewportGeneration++;
     _cancelPriorityPump();
+    _cancelCompletionPump();
     _cancelBackgroundDrain();
     _viewportVisibleQueue = [];
     _viewportNearQueue = [];

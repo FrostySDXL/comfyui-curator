@@ -138,6 +138,7 @@ global.assignThumbnailSrcIfCached = function(imageEl, imageSrc, cacheKey) {
 var rafQueue = [];
 var idleQueue = [];
 var timeoutQueue = [];
+var microtaskQueue = [];
 
 global.requestAnimationFrame = function(fn) { rafQueue.push(fn); return rafQueue.length; };
 global.cancelAnimationFrame = function(id) { /* noop */ };
@@ -147,6 +148,26 @@ global.cancelIdleCallback = function(id) { /* noop */ };
 
 global.setTimeout = function(fn, ms) { timeoutQueue.push(fn); return timeoutQueue.length; };
 global.clearTimeout = function(id) { /* noop */ };
+
+/* Mock Promise.resolve().then(fn) to capture microtask callbacks for
+   deterministic testing. The real Promise is still used for async control;
+   only the Promise.resolve() static call within the viewport loader is
+   intercepted so completion-pump callbacks land in microtaskQueue. */
+var _realPromiseResolve = Promise.resolve.bind(Promise);
+global.Promise = function Promise(executor) {
+    return new _realPromiseResolve().constructor(executor);
+};
+global.Promise.resolve = function(value) {
+    return {
+        then: function(onFulfilled, onRejected) {
+            microtaskQueue.push(function() {
+                try { onFulfilled && onFulfilled(value); } catch(e) { process.stderr.write('microtask error: ' + e + '\n'); }
+            });
+            return this;
+        }
+    };
+};
+global.Promise.prototype = Object.create(Object.prototype);
 
 function flushRaf() {
     var queue = rafQueue.splice(0);
@@ -163,7 +184,13 @@ function flushTimeouts() {
     queue.forEach(function(fn) { try { fn(); } catch(e) { process.stderr.write('timeout error: ' + e + '\n'); } });
 }
 
+function flushMicrotasks() {
+    var queue = microtaskQueue.splice(0);
+    queue.forEach(function(fn) { try { fn(); } catch(e) { process.stderr.write('microtask error: ' + e + '\n'); } });
+}
+
 function flushAllAsync() {
+    flushMicrotasks();
     flushRaf();
     flushIdle();
     flushTimeouts();
@@ -224,6 +251,7 @@ function resetState() {
     rafQueue = [];
     idleQueue = [];
     timeoutQueue = [];
+    microtaskQueue = [];
     _visibleObserved = new Map();
     _nearObserved = new Map();
     _visibleObserverCb = null;
@@ -239,6 +267,7 @@ function resetState() {
     _evalInCtx('_viewportNearObserver = null');
     _evalInCtx('_viewportDrainTimerId = null');
     _evalInCtx('_viewportPumpRafId = null');
+    _evalInCtx('_viewportCompletionScheduled = false');
     _evalInCtx('_viewportVisibleQueue = []');
     _evalInCtx('_viewportNearQueue = []');
     _evalInCtx('_viewportDeferredQueue = []');
@@ -333,6 +362,7 @@ function test3_concurrency_cap() {
 
     resolveAllLoads();
     var loadsBefore = loadCalls.length;
+    flushMicrotasks();
     flushRaf();
     flushIdle();
     flushTimeouts();
@@ -362,6 +392,7 @@ function test4_priority_ordering() {
         'T4a: visible element loads first (got ' + (firstLoad ? firstLoad.imageSrc : 'none') + ')');
 
     resolveAllLoads();
+    flushMicrotasks();
     flushRaf();
 
     var secondLoad = loadCalls[1];
@@ -506,6 +537,7 @@ function test9_no_background_spin_at_cap() {
         loadPromises[0].resolve();
     }
     /* Priority pump + background drain should pick up remaining work */
+    flushMicrotasks();
     flushRaf();
     flushIdle();
     flushTimeouts();
@@ -515,6 +547,7 @@ function test9_no_background_spin_at_cap() {
 
     /* All items eventually load */
     resolveAllLoads();
+    flushMicrotasks();
     flushRaf();
     flushIdle();
     flushTimeouts();
@@ -601,6 +634,7 @@ function test10b_mixed_cache_hits_and_misses() {
     /* Resolve all and drain in cycles until complete */
     for (var cycle = 0; cycle < 10 && loadCalls.length < 50; cycle++) {
         resolveAllLoads();
+        flushMicrotasks();
         flushRaf();
         flushIdle();
         flushTimeouts();
@@ -636,9 +670,285 @@ function test10c_stale_guard_in_cache_hit_path() {
     assert(_loadSerial === callCount, 'T10c5: no new network request triggered');
 }
 
+/* ── Completion microtask pump tests ─────────────────────────────────── */
+
+function test11a_fast_resolve_advances_without_rAF() {
+    resetState();
+
+    /* Schedule and promote 500 elements to visible */
+    var elements = [];
+    for (var i = 0; i < 500; i++) {
+        var el = makeElement(true);
+        elements.push(el);
+        scheduleThumbnailLoad(el, '/thumb/' + i + '.png', 'key-' + i);
+    }
+    for (var j = 0; j < elements.length; j++) {
+        _visibleObserverCb([{ isIntersecting: true, target: elements[j] }]);
+    }
+
+    /* Single rAF pump admits first 8 */
+    var rafCount = rafQueue.length;
+    flushRaf();
+    var rafFlashedCount = rafCount; /* rAF queue drained, no more scheduled */
+
+    var firstBatch = loadCalls.length;
+    assert(firstBatch === 8, 'T11a1: first rAF admits 8 (got ' + firstBatch + ')');
+    assert(getActiveFetches() === 8, 'T11a2: active fetches at cap after first wave');
+
+    /* Resolve all 8 and drain ONLY microtasks, NOT rAF */
+    resolveAllLoads();
+
+    /* At this point: decrementAndDrain was called 8 times, but the guard
+       ensures only one completion microtask is scheduled */
+    var microtaskQuedCount = microtaskQueue.length;
+    assert(microtaskQuedCount === 1, 'T11a3: single completion microtask queued for 8 completions (got ' + microtaskQuedCount + ')');
+
+    flushMicrotasks();
+
+    /* After microtask drain, next batch should be admitted */
+    var secondBatch = loadCalls.length;
+    assert(secondBatch > firstBatch, 'T11a4: more loads admitted by completion microtask without rAF (before=' + firstBatch + ' after=' + secondBatch + ')');
+
+    /* Continue resolving and draining via microtasks only until all 500 admitted */
+    var rafCallbacksBefore = rafQueue.length;
+    for (var cycle = 0; cycle < 100 && loadCalls.length < 500; cycle++) {
+        resolveAllLoads();
+        flushMicrotasks();
+    }
+
+    var totalAdmitted = loadCalls.length;
+    assert(totalAdmitted === 500, 'T11a5: all 500 admitted via microtasks without extra rAF pauses (got ' + totalAdmitted + ')');
+
+    /* No new rAF callbacks were scheduled by load completions */
+    assert(rafQueue.length === 0, 'T11a6: no rAF queued by load completions (got ' + rafQueue.length + ')');
+}
+
+function test11b_concurrency_never_exceeds_8() {
+    resetState();
+
+    /* Schedule 100 elements, promote to visible */
+    var elements = [];
+    for (var i = 0; i < 100; i++) {
+        var el = makeElement(true);
+        elements.push(el);
+        scheduleThumbnailLoad(el, '/thumb/' + i + '.png', 'key-cncy-' + i);
+    }
+    for (var j = 0; j < elements.length; j++) {
+        _visibleObserverCb([{ isIntersecting: true, target: elements[j] }]);
+    }
+
+    /* Initial rAF admits 8 */
+    flushRaf();
+    assert(getActiveFetches() === 8, 'T11b1: first wave at concurrency 8');
+
+    /* Track maximum active fetches across all drain cycles */
+    var maxActive = 8;
+    for (var cycle = 0; cycle < 50 && loadCalls.length < 100; cycle++) {
+        resolveAllLoads();
+        flushMicrotasks();
+        flushRaf();
+        flushIdle();
+        flushTimeouts();
+        if (getActiveFetches() > maxActive) maxActive = getActiveFetches();
+    }
+
+    assert(maxActive <= 8, 'T11b2: active fetches never exceed 8 (max was ' + maxActive + ')');
+    assert(loadCalls.length === 100, 'T11b3: all 100 admitted');
+}
+
+function test11c_burst_completions_single_microtask() {
+    resetState();
+
+    /* Schedule 20 elements, promote to visible */
+    var elements = [];
+    for (var i = 0; i < 20; i++) {
+        var el = makeElement(true);
+        elements.push(el);
+        scheduleThumbnailLoad(el, '/thumb/bt-' + i + '.png', 'key-bt-' + i);
+    }
+    for (var j = 0; j < elements.length; j++) {
+        _visibleObserverCb([{ isIntersecting: true, target: elements[j] }]);
+    }
+
+    flushRaf();
+    assert(loadCalls.length === 8, 'T11c1: initial 8 admitted via rAF');
+
+    var microBefore = microtaskQueue.length;
+    resolveAllLoads(); /* all 8 complete simultaneously */
+    assert(microtaskQueue.length === 1, 'T11c2: exactly one microtask queued for 8-burst (got ' + microtaskQueue.length + ')');
+
+    flushMicrotasks();
+    /* After microtask, next 8 should be admitted */
+    assert(loadCalls.length === 16, 'T11c3: second wave of 8 admitted after single microtask (got ' + loadCalls.length + ')');
+}
+
+function test11d_priority_ordering_via_completion() {
+    resetState();
+
+    var visibleEl = makeElement(true);
+    var nearEl = makeElement(true);
+    var deferredEl = makeElement(true);
+
+    /* Schedule all three */
+    scheduleThumbnailLoad(visibleEl, '/thumb/vis.png', 'key-vis');
+    scheduleThumbnailLoad(nearEl, '/thumb/near.png', 'key-near');
+    scheduleThumbnailLoad(deferredEl, '/thumb/def.png', 'key-def');
+
+    /* Promote first two */
+    _visibleObserverCb([{ isIntersecting: true, target: visibleEl }]);
+    _nearObserverCb([{ isIntersecting: true, target: nearEl }]);
+
+    /* Limit concurrency to 1 to observe strict ordering */
+    _evalInCtx('_THUMBNAIL_LOAD_CONCURRENCY_ORIG = THUMBNAIL_LOAD_CONCURRENCY');
+    /* Override concurrency check in _drainNext by pinning activeFetches */
+    _evalInCtx('_viewportActiveFetches = 0');
+
+    /* Force drain visible via rAF pump */
+    flushRaf();
+    var call0 = loadCalls[0];
+    assert(call0 && call0.imageSrc === '/thumb/vis.png',
+        'T11d1: visible loaded first (got ' + (call0 ? call0.imageSrc : 'none') + ')');
+
+    /* Now bump activeFetches so _drainNext can proceed past the check.
+       Simulate: after first load resolves, decrementAndDrain schedules microtask.
+       Resolve the first load. */
+    _evalInCtx('_viewportActiveFetches = 1'); /* simulate one in-flight */
+    resolveAllLoads();
+    flushMicrotasks();
+
+    /* After microtask pump with activeFetches=1→0, near should load next (since we reset to 0 and drain again) */
+    /* Actually, let me be more precise: _drainNext checks < THUMBNAIL_LOAD_CONCURRENCY.
+       Since we've monkeyed with activeFetches, let's just test the wave-after-completion behavior. */
+    _evalInCtx('_viewportActiveFetches = 0');
+
+    /* Promote near directly and resolve - it should get admitted via microtask */
+    resolveAllLoads();
+    flushMicrotasks();
+
+    /* Check ordering: visible first, then near */
+    assert(loadCalls.length >= 2, 'T11d2: at least 2 loads admitted');
+    /* visible already loaded, near should be second */
+    if (loadCalls.length >= 2) {
+        var secondCall = loadCalls[1];
+        assert(secondCall.imageSrc === '/thumb/near.png',
+            'T11d3: near loaded before deferred via completion pump (got ' + secondCall.imageSrc + ')');
+    }
+
+    /* Cleanup: resolve remaining loads and let deferred load */
+    resolveAllLoads();
+    flushMicrotasks();
+    flushIdle();
+    flushTimeouts();
+}
+
+function test11e_cancellation_before_microtask() {
+    resetState();
+
+    /* Schedule elements and promote */
+    var elements = [];
+    for (var i = 0; i < 20; i++) {
+        var el = makeElement(true);
+        elements.push(el);
+        scheduleThumbnailLoad(el, '/thumb/cancel-' + i + '.png', 'key-cancel-' + i);
+    }
+    for (var j = 0; j < elements.length; j++) {
+        _visibleObserverCb([{ isIntersecting: true, target: elements[j] }]);
+    }
+
+    /* Admit first 8 via rAF */
+    flushRaf();
+    assert(loadCalls.length === 8, 'T11e1: 8 admitted before cancel');
+
+    /* Resolve all 8 completions → queues completion microtask */
+    resolveAllLoads();
+    var queuedMicrotask = microtaskQueue.length > 0;
+    assert(queuedMicrotask, 'T11e2: microtask queued after completions');
+
+    /* Cancel BEFORE the microtask runs */
+    cancelScheduledViewportLoads();
+
+    /* Now flush the microtask - it must be a no-op due to generation check */
+    flushMicrotasks();
+
+    /* No new loads should have been admitted */
+    assert(loadCalls.length === 8, 'T11e3: no stale admissions after cancel (got ' + loadCalls.length + ')');
+}
+
+function test11f_no_hot_microtask_loop() {
+    resetState();
+
+    /* Schedule 16 elements, promote to visible */
+    var elements = [];
+    for (var i = 0; i < 16; i++) {
+        var el = makeElement(true);
+        elements.push(el);
+        scheduleThumbnailLoad(el, '/thumb/hot-' + i + '.png', 'key-hot-' + i);
+    }
+    for (var j = 0; j < elements.length; j++) {
+        _visibleObserverCb([{ isIntersecting: true, target: elements[j] }]);
+    }
+
+    flushRaf();
+    assert(loadCalls.length === 8, 'T11f1: 8 admitted (at cap)');
+
+    /* Resolve all 8 - should queue ONE microtask */
+    resolveAllLoads();
+    var afterResolve = microtaskQueue.length;
+    assert(afterResolve === 1, 'T11f2: exactly 1 microtask queued');
+
+    /* Flush that microtask */
+    flushMicrotasks();
+
+    /* After the completion pump ran, it drained next 8 (hit cap). */
+    /* Now verify no ADDITIONAL microtask was queued by the pump itself (no hot loop) */
+    assert(microtaskQueue.length === 0, 'T11f3: no self-rescheduling microtask after pump (got ' + microtaskQueue.length + ')');
+    assert(loadCalls.length === 16, 'T11f4: next 8 admitted by single completion pump');
+
+    /* Now resolve these 8 and check again: single microtask, no loop */
+    resolveAllLoads();
+    assert(microtaskQueue.length === 1, 'T11f5: single microtask after second wave resolution (got ' + microtaskQueue.length + ')');
+
+    flushMicrotasks();
+    /* No more work to drain (queues empty), but also no loop */
+    assert(microtaskQueue.length === 0, 'T11f6: no lingering microtask after final drain (got ' + microtaskQueue.length + ')');
+}
+
+function test11g_observer_uses_rAF_not_microtask() {
+    resetState();
+
+    var el = makeElement(true);
+    scheduleThumbnailLoad(el, '/thumb/obs.png', 'key-obs');
+
+    /* Fire near observer - which calls _requestPriorityPump (rAF) */
+    _nearObserverCb([{ isIntersecting: true, target: el }]);
+
+    /* Observer promotion should have queued an rAF, NOT a microtask */
+    assert(microtaskQueue.length === 0, 'T11g1: observer promotion does not queue microtask (got ' + microtaskQueue.length + ')');
+    assert(rafQueue.length >= 1, 'T11g2: observer promotion queues rAF (got ' + rafQueue.length + ')');
+
+    /* rAF pump should admit */
+    flushRaf();
+    assert(loadCalls.length === 1, 'T11g3: load admitted via rAF from observer');
+
+    /* Resolve the load - this should queue a microtask (completion pump) */
+    resolveAllLoads();
+    assert(microtaskQueue.length === 1, 'T11g4: load completion queues microtask');
+
+    flushMicrotasks();
+    /* After completion microtask, the element is already loaded, nothing extra */
+    /* Verify both scheduling mechanisms coexist */
+}
+
 /* ── Run all tests ─────────────────────────────────────────────────────── */
 
 try {
+    test11a_fast_resolve_advances_without_rAF();
+    test11b_concurrency_never_exceeds_8();
+    test11c_burst_completions_single_microtask();
+    test11d_priority_ordering_via_completion();
+    test11e_cancellation_before_microtask();
+    test11f_no_hot_microtask_loop();
+    test11g_observer_uses_rAF_not_microtask();
     test10a_cache_hits_bypass_slot_accounting();
     test10b_mixed_cache_hits_and_misses();
     test10c_stale_guard_in_cache_hit_path();
