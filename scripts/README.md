@@ -145,8 +145,15 @@ interrupted batches and profiles from manifests with:
 ```
 
 The JSON report contains versioned raw phase metrics and `summary.md` contains a
-compact comparison. Phases cover cold load, controlled scroll, warm reload,
-A-to-B-to-A switching, and restored sidebar width changes. Shared metrics use
+compact comparison. Phases cover cold load (with three intermediate measurement
+checkpoints: first viewport settled, partial controlled traversal, and full
+traversal), controlled scroll, warm reload, A-to-B-to-A switching, and restored
+sidebar width changes. Each checkpoint records loaded image count, thumbnail
+request count, live blob count and bytes, DOM node count, browser RSS, frame
+intervals, long-task metrics where available, and server `.thumbs` file count
+and bytes. The full traversal checkpoint uses a region-by-region viewport-settle
+readiness condition compatible with future visible/near-only loading rather than
+all-elements-terminal gating. Shared metrics use
 Resource Timing, in-page cache/DOM evaluation, animation-frame intervals,
 psutil browser-process RSS, and `.thumbs` file sizes. Cache hits are explicitly
 a `transferSize == 0 && encodedBodySize > 0` heuristic. Blob compressed bytes

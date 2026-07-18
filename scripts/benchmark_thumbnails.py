@@ -400,9 +400,10 @@ def render_markdown_summary(report: dict[str, Any]) -> str:
         for phase in result.get("phases", []):
             metrics = phase.get("cross_browser_metrics", phase.get("metrics", {}))
             resources = metrics.get("thumbnail_resources", {})
+            has_checkpoints = bool(phase.get("checkpoints"))
             lines.append(
                 "| {browser} {version} | {size} | {phase} | {classification} | {requests} | "
-                "{ready} | {long_tasks} | ok |".format(
+                "{ready} | {long_tasks} | {status} |".format(
                     browser=result["browser"],
                     version=result.get("version", "unknown"),
                     size=result["size"],
@@ -415,6 +416,39 @@ def render_markdown_summary(report: dict[str, Any]) -> str:
                     long_tasks=_summary_metric(
                         metrics.get("long_tasks", unavailable("not measured"))
                     ),
+                    status="ok (with checkpoints)" if has_checkpoints else "ok",
+                )
+            )
+    # Render checkpoint detail sections
+    checkpoint_data: list[dict[str, Any]] = []
+    for result in report.get("browser_results", []):
+        if result.get("status") != "ok":
+            continue
+        for phase in result.get("phases", []):
+            for cp in phase.get("checkpoints", []):
+                checkpoint_data.append(
+                    {
+                        "browser": result["browser"],
+                        "version": result.get("version", "unknown"),
+                        "size": result["size"],
+                        **cp,
+                    }
+                )
+    if checkpoint_data:
+        lines.extend(["", "## Checkpoints", ""])
+        lines.append("| Browser | Size | Checkpoint | Loaded | Requests | Blobs | DOM |")
+        lines.append("|---|---|---|---:|---:|---:|---:|")
+        for cp in checkpoint_data:
+            lines.append(
+                "| {browser} {version} | {size} | {name} | {loaded} | {requests} | {blobs} | {dom} |".format(
+                    browser=cp["browser"],
+                    version=cp["version"],
+                    size=cp["size"],
+                    name=cp.get("name", "-"),
+                    loaded=cp.get("loaded_image_count", "-"),
+                    requests=cp.get("thumbnail_request_count", "-"),
+                    blobs=cp.get("blob_live_count", "-"),
+                    dom=cp.get("dom_node_count", "-"),
                 )
             )
     warnings = report.get("warnings", [])
@@ -768,6 +802,141 @@ requestAnimationFrame(step);
 """
 
 
+TRAVERSAL_GRID = r"""
+const done = arguments[arguments.length - 1];
+const positions = arguments[0];
+// Deterministic scroll-target positions (pre-computed by harness)
+const content = document.querySelector('.content');
+if (!content) { done({available: false, reason: 'Grid scroll container not found'}); return; }
+if (!Array.isArray(positions) || positions.length === 0) {
+    done({available: false, reason: 'Traversal positions array is empty or invalid'}); return;
+}
+
+const intervals = [];
+const visitedRegions = [];
+const started = performance.now();
+let previous = started;
+const maxTotalFrames = positions.length > 3 ? 5000 : 1500;
+
+let currentRegion = 0;
+let regionStartTime = started;
+
+function viewportSettled() {
+    const images = Array.from(
+        document.querySelectorAll('#grid .thumb:not(.loading-placeholder) img')
+    ).filter(Boolean);
+    const visible = images.filter(function(img) {
+        var rect = img.getBoundingClientRect();
+        return rect.bottom > 0 && rect.top < window.innerHeight;
+    });
+    if (visible.length === 0) return {settled: true, visible: 0, loaded: 0};
+    var loaded = visible.filter(function(img) { return img.classList.contains('loaded'); }).length;
+    return {settled: loaded === visible.length, visible: visible.length, loaded: loaded};
+}
+
+function step(now) {
+    var dt = now - previous;
+    intervals.push(dt);
+    previous = now;
+
+    if (currentRegion >= positions.length || intervals.length >= maxTotalFrames) {
+        done({
+            available: true,
+            elapsedMs: now - started,
+            intervals: intervals,
+            frameCapReached: intervals.length >= maxTotalFrames,
+            mode: 'traversal',
+            regionsVisited: currentRegion,
+            totalPositions: positions.length,
+            visitedRegions: visitedRegions
+        });
+        return;
+    }
+
+    content.scrollTop = positions[currentRegion];
+
+    var state = viewportSettled();
+    var regionElapsed = now - regionStartTime;
+
+    if (state.settled || regionElapsed > 5000) {
+        visitedRegions.push({
+            region: currentRegion,
+            scrollPosition: positions[currentRegion],
+            visibleCount: state.visible,
+            visibleLoaded: state.loaded,
+            settled: state.settled,
+            regionElapsedMs: Math.round(regionElapsed)
+        });
+        currentRegion++;
+        regionStartTime = now;
+    }
+
+    requestAnimationFrame(step);
+}
+requestAnimationFrame(step);
+"""
+
+
+VIEWPORT_SETTLE_ASYNC = r"""
+const done = arguments[arguments.length - 1];
+const expectedCount = Number(arguments[0]) || 0;
+const timeoutMs = Number(arguments[1]) || 30000;
+
+const intervals = [];
+const started = performance.now();
+let previous = started;
+const deadline = started + timeoutMs;
+
+function readState() {
+    var thumbs = Array.from(document.querySelectorAll('#grid .thumb:not(.loading-placeholder)'));
+    var images = thumbs.map(function(t) { return t.querySelector('img'); }).filter(Boolean);
+    var visible = images.filter(function(img) {
+        var rect = img.getBoundingClientRect();
+        return rect.bottom > 0 && rect.top < window.innerHeight;
+    });
+    return {
+        count: thumbs.length,
+        loaded: images.filter(function(img) { return img.classList.contains('loaded'); }).length,
+        visibleCount: visible.length,
+        visibleLoaded: visible.filter(function(img) { return img.classList.contains('loaded'); }).length,
+        currentBatch: typeof currentBatch === 'undefined' ? null : currentBatch
+    };
+}
+
+function step(now) {
+    var dt = now - previous;
+    intervals.push(dt);
+    previous = now;
+
+    var state = readState();
+
+    if (state.visibleCount > 0 && state.visibleLoaded === state.visibleCount
+        && state.count === expectedCount) {
+        done({
+            available: true,
+            ready: true,
+            elapsedMs: now - started,
+            intervals: intervals,
+            state: state
+        });
+        return;
+    }
+    if (now >= deadline) {
+        done({
+            available: true,
+            ready: false,
+            elapsedMs: now - started,
+            intervals: intervals,
+            state: state
+        });
+        return;
+    }
+    requestAnimationFrame(step);
+}
+requestAnimationFrame(step);
+"""
+
+
 SIDEBAR_WIDTH_PHASE = r"""
 const done = arguments[arguments.length - 1];
 if (typeof applySidebarWidth !== 'function' || typeof applyAiSidebarWidth !== 'function') {
@@ -977,6 +1146,147 @@ return {
     }
 
 
+def _build_checkpoint_record(
+    name: str,
+    elapsed_ms: float,
+    loaded_image_count: int,
+    thumbnail_request_count: int,
+    blob_live_count: int | None,
+    blob_bytes: int | None,
+    dom_node_count: int,
+    browser_process_memory: dict[str, Any],
+    frame_timing: dict[str, Any],
+    long_tasks: dict[str, Any],
+    thumbnail_disk: dict[str, Any],
+    readiness: dict[str, Any] | None = None,
+    blob_observation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Assemble a measurement checkpoint record with all required metric slots.
+
+    Every slot must be a dict conforming to the available/unavailable pattern.
+    Scalar convenience fields (loaded_image_count, thumbnail_request_count, etc.)
+    are carried at the top level for quick inspection without drilling into
+    available/value wrappers.
+
+    readiness carries the checkpoint gate state (ready, elapsed, visited/total
+    counts, timed-out region flag, frame-cap status).
+    blob_observation carries the available/unavailable wrapper for live blob
+    URL observation with methodology and reason.
+    """
+    record: dict[str, Any] = {
+        "name": name,
+        "elapsed_ms": elapsed_ms,
+        "loaded_image_count": loaded_image_count,
+        "thumbnail_request_count": thumbnail_request_count,
+        "blob_live_count": blob_live_count,
+        "blob_bytes": blob_bytes,
+        "dom_node_count": dom_node_count,
+        "browser_process_memory": browser_process_memory,
+        "frame_timing": frame_timing,
+        "long_tasks": long_tasks,
+        "thumbnail_disk": thumbnail_disk,
+    }
+    if readiness is not None:
+        record["readiness"] = readiness
+    if blob_observation is not None:
+        record["blob_observation"] = blob_observation
+    return record
+
+
+def _build_traversal_positions(total_height: int, client_height: int, mode: str) -> list[int]:
+    """Build deterministic scroll-target positions for grid traversal.
+
+    Args:
+        total_height: content.scrollHeight - clientHeight (0 if no scroll)
+        client_height: content.clientHeight (actual viewport height from browser)
+        mode: 'partial' (bounded subset) or 'full' (entire grid)
+
+    Returns a list of nondecreasing pixel positions. Full mode advances by
+    step with no gaps larger than step and includes exact total_height.
+    Partial mode steps sequentially through the first ~40% of the grid
+    at the same step size, ending at the exact bounded endpoint.
+    A zero-height grid returns [0].
+    """
+    region_height = max(300, round(client_height * 0.6))
+    if total_height <= 0:
+        return [0]
+    if mode == "partial":
+        bounded = min(total_height, round(total_height * 0.4))
+        positions = [0]
+        current = 0
+        while current < bounded:
+            current = min(bounded, current + region_height)
+            positions.append(current)
+        return positions
+    # Full mode: step through entire grid, no gap > region_height
+    positions = [0]
+    current = 0
+    while current < total_height:
+        current = min(total_height, current + region_height)
+        positions.append(current)
+    return positions
+
+
+def _is_traversal_ready(traversal_data: dict[str, Any]) -> bool:
+    """Return True only when every traversal readiness condition is met.
+
+    The traversal must be available, must not have hit its frame cap, must
+    have visited every target region, and every visited region must have
+    settled (no timeout).
+    """
+    if not traversal_data.get("available", False):
+        return False
+    if traversal_data.get("frameCapReached", False):
+        return False
+    visited = int(traversal_data.get("regionsVisited", 0))
+    target = int(traversal_data.get("totalPositions", 0))
+    if visited != target:
+        return False
+    regions = traversal_data.get("visitedRegions", [])
+    if not isinstance(regions, list):
+        return False
+    if any(not region.get("settled", False) for region in regions):
+        return False
+    return True
+
+
+def _build_checkpoint_warnings(checkpoint_name: str, readiness: dict[str, Any]) -> list[str]:
+    """Generate warning strings for checkpoint states that indicate
+    degraded or incomplete measurement.
+
+    Handles first-viewport checkpoints (timeout/unavailable) and traversal
+    checkpoints (unsettled regions, frame caps, unavailable).
+    """
+    warnings: list[str] = []
+    if not readiness.get("available", True):
+        reason = readiness.get("reason") or "no reason supplied"
+        warnings.append(f"Checkpoint '{checkpoint_name}' was unavailable: {reason}")
+        return warnings
+    state = readiness.get("state", {})
+    unsettled = int(state.get("unsettled_region_count", 0))
+    if unsettled > 0:
+        warnings.append(
+            f"Checkpoint '{checkpoint_name}' had {unsettled} unsettled/timed-out region(s)"
+        )
+    if state.get("frame_cap_reached"):
+        warnings.append(f"Checkpoint '{checkpoint_name}' reached its rAF frame cap")
+    if not readiness.get("ready", True):
+        regions_visited = int(state.get("regions_visited") or 0)
+        total_regions = int(state.get("total_regions") or 0)
+        if total_regions > 0 and regions_visited != total_regions:
+            warnings.append(
+                f"Checkpoint '{checkpoint_name}' visited {regions_visited} "
+                f"of {total_regions} target regions"
+            )
+        elif not warnings:  # cp1 timeout (no region counts)
+            elapsed = readiness.get("elapsed_ms", 0)
+            warnings.append(
+                f"Checkpoint '{checkpoint_name}' timed out or was not ready "
+                f"(elapsed {elapsed:.0f} ms)"
+            )
+    return warnings
+
+
 def _select_and_wait(driver: Any, batch: str, count: int, timeout: float) -> dict[str, Any]:
     response = driver.execute_async_script(SELECT_BATCH, batch)
     if not response.get("ok"):
@@ -1110,6 +1420,264 @@ def _phase_metrics(
     return metrics, warnings
 
 
+def _capture_checkpoint(
+    driver: Any,
+    dependencies: OptionalDependencies,
+    runtime: RuntimeContext,
+    browser: str,
+    batch: str,
+    *,
+    name: str,
+    readiness: dict[str, Any],
+    frame_data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Capture a measurement snapshot at a specific point during the cold phase.
+
+    Collects all metric dimensions required for checkpoint attribution: loaded
+    image count from the readiness state, thumbnail request count from Resource
+    Timing, live blob count and bytes from the benchmark DOM bridge, DOM node
+    count, browser RSS, long-task observations, frame timing (when traversal
+    data is supplied), and server-side .thumbs file count and bytes.
+    """
+    entries = driver.execute_script(RESOURCE_ENTRIES)
+    page = driver.execute_script(PAGE_METRICS)
+    resources = summarize_thumbnail_resources(entries, runtime.paths.thumbnail_prefix)
+
+    blob_raw = driver.execute_async_script(BLOB_BYTES)
+    blob_live_count: int | None = blob_raw.get("count") if blob_raw.get("available") else None
+    blob_bytes_val: int | None = blob_raw.get("bytes") if blob_raw.get("available") else None
+    if blob_raw.get("available"):
+        blob_obs = available(
+            {"entry_count": blob_raw["count"], "compressed_bytes": blob_raw["bytes"]},
+            BLOB_METHODOLOGY,
+        )
+    else:
+        blob_obs = unavailable(
+            str(blob_raw.get("reason") or "Benchmark DOM bridge blob observation is unavailable")
+        )
+
+    if page["longTasks"].get("available"):
+        tasks = page["longTasks"]["entries"]
+        long_tasks = available(
+            {
+                "count": len(tasks),
+                "duration_ms": round(sum(float(task["duration"]) for task in tasks), 3),
+            },
+            "PerformanceObserver longtask entries captured after harness instrumentation",
+        )
+    else:
+        long_tasks = unavailable(str(page["longTasks"].get("reason")))
+
+    loaded_count = readiness.get("state", {}).get("loaded", 0) if readiness else 0
+
+    return _build_checkpoint_record(
+        name=name,
+        elapsed_ms=round(float(readiness.get("elapsed_ms", 0)), 3) if readiness else 0,
+        loaded_image_count=loaded_count,
+        thumbnail_request_count=resources["request_count"],
+        blob_live_count=blob_live_count,
+        blob_bytes=blob_bytes_val,
+        dom_node_count=page["domNodeCount"],
+        browser_process_memory=_browser_process_memory(dependencies, driver, browser),
+        frame_timing=summarize_frames(frame_data)
+        if frame_data is not None
+        else unavailable("No frame data for this checkpoint"),
+        long_tasks=long_tasks,
+        thumbnail_disk=available(
+            _thumbnail_disk_metrics(runtime.batch_root, batch),
+            "Regular-file count and logical file bytes in the benchmark batch .thumbs directory",
+        ),
+        readiness=readiness,
+        blob_observation=blob_obs,
+    )
+
+
+def _prepare_checkpoint_cold_phase(
+    driver: Any,
+    dependencies: OptionalDependencies,
+    active_batch_session: ActiveBatchSession,
+    runtime: RuntimeContext,
+    spec: FixtureSpec,
+    timeout: float,
+) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any], list[str]]:
+    """Run the cold-phase checkpoint flow: companion warm-up, viewport settle,
+    partial traversal, full traversal, then final all-thumbnails readiness.
+
+    Returns four items:
+      1. checkpoints: list of three checkpoint records captured at each stage
+      2. companion_ready: readiness dict for the companion batch
+      3. final_readiness: readiness dict after all primary-batch thumbnails
+         reach loaded/error state (preserving existing cold-phase contract)
+      4. cp_warnings: human-readable warnings for checkpoint failures
+    """
+    active_batch_session.switch(spec.companion_batch)
+    driver.get(runtime.page_url)
+    companion_ready = _select_and_wait(driver, spec.companion_batch, spec.companion_size, timeout)
+
+    _install_instrumentation(driver, spec.size)
+
+    # Select primary batch, but only wait for viewport — not all thumbnails
+    response = driver.execute_async_script(SELECT_BATCH, spec.primary_batch)
+    if not response.get("ok"):
+        raise BenchmarkError(
+            f"Could not select benchmark batch {spec.primary_batch}: {response.get('error')}"
+        )
+
+    # ---- Checkpoint 1: first viewport settled ----
+    # Use async rAF-based viewport settle to capture frame intervals
+    viewport_result = driver.execute_async_script(
+        VIEWPORT_SETTLE_ASYNC, spec.size, int(timeout * 1000)
+    )
+    viewport_available = bool(viewport_result.get("available", False))
+    viewport_ready = bool(viewport_result.get("ready", False))
+    _viewport_ready = viewport_ready and viewport_available
+    if not viewport_available:
+        _reason = str(viewport_result.get("reason") or "viewport settle script unavailable")
+    elif not viewport_ready:
+        _reason = "Viewport did not settle within timeout"
+    else:
+        _reason = None
+    viewport_readiness = {
+        "ready": _viewport_ready,
+        "elapsed_ms": round(float(viewport_result.get("elapsedMs", 0)), 3),
+        "state": viewport_result.get("state", {}),
+        "available": viewport_available,
+        "reason": _reason,
+    }
+    cp1 = _capture_checkpoint(
+        driver,
+        dependencies,
+        runtime,
+        spec.browser,
+        spec.primary_batch,
+        name="first_viewport_settled",
+        readiness=viewport_readiness,
+        frame_data=viewport_result if viewport_available else None,
+    )
+    # Preserve first-viewport timing, but only when actually ready
+    _first_viewport_ms = round(viewport_readiness["elapsed_ms"], 3) if _viewport_ready else None
+
+    # Compute traversal positions from the grid scroll dimensions
+    grid_info = driver.execute_script(
+        "var c=document.querySelector('.content');"
+        "if(!c)return[0,0];"
+        "return[Math.max(0,c.scrollHeight-c.clientHeight),c.clientHeight];"
+    )
+    total_grid_height = (
+        int(grid_info[0]) if isinstance(grid_info, (list, tuple)) and len(grid_info) > 0 else 0
+    )
+    client_height = (
+        int(grid_info[1]) if isinstance(grid_info, (list, tuple)) and len(grid_info) > 1 else 600
+    )
+
+    # ---- Checkpoint 2: partial controlled traversal ----
+    partial_positions = _build_traversal_positions(total_grid_height, client_height, "partial")
+    partial_traversal = driver.execute_async_script(TRAVERSAL_GRID, partial_positions)
+    loaded_after_partial = _query_grid_loaded(driver)
+    partial_ready = _is_traversal_ready(partial_traversal)
+    partial_state = {
+        "loaded": loaded_after_partial,
+        "regions_visited": partial_traversal.get("regionsVisited"),
+        "total_regions": partial_traversal.get("totalPositions"),
+        "frame_cap_reached": partial_traversal.get("frameCapReached", False),
+        "unsettled_region_count": sum(
+            1 for r in partial_traversal.get("visitedRegions", []) if not r.get("settled", False)
+        ),
+        "available": partial_traversal.get("available", False),
+        "reason": partial_traversal.get("reason"),
+    }
+    cp2_readiness = {
+        "ready": partial_ready,
+        "elapsed_ms": partial_traversal.get("elapsedMs", 0),
+        "state": partial_state,
+        "available": partial_traversal.get("available", False),
+        "reason": partial_traversal.get("reason"),
+    }
+    cp2 = _capture_checkpoint(
+        driver,
+        dependencies,
+        runtime,
+        spec.browser,
+        spec.primary_batch,
+        name="partial_traversal",
+        readiness=cp2_readiness,
+        frame_data=partial_traversal,
+    )
+
+    # ---- Checkpoint 3: full traversal ----
+    full_positions = _build_traversal_positions(total_grid_height, client_height, "full")
+    full_traversal = driver.execute_async_script(TRAVERSAL_GRID, full_positions)
+    loaded_after_full = _query_grid_loaded(driver)
+    full_ready = _is_traversal_ready(full_traversal)
+    full_state = {
+        "loaded": loaded_after_full,
+        "regions_visited": full_traversal.get("regionsVisited"),
+        "total_regions": full_traversal.get("totalPositions"),
+        "frame_cap_reached": full_traversal.get("frameCapReached", False),
+        "unsettled_region_count": sum(
+            1 for r in full_traversal.get("visitedRegions", []) if not r.get("settled", False)
+        ),
+        "available": full_traversal.get("available", False),
+        "reason": full_traversal.get("reason"),
+    }
+    cp3_readiness = {
+        "ready": full_ready,
+        "elapsed_ms": full_traversal.get("elapsedMs", 0),
+        "state": full_state,
+        "available": full_traversal.get("available", False),
+        "reason": full_traversal.get("reason"),
+    }
+    cp3 = _capture_checkpoint(
+        driver,
+        dependencies,
+        runtime,
+        spec.browser,
+        spec.primary_batch,
+        name="full_traversal",
+        readiness=cp3_readiness,
+        frame_data=full_traversal,
+    )
+
+    # Restore scroll position to top so the next controlled_scroll phase
+    # can produce meaningful frame data (full traversal left it at bottom)
+    driver.execute_script("var c=document.querySelector('.content');if(c)c.scrollTop=0;")
+
+    # Build checkpoint warnings for defect 3
+    cp_warnings: list[str] = []
+    cp_warnings.extend(_build_checkpoint_warnings("first_viewport_settled", viewport_readiness))
+    cp_warnings.extend(_build_checkpoint_warnings("partial_traversal", cp2_readiness))
+    cp_warnings.extend(_build_checkpoint_warnings("full_traversal", cp3_readiness))
+
+    # ---- Final: wait for all thumbnails (preserves existing cold-phase contract) ----
+    final_readiness = _wait_for_grid(driver, spec.size, timeout)
+    # Propagate first-viewport timing from checkpoint 1 when ready
+    final_readiness["first_viewport_ms"] = (
+        round(_first_viewport_ms, 3) if _first_viewport_ms is not None else None
+    )
+
+    return [cp1, cp2, cp3], companion_ready, final_readiness, cp_warnings
+
+
+def _grid_loaded_count_js() -> str:
+    """Return a JS expression that evaluates to the number of distinct loaded
+    thumbnail img elements in the grid, suitable for use inside execute_script."""
+    return """
+(function() {
+    var thumbs = Array.from(document.querySelectorAll('#grid .thumb:not(.loading-placeholder)'));
+    var images = thumbs.map(function(t) { return t.querySelector('img'); }).filter(Boolean);
+    return images.filter(function(img) { return img.classList.contains('loaded'); }).length;
+})()
+"""
+
+
+def _query_grid_loaded(driver: Any) -> int:
+    """Return the current count of distinct loaded thumbnail img elements."""
+    try:
+        return int(driver.execute_script(_grid_loaded_count_js()))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _browser_specific_metrics(browser: str) -> dict[str, Any]:
     if browser == "firefox":
         return {
@@ -1154,8 +1722,8 @@ def benchmark_case(
     stage = "cold companion and primary preparation"
     phase_failed = False
     try:
-        companion_ready, readiness = prepare_cold_phase(
-            driver, active_batch_session, runtime, spec, args.timeout
+        checkpoints, companion_ready, readiness, cp_warnings = _prepare_checkpoint_cold_phase(
+            driver, dependencies, active_batch_session, runtime, spec, args.timeout
         )
         stage = "cold metric collection"
         metrics, warnings = _phase_metrics(
@@ -1172,7 +1740,10 @@ def benchmark_case(
             )
         if not companion_ready["ready"]:
             warnings.append("Initial companion batch did not become ready before cold measurement")
-        phases.append(_phase("cold_initial_load", "cold", metrics, warnings))
+        warnings.extend(cp_warnings)
+        cold_phase = _phase("cold_initial_load", "cold", metrics, warnings)
+        cold_phase["checkpoints"] = checkpoints
+        phases.append(cold_phase)
 
         stage = "controlled scroll"
         _install_instrumentation(driver, spec.size)
