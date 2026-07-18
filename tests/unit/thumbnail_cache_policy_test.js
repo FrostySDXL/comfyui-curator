@@ -267,7 +267,7 @@ function createCacheEntry(cacheKey, scopeBatch, priority) {
     /* Set metadata via internal function */
     try {
         _evalInCtx(
-            '_thumbnailMetadata.set("' + cacheKey + '", { scopeBatch: "' + (scopeBatch || '') + '", priority: ' + (priority !== undefined ? priority : 2) + ', _lruTouch: ++_lruTouchNext });'
+            '_thumbnailMetadata.set("' + cacheKey + '", { scopeBatch: "' + (scopeBatch || '') + '", priority: ' + (priority !== undefined ? priority : 2) + ', _lruTouch: ++_lruTouchNext, _resident: 0 });'
         );
     } catch (e) {
         process.stderr.write('createCacheEntry error: ' + e + '\n');
@@ -1250,6 +1250,459 @@ function test30_exactly_one_lru_bump_assign_with_meta() {
     assert(t1 === t0 + 1, 'T28c: exactly one LRU increment on assignThumbnailSrcIfCached hit with meta (t0=' + t0 + ', t1=' + t1 + ')');
 }
 
+/* ── Helper: read _resident from metadata ──────────────────────────────── */
+
+function _getEntryResident(cacheKey) {
+    try {
+        var meta = _evalInCtx('_thumbnailMetadata.get("' + cacheKey + '")');
+        if (meta && typeof meta._resident === 'number') return meta._resident;
+        return 0; /* field missing — treat as probationary (matches eviction default) */
+    } catch (e) {
+        return 0;
+    }
+}
+
+function _getMetadataResidentCount(expectedResident) {
+    try {
+        var allMeta = _evalInCtx('Array.from(_thumbnailMetadata.values())');
+        if (!Array.isArray(allMeta)) return 0;
+        var count = 0;
+        for (var i = 0; i < allMeta.length; i++) {
+            if (allMeta[i]._resident === expectedResident) count++;
+        }
+        return count;
+    } catch (e) {
+        return -1;
+    }
+}
+
+/* ── Stage 2.5: Resident/probation cache retention tests ───────────────── */
+
+function test31_new_entries_start_probationary() {
+    _resetCacheState();
+
+    /* Create a fresh entry via createCacheEntry */
+    createCacheEntry('fresh-1', 'batch-x', 2);
+    assert(_getEntryResident('fresh-1') === 0, 'T31a: new entry starts probationary (got ' + _getEntryResident('fresh-1') + ')');
+
+    /* Create via _updateCacheMetadata directly */
+    _callUpdateCacheMetadata('fresh-2', JSON.stringify({ scopeBatch: 'batch-x', priority: 2 }));
+    assert(_getEntryResident('fresh-2') === 0, 'T31b: new entry via _updateCacheMetadata starts probationary (got ' + _getEntryResident('fresh-2') + ')');
+
+    /* Verify the _resident field exists on metadata */
+    try {
+        var meta = _evalInCtx('_thumbnailMetadata.get("fresh-1")');
+        assert(typeof meta._resident === 'number', 'T31c: _resident is a number field on metadata');
+    } catch (e) {
+        assert(false, 'T31c: failed to read metadata');
+    }
+}
+
+function test32_cache_hit_promotes_to_resident() {
+    _resetCacheState();
+
+    /* Create a probationary entry */
+    createCacheEntry('hit-promo', 'batch-x', 2);
+    assert(_getEntryResident('hit-promo') === 0, 'T32a: entry starts probationary');
+
+    /* Touch via _touchCacheEntry → promotes to resident */
+    _callTouchCacheEntry('hit-promo');
+    assert(_getEntryResident('hit-promo') === 1, 'T32b: _touchCacheEntry promotes to resident (got ' + _getEntryResident('hit-promo') + ')');
+
+    /* Touch again should stay resident, not toggle */
+    _callTouchCacheEntry('hit-promo');
+    assert(_getEntryResident('hit-promo') === 1, 'T32c: resident stays 1 on repeated touch (got ' + _getEntryResident('hit-promo') + ')');
+
+    /* Verify blob URL was NOT revoked during promotion */
+    var revokeBefore = _revokeLog.length;
+    _callTouchCacheEntry('hit-promo');
+    assert(_revokeLog.length === revokeBefore, 'T32d: resident promotion does not revoke blob URL');
+}
+
+function test33_resident_survives_over_probationary_same_scope_priority() {
+    _resetCacheState();
+
+    _evalInCtx('THUMBNAIL_BLOB_CACHE_MAX = 4');
+    _evalInCtx('_realBatchCurrent = "batch-x"');
+    _evalInCtx('_realBatchPrev = null');
+
+    /* All entries: current-batch scope, deferred priority */
+    /* 2 probationary entries */
+    createCacheEntry('prob-1', 'batch-x', 2);
+    createCacheEntry('prob-2', 'batch-x', 2);
+    /* 2 resident entries (touch to promote) */
+    createCacheEntry('res-1', 'batch-x', 2);
+    _callTouchCacheEntry('res-1'); /* promote to resident */
+    createCacheEntry('res-2', 'batch-x', 2);
+    _callTouchCacheEntry('res-2'); /* promote to resident */
+
+    assert(_getCacheSize() === 4, 'T33a: cache at cap 4');
+    assert(_getEntryResident('prob-1') === 0, 'T33b: prob-1 is probationary');
+    assert(_getEntryResident('res-1') === 1, 'T33c: res-1 is resident');
+
+    /* Add one more probationary entry → must evict a probationary entry, not resident */
+    thumbnailBlobUrlCache.set('new-prob', 'blob:new-prob');
+    _callUpdateCacheMetadata('new-prob', JSON.stringify({ scopeBatch: 'batch-x', priority: 2 }));
+    _callEvictIfNeeded();
+
+    assert(_getCacheSize() === 4, 'T33d: cache back at cap 4');
+    /* A probationary entry was evicted */
+    var prob1Survived = thumbnailBlobUrlCache.has('prob-1');
+    var prob2Survived = thumbnailBlobUrlCache.has('prob-2');
+    assert(!(prob1Survived && prob2Survived), 'T33e: at least one probationary entry was evicted (prob-1=' + prob1Survived + ', prob-2=' + prob2Survived + ')');
+    /* Both resident entries survived */
+    assert(thumbnailBlobUrlCache.has('res-1'), 'T33f: resident entry res-1 survived');
+    assert(thumbnailBlobUrlCache.has('res-2'), 'T33g: resident entry res-2 survived');
+}
+
+function test34_scope_dominates_residency() {
+    _resetCacheState();
+
+    _evalInCtx('THUMBNAIL_BLOB_CACHE_MAX = 3');
+    _evalInCtx('_realBatchCurrent = "current-batch"');
+    _evalInCtx('_realBatchPrev = "previous-batch"');
+
+    /* previous-batch resident entry */
+    createCacheEntry('prev-res', 'previous-batch', 2);
+    _callTouchCacheEntry('prev-res'); /* promote to resident (scopeClass=1) */
+
+    /* current-batch probationary entry */
+    createCacheEntry('cur-prob', 'current-batch', 2);
+    assert(_getEntryResident('cur-prob') === 0, 'T34a: cur-prob is probationary (scopeClass=2)');
+
+    /* current-batch resident entry */
+    createCacheEntry('cur-res', 'current-batch', 2);
+    _callTouchCacheEntry('cur-res'); /* promote to resident (scopeClass=2) */
+
+    assert(_getCacheSize() === 3, 'T34b: cache at cap 3');
+
+    /* Add a new current-batch probationary entry → previous-batch resident
+       must be evicted before current-batch probationary because scope dominates */
+    thumbnailBlobUrlCache.set('new-cur-prob', 'blob:new-cur');
+    _callUpdateCacheMetadata('new-cur-prob', JSON.stringify({ scopeBatch: 'current-batch', priority: 2 }));
+    _callEvictIfNeeded();
+
+    assert(_getCacheSize() === 3, 'T34c: cache at cap 3 after eviction');
+    assert(!thumbnailBlobUrlCache.has('prev-res'), 'T34d: previous-batch resident evicted before current-batch probationary');
+    assert(thumbnailBlobUrlCache.has('cur-prob'), 'T34e: current-batch probationary survived (scope dominates residency)');
+    assert(thumbnailBlobUrlCache.has('cur-res'), 'T34f: current-batch resident survived');
+}
+
+function test35_priority_dominates_residency() {
+    _resetCacheState();
+
+    _evalInCtx('THUMBNAIL_BLOB_CACHE_MAX = 3');
+    _evalInCtx('_realBatchCurrent = "batch-x"');
+    _evalInCtx('_realBatchPrev = null');
+
+    /* current-batch, deferred (2), resident */
+    createCacheEntry('def-res', 'batch-x', 2);
+    _callTouchCacheEntry('def-res'); /* resident */
+
+    /* current-batch, deferred (2), probationary */
+    createCacheEntry('def-prob', 'batch-x', 2);
+
+    /* current-batch, visible (0), probationary */
+    createCacheEntry('vis-prob', 'batch-x', 0);
+    assert(_getEntryResident('vis-prob') === 0, 'T35a: vis-prob is probationary');
+
+    assert(_getCacheSize() === 3, 'T35b: cache at cap 3');
+
+    /* Add a new deferred probationary entry → deferred resident must survive
+       over deferred probationary within same scope, but visible probationary
+       must survive over deferred resident because priority dominates */
+    thumbnailBlobUrlCache.set('new-def-prob', 'blob:new-def');
+    _callUpdateCacheMetadata('new-def-prob', JSON.stringify({ scopeBatch: 'batch-x', priority: 2 }));
+    _callEvictIfNeeded();
+
+    assert(_getCacheSize() === 3, 'T35c: cache at cap 3');
+    /* The weakest among same scope: def-prob (deferred, probationary) vs def-res (deferred, resident)
+       probationary < resident → def-prob evicted first */
+    assert(!thumbnailBlobUrlCache.has('def-prob'), 'T35d: deferred probationary evicted first (same scope)');
+    assert(thumbnailBlobUrlCache.has('def-res'), 'T35e: deferred resident survived (residency within same priority)');
+    assert(thumbnailBlobUrlCache.has('vis-prob'), 'T35f: visible probationary survived (priority dominates residency)');
+}
+
+function test36_real_batch_transition_marks_outgoing_resident() {
+    _resetCacheState();
+
+    /* Simulate batch A with some entries */
+    _evalInCtx('_realBatchCurrent = "batch-A"');
+    _evalInCtx('_realBatchPrev = null');
+
+    /* Create A entries - some probationary (never touched) */
+    createCacheEntry('a-untouched-1', 'batch-A', 2);
+    createCacheEntry('a-untouched-2', 'batch-A', 2);
+    /* Create A entries - some resident (touched) */
+    createCacheEntry('a-touched-1', 'batch-A', 2);
+    _callTouchCacheEntry('a-touched-1');
+    createCacheEntry('a-touched-2', 'batch-A', 2);
+    _callTouchCacheEntry('a-touched-2');
+
+    assert(_getEntryResident('a-untouched-1') === 0, 'T36a: untouched A entry is probationary');
+    assert(_getEntryResident('a-touched-1') === 1, 'T36b: touched A entry is resident');
+
+    /* Transition to batch B */
+    _callUpdateRealBatchTracking('batch-B');
+
+    /* All outgoing A entries should now be resident */
+    assert(_getEntryResident('a-untouched-1') === 1, 'T36c: untouched A entry promoted to resident by batch transition (got ' + _getEntryResident('a-untouched-1') + ')');
+    assert(_getEntryResident('a-untouched-2') === 1, 'T36d: second untouched A entry promoted to resident');
+    assert(_getEntryResident('a-touched-1') === 1, 'T36e: already-resident A entry stays resident');
+    assert(_getEntryResident('a-touched-2') === 1, 'T36f: already-resident A entry stays resident');
+
+    /* No entries from other scopes were affected */
+    createCacheEntry('other-untouched', 'other-batch', 2);
+    assert(_getEntryResident('other-untouched') === 0, 'T36g: other-batch entry not affected by A→B transition');
+}
+
+function test37_same_batch_and_virtual_no_resident_marking() {
+    _resetCacheState();
+
+    _evalInCtx('_realBatchCurrent = "batch-X"');
+    _evalInCtx('_realBatchPrev = null');
+
+    /* Create X entries */
+    createCacheEntry('x-prob', 'batch-X', 2);
+    assert(_getEntryResident('x-prob') === 0, 'T37a: X entry starts probationary');
+
+    /* Same batch repeat → no marking */
+    _callUpdateRealBatchTracking('batch-X');
+    assert(_getEntryResident('x-prob') === 0, 'T37b: same-batch repeat does not mark resident');
+
+    /* Virtual sentinel __favorites__ → no marking */
+    _callUpdateRealBatchTracking('__favorites__');
+    assert(_getEntryResident('x-prob') === 0, 'T37c: __favorites__ does not trigger marking');
+    assert(_getRealBatchCurrent() === 'batch-X', 'T37d: current batch unchanged by virtual');
+
+    /* Real transition again */
+    _callUpdateRealBatchTracking('batch-Y');
+    assert(_getEntryResident('x-prob') === 1, 'T37e: real transition X→Y marks X entries resident (got ' + _getEntryResident('x-prob') + ')');
+}
+
+function test38_resident_metadata_cleaned_on_eviction() {
+    _resetCacheState();
+
+    _evalInCtx('THUMBNAIL_BLOB_CACHE_MAX = 2');
+
+    createCacheEntry('keep-res', 'batch-x', 0);
+    _callTouchCacheEntry('keep-res');
+    createCacheEntry('evict-prob', 'batch-x', 2);
+
+    assert(_getCacheSize() === 2, 'T38a: cache at cap 2');
+    assert(_getMetadataSize() === 2, 'T38b: metadata at 2');
+
+    /* Trigger eviction of the weaker entry */
+    thumbnailBlobUrlCache.set('new-key', 'blob:new');
+    _callUpdateCacheMetadata('new-key', JSON.stringify({ scopeBatch: 'batch-x', priority: 0 }));
+    _callEvictIfNeeded();
+
+    assert(_getCacheSize() === 2, 'T38c: cache back at cap 2');
+    assert(_getMetadataSize() === 2, 'T38d: metadata at 2 after eviction');
+
+    /* Evicted entry metadata (including _resident) is gone */
+    var metaExists;
+    try {
+        metaExists = _evalInCtx('_thumbnailMetadata.has("evict-prob")');
+    } catch (e) {
+        metaExists = true;
+    }
+    assert(metaExists === false, 'T38e: evicted entry metadata (including _resident) removed');
+}
+
+function test39_resident_metadata_cleaned_on_clear() {
+    _resetCacheState();
+
+    createCacheEntry('a-res', 'batch-x', 0);
+    _callTouchCacheEntry('a-res');
+    createCacheEntry('b-prob', 'batch-x', 2);
+
+    assert(_getCacheSize() === 2, 'T39a: cache has 2 entries');
+    assert(_getMetadataSize() === 2, 'T39b: metadata has 2 entries');
+    assert(_getEntryResident('a-res') === 1, 'T39c: entry is resident before clear');
+
+    /* Full clear (beforeunload-style) */
+    for (var vals = thumbnailBlobUrlCache.values(), v = vals.next(); !v.done; v = vals.next()) {
+        var blobUrl = v.value;
+        if (blobUrl) URL.revokeObjectURL(blobUrl);
+    }
+    thumbnailBlobUrlCache.clear();
+    try {
+        _evalInCtx('_thumbnailMetadata.clear()');
+    } catch (e) {}
+
+    assert(_getCacheSize() === 0, 'T39d: cache empty after clear');
+    assert(_getMetadataSize() === 0, 'T39e: metadata empty after clear');
+}
+
+function test40_deterministic_ABA_scan_resistance() {
+    /* ── Phase 1: populate A to cap as cold probationary entries ──────────
+       Do NOT pre-touch; the A→B transition mark pass is what must
+       promote them. */
+    _resetCacheState();
+    var CAP = 10;
+    _evalInCtx('THUMBNAIL_BLOB_CACHE_MAX = ' + CAP);
+    _evalInCtx('_realBatchCurrent = "batch-A"');
+    _evalInCtx('_realBatchPrev = null');
+
+    for (var i = 0; i < CAP; i++) {
+        /* Use createCacheEntry so _resident starts at 0 (probationary). */
+        createCacheEntry('A-' + i, 'batch-A', 2);
+    }
+    assert(_getCacheSize() === CAP, 'T40a: cache at cap after cold A populate');
+    for (var i2 = 0; i2 < CAP; i2++) {
+        assert(_getEntryResident('A-' + i2) === 0, 'T40a' + i2 + ': A-' + i2 + ' is probationary before any touch or transition');
+    }
+
+    /* ── Phase 2: A→B transition alone marks all outgoing A resident ──── */
+    _callUpdateRealBatchTracking('batch-B');
+    /* current='batch-B', prev='batch-A' */
+    assert(_getRealBatchCurrent() === 'batch-B', 'T40b0: current is batch-B after transition');
+    assert(_getRealBatchPrev() === 'batch-A', 'T40b1: prev is batch-A after transition');
+    for (var i3 = 0; i3 < CAP; i3++) {
+        assert(_getEntryResident('A-' + i3) === 1, 'T40b' + i3 + ': cold A-' + i3 + ' promoted to resident by A→B transition alone');
+    }
+
+    /* ── Phase 3: admit small B visible entries ──────────────────────────
+       A entries are scopeClass=1 (previous), all deferred, all resident.
+       B entries are scopeClass=2 (current), visible (priority=0).
+       The three oldest-A-by-LRU must be evicted to make room. */
+
+    var revokeBeforeB = _revokeLog.length;
+    for (var j = 0; j < 3; j++) {
+        thumbnailBlobUrlCache.set('B-' + j, 'blob:B-' + j);
+        _callUpdateCacheMetadata('B-' + j, JSON.stringify({ scopeBatch: 'batch-B', priority: 0 }));
+        _callEvictIfNeeded();
+    }
+    assert(_getCacheSize() === CAP, 'T40c0: cache at cap after B admission');
+    assert(_revokeLog.length === revokeBeforeB + 3, 'T40c1: exactly 3 A entries evicted');
+    /* Identify which A keys survived. */
+    var survivingOriginalA = [];
+    for (var k = 0; k < CAP; k++) {
+        if (thumbnailBlobUrlCache.has('A-' + k)) {
+            survivingOriginalA.push('A-' + k);
+        }
+    }
+    assert(survivingOriginalA.length === CAP - 3,
+        'T40c2: ' + survivingOriginalA.length + ' original A survivors (expected 7): ' + survivingOriginalA.join(','));
+    /* All survivors must be resident. */
+    for (var s = 0; s < survivingOriginalA.length; s++) {
+        assert(_getEntryResident(survivingOriginalA[s]) === 1,
+            'T40c3: survivor ' + survivingOriginalA[s] + ' still resident');
+    }
+
+    /* ── Phase 4: B→A transition ──────────────────────────────────────── */
+    _callUpdateRealBatchTracking('batch-A');
+    /* current='batch-A', prev='batch-B' */
+    assert(_getRealBatchCurrent() === 'batch-A', 'T40d0: current is batch-A after return');
+    assert(_getRealBatchPrev() === 'batch-B', 'T40d1: prev is batch-B after return');
+
+    /* ── Phase 5: re-admit the missing A entries as probationary ─────────
+       They share scopeClass=2 + deferred priorityClass=0 with the
+       resident survivors, but B entries (scopeClass=1) are weaker and
+       must leave first. After B is gone, probationary entries recycle
+       among themselves. */
+    var missingA = [];
+    for (var m = 0; m < CAP; m++) {
+        if (!thumbnailBlobUrlCache.has('A-' + m)) {
+            missingA.push('A-' + m);
+        }
+    }
+    assert(missingA.length === 3, 'T40e0: 3 missing A keys to re-admit');
+
+    for (var n = 0; n < missingA.length; n++) {
+        var mKey = missingA[n];
+        thumbnailBlobUrlCache.set(mKey, 'blob:refetched-' + mKey);
+        _callUpdateCacheMetadata(mKey, JSON.stringify({ scopeBatch: 'batch-A', priority: 2 }));
+        _callEvictIfNeeded();
+    }
+    /* After re-admission:
+       - 3 missing A probationary entries in cache
+       - 7 surviving original A resident entries in cache
+       - 0 B entries (all evicted by scopeClass 1 < 2)
+       - cap = 10 */
+    assert(_getCacheSize() === CAP, 'T40e1: cache at cap after re-admission');
+    /* B entries must be gone. */
+    for (var b = 0; b < 3; b++) {
+        assert(!thumbnailBlobUrlCache.has('B-' + b), 'T40e2: B-' + b + ' evicted (scopeClass 1 < 2)');
+    }
+    /* Re-admitted entries are probationary. */
+    for (var p = 0; p < missingA.length; p++) {
+        assert(_getEntryResident(missingA[p]) === 0, 'T40e3: re-admitted ' + missingA[p] + ' is probationary');
+    }
+    /* All original survivors still present and resident. */
+    for (var q = 0; q < survivingOriginalA.length; q++) {
+        var svKey = survivingOriginalA[q];
+        assert(thumbnailBlobUrlCache.has(svKey), 'T40e4: survivor ' + svKey + ' still in cache after re-admission');
+        assert(_getEntryResident(svKey) === 1, 'T40e5: survivor ' + svKey + ' still resident after re-admission');
+    }
+
+    /* ── Phase 6: admit 2 extra deferred scan entries beyond cap ─────────
+       All entries share scopeClass=2, priorityClass=0.  Without
+       residency, retained predecessors would be evicted by pure LRU.
+       With residency, probationary entries recycle among themselves
+       and the captured resident survivors lose zero members. */
+
+    var extraKey1 = 'A-10';
+    thumbnailBlobUrlCache.set(extraKey1, 'blob:' + extraKey1);
+    _callUpdateCacheMetadata(extraKey1, JSON.stringify({ scopeBatch: 'batch-A', priority: 2 }));
+    _callEvictIfNeeded();
+    assert(_getCacheSize() === CAP, 'T40f0: cache at cap after first extra entry');
+
+    var extraKey2 = 'A-11';
+    thumbnailBlobUrlCache.set(extraKey2, 'blob:' + extraKey2);
+    _callUpdateCacheMetadata(extraKey2, JSON.stringify({ scopeBatch: 'batch-A', priority: 2 }));
+    _callEvictIfNeeded();
+    assert(_getCacheSize() === CAP, 'T40f1: cache at cap after second extra entry');
+
+    /* Zero losses from the original-resident survivor set. */
+    for (var r = 0; r < survivingOriginalA.length; r++) {
+        var rKey = survivingOriginalA[r];
+        assert(thumbnailBlobUrlCache.has(rKey),
+            'T40f2: original resident survivor ' + rKey + ' still present after two extra scan entries');
+        assert(_getEntryResident(rKey) === 1,
+            'T40f3: original resident survivor ' + rKey + ' still resident after two extra scan entries');
+    }
+
+    /* ── Phase 7: public cache-hit path on a guaranteed original-resident
+       survivor via assignThumbnailSrcIfCached ────────────────────────
+       Must produce no fetch, no URL creation, no revocation, unchanged
+       blob URL, exactly one LRU increment, and resident stays resident. */
+    var pickKey = survivingOriginalA[0];
+    var expectedBlob = thumbnailBlobUrlCache.get(pickKey);
+    assert(typeof expectedBlob === 'string' && expectedBlob.length > 0,
+        'T40g0: survivor ' + pickKey + ' has a blob URL');
+
+    var createBefore = _createCount;
+    var revokeBefore = _revokeLog.length;
+    var lruBefore = _getLruTouchNext();
+    var imgEl = makeImageEl();
+
+    var hitResult = assignThumbnailSrcIfCached(imgEl, '/thumb/' + pickKey + '.png', pickKey);
+    assert(hitResult === true, 'T40g1: assignThumbnailSrcIfCached returns true on retained resident hit');
+    assert(imgEl.getAttribute('src') === expectedBlob,
+        'T40g2: src assigned matches retained blob URL (expected ' + expectedBlob + ', got ' + imgEl.getAttribute('src') + ')');
+
+    /* No fetch/URL-creation side-effects. */
+    assert(_createCount === createBefore,
+        'T40g3: no URL.createObjectURL call (createCount was ' + createBefore + ', now ' + _createCount + ')');
+    assert(_revokeLog.length === revokeBefore,
+        'T40g4: no blob URL revoked (revokeLog was ' + revokeBefore + ', now ' + _revokeLog.length + ')');
+
+    /* Blob URL unchanged. */
+    assert(thumbnailBlobUrlCache.get(pickKey) === expectedBlob,
+        'T40g5: blob URL unchanged after hit (expected ' + expectedBlob + ', got ' + thumbnailBlobUrlCache.get(pickKey) + ')');
+
+    /* Exactly one LRU increment. */
+    var lruAfter = _getLruTouchNext();
+    assert(lruAfter === lruBefore + 1,
+        'T40g6: exactly one LRU increment (was ' + lruBefore + ', now ' + lruAfter + ')');
+
+    /* Resident stays resident. */
+    assert(_getEntryResident(pickKey) === 1,
+        'T40g7: resident stays resident after cache hit (got ' + _getEntryResident(pickKey) + ')');
+}
+
 /* ── Run all tests asynchronously ──────────────────────────────────────── */
 
 var syncTests = [
@@ -1278,7 +1731,18 @@ var syncTests = [
     test26_virtual_view_distinct_real_scopes,
     test27_batch_tracker_rejects_non_real_inputs,
     test29_exactly_one_lru_bump_on_hit_no_meta,
-    test30_exactly_one_lru_bump_assign_with_meta
+    test30_exactly_one_lru_bump_assign_with_meta,
+    /* Stage 2.5: resident/probation tests */
+    test31_new_entries_start_probationary,
+    test32_cache_hit_promotes_to_resident,
+    test33_resident_survives_over_probationary_same_scope_priority,
+    test34_scope_dominates_residency,
+    test35_priority_dominates_residency,
+    test36_real_batch_transition_marks_outgoing_resident,
+    test37_same_batch_and_virtual_no_resident_marking,
+    test38_resident_metadata_cleaned_on_eviction,
+    test39_resident_metadata_cleaned_on_clear,
+    test40_deterministic_ABA_scan_resistance
 ];
 
 var asyncTests = [

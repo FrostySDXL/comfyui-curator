@@ -5,10 +5,11 @@
  */
 
         /* ── Stage 2 cache metadata ──────────────────────────────────────
-         * _thumbnailMetadata: Map<cacheKey, {priority, scopeBatch, _lruTouch}>
+         * _thumbnailMetadata: Map<cacheKey, {priority, scopeBatch, _lruTouch, _resident}>
          *   - priority: strongest observed request priority (0=visible, 1=near, 2=deferred)
          *   - scopeBatch: real source batch for scope-aware eviction
          *   - _lruTouch: monotonic recency counter; higher = more recently used
+         *   - _resident: 0 = probationary (fresh), 1 = resident (reused/outgoing-marked)
          * _lruTouchNext: monotonic counter incremented on every touch
          * _inflightMetadataPriority: Map<cacheKey, meta> for metadata aggregation
          *   during inflight fetch dedup; taken when fetch completes
@@ -24,17 +25,19 @@
             const meta = _thumbnailMetadata.get(cacheKey);
             if (meta) {
                 meta._lruTouch = ++_lruTouchNext;
+                meta._resident = 1; /* promote to resident on reuse */
             }
         }
 
         function _updateCacheMetadata(cacheKey, meta) {
             /* Creates or promotes metadata (priority, scope).
                Bumps LRU recency only when the entry is first created.
-               _touchCacheEntry is the sole LRU touch point for cache reuse. */
+               _touchCacheEntry is the sole LRU touch point for cache reuse.
+               New entries start probationary (_resident: 0). */
             if (!meta) return;
             let existing = _thumbnailMetadata.get(cacheKey);
             if (!existing) {
-                _thumbnailMetadata.set(cacheKey, { priority: 2, scopeBatch: null, _lruTouch: ++_lruTouchNext });
+                _thumbnailMetadata.set(cacheKey, { priority: 2, scopeBatch: null, _lruTouch: ++_lruTouchNext, _resident: 0 });
                 existing = _thumbnailMetadata.get(cacheKey);
             }
             /* Monotonic priority promotion: visible(0) > near(1) > deferred(2).
@@ -71,25 +74,30 @@
                 let weakestKey = null;
                 let weakestScopeProtection = Infinity;
                 let weakestPriorityProtection = Infinity;
+                let weakestResident = Infinity;
                 let weakestLruTouch = Infinity;
 
                 for (const [key, blobUrl] of thumbnailBlobUrlCache) {
                     const meta = _thumbnailMetadata.get(key);
                     const scopeClass = _getScopeClass(meta ? meta.scopeBatch : null);
                     const priorityClass = _getPriorityClass(meta ? meta.priority : undefined);
+                    const resident = meta && typeof meta._resident === 'number' ? meta._resident : 0;
                     const lruTouch = meta ? meta._lruTouch : 0;
 
                     /* Eviction ranking (lower = evict first):
                        1. scopeClass (0=other, 1=previous, 2=current)
                        2. priorityClass (0=deferred, 1=near, 2=visible)
-                       3. lruTouch (lower = older = evict first)
+                       3. resident (0=probationary, 1=resident)
+                       4. lruTouch (lower = older = evict first)
                     */
                     if (scopeClass < weakestScopeProtection ||
                         (scopeClass === weakestScopeProtection && priorityClass < weakestPriorityProtection) ||
-                        (scopeClass === weakestScopeProtection && priorityClass === weakestPriorityProtection && lruTouch < weakestLruTouch)) {
+                        (scopeClass === weakestScopeProtection && priorityClass === weakestPriorityProtection && resident < weakestResident) ||
+                        (scopeClass === weakestScopeProtection && priorityClass === weakestPriorityProtection && resident === weakestResident && lruTouch < weakestLruTouch)) {
                         weakestKey = key;
                         weakestScopeProtection = scopeClass;
                         weakestPriorityProtection = priorityClass;
+                        weakestResident = resident;
                         weakestLruTouch = lruTouch;
                     }
                 }
@@ -143,6 +151,16 @@
             /* Same batch: no rotation */
             if (_realBatchCurrent === newBatch) {
                 return;
+            }
+            /* Mark outgoing current-batch entries as resident so they
+               survive sequential A→B→A self-eviction (O(n), n <= cap). */
+            const outgoingBatch = _realBatchCurrent;
+            if (outgoingBatch) {
+                for (const meta of _thumbnailMetadata.values()) {
+                    if (meta.scopeBatch === outgoingBatch) {
+                        meta._resident = 1;
+                    }
+                }
             }
             _realBatchPrev = _realBatchCurrent;
             _realBatchCurrent = newBatch;
