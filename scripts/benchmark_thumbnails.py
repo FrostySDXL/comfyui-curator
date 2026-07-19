@@ -1662,11 +1662,9 @@ def _grid_loaded_count_js() -> str:
     """Return a JS expression that evaluates to the number of distinct loaded
     thumbnail img elements in the grid, suitable for use inside execute_script."""
     return """
-(function() {
-    var thumbs = Array.from(document.querySelectorAll('#grid .thumb:not(.loading-placeholder)'));
-    var images = thumbs.map(function(t) { return t.querySelector('img'); }).filter(Boolean);
-    return images.filter(function(img) { return img.classList.contains('loaded'); }).length;
-})()
+var thumbs = Array.from(document.querySelectorAll('#grid .thumb:not(.loading-placeholder)'));
+var images = thumbs.map(function(t) { return t.querySelector('img'); }).filter(Boolean);
+return images.filter(function(img) { return img.classList.contains('loaded'); }).length;
 """
 
 

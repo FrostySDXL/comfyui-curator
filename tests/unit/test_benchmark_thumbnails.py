@@ -1345,3 +1345,42 @@ def test_blob_observation_unavailable_preserves_reason():
     assert "blob_observation" in record
     assert record["blob_observation"]["available"] is False
     assert record["blob_observation"]["reason"] is not None
+
+
+class _GridScriptFakeDriver:
+    """Fake that returns an integer for execute_script with a top-level
+    return script and raises for an IIFE (no top-level return propagation)."""
+
+    def __init__(self, count):
+        self._count = count
+
+    def execute_script(self, script):
+        stripped = script.strip()
+        if stripped.startswith("(function()"):
+            raise RuntimeError("IIFE without WebDriver top-level return propagates undefined")
+        if "return " in script and "#grid" in script:
+            return self._count
+        raise RuntimeError(f"unexpected script shape: {stripped[:80]}")
+
+
+def test_grid_loaded_js_has_top_level_return():
+    """_grid_loaded_count_js must produce a script with a top-level return
+    statement, not an IIFE, so that Selenium execute_script receives the
+    integer distinct loaded count instead of None/undefined."""
+    benchmark = load_benchmark_module()
+    script = benchmark._grid_loaded_count_js()
+
+    assert not script.strip().startswith("(function()"), (
+        "expected top-level return, got IIFE: _grid_loaded_count_js()"
+    )
+    assert "return " in script
+    assert "#grid .thumb:not(.loading-placeholder)" in script
+    assert "classList.contains('loaded')" in script
+
+
+def test_query_grid_loaded_returns_distinct_count():
+    """_query_grid_loaded must return the driver's integer response when
+    the script is a proper top-level return expression."""
+    benchmark = load_benchmark_module()
+    count = benchmark._query_grid_loaded(_GridScriptFakeDriver(42))
+    assert count == 42
