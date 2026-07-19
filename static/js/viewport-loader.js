@@ -1,10 +1,13 @@
 /* Ordered classic script.
  * Defines: viewport-aware thumbnail load scheduling with three-tier priority,
- *          bounded concurrency (16), promotion without duplication, eventual
- *          background drain (no-spin at capacity), and safe unschedule/cancellation.
- *          Uses a single rAF priority pump and a single idle background drain.
+ *          bounded concurrency (16), promotion without duplication, approach-triggered
+ *          loading (deferred items never auto-drain; they load only when
+ *          promoted by observer callbacks), and safe unschedule/cancellation.
+ *          Uses a single rAF priority pump and a single microtask completion pump.
  *          Passes priority + resolved source-batch metadata to the cache layer
  *          for scope/priority-aware LRU eviction (Stage 2).
+ *          An explicit IntersectionObserver-unavailable fallback eagerly loads
+ *          through bounded concurrency when observers cannot exist.
  * Relies on: grid.js (setThumbnailImageSrc, assignThumbnailSrcIfCached), state.js (folderRequestToken).
  * Note: _resolveSourceBatch is defined in grid.js and consumed by grid.js, not here.
  * After this stage, IntersectionObserver controls load START only.
@@ -35,6 +38,13 @@ function _ensureViewportObservers() {
     if (_viewportVisibleObserver) return;
     if (typeof IntersectionObserver === 'undefined') return;
 
+    /* Use the .content scroll container as the observer root so that
+       rootMargin refers to the scrollable grid area, not the browser
+       viewport. If .content is unexpectedly absent, fall back to
+       root: null (viewport), which is safe but provides less precise
+       near-band detection through the clipped scroll ancestor. */
+    var scrollRoot = document.querySelector('.content') || null;
+
     _viewportVisibleObserver = new IntersectionObserver(function (entries) {
         for (var i = 0; i < entries.length; i++) {
             if (entries[i].isIntersecting) {
@@ -48,7 +58,7 @@ function _ensureViewportObservers() {
             }
         }
         if (entries.length > 0) _requestPriorityPump();
-    }, { root: null, rootMargin: '0%', threshold: 0 });
+    }, { root: scrollRoot, rootMargin: '0%', threshold: 0 });
 
     _viewportNearObserver = new IntersectionObserver(function (entries) {
         for (var i = 0; i < entries.length; i++) {
@@ -63,7 +73,7 @@ function _ensureViewportObservers() {
             }
         }
         if (entries.length > 0) _requestPriorityPump();
-    }, { root: null, rootMargin: '100%', threshold: 0 });
+    }, { root: scrollRoot, rootMargin: '100%', threshold: 0 });
 }
 
 function _removeInfoFromQueues(info) {
@@ -156,13 +166,20 @@ function _cancelCompletionPump() {
 function _runCompletionPump() {
     _drainNext(VIEWPORT_PRIORITY_VISIBLE);
     _drainNext(VIEWPORT_PRIORITY_NEAR);
-    _drainNext(VIEWPORT_PRIORITY_DEFERRED);
+    /* Never drain deferred in the normal observer path.
+       Distant thumbnails load only on observer approach.
+       Fallback: when IntersectionObserver is unavailable, eagerly
+       drain deferred through completion waves. */
+    if (!_viewportVisibleObserver) {
+        _drainNext(VIEWPORT_PRIORITY_DEFERRED);
+    }
 }
 
 function _runPriorityPump() {
     _drainNext(VIEWPORT_PRIORITY_VISIBLE);
     _drainNext(VIEWPORT_PRIORITY_NEAR);
-    _drainNext(VIEWPORT_PRIORITY_DEFERRED);
+    /* Never drain deferred from priority pump.
+       Distant thumbnails load only on observer approach. */
 }
 
 function _drainNext(priority) {
@@ -184,6 +201,11 @@ function _drainNext(priority) {
 }
 
 function _scheduleBackgroundDrain() {
+    /* With IntersectionObserver available, deferred work
+       loads only on observer approach. Never auto-drain in the
+       normal browser path. The fallback path (no IntersectionObserver)
+       eagerly drains below. */
+    if (_viewportVisibleObserver) return;
     if (_viewportDrainTimerId !== null) return;
     _viewportDrainTimerId = _createIdleCallback(function () {
         _viewportDrainTimerId = null;
@@ -234,8 +256,11 @@ function scheduleThumbnailLoad(element, imageSrc, cacheKey, priority, scopeBatch
         _viewportVisibleObserver.observe(element);
         _viewportNearObserver.observe(element);
     }
-
-    _scheduleBackgroundDrain();
+    /* Only arm background drain in the no-observer fallback.
+       With IntersectionObserver, deferred items load on approach only. */
+    if (!_viewportVisibleObserver) {
+        _scheduleBackgroundDrain();
+    }
 }
 
 function unscheduleThumbnailLoad(element) {

@@ -106,8 +106,8 @@ def test_bounded_concurrency_constant():
 
 
 def test_background_drain_mechanism_exists():
-    """A single bounded background drain (requestIdleCallback or setTimeout)
-    must exist to eventually load deferred thumbnails."""
+    """Background drain mechanism (requestIdleCallback or setTimeout) must
+    exist for the IntersectionObserver-unavailable fallback path."""
     source = read_frontend_js()
     has_idle = "requestIdleCallback" in source
     has_timeout = "setTimeout(" in source
@@ -398,7 +398,8 @@ def test_admit_and_load_unobserves_both_observers():
 
 def test_schedule_thumbnail_load_does_not_drain_immediately():
     """scheduleThumbnailLoad must NOT call _drainQueues or _startViewportLoad
-    directly. It registers and arms background drain only."""
+    directly. It arms background drain only when IntersectionObserver is
+    unavailable (fallback path)."""
     source = read_frontend_js()
     schedule_body = extract_function_body(source, "function scheduleThumbnailLoad(")
     assert "_drainQueues()" not in schedule_body, (
@@ -407,9 +408,13 @@ def test_schedule_thumbnail_load_does_not_drain_immediately():
     assert "_startViewportLoad(" not in schedule_body, (
         "scheduleThumbnailLoad must not call _startViewportLoad directly"
     )
-    # Must arm background drain
+    # Background drain is armed only in the no-observer fallback
     assert "_scheduleBackgroundDrain()" in schedule_body, (
-        "scheduleThumbnailLoad must arm _scheduleBackgroundDrain"
+        "scheduleThumbnailLoad must reference _scheduleBackgroundDrain (fallback path)"
+    )
+    # Background drain arm is conditional on no observers
+    assert "!_viewportVisibleObserver" in schedule_body, (
+        "scheduleThumbnailLoad must guard background drain behind !_viewportVisibleObserver"
     )
 
 
@@ -438,7 +443,8 @@ def test_cancellation_cancels_priority_pump():
 
 
 def test_background_drain_only_drains_deferred():
-    """Background drain must only drain deferred queue, not visible/near."""
+    """Background drain must target deferred priority (used in no-observer
+    fallback path)."""
     source = read_frontend_js()
     # Find the background drain function
     bg_drain = None
@@ -452,6 +458,10 @@ def test_background_drain_only_drains_deferred():
         # Background drain should call _drainNext(DEFERRED) not _drainQueues
         assert "VIEWPORT_PRIORITY_DEFERRED" in bg_drain, (
             "Background drain must target deferred priority"
+        )
+        # Guarded by observer check in normal path
+        assert "_viewportVisibleObserver" in bg_drain, (
+            "Background drain must check _viewportVisibleObserver guard"
         )
 
 

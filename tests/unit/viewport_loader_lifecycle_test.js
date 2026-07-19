@@ -27,15 +27,28 @@ var _visibleObserverCb = null;
 var _nearObserverCb = null;
 var _visibleObserved = new Map();
 var _nearObserved = new Map();
+var _visibleObserverOpts = null;
+var _nearObserverOpts = null;
 
 var observeLog = [];
 var unobserveLog = [];
 
+var _mockContent = { _id: 'content-root' };
+
+global.document = {
+    querySelector: function(sel) {
+        if (sel === '.content') return _mockContent;
+        return null;
+    }
+};
+
 function mockIntersectionObserver(cb, opts) {
     if (opts && opts.rootMargin === '0%') {
         _visibleObserverCb = cb;
+        _visibleObserverOpts = opts;
     } else {
         _nearObserverCb = cb;
+        _nearObserverOpts = opts;
     }
     return {
         observe: function(el) {
@@ -212,6 +225,25 @@ var scheduleThumbnailLoad = ctx.scheduleThumbnailLoad;
 var unscheduleThumbnailLoad = ctx.unscheduleThumbnailLoad;
 var cancelScheduledViewportLoads = ctx.cancelScheduledViewportLoads;
 
+/* ── Verify observer root configuration ───────────────────────────────── */
+/* Trigger observer creation via a single schedule call, then inspect. */
+(function verifyObserverRoot() {
+    var el = makeElement(true);
+    scheduleThumbnailLoad(el, '/thumb/null.png', 'key-null');
+    assert(_visibleObserverOpts !== null, 'OR1: visible observer options captured');
+    assert(_nearObserverOpts !== null, 'OR2: near observer options captured');
+    assert(_visibleObserverOpts.root === _mockContent,
+        'OR3: visible observer root is .content element (got ' + JSON.stringify(_visibleObserverOpts.root) + ')');
+    assert(_nearObserverOpts.root === _mockContent,
+        'OR4: near observer root is .content element');
+    assert(_visibleObserverOpts.rootMargin === '0%',
+        'OR5: visible observer rootMargin is 0% (got ' + _visibleObserverOpts.rootMargin + ')');
+    assert(_nearObserverOpts.rootMargin === '100%',
+        'OR6: near observer rootMargin is 100% (got ' + _nearObserverOpts.rootMargin + ')');
+    /* Clean up: cancel to reset state for real tests */
+    cancelScheduledViewportLoads();
+})();
+
 /* ── State helpers ─────────────────────────────────────────────────────── */
 
 function _evalInCtx(code) {
@@ -313,17 +345,26 @@ function test1_disconnected_elements_not_immediately_drained() {
     var el1Loaded = loadCalls.some(function(c) { return c.imageSrc === '/thumb/a.png'; });
     assert(el1Loaded, 'T1g: visible element should start loading after pump');
 
-    /* el2 is deferred and hasn't loaded yet (no observer fired, not priority-pumped) */
-    flushIdle();
-    flushTimeouts();
+    /* el2 is deferred and has NOT been promoted by any observer.
+       Background drain must NOT load deferred work when
+       IntersectionObserver is available. flushed by rAF, idle, timer */
+    flushAllAsync();
 
     var el2Loaded = loadCalls.some(function(c) { return c.imageSrc === '/thumb/b.png'; });
-    assert(el2Loaded, 'T1h: deferred element should eventually load via background drain');
+    assert(!el2Loaded, 'T1h: deferred element must NOT load via background drain (approach-only loading)');
 
     var el1Count = loadCalls.filter(function(c) { return c.imageSrc === '/thumb/a.png'; }).length;
-    var el2Count = loadCalls.filter(function(c) { return c.imageSrc === '/thumb/b.png'; }).length;
     assert(el1Count === 1, 'T1i: visible element loads exactly once (got ' + el1Count + ')');
-    assert(el2Count === 1, 'T1j: deferred element loads exactly once (got ' + el2Count + ')');
+
+    /* Promote el2 via near observer (approach) and verify it loads */
+    _nearObserverCb([{ isIntersecting: true, target: el2 }]);
+    assert(getNearQueueLen() >= 1, 'T1j: near observer promotes deferred to near queue');
+    flushRaf();
+    var el2LoadedAfterPromotion = loadCalls.some(function(c) { return c.imageSrc === '/thumb/b.png'; });
+    assert(el2LoadedAfterPromotion, 'T1k: promoted near element loads after approach');
+
+    var el2Count = loadCalls.filter(function(c) { return c.imageSrc === '/thumb/b.png'; }).length;
+    assert(el2Count === 1, 'T1l: promoted element loads exactly once (got ' + el2Count + ')');
 }
 
 function test2_admission_cleanup() {
@@ -403,13 +444,13 @@ function test4_priority_ordering() {
     assert(secondLoad && secondLoad.imageSrc === '/thumb/near.png',
         'T4b: near loads before deferred (got ' + (secondLoad ? secondLoad.imageSrc : 'none') + ')');
 
-    resolveAllLoads();
-    flushRaf();
-    flushIdle();
-    flushTimeouts();
+    /* Deferred element has NOT been promoted by any observer.
+       It must stay pending, never load. */
+    flushAllAsync();
 
     var defLoaded = loadCalls.some(function(c) { return c.imageSrc === '/thumb/def.png'; });
-    assert(defLoaded, 'T4c: deferred element eventually loads');
+    assert(!defLoaded, 'T4c: deferred element must NOT load without observer promotion');
+    assert(getDeferredQueueLen() >= 1, 'T4d: deferred element remains in pending queue (got ' + getDeferredQueueLen() + ')');
 }
 
 function test5_cancellation() {
@@ -453,10 +494,13 @@ function test6_unschedule() {
     var elUnobserved = unobserveLog.some(function(l) { return l.el === el._id; });
     assert(elUnobserved, 'T6d: unschedule unobserve elements');
 
-    flushRaf();
-    flushIdle();
-    flushTimeouts();
-    assert(loadCalls.length === 0, 'T6e: unscheduled element should not load');
+    /* Fire both observer callbacks after unschedule -- must be no-ops */
+    _visibleObserverCb([{ isIntersecting: true, target: el }]);
+    _nearObserverCb([{ isIntersecting: true, target: el }]);
+    flushAllAsync();
+    assert(loadCalls.length === 0, 'T6e: unscheduled element should not load after observer callbacks');
+    assert(getInfoMapSize() === 0, 'T6f: info map still empty after observer callback');
+    assert(getVisibleQueueLen() === 0, 'T6g: visible queue still empty after observer callback');
 }
 
 function test7_disconnected_then_connected() {
@@ -500,12 +544,12 @@ function test8_no_immediate_drain_in_schedule() {
     assert(loadCalls.length >= 1, 'T8f: loaded after pump');
 }
 
-function test9_no_background_spin_at_cap() {
+function test9_background_drain_noop_with_observers() {
+    /* With IntersectionObserver available, background drain must
+       NOT drain deferred items. They stay pending until observer promotion. */
     resetState();
 
-    var scheduleCount = getConcurrency() + 4;
-
-    /* Schedule enough elements to exceed cap, don't promote any via observer */
+    var scheduleCount = getConcurrency() + 4; /* 20 items */
     var elements = [];
     for (var i = 0; i < scheduleCount; i++) {
         var el = makeElement(true); /* connected */
@@ -516,49 +560,30 @@ function test9_no_background_spin_at_cap() {
     /* All items are in deferred queue, no observer has fired */
     assert(getDeferredQueueLen() === scheduleCount, 'T9a: all items in deferred queue (got ' + getDeferredQueueLen() + ')');
 
-    /* Background drain was armed by scheduleThumbnailLoad */
-    /* Run the background drain (idle callback) */
-    flushIdle();
-    flushTimeouts();
+    /* Flush all async: background drain must be a no-op with observers */
+    flushAllAsync();
 
-    /* After drain, cap admitted, 4 remain deferred */
-    assert(loadCalls.length === getConcurrency(), 'T9b: cap loads admitted at cap (got ' + loadCalls.length + ')');
-    assert(getActiveFetches() === getConcurrency(), 'T9c: active fetches at cap');
-    assert(getDeferredQueueLen() === 4, 'T9d: 4 items remain in deferred (got ' + getDeferredQueueLen() + ')');
+    /* NO items should have been admitted from deferred */
+    assert(loadCalls.length === 0, 'T9b: zero loads admitted from deferred (got ' + loadCalls.length + ')');
+    assert(getDeferredQueueLen() === scheduleCount, 'T9c: all items still in deferred queue (got ' + getDeferredQueueLen() + ')');
+    assert(getInfoMapSize() === scheduleCount, 'T9d: info map retains all entries (got ' + getInfoMapSize() + ')');
+    assert(getActiveFetches() === 0, 'T9e: active fetches still 0');
 
-    /* Capture timer state after first drain */
-    var idleAfter = idleQueue.length;
-    var timeoutAfter = timeoutQueue.length;
-
-    /* Flush any additional scheduled callbacks */
-    flushIdle();
-    flushTimeouts();
-
-    /* Verify no callback was enqueued during the flush -- no spin */
-    assert(idleQueue.length === 0, 'T9e: no idle callback scheduled at cap (got ' + idleQueue.length + ')');
-    assert(timeoutQueue.length === 0, 'T9f: no timeout callback scheduled at cap (got ' + timeoutQueue.length + ')');
-
-    /* Resolve one load to drop below cap */
-    if (loadPromises.length >= 1) {
-        loadPromises[0].resolve();
+    /* Now promote first cap items to visible via observer */
+    for (var j = 0; j < getConcurrency(); j++) {
+        _visibleObserverCb([{ isIntersecting: true, target: elements[j] }]);
     }
-    /* Priority pump + background drain should pick up remaining work */
-    flushMicrotasks();
     flushRaf();
-    flushIdle();
-    flushTimeouts();
+    assert(loadCalls.length === getConcurrency(), 'T9f: promoted visible items admitted (got ' + loadCalls.length + ')');
+    assert(getDeferredQueueLen() === scheduleCount - getConcurrency(), 'T9g: remaining items still deferred');
 
-    var totalAdmitted = loadCalls.length;
-    assert(totalAdmitted >= getConcurrency() + 1, 'T9g: work advances after load completes (got ' + totalAdmitted + ' admitted)');
-
-    /* All items eventually load */
+    /* Resolve all loads — completion pump picks up promoted items */
     resolveAllLoads();
-    flushMicrotasks();
-    flushRaf();
-    flushIdle();
-    flushTimeouts();
-
-    assert(loadCalls.length === scheduleCount, 'T9h: all items eventually admitted (got ' + loadCalls.length + ')');
+    flushAllAsync();
+    /* Remaining items stay deferred (not promoted) */
+    var remainingDeferred = getDeferredQueueLen();
+    assert(remainingDeferred === scheduleCount - getConcurrency(),
+        'T9h: unpromoted items remain deferred (got ' + remainingDeferred + ')');
 }
 
 function test10a_cache_hits_bypass_slot_accounting() {
@@ -946,9 +971,418 @@ function test11g_observer_uses_rAF_not_microtask() {
     /* Verify both scheduling mechanisms coexist */
 }
 
+/* ── Approach-triggered loading tests ───────────────────────── */
+
+function test12_fast_scroll_promotion_not_stranded() {
+    /* Promote more items than concurrency allows, resolve in waves.
+       Completion pumps must eventually load ALL promoted items. */
+    resetState();
+
+    var totalItems = 100;
+    var elements = [];
+    for (var i = 0; i < totalItems; i++) {
+        var el = makeElement(true);
+        elements.push(el);
+        scheduleThumbnailLoad(el, '/thumb/scroll-' + i + '.png', 'key-scroll-' + i);
+    }
+
+    /* Promote all to visible (simulates fast scroll exposing everything) */
+    for (var j = 0; j < elements.length; j++) {
+        _visibleObserverCb([{ isIntersecting: true, target: elements[j] }]);
+    }
+    assert(getVisibleQueueLen() === totalItems, 'T12a: all promoted to visible (got ' + getVisibleQueueLen() + ')');
+
+    /* Initial rAF admits cap */
+    flushRaf();
+    assert(loadCalls.length === getConcurrency(), 'T12b: initial cap admitted via rAF');
+    assert(getActiveFetches() === getConcurrency(), 'T12c: at cap');
+
+    /* Resolve in waves and verify completion pumps advance work */
+    var wave = 0;
+    while (loadCalls.length < totalItems && wave < 50) {
+        var before = loadCalls.length;
+        resolveAllLoads();
+        flushAllAsync();
+        var after = loadCalls.length;
+        if (after === before && before < totalItems) {
+            /* No progress this wave -- shouldn't happen */
+            break;
+        }
+        wave++;
+    }
+
+    assert(loadCalls.length === totalItems, 'T12d: all promoted items eventually loaded (got ' + loadCalls.length + ')');
+    assert(getVisibleQueueLen() === 0, 'T12e: visible queue drained');
+    assert(getInfoMapSize() === 0, 'T12f: info map cleaned up');
+}
+
+function test13_no_viewport_exit_unload() {
+    /* Once a thumbnail is displayed, isIntersecting:false must not change
+       src, remove loaded class, unload, or restart shimmer.
+       Also verifies selected class survives and sidebar-resize (false→true
+       re-intersection) does not trigger a second load. */
+    resetState();
+
+    var el = makeElement(true);
+    /* Add selected class before scheduling */
+    el.classList.add('selected');
+    scheduleThumbnailLoad(el, '/thumb/stay.png', 'key-stay');
+
+    /* Promote and load */
+    _visibleObserverCb([{ isIntersecting: true, target: el }]);
+    flushRaf();
+    assert(loadCalls.length === 1, 'T13a: element loaded');
+    resolveAllLoads();
+    flushAllAsync();
+
+    var imgEl = el.querySelector('img');
+    var loadedSrc = imgEl.getAttribute('src');
+    var hadLoadedClass = imgEl.classList.contains('loaded');
+    var hadSelectedClass = el.classList.contains('selected');
+    assert(hadLoadedClass, 'T13b: loaded class present');
+    assert(hadSelectedClass, 'T13c: selected class present');
+    assert(typeof loadedSrc === 'string' && loadedSrc.length > 0, 'T13d: src assigned');
+
+    /* Simulate viewport exit: isIntersecting:false */
+    _visibleObserverCb([{ isIntersecting: false, target: el }]);
+    _nearObserverCb([{ isIntersecting: false, target: el }]);
+    flushAllAsync();
+
+    /* Verify nothing changed */
+    assert(imgEl.getAttribute('src') === loadedSrc, 'T13e: src unchanged after exit (was ' + loadedSrc + ', is ' + imgEl.getAttribute('src') + ')');
+    assert(imgEl.classList.contains('loaded'), 'T13f: loaded class still present after exit');
+    assert(el.classList.contains('selected'), 'T13g: selected class survived exit');
+    assert(imgEl.dataset.thumbnailCacheKey === 'key-stay', 'T13h: cache key unchanged');
+
+    /* Sidebar resize: false then true re-intersection after display.
+       Must not trigger a second load. */
+    _visibleObserverCb([{ isIntersecting: false, target: el }]);
+    _nearObserverCb([{ isIntersecting: false, target: el }]);
+    _visibleObserverCb([{ isIntersecting: true, target: el }]);
+    flushRaf();
+    flushAllAsync();
+
+    var stayCallCount = loadCalls.filter(function(c) { return c.imageSrc === '/thumb/stay.png'; }).length;
+    assert(stayCallCount === 1, 'T13i: re-intersection after exit/re-enter does not trigger second load (got ' + stayCallCount + ')');
+    assert(imgEl.getAttribute('src') === loadedSrc, 'T13j: src unchanged after re-enter');
+    assert(imgEl.classList.contains('loaded'), 'T13k: loaded class still present after re-enter');
+    assert(el.classList.contains('selected'), 'T13l: selected class survived re-enter');
+}
+
+function test14_cancellation_before_pumps_prevent_stale_work() {
+    /* Cancel before pumps run; no stale work admitted. */
+    resetState();
+
+    var elements = [];
+    for (var i = 0; i < 30; i++) {
+        var el = makeElement(true);
+        elements.push(el);
+        scheduleThumbnailLoad(el, '/thumb/cbp-' + i + '.png', 'key-cbp-' + i);
+    }
+
+    for (var j = 0; j < elements.length; j++) {
+        _visibleObserverCb([{ isIntersecting: true, target: elements[j] }]);
+    }
+
+    /* Cancel BEFORE any pumps */
+    cancelScheduledViewportLoads();
+
+    /* Now flush everything */
+    flushAllAsync();
+
+    assert(loadCalls.length === 0, 'T14a: zero loads after cancel-before-pump (got ' + loadCalls.length + ')');
+    assert(getVisibleQueueLen() === 0, 'T14b: visible queue empty');
+    assert(getInfoMapSize() === 0, 'T14c: info map empty');
+}
+
+function test15_unschedule_prevents_pending_work() {
+    /* Unschedule removes element from queues and prevents loading. */
+    resetState();
+
+    var stayEl = makeElement(true);
+    var removeEl = makeElement(true);
+
+    scheduleThumbnailLoad(stayEl, '/thumb/stay.png', 'key-stay');
+    scheduleThumbnailLoad(removeEl, '/thumb/remove.png', 'key-remove');
+
+    unscheduleThumbnailLoad(removeEl);
+    assert(getInfoMapSize() === 1, 'T15a: only one element remains in info map');
+
+    /* Promote both but removeEl is already unscheduled */
+    _visibleObserverCb([{ isIntersecting: true, target: stayEl }]);
+    /* removeEl won't be found in info map */
+    flushRaf();
+
+    assert(loadCalls.length === 1, 'T15b: only stayEl loaded (got ' + loadCalls.length + ')');
+    if (loadCalls.length > 0) {
+        assert(loadCalls[0].imageSrc === '/thumb/stay.png', 'T15c: correct element loaded');
+    }
+    var removeLoaded = loadCalls.some(function(c) { return c.imageSrc === '/thumb/remove.png'; });
+    assert(!removeLoaded, 'T15d: unscheduled element never loaded');
+}
+
+function test16_incremental_reschedule_unchanged_key() {
+    /* Rescheduling with the same cache key must not duplicate or mutate
+       displayed work (cache hit path preserves existing src).
+       Also verifies selected class survives reschedule. */
+    resetState();
+
+    var el = makeElement(true);
+    el.classList.add('selected');
+    scheduleThumbnailLoad(el, '/thumb/inc.png', 'key-inc');
+
+    _visibleObserverCb([{ isIntersecting: true, target: el }]);
+    flushRaf();
+    resolveAllLoads();
+    flushAllAsync();
+
+    var imgEl = el.querySelector('img');
+    var firstSrc = imgEl.getAttribute('src');
+    assert(typeof firstSrc === 'string' && firstSrc.length > 0, 'T16a: first load assigned src');
+    assert(imgEl.classList.contains('loaded'), 'T16ax: loaded class present after first load');
+    assert(el.classList.contains('selected'), 'T16ay: selected class present after first load');
+
+    /* Pre-populate cache with the same key to simulate cache hit */
+    thumbnailBlobUrlCache.set('key-inc', firstSrc);
+
+    /* Reschedule -- this goes through cache-hit path */
+    scheduleThumbnailLoad(el, '/thumb/inc.png', 'key-inc');
+
+    /* Promote again */
+    _visibleObserverCb([{ isIntersecting: true, target: el }]);
+    flushRaf();
+
+    /* Should be cache hit: no new network load, src unchanged */
+    var loadCountForInc = loadCalls.filter(function(c) { return c.cacheKey === 'key-inc'; }).length;
+    assert(loadCountForInc === 1, 'T16b: only one network load for key-inc (got ' + loadCountForInc + ')');
+    assert(imgEl.getAttribute('src') === firstSrc, 'T16c: src unchanged after reschedule');
+    assert(imgEl.classList.contains('loaded'), 'T16d: loaded class preserved');
+    assert(el.classList.contains('selected'), 'T16e: selected class preserved after reschedule');
+}
+
+function test17_fallback_eager_load_without_observers() {
+    /* When IntersectionObserver is unavailable, the fallback path must
+       eagerly load all items through bounded concurrency. */
+    resetState();
+
+    /* Simulate no IntersectionObserver by temporarily removing it.
+       save/restore so the global mock is available for other tests. */
+    var savedIO = global.IntersectionObserver;
+    global.IntersectionObserver = undefined;
+    /* Force re-evaluation — _ensureViewportObservers caches the null
+       observers, so clear them to simulate a fresh module load. */
+    _evalInCtx('_viewportVisibleObserver = null');
+    _evalInCtx('_viewportNearObserver = null');
+
+    var totalItems = 30;
+    var elements = [];
+    for (var i = 0; i < totalItems; i++) {
+        var el = makeElement(true);
+        elements.push(el);
+        scheduleThumbnailLoad(el, '/thumb/fallback-' + i + '.png', 'key-fb-' + i);
+    }
+
+    /* Restore IntersectionObserver for later tests */
+    global.IntersectionObserver = savedIO;
+
+    /* In fallback mode, background drain was armed by scheduleThumbnailLoad
+       (since _viewportVisibleObserver is null, the guard passes).
+       Flush to admit first wave. */
+    flushIdle();
+    flushTimeouts();
+    assert(loadCalls.length === getConcurrency(), 'T17a: fallback admits cap (got ' + loadCalls.length + ')');
+    assert(getActiveFetches() === getConcurrency(), 'T17b: active fetches at cap');
+
+    /* Resolve and drain in waves */
+    var wave = 0;
+    while (loadCalls.length < totalItems && wave < 20) {
+        var before = loadCalls.length;
+        resolveAllLoads();
+        flushAllAsync();
+        if (loadCalls.length === before) break;
+        wave++;
+    }
+
+    /* Final resolve for any remaining in-flight */
+    resolveAllLoads();
+    flushAllAsync();
+
+    assert(loadCalls.length === totalItems, 'T17c: fallback loads all items (got ' + loadCalls.length + ')');
+    assert(getActiveFetches() === 0, 'T17d: no lingering active fetches');
+}
+
+function test18_cache_hit_and_priority_promotion_intact() {
+    /* Verify cache-hit bypass and priority ordering remain intact
+       after deferred-drain removal. */
+    resetState();
+
+    /* Pre-populate cache for some entries */
+    for (var i = 0; i < 10; i++) {
+        thumbnailBlobUrlCache.set('key-ch-' + i, 'blob:cached-ch-' + i);
+    }
+
+    /* Schedule 10 cache hits + cap network misses = 26 total,
+       so the cap is saturated by actual network requests. */
+    var totalItems = 10 + getConcurrency();
+    var elements = [];
+    for (var i = 0; i < totalItems; i++) {
+        var el = makeElement(true);
+        elements.push(el);
+        scheduleThumbnailLoad(el, '/thumb/ch-' + i + '.png', 'key-ch-' + i);
+    }
+
+    /* Promote all to visible */
+    for (var j = 0; j < elements.length; j++) {
+        _visibleObserverCb([{ isIntersecting: true, target: elements[j] }]);
+    }
+    flushRaf();
+
+    /* First 10: cache hits (no network), remaining: network misses at cap */
+    var netLoads = loadCalls.length;
+    assert(netLoads === getConcurrency(), 'T18a: network misses capped at ' + getConcurrency() + ' (got ' + netLoads + ')');
+
+    /* Cache-hit elements have src assigned */
+    var cachedAssigned = 0;
+    for (var k = 0; k < 10; k++) {
+        if (elements[k]._src) cachedAssigned++;
+    }
+    assert(cachedAssigned === 10, 'T18b: all 10 cache hits assigned src');
+
+    /* Active fetches at cap from network misses */
+    assert(getActiveFetches() === getConcurrency(), 'T18c: active fetches at cap from misses');
+
+    /* Ensure concurrency constant unchanged */
+    assert(getConcurrency() === 16, 'T18d: concurrency still 16');
+}
+
+function test19_visible_ordered_before_near() {
+    /* Verify observer promotion ordering: visible outranks near
+       even after deferred-drain removal. */
+    resetState();
+
+    var visEl = makeElement(true);
+    var nearEl = makeElement(true);
+
+    scheduleThumbnailLoad(visEl, '/thumb/v1.png', 'key-v1');
+    scheduleThumbnailLoad(nearEl, '/thumb/n1.png', 'key-n1');
+
+    /* Promote: near first (but near queue), then visible */
+    _nearObserverCb([{ isIntersecting: true, target: nearEl }]);
+    _visibleObserverCb([{ isIntersecting: true, target: visEl }]);
+
+    flushRaf();
+
+    assert(loadCalls.length >= 2, 'T19a: both loaded');
+    assert(loadCalls[0].imageSrc === '/thumb/v1.png',
+        'T19b: visible loads before near (first was ' + (loadCalls[0] ? loadCalls[0].imageSrc : 'none') + ')');
+    assert(loadCalls[1].imageSrc === '/thumb/n1.png',
+        'T19c: near loads after visible (second was ' + (loadCalls[1] ? loadCalls[1].imageSrc : 'none') + ')');
+
+    /* Neither item duplicated */
+    var visCount = loadCalls.filter(function(c) { return c.imageSrc === '/thumb/v1.png'; }).length;
+    var nearCount = loadCalls.filter(function(c) { return c.imageSrc === '/thumb/n1.png'; }).length;
+    assert(visCount === 1, 'T19d: visible loaded exactly once');
+    assert(nearCount === 1, 'T19e: near loaded exactly once');
+}
+
+function test20_cancellation_with_inflight_work_no_stranding() {
+    /* (a) Admit old generation to all 16 active slots.
+       (b) Cancel old generation while loads remain in flight.
+       (c) Schedule and observer-promote new-generation visible work
+           WHILE active slots are still occupied.
+       (d) Flush rAF — prove no new load starts yet but new work
+           remains queued (not lost).
+       (e) Resolve old in-flight promises.
+       (f) Flush completion microtasks — prove new-generation work
+           begins and eventually all new approached work loads.
+       (g) Prove no additional old-generation queued item is admitted. */
+    resetState();
+
+    /* (a) Admit old generation to cap */
+    var oldEls = [];
+    for (var i = 0; i < 20; i++) {
+        var el = makeElement(true);
+        oldEls.push(el);
+        scheduleThumbnailLoad(el, '/thumb/old-' + i + '.png', 'key-old-' + i);
+    }
+    for (var j = 0; j < oldEls.length; j++) {
+        _visibleObserverCb([{ isIntersecting: true, target: oldEls[j] }]);
+    }
+    flushRaf();
+    assert(loadCalls.length === getConcurrency(), 'T20a: old generation admitted to cap ' + getConcurrency());
+    assert(getActiveFetches() === getConcurrency(), 'T20aa: active fetches at cap');
+
+    /* (b) Cancel old generation while those loads remain in flight.
+       Generation increments, queues and info map cleared.
+       Old decrementAndDrain closures remain pending.
+       activeFetches is NOT reset — old slots still occupied. */
+    var oldGen = getGeneration();
+    cancelScheduledViewportLoads();
+    var newGen = getGeneration();
+    assert(newGen > oldGen, 'T20b: generation incremented after cancel');
+
+    /* (c) Schedule and promote new-generation work WHILE old slots are
+       still occupied (activeFetches still 16). */
+    assert(getActiveFetches() === getConcurrency(),
+        'T20c: slots still occupied after cancel (got ' + getActiveFetches() + ')');
+
+    var newEls = [];
+    for (var k = 0; k < 20; k++) {
+        var nel = makeElement(true);
+        newEls.push(nel);
+        scheduleThumbnailLoad(nel, '/thumb/new-' + k + '.png', 'key-new-' + k);
+    }
+    for (var m = 0; m < newEls.length; m++) {
+        _visibleObserverCb([{ isIntersecting: true, target: newEls[m] }]);
+    }
+    /* Verify new work is in visible queue (promoted) */
+    var visibleQueuedBefore = getVisibleQueueLen();
+    assert(visibleQueuedBefore >= 20, 'T20d: new work promoted to visible queue (got ' + visibleQueuedBefore + ')');
+
+    /* (d) Flush rAF — prove no new load starts yet (slots full)
+       but new work remains queued (not lost). */
+    flushRaf();
+    var newLoadsAfterRaf = loadCalls.filter(function(c) { return c.imageSrc.indexOf('/thumb/new-') === 0; }).length;
+    assert(newLoadsAfterRaf === 0, 'T20e: no new loads started while slots occupied (got ' + newLoadsAfterRaf + ')');
+    var stillQueued = getVisibleQueueLen();
+    assert(stillQueued >= 20, 'T20f: new work remains queued, not lost (got ' + stillQueued + ')');
+    assert(getActiveFetches() === getConcurrency(), 'T20g: slots still occupied');
+
+    /* (e) Resolve old in-flight promises.
+       Each old decrementAndDrain runs: decrements activeFetches,
+       schedules completion pump. The pump reads _viewportGeneration
+       at call time (= newGen), so the microtask will pass the
+       generation check and run _runCompletionPump. */
+    resolveAllLoads();
+
+    /* (f) Flush completion microtasks — new-generation work begins.
+       The completion pump drains visible queue, admitting 16 at cap.
+       Those 16 new loads are now in flight. Resolve them and flush
+       again so the next completion wave drains the remaining 4. */
+    flushAllAsync();
+    resolveAllLoads();
+    flushAllAsync();
+
+    var totalNewAdmitted = loadCalls.filter(function(c) { return c.imageSrc.indexOf('/thumb/new-') === 0; }).length;
+    assert(totalNewAdmitted === 20, 'T20h: all new approached work loaded (got ' + totalNewAdmitted + ')');
+
+    /* (g) No additional old-generation items beyond the initial wave. */
+    var totalOldAdmitted = loadCalls.filter(function(c) { return c.imageSrc.indexOf('/thumb/old-') === 0; }).length;
+    assert(totalOldAdmitted === getConcurrency(), 'T20i: no additional old items admitted beyond initial wave (got ' + totalOldAdmitted + ')');
+}
+
 /* ── Run all tests ─────────────────────────────────────────────────────── */
 
 try {
+    test9_background_drain_noop_with_observers();
+    test8_no_immediate_drain_in_schedule();
+    test1_disconnected_elements_not_immediately_drained();
+    test2_admission_cleanup();
+    test3_concurrency_cap();
+    test4_priority_ordering();
+    test5_cancellation();
+    test6_unschedule();
+    test7_disconnected_then_connected();
     test11a_fast_resolve_advances_without_rAF();
     test11b_concurrency_never_exceeds_8();
     test11c_burst_completions_single_microtask();
@@ -959,15 +1393,16 @@ try {
     test10a_cache_hits_bypass_slot_accounting();
     test10b_mixed_cache_hits_and_misses();
     test10c_stale_guard_in_cache_hit_path();
-    test9_no_background_spin_at_cap();
-    test8_no_immediate_drain_in_schedule();
-    test1_disconnected_elements_not_immediately_drained();
-    test2_admission_cleanup();
-    test3_concurrency_cap();
-    test4_priority_ordering();
-    test5_cancellation();
-    test6_unschedule();
-    test7_disconnected_then_connected();
+    /* approach-triggered loading acceptance tests */
+    test12_fast_scroll_promotion_not_stranded();
+    test13_no_viewport_exit_unload();
+    test14_cancellation_before_pumps_prevent_stale_work();
+    test15_unschedule_prevents_pending_work();
+    test16_incremental_reschedule_unchanged_key();
+    test17_fallback_eager_load_without_observers();
+    test18_cache_hit_and_priority_promotion_intact();
+    test19_visible_ordered_before_near();
+    test20_cancellation_with_inflight_work_no_stranding();
 } catch (e) {
     process.stderr.write('Test error: ' + e.stack + '\n');
     assertions.push({ pass: false, message: 'Exception: ' + e.message });
