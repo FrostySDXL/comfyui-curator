@@ -123,52 +123,6 @@ def test_set_active_batch_serializes_disabled_state_as_empty_string(monkeypatch,
     assert captured["body"] == {"batch": ""}
 
 
-def test_cold_preparation_loads_companion_before_instrumented_primary(monkeypatch, tmp_path):
-    benchmark = load_benchmark_module()
-    events = []
-    spec = benchmark.build_fixture_specs("run-abc", [100], ["firefox"])[0]
-    runtime = benchmark.RuntimeContext(
-        origin="http://127.0.0.1:8188",
-        page_url="http://127.0.0.1:8188/curator",
-        paths=benchmark.runtime_paths("native"),
-        batch_root=tmp_path,
-        active_batch="operator-batch",
-    )
-
-    class FakeSession:
-        def switch(self, batch):
-            events.append(("activate", batch))
-
-    class FakeDriver:
-        def get(self, url):
-            events.append(("navigate", url))
-
-    def fake_select(_driver, batch, count, _timeout):
-        events.append(("select", batch, count))
-        return {"ready": True, "batch": batch}
-
-    def fake_instrument(_driver, count):
-        events.append(("instrument", count))
-
-    monkeypatch.setattr(benchmark, "_select_and_wait", fake_select)
-    monkeypatch.setattr(benchmark, "_install_instrumentation", fake_instrument)
-
-    companion_ready, primary_ready = benchmark.prepare_cold_phase(
-        FakeDriver(), FakeSession(), runtime, spec, timeout=30
-    )
-
-    assert events == [
-        ("activate", spec.companion_batch),
-        ("navigate", runtime.page_url),
-        ("select", spec.companion_batch, spec.companion_size),
-        ("instrument", spec.size),
-        ("select", spec.primary_batch, spec.size),
-    ]
-    assert ("activate", spec.primary_batch) not in events
-    assert companion_ready["batch"] == spec.companion_batch
-    assert primary_ready["batch"] == spec.primary_batch
-
-
 def test_cleanup_refuses_unmarked_and_mismatched_batches(tmp_path):
     benchmark = load_benchmark_module()
     root = tmp_path / "batches"
@@ -610,14 +564,8 @@ def _checkpoint_cold_driver(
     dom_extra=None,
     monkeypatch=None,
 ):
-    """Build FakeDriver, deps, session for _prepare_checkpoint_cold_phase.
-
-    viewport: "ready", "timeout", or "unavailable"
-    traversal: "success", "unsettled", "frame_cap", or "unavailable"
-
-    Returns (driver, deps, session, hooks dict with events, instrument_count,
-    scroll_ops, traversal_calls, client_height, distinct_loaded).
-    """
+    """FakeDriver/session/hooks for _prepare_checkpoint_cold_phase.
+    viewport: ready/timeout/unavailable; traversal: success/unsettled/frame_cap/unavailable."""
 
     events: list = []
     instrument_count = [0]
@@ -830,7 +778,6 @@ def _checkpoint_cold_driver(
 
 def test_cold_phase_orchestration_checkpoints_flow(monkeypatch, tmp_path):
     benchmark = load_benchmark_module()
-    from pathlib import Path
 
     spec = benchmark.build_fixture_specs("run-flow", [50], ["firefox"])[0]
     runtime = benchmark.RuntimeContext(
@@ -888,12 +835,13 @@ def test_cold_phase_orchestration_checkpoints_flow(monkeypatch, tmp_path):
     assert cp1["loaded_image_count"] <= spec.size
     assert cp2["loaded_image_count"] <= spec.size
     assert cp3["loaded_image_count"] <= spec.size
-    assert len(hooks["traversal_calls"]) == 2
+    assert len(hooks["traversal_calls"]) == 3  # companion + primary partial + primary full
 
     # ---- Gap-free traversal, client height, scroll restore ----
     assert hooks["client_height"][0] == 700
-    partial_pos = hooks["traversal_calls"][0]
-    full_pos = hooks["traversal_calls"][1]
+    # First is companion, last two are primary partial + full
+    partial_pos = hooks["traversal_calls"][1]
+    full_pos = hooks["traversal_calls"][2]
     region_step = round(700 * 0.6)
     for positions, expected_last in [(partial_pos, 800), (full_pos, 2000)]:
         for i in range(1, len(positions)):
@@ -930,7 +878,6 @@ def test_viewport_checkpoint_edge_cases(
 ):
     """Parametrized viewport ready, timeout, and unavailable scenarios."""
     benchmark = load_benchmark_module()
-    from pathlib import Path
 
     spec = benchmark.build_fixture_specs("run-vp", [50], ["firefox"])[0]
     runtime = benchmark.RuntimeContext(
@@ -1000,7 +947,6 @@ def test_traversal_checkpoint_readiness(
     """Checkpoint 2/3 readiness must carry exact unsettled_region_count,
     available/reason, ready flag, and warnings reflecting traversal outcome."""
     benchmark = load_benchmark_module()
-    from pathlib import Path
 
     spec = benchmark.build_fixture_specs("run-trv", [50], ["firefox"])[0]
     runtime = benchmark.RuntimeContext(
@@ -1384,3 +1330,571 @@ def test_query_grid_loaded_returns_distinct_count():
     benchmark = load_benchmark_module()
     count = benchmark._query_grid_loaded(_GridScriptFakeDriver(42))
     assert count == 42
+
+
+def _shared_benchmark_driver(
+    benchmark,
+    spec,
+    *,
+    viewport="ready",
+    traversal="success",
+    grid_scroll=(2000, 700),
+):
+    """Configurable FakeDriver for _select_and_traverse, cold, warm, A-B-A."""
+    events: list = []
+    scroll_ops: list[int] = []
+    client_height_val: list = [None]
+    positions_passed: list[list[int]] = []
+    instrument_args: list[tuple] = []
+    quit_flag = [False]
+    resource_log: list[list[dict]] = [[]]
+
+    class FakeDriver:
+        capabilities = {}
+        service = type("Svc", (), {"process": type("Pr", (), {"pid": 1234})()})()
+
+        def __init__(self):
+            self._active_batch = None
+
+        def get(self, url):
+            events.append(("navigate", url))
+
+        def refresh(self):
+            events.append(("refresh",))
+
+        def execute_script(self, script):
+            if "scrollHeight" in script and "clientHeight" in script:
+                client_height_val[0] = grid_scroll[1]
+                return [grid_scroll[0], grid_scroll[1]]
+            if "getElementsByTagName" in script:
+                return {
+                    "domNodeCount": 500,
+                    "blobCacheEntryCount": 3,
+                    "blobObservation": {"available": True, "reason": None},
+                    "longTasks": {"available": True, "entries": []},
+                    "navigation": {"domContentLoadedMs": 300, "loadEventMs": 500},
+                }
+            if "performance.getEntriesByType('resource')" in script:
+                # Return currently accumulated resource log
+                return resource_log[-1] if resource_log else []
+            if "#grid .thumb:not(.loading-placeholder)" in script:
+                # _wait_for_grid (has visibleCount) vs _query_grid_loaded (returns int)
+                if "visibleCount" in script:
+                    count_val = 50
+                    if spec and self._active_batch:
+                        if self._active_batch == spec.primary_batch:
+                            count_val = spec.size
+                        elif self._active_batch == spec.companion_batch:
+                            count_val = spec.companion_size
+                    return {
+                        "count": count_val,
+                        "loaded": count_val,
+                        "visibleCount": 15,
+                        "visibleLoaded": 15,
+                    }
+                return 42  # _query_grid_loaded: distinct loaded count
+            if "scrollTop" in script and "=" in script and ".content" in script:
+                m = re.search(r"scrollTop\s*=\s*(\d+)", script)
+                if m:
+                    val = int(m.group(1))
+                    scroll_ops.append(val)
+                    events.append(("scroll_restore", val))
+            if "removeItem" in script:
+                events.append(("clear_localstorage",))
+            return {}
+
+        def execute_async_script(self, script, *args):
+            if "selectBatch" in script:
+                self._active_batch = args[0] if args else None
+                events.append(("select_batch", args[0] if args else None))
+                return {"ok": True}
+            if "Benchmark DOM bridge" in script or "blobUrls" in script:
+                return {"available": True, "count": 3, "bytes": 30000}
+            if "expectedCount" in script and "timeoutMs" in script:
+                expected = args[0] if args else 0
+                events.append(("viewport_settle", expected))
+                if viewport == "unavailable":
+                    return {"available": False, "reason": "Grid scroll container not found"}
+                if viewport == "timeout":
+                    return {
+                        "available": True,
+                        "ready": False,
+                        "elapsedMs": 5000.0,
+                        "intervals": [16, 17],
+                        "state": {
+                            "count": expected,
+                            "loaded": 5,
+                            "visibleCount": 20,
+                            "visibleLoaded": 5,
+                        },
+                    }
+                return {
+                    "available": True,
+                    "ready": True,
+                    "elapsedMs": 350.0,
+                    "intervals": [16, 17, 18, 20, 16],
+                    "state": {
+                        "count": expected,
+                        "loaded": 15,
+                        "visibleCount": min(20, expected),
+                        "visibleLoaded": min(20, expected),
+                    },
+                }
+            if "viewportSettled" in script and "visitedRegions" in script:
+                positions = list(args[0]) if args and isinstance(args[0], list) else []
+                positions_passed.append(list(positions))
+                events.append(("traversal", len(positions)))
+                n = len(positions)
+                if traversal == "unavailable":
+                    return {"available": False, "reason": "Grid scroll container not found"}
+                capped = traversal == "frame_cap"
+                unsettled = traversal == "unsettled"
+                count = max(0, n - 1) if capped else n
+                regions = [
+                    {
+                        "region": i,
+                        "scrollPosition": positions[i] if i < len(positions) else 0,
+                        "visibleCount": 10,
+                        "visibleLoaded": 10,
+                        "settled": not (unsettled and i == n - 1),
+                        "regionElapsedMs": 50,
+                    }
+                    for i in range(count)
+                ]
+                return {
+                    "available": True,
+                    "elapsedMs": 150 if capped else 800,
+                    "mode": "traversal",
+                    "intervals": [16, 17] if capped else [16, 17, 18],
+                    "frameCapReached": capped,
+                    "regionsVisited": count,
+                    "totalPositions": n,
+                    "visitedRegions": regions,
+                }
+            if "content.scrollTop" in script and "requestAnimationFrame" in script:
+                return {
+                    "available": True,
+                    "elapsedMs": 200,
+                    "intervals": [],
+                    "frameCapReached": False,
+                }
+            if "applySidebarWidth" in script:
+                return {"available": True, "elapsedMs": 100, "intervals": [], "restored": True}
+            return {"available": True, "elapsedMs": 100, "intervals": []}
+
+        def quit(self):
+            quit_flag[0] = True
+
+    _MemInfo = type("_MemInfo", (), {"rss": 50_000_000})
+    _FakeProc = type(
+        "_FakeProc",
+        (),
+        {
+            "children": staticmethod(lambda recursive=False: []),
+            "name": staticmethod(lambda: "firefox"),
+            "memory_info": staticmethod(lambda: _MemInfo()),
+        },
+    )
+    _FakePsutil = type("_FakePsutil", (), {"Process": staticmethod(lambda pid: _FakeProc())})
+    deps = type("_FakeDeps", (), {"psutil": _FakePsutil()})()
+
+    hooks = {
+        "events": events,
+        "scroll_ops": scroll_ops,
+        "client_height": client_height_val,
+        "positions_passed": positions_passed,
+        "instrument_args": instrument_args,
+        "quit_flag": quit_flag,
+        "resource_log": resource_log,
+    }
+    return FakeDriver(), deps, hooks
+
+
+class TestSelectAndTraverse:
+    def test_success_returns_readiness_fields(self):
+        benchmark = load_benchmark_module()
+        spec = benchmark.build_fixture_specs("run-t", [50], ["firefox"])[0]
+        driver, deps, hooks = _shared_benchmark_driver(benchmark, spec)
+        readiness = benchmark._select_and_traverse(driver, "p", 50, timeout=30.0)
+        assert readiness["ready"] is True
+        assert readiness["elapsed_ms"] > 0
+        assert readiness["first_viewport_ms"] == pytest.approx(350.0, rel=0.01)
+        assert readiness["available"] is True
+        assert readiness["reason"] is None
+        assert readiness["warnings"] == []
+        assert readiness["state"]["loaded"] == 42
+
+    @pytest.mark.parametrize(
+        "vp,tr,expect_ready,expect_avail,expect_warnings",
+        [
+            ("ready", "success", True, True, []),
+            ("timeout", "success", False, True, ["Viewport did not settle"]),
+            ("unavailable", "success", False, False, ["Viewport settle unavailable"]),
+            ("ready", "unsettled", False, True, ["unsettled"]),
+            ("ready", "frame_cap", False, True, ["frame-capped"]),
+            ("ready", "unavailable", False, False, ["traversal unavailable"]),
+        ],
+    )
+    def test_edge_cases(self, vp, tr, expect_ready, expect_avail, expect_warnings):
+        benchmark = load_benchmark_module()
+        spec = benchmark.build_fixture_specs("run-e", [50], ["firefox"])[0]
+        driver, deps, hooks = _shared_benchmark_driver(
+            benchmark,
+            spec,
+            viewport=vp,
+            traversal=tr,
+        )
+        r = benchmark._select_and_traverse(driver, "t", 50, timeout=30.0)
+        assert r["ready"] is expect_ready
+        assert r["available"] is expect_avail
+        if expect_ready and expect_avail:
+            assert r["reason"] is None
+        else:
+            assert r["reason"] is not None
+        for word in expect_warnings:
+            assert any(word in w for w in r["warnings"]), f"missing '{word}' in {r['warnings']}"
+
+    def test_full_traversal_positions_and_scroll_restore(self):
+        benchmark = load_benchmark_module()
+        spec = benchmark.build_fixture_specs("run-p", [50], ["firefox"])[0]
+        driver, deps, hooks = _shared_benchmark_driver(
+            benchmark,
+            spec,
+            grid_scroll=(2000, 700),
+        )
+        benchmark._select_and_traverse(driver, "t", 50, timeout=30.0)
+        # Scroll restored to top
+        assert hooks["scroll_ops"][-1] == 0
+        # Positions captured: gap-free, start=0, exact bottom
+        assert len(hooks["positions_passed"]) == 1
+        positions = hooks["positions_passed"][0]
+        region_h = max(300, round(700 * 0.6))
+        assert positions[0] == 0
+        assert positions[-1] == 2000
+        for i in range(1, len(positions)):
+            assert positions[i] - positions[i - 1] <= region_h
+
+
+def test_cold_companion_event_order(monkeypatch, tmp_path):
+    """session_switch < navigate < companion select < viewport settle
+    < companion traversal < scroll restore < instrumentation
+    < primary select < primary viewport settle; companion traversal first."""
+    benchmark = load_benchmark_module()
+    spec = benchmark.build_fixture_specs("run-cc", [50], ["firefox"])[0]
+    root = Path(tmp_path)
+    (root / spec.primary_batch / ".thumbs").mkdir(parents=True)
+    (root / spec.companion_batch / ".thumbs").mkdir(parents=True)
+    driver, deps, hooks = _shared_benchmark_driver(benchmark, spec)
+
+    def _patch_install(_driver, count):
+        hooks["events"].append(("instrument", count))
+
+    benchmark._install_instrumentation = _patch_install
+
+    runtime = benchmark.RuntimeContext(
+        origin="http://127.0.0.1:8188",
+        page_url="http://127.0.0.1:8188/curator",
+        paths=benchmark.runtime_paths("native"),
+        batch_root=root,
+        active_batch=None,
+    )
+
+    class FakeSession:
+        def switch(self, batch):
+            hooks["events"].append(("session_switch", batch))
+
+    benchmark._prepare_checkpoint_cold_phase(driver, deps, FakeSession(), runtime, spec, timeout=30)
+    ev = hooks["events"]
+
+    s_switch = next(
+        i for i, e in enumerate(ev) if e[0] == "session_switch" and e[1] == spec.companion_batch
+    )
+    nav = next(i for i, e in enumerate(ev) if e[0] == "navigate")
+    c_sel = next(
+        i for i, e in enumerate(ev) if e[0] == "select_batch" and e[1] == spec.companion_batch
+    )
+    c_vp = next(
+        i for i, e in enumerate(ev) if e[0] == "viewport_settle" and e[1] == spec.companion_size
+    )
+    c_trv = next(i for i, e in enumerate(ev) if e[0] == "traversal")
+    c_sr = next(i for i, e in enumerate(ev) if e[0] == "scroll_restore")
+    ins = next(i for i, e in enumerate(ev) if e[0] == "instrument")
+    p_sel = next(
+        i for i, e in enumerate(ev) if e[0] == "select_batch" and e[1] == spec.primary_batch
+    )
+    p_vp = next(i for i, e in enumerate(ev) if e[0] == "viewport_settle" and e[1] == spec.size)
+
+    assert s_switch < nav < c_sel < c_vp < c_trv < c_sr < ins < p_sel < p_vp, (
+        f"order violation: s_switch={s_switch} nav={nav} c_sel={c_sel} c_vp={c_vp} "
+        f"c_trv={c_trv} c_sr={c_sr} ins={ins} p_sel={p_sel} p_vp={p_vp}"
+    )
+
+    trv_events = [(i, e) for i, e in enumerate(ev) if e[0] == "traversal"]
+    assert trv_events[0][0] == c_trv, "first traversal must be companion"
+    pre_instr_primary = [
+        i for i, e in enumerate(ev[:ins]) if e[0] == "select_batch" and e[1] == spec.primary_batch
+    ]
+    assert not pre_instr_primary, (
+        "no all-terminal wait: primary select_batch before instrumentation"
+    )
+
+
+def test_benchmark_case_cold_companion_warnings_propagated(monkeypatch, tmp_path):
+    """Cold phase warnings: generic + unique detailed each appear exactly once."""
+    benchmark = load_benchmark_module()
+    driver, deps, hooks, spec, runtime, session, args = _setup_benchmark_case(
+        monkeypatch, tmp_path, benchmark
+    )
+    uw = "unique-companion-detailed-warning-cold-x9z2"
+
+    def fake_cold_phase(drv, deps, session, runtime, spec, timeout):
+        cr = {
+            "ready": False,
+            "elapsed_ms": 500.0,
+            "first_viewport_ms": None,
+            "state": {"loaded": 0, "count": spec.companion_size},
+            "available": True,
+            "reason": "companion not ready",
+            "warnings": [uw],
+        }
+        fr = {
+            "ready": True,
+            "elapsed_ms": 300.0,
+            "first_viewport_ms": 200.0,
+            "state": {"count": spec.size, "loaded": spec.size},
+        }
+        return [{"name": "cp"}] * 3, cr, fr, []
+
+    monkeypatch.setattr(benchmark, "_prepare_checkpoint_cold_phase", fake_cold_phase)
+    result = benchmark.benchmark_case(deps, args, runtime, spec, tmp_path / "profile", session)
+    cw = next(p for p in result["phases"] if p["phase"] == "cold_initial_load")["warnings"]
+    gm = "Initial companion batch did not become ready before cold measurement"
+    assert gm in " ".join(cw) and uw in cw
+    assert sum(1 for w in cw if gm in w) == 1
+    assert sum(1 for w in cw if uw in w) == 1
+
+
+def _setup_benchmark_case(monkeypatch, tmp_path, benchmark, **driver_kw):
+    spec = benchmark.build_fixture_specs("run-bc", [50], ["firefox"])[0]
+    root = Path(tmp_path)
+    (root / spec.primary_batch / ".thumbs").mkdir(parents=True)
+    (root / spec.companion_batch / ".thumbs").mkdir(parents=True)
+
+    driver, deps, hooks = _shared_benchmark_driver(
+        benchmark,
+        spec,
+        **driver_kw,
+    )
+
+    def _patch_install(_driver, count):
+        hooks["instrument_args"].append(count)
+        hooks["events"].append(("instrument", count))
+        hooks["resource_log"].append([])
+
+    benchmark._install_instrumentation = _patch_install
+    monkeypatch.setattr(
+        benchmark,
+        "_browser_process_memory",
+        lambda *a: benchmark.available({"rss_bytes": 1000000, "process_count": 1}, "psutil"),
+    )
+    monkeypatch.setattr(benchmark, "create_driver", lambda *a, **kw: driver)
+    monkeypatch.setattr(benchmark, "set_active_batch", lambda rt, b: None)
+
+    def fake_select_and_traverse(drv, batch, count, timeout):
+        hooks["events"].append(("select", batch, count))
+        if hooks["resource_log"]:
+            hooks["resource_log"][-1].extend(
+                {
+                    "name": f"http://localhost/curator/thumb/b/inbox/{i}.png",
+                    "duration": 8.0,
+                    "transferSize": 0,
+                    "encodedBodySize": 2048,
+                }
+                for i in range(count)
+            )
+        return {
+            "ready": True,
+            "elapsed_ms": 500.0,
+            "first_viewport_ms": 200.0,
+            "state": {"loaded": count, "count": count},
+            "available": True,
+            "reason": None,
+            "warnings": [],
+        }
+
+    monkeypatch.setattr(benchmark, "_select_and_traverse", fake_select_and_traverse)
+
+    runtime = benchmark.RuntimeContext(
+        origin="http://127.0.0.1:8188",
+        page_url="http://127.0.0.1:8188/curator",
+        paths=benchmark.runtime_paths("native"),
+        batch_root=root,
+        active_batch=None,
+    )
+    session = benchmark.ActiveBatchSession(runtime)
+    args = type(
+        "_FakeArgs", (), {"timeout": 30, "headless": True, "firefox_binary": Path("fake")}
+    )()
+    return driver, deps, hooks, spec, runtime, session, args
+
+
+def test_warm_reload_and_aba_use_select_and_traverse(monkeypatch, tmp_path):
+    """Warm/ABA select+instrument order: cold companion, warm primary,
+    combined A-B-A instrument, ABA companion, ABA primary; no instrument
+    between B/A pair; primary readiness first_viewport_ms==200, elapsed<500."""
+    benchmark = load_benchmark_module()
+    driver, deps, hooks, spec, runtime, session, args = _setup_benchmark_case(
+        monkeypatch, tmp_path, benchmark
+    )
+    result = benchmark.benchmark_case(deps, args, runtime, spec, tmp_path / "profile", session)
+    cs, s, pb, cb = spec.companion_size, spec.size, spec.primary_batch, spec.companion_batch
+    assert [e for e in hooks["events"] if e[0] == "select"] == [
+        ("select", cb, cs),
+        ("select", pb, s),
+        ("select", cb, cs),
+        ("select", pb, s),
+    ]
+    all_ev = [e for e in hooks["events"] if e[0] in ("select", "instrument")]
+    cii = next(i for i, e in enumerate(all_ev) if e == ("instrument", s + cs))
+    assert all_ev[cii - 1] == ("select", pb, s)
+    assert all_ev[cii + 1] == ("select", cb, cs)
+    assert all_ev[cii + 2] == ("select", pb, s)
+    assert sum(1 for e in hooks["instrument_args"] if e == s + cs) == 1
+    gr = [p for p in result["phases"] if p["phase"] == "batch_a_b_a_switch"][0][
+        "cross_browser_metrics"
+    ]["grid_readiness"]
+    assert gr["available"] and gr["value"]["ready"]
+    assert gr["value"]["elapsed_ms"] < 500
+    assert gr["value"]["first_viewport_ms"] == pytest.approx(200.0, rel=0.05)
+
+
+def test_aba_companion_warnings_propagated(monkeypatch, tmp_path):
+    """Companion traversal warnings reach A-B-A phase warnings, deduplicated."""
+    benchmark = load_benchmark_module()
+    driver, deps, hooks, spec, runtime, session, args = _setup_benchmark_case(
+        monkeypatch,
+        tmp_path,
+        benchmark,
+    )
+    companion_warning_text = "companion traversal frame-capped"
+    call_seq = [0]
+
+    def warning_traverse(drv, batch, count, timeout):
+        call_seq[0] += 1
+        # A-B-A companion call (3rd overall: cold companion, warm reload, then this)
+        if call_seq[0] == 3 and batch == spec.companion_batch:
+            return {
+                "ready": False,
+                "elapsed_ms": 500,
+                "first_viewport_ms": 200,
+                "state": {"loaded": 2, "count": count},
+                "available": True,
+                "reason": "companion traversal incomplete",
+                "warnings": [companion_warning_text],
+            }
+        return {
+            "ready": True,
+            "elapsed_ms": 500,
+            "first_viewport_ms": 200,
+            "state": {"loaded": count, "count": count},
+            "available": True,
+            "reason": None,
+            "warnings": [],
+        }
+
+    monkeypatch.setattr(benchmark, "_select_and_traverse", warning_traverse)
+    result = benchmark.benchmark_case(deps, args, runtime, spec, tmp_path / "profile", session)
+    aba = [p for p in result["phases"] if p["phase"] == "batch_a_b_a_switch"]
+    assert len(aba) == 1
+    aba_warnings = aba[0]["warnings"]
+    assert companion_warning_text in " ".join(aba_warnings)
+    assert any("did not become ready" in w for w in aba_warnings)
+
+
+def test_aba_resource_entries_cumulative(monkeypatch, tmp_path):
+    """A-B-A phase request_count == companion_size + primary_size after one
+    instrumentation boundary before both traversals."""
+    benchmark = load_benchmark_module()
+    driver, deps, hooks, spec, runtime, session, args = _setup_benchmark_case(
+        monkeypatch,
+        tmp_path,
+        benchmark,
+    )
+
+    result = benchmark.benchmark_case(deps, args, runtime, spec, tmp_path / "profile", session)
+    aba = [p for p in result["phases"] if p["phase"] == "batch_a_b_a_switch"]
+    assert len(aba) == 1
+    req_count = aba[0]["cross_browser_metrics"]["thumbnail_resources"]["request_count"]
+    assert req_count == spec.companion_size + spec.size, (
+        f"expected {spec.companion_size + spec.size}, got {req_count}"
+    )
+    # One combined instrumentation boundary before A-B-A traversals
+    aba_sizes = [c for c in hooks["instrument_args"] if c == spec.size + spec.companion_size]
+    assert len(aba_sizes) == 1, f"expected 1 A-B-A instrumentation, got {aba_sizes}"
+
+
+def test_phase_metrics_propagates_readiness_warnings():
+    """_phase_metrics extends phase warnings with readiness.warnings."""
+    benchmark = load_benchmark_module()
+    spec = benchmark.build_fixture_specs("run-pm", [50], ["firefox"])[0]
+    driver, deps, hooks = _shared_benchmark_driver(benchmark, spec)
+
+    readiness = {
+        "ready": True,
+        "elapsed_ms": 500,
+        "first_viewport_ms": 200,
+        "state": {"loaded": 50, "count": 50},
+        "warnings": ["traversal had 1 unsettled region"],
+    }
+    runtime = benchmark.RuntimeContext(
+        origin="http://127.0.0.1:8188",
+        page_url="http://127.0.0.1:8188/curator",
+        paths=benchmark.runtime_paths("native"),
+        batch_root=Path("."),
+        active_batch=None,
+    )
+    metrics, warnings = benchmark._phase_metrics(
+        driver,
+        deps,
+        runtime,
+        "firefox",
+        "test-batch",
+        readiness=readiness,
+    )
+    assert any("unsettled region" in w for w in warnings)
+    gr = metrics["grid_readiness"]
+    assert "viewport" in gr.get("methodology", "").lower() or (
+        "traversal" in gr.get("methodology", "").lower()
+    )
+
+
+def test_driver_quit_called_on_phase_failure(monkeypatch, tmp_path):
+    """When a phase raises BenchmarkError, driver.quit must still be called."""
+    benchmark = load_benchmark_module()
+    driver, deps, hooks, spec, runtime, session, args = _setup_benchmark_case(
+        monkeypatch,
+        tmp_path,
+        benchmark,
+    )
+    call_seq = [0]
+
+    def failing_traverse(drv, batch, count, timeout):
+        call_seq[0] += 1
+        if call_seq[0] >= 2 and batch == spec.primary_batch:
+            raise benchmark.BenchmarkError("simulated warm reload failure")
+        return {
+            "ready": True,
+            "elapsed_ms": 500,
+            "first_viewport_ms": 200,
+            "state": {"loaded": count, "count": count},
+            "available": True,
+            "reason": None,
+            "warnings": [],
+        }
+
+    monkeypatch.setattr(benchmark, "_select_and_traverse", failing_traverse)
+
+    with pytest.raises(benchmark.BenchmarkError, match="simulated warm reload failure"):
+        benchmark.benchmark_case(deps, args, runtime, spec, tmp_path / "profile", session)
+
+    assert hooks["quit_flag"][0] is True

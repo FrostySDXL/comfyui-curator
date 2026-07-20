@@ -151,9 +151,25 @@ traversal), controlled scroll, warm reload, A-to-B-to-A switching, and restored
 sidebar width changes. Each checkpoint records loaded image count, thumbnail
 request count, live blob count and bytes, DOM node count, browser RSS, frame
 intervals, long-task metrics where available, and server `.thumbs` file count
-and bytes. The full traversal checkpoint uses a region-by-region viewport-settle
-readiness condition compatible with future visible/near-only loading rather than
-all-elements-terminal gating. Shared metrics use
+and bytes.
+
+The full traversal checkpoint and the warm reload and A-B-A phases all use a
+controlled full traversal readiness gate (viewport settle with expected-count
+guard, region-by-region deterministic traversal, and traversal readiness
+verification) instead of requiring all thumbnail elements to reach terminal
+state. This is compatible with production approach-only loading where distant
+thumbnails remain pending until the region is approached.
+
+Each batch selection in warm reload and A-B-A gets its own viewport settle
+operation producing a per-batch first_viewport_ms.  A-B-A traversal order is
+companion-batch then primary-batch, and Resource Timing remains cumulative
+across both traversals because instrumentation is installed once before the
+switches. The primary readiness retains total switch elapsed_ms while
+preserving its own first_viewport_ms separately.  Traversal-unavailable,
+frame-capped, unsettled, or incomplete states produce ready=false and
+actionable phase warnings without hanging for the global timeout.
+
+Shared metrics use
 Resource Timing, in-page cache/DOM evaluation, animation-frame intervals,
 psutil browser-process RSS, and `.thumbs` file sizes. Cache hits are explicitly
 a `transferSize == 0 && encodedBodySize > 0` heuristic. Blob compressed bytes

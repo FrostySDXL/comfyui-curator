@@ -1287,26 +1287,148 @@ def _build_checkpoint_warnings(checkpoint_name: str, readiness: dict[str, Any]) 
     return warnings
 
 
-def _select_and_wait(driver: Any, batch: str, count: int, timeout: float) -> dict[str, Any]:
+def _select_and_traverse(driver: Any, batch: str, count: int, timeout: float) -> dict[str, Any]:
+    """Select a batch, settle first viewport, perform full controlled traversal.
+
+    Returns a readiness dict compatible with existing _phase_metrics/summary
+    and A-B-A total-elapsed tracking.  Every batch selection gets its own
+    VIEWPORT_SETTLE_ASYNC so first_viewport_ms is per-batch.  After the full
+    deterministic traversal the grid is scrolled back to top.
+    """
     response = driver.execute_async_script(SELECT_BATCH, batch)
     if not response.get("ok"):
-        raise BenchmarkError(f"Could not select benchmark batch {batch}: {response.get('error')}")
-    return _wait_for_grid(driver, count, timeout)
+        raise BenchmarkError(f"Could not select batch {batch}: {response.get('error')}")
 
+    wall_started = time.perf_counter()
 
-def prepare_cold_phase(
-    driver: Any,
-    active_batch_session: ActiveBatchSession,
-    runtime: RuntimeContext,
-    spec: FixtureSpec,
-    timeout: float,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    active_batch_session.switch(spec.companion_batch)
-    driver.get(runtime.page_url)
-    companion_ready = _select_and_wait(driver, spec.companion_batch, spec.companion_size, timeout)
-    _install_instrumentation(driver, spec.size)
-    primary_ready = _select_and_wait(driver, spec.primary_batch, spec.size, timeout)
-    return companion_ready, primary_ready
+    # ---- First viewport settle (per-batch) ----
+    viewport_result: dict[str, Any] = driver.execute_async_script(
+        VIEWPORT_SETTLE_ASYNC, count, int(timeout * 1000)
+    )
+    viewport_available = bool(viewport_result.get("available", False))
+    viewport_ready = bool(viewport_result.get("ready", False))
+    _vp_ok = viewport_ready and viewport_available
+    first_viewport_ms: float | None = (
+        round(float(viewport_result.get("elapsedMs", 0)), 3) if _vp_ok else None
+    )
+
+    # ---- Full deterministic traversal ----
+    grid_info = driver.execute_script(
+        "var c=document.querySelector('.content');"
+        "if(!c)return[0,0];"
+        "return[Math.max(0,c.scrollHeight-c.clientHeight),c.clientHeight];"
+    )
+    total_height = (
+        int(grid_info[0]) if isinstance(grid_info, (list, tuple)) and len(grid_info) > 0 else 0
+    )
+    client_height = (
+        int(grid_info[1]) if isinstance(grid_info, (list, tuple)) and len(grid_info) > 1 else 600
+    )
+    positions = _build_traversal_positions(total_height, client_height, "full")
+    traversal_result: dict[str, Any] = driver.execute_async_script(TRAVERSAL_GRID, positions)
+    traversal_available = bool(traversal_result.get("available", False))
+    traversal_ready = _is_traversal_ready(traversal_result) if traversal_available else False
+
+    # Capture loaded count after traversal for state reporting
+    loaded_after = _query_grid_loaded(driver)
+
+    # Restore scrollTop=0 so subsequent phases start at top
+    driver.execute_script("var c=document.querySelector('.content');if(c)c.scrollTop=0;")
+
+    # ---- Warnings ----
+    warnings: list[str] = []
+    if not viewport_available:
+        warnings.append(f"Viewport settle unavailable for batch {batch}")
+    elif not viewport_ready:
+        warnings.append(f"Viewport did not settle within timeout for batch {batch}")
+    if not traversal_available:
+        warnings.append(
+            f"Full traversal unavailable for batch {batch}: "
+            f"{traversal_result.get('reason', 'unknown')}"
+        )
+    elif not traversal_ready:
+        if traversal_result.get("frameCapReached"):
+            warnings.append(f"Full traversal frame-capped for batch {batch}")
+        unsettled = sum(
+            1 for r in traversal_result.get("visitedRegions", []) if not r.get("settled", False)
+        )
+        if unsettled:
+            warnings.append(f"Full traversal had {unsettled} unsettled region(s) for batch {batch}")
+        visited = int(traversal_result.get("regionsVisited", 0))
+        target = int(traversal_result.get("totalPositions", 0))
+        if visited != target:
+            warnings.append(
+                f"Full traversal incomplete for batch {batch} ({visited}/{target} regions)"
+            )
+
+    overall_ready = _vp_ok and traversal_ready and traversal_available
+
+    # Build an actionable reason string on failure
+    reason: str | None = None
+    if not overall_ready:
+        parts: list[str] = []
+        if not viewport_available:
+            parts.append("viewport settle script unavailable")
+        elif not viewport_ready:
+            parts.append("viewport did not settle within timeout")
+        if not traversal_available:
+            parts.append(
+                f"traversal script unavailable: {traversal_result.get('reason', 'unknown')}"
+            )
+        elif not traversal_ready:
+            if traversal_result.get("frameCapReached"):
+                parts.append("traversal reached frame cap")
+            unsettled = sum(
+                1 for r in traversal_result.get("visitedRegions", []) if not r.get("settled", False)
+            )
+            if unsettled:
+                parts.append(f"{unsettled} traversal region(s) unsettled")
+            visited = int(traversal_result.get("regionsVisited", 0))
+            target = int(traversal_result.get("totalPositions", 0))
+            if visited != target:
+                parts.append(f"traversal incomplete ({visited}/{target} regions)")
+        if parts:
+            reason = "; ".join(parts)
+
+    return {
+        "ready": overall_ready,
+        "available": viewport_available and traversal_available,
+        "elapsed_ms": round((time.perf_counter() - wall_started) * 1000, 3),
+        "first_viewport_ms": first_viewport_ms,
+        "state": {
+            "loaded": loaded_after,
+            "count": count,
+            "visibleCount": int(viewport_result.get("state", {}).get("visibleCount", 0))
+            if viewport_available
+            else 0,
+            "visibleLoaded": int(viewport_result.get("state", {}).get("visibleLoaded", 0))
+            if viewport_available
+            else 0,
+            "traversal_ready": traversal_ready,
+            "regions_visited": (
+                int(traversal_result.get("regionsVisited", 0)) if traversal_available else 0
+            ),
+            "total_positions": (
+                int(traversal_result.get("totalPositions", 0)) if traversal_available else 0
+            ),
+            "frame_cap_reached": (
+                bool(traversal_result.get("frameCapReached", False))
+                if traversal_available
+                else False
+            ),
+            "unsettled_region_count": (
+                sum(
+                    1
+                    for r in traversal_result.get("visitedRegions", [])
+                    if not r.get("settled", False)
+                )
+                if traversal_available
+                else 0
+            ),
+        },
+        "reason": reason,
+        "warnings": warnings,
+    }
 
 
 def _thumbnail_disk_metrics(batch_root: Path, batch: str) -> dict[str, int]:
@@ -1372,11 +1494,14 @@ def _phase_metrics(
     else:
         long_tasks = unavailable(str(page["longTasks"].get("reason")))
     warnings = []
-    if readiness is not None and not readiness["ready"]:
-        warnings.append(
-            f"Grid readiness timed out with {readiness.get('state', {}).get('loaded', 0)} loaded "
-            f"of {readiness.get('state', {}).get('count', 0)} rendered thumbnails"
-        )
+    if readiness is not None:
+        if not readiness["ready"]:
+            warnings.append(
+                f"Grid readiness timed out with {readiness.get('state', {}).get('loaded', 0)} loaded "
+                f"of {readiness.get('state', {}).get('count', 0)} rendered thumbnails"
+            )
+        # Propagate per-readiness warnings (viewport/timeout/traversal)
+        warnings.extend(readiness.get("warnings", []))
     metrics = {
         "thumbnail_resources": resources,
         "grid_readiness": available(
@@ -1385,7 +1510,8 @@ def _phase_metrics(
                 "elapsed_ms": readiness["elapsed_ms"],
                 "first_viewport_ms": readiness["first_viewport_ms"],
             },
-            "Harness wall clock from batch selection until all expected thumbnail elements reached loaded/error state",
+            "Harness wall clock from batch selection through viewport settle and controlled "
+            "full traversal (not all expected elements terminal)",
         )
         if readiness is not None
         else unavailable("This phase does not perform grid loading"),
@@ -1512,7 +1638,9 @@ def _prepare_checkpoint_cold_phase(
     """
     active_batch_session.switch(spec.companion_batch)
     driver.get(runtime.page_url)
-    companion_ready = _select_and_wait(driver, spec.companion_batch, spec.companion_size, timeout)
+    companion_ready = _select_and_traverse(
+        driver, spec.companion_batch, spec.companion_size, timeout
+    )
 
     _install_instrumentation(driver, spec.size)
 
@@ -1738,6 +1866,10 @@ def benchmark_case(
             )
         if not companion_ready["ready"]:
             warnings.append("Initial companion batch did not become ready before cold measurement")
+        # Propagate detailed companion warnings (unavailable, frame-cap, unsettled, etc.)
+        for cw in companion_ready.get("warnings", []):
+            if cw not in warnings:
+                warnings.append(cw)
         warnings.extend(cp_warnings)
         cold_phase = _phase("cold_initial_load", "cold", metrics, warnings)
         cold_phase["checkpoints"] = checkpoints
@@ -1765,7 +1897,7 @@ def benchmark_case(
         )
         driver.refresh()
         _install_instrumentation(driver, spec.size)
-        readiness = _select_and_wait(driver, spec.primary_batch, spec.size, args.timeout)
+        readiness = _select_and_traverse(driver, spec.primary_batch, spec.size, args.timeout)
         stage = "warm reload metric collection"
         metrics, warnings = _phase_metrics(
             driver,
@@ -1780,10 +1912,10 @@ def benchmark_case(
         stage = "batch A-B-A switch"
         _install_instrumentation(driver, spec.size + spec.companion_size)
         switch_started = time.perf_counter()
-        companion_ready = _select_and_wait(
+        companion_ready = _select_and_traverse(
             driver, spec.companion_batch, spec.companion_size, args.timeout
         )
-        primary_ready = _select_and_wait(driver, spec.primary_batch, spec.size, args.timeout)
+        primary_ready = _select_and_traverse(driver, spec.primary_batch, spec.size, args.timeout)
         primary_ready["elapsed_ms"] = round((time.perf_counter() - switch_started) * 1000, 3)
         stage = "batch A-B-A metric collection"
         metrics, warnings = _phase_metrics(
@@ -1796,6 +1928,11 @@ def benchmark_case(
         )
         if not companion_ready["ready"]:
             warnings.append("Companion batch did not become ready during A -> B -> A switch")
+        # Propagate detailed companion warnings (unavailable, frame-cap, unsettled, etc.)
+        companion_warnings = companion_ready.get("warnings", [])
+        for cw in companion_warnings:
+            if cw not in warnings:
+                warnings.append(cw)
         phases.append(_phase("batch_a_b_a_switch", "warm-refetch", metrics, warnings))
 
         stage = "sidebar width changes"
