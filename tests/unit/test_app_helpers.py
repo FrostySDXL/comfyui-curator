@@ -1,3 +1,18 @@
+def test_index_passes_explicit_standalone_template_context(app_module, monkeypatch):
+    captured = {}
+
+    def capture_render_template(template_name, **context):
+        captured["template_name"] = template_name
+        captured["context"] = context
+        return "rendered"
+
+    monkeypatch.setattr(app_module, "render_template", capture_render_template)
+
+    assert app_module.index() == "rendered"
+    assert captured["template_name"] == "index.html"
+    assert captured["context"]["curator_native"] is False
+
+
 def test_load_state_defaults_to_no_active_batch(app_module):
     assert app_module.load_state() == {"active_batch": None}
 

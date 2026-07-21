@@ -159,6 +159,7 @@ def index():
         "index.html",
         available_models=AVAILABLE_MODELS,
         default_model=DEFAULT_MODEL,
+        curator_native=False,
     )
 
 

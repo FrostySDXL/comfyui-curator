@@ -102,7 +102,10 @@ def test_view_panel_closes_on_keyboard_exit_outside_pointer_and_escape() -> None
     assert "trigger.setAttribute('aria-expanded', 'false');" in close_menu
     assert "if (restoreFocus) trigger.focus();" in close_menu
     assert "if (event.key !== 'Escape') return;" in keydown
-    assert "closeViewMenu(true);" in keydown
+    prevent_default = keydown.index("event.preventDefault();")
+    stop_propagation = keydown.index("event.stopPropagation();")
+    close_and_restore = keydown.index("closeViewMenu(true);")
+    assert prevent_default < stop_propagation < close_and_restore
     assert "requestAnimationFrame(() =>" in focusout
     assert "if (!wrapper.contains(document.activeElement)) closeViewMenu();" in focusout
     assert "if (!menu.hidden && !wrapper.contains(event.target)) closeViewMenu();" in bind

@@ -299,14 +299,14 @@ def test_grid_thumb_map_preserved():
     assert "gridThumbMap.get(img.name)" in update_grid_body
 
 
-def test_thumbs_with_unchanged_cache_key_not_rescheduled():
-    """updateThumbElement must check thumbnailCacheKey to skip unchanged thumbs."""
+def test_thumb_source_key_change_keeps_loaded_image_visible():
+    """A scheduled source replacement must not hide the displayed thumbnail."""
     source = read_frontend_js()
     update_thumb_body = extract_function_body(
         source, "function updateThumbElement(thumb, img, index)"
     )
     assert "thumbnailCacheKey" in update_thumb_body
-    assert "classList.remove('loaded')" in update_thumb_body
+    assert "classList.remove('loaded')" not in update_thumb_body
 
 
 def test_selection_mode_preserved_in_update_thumb():

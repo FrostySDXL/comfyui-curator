@@ -30,6 +30,7 @@ function closeViewMenu(restoreFocus = false) {
 function handleViewPanelKeydown(event) {
             if (event.key !== 'Escape') return;
             event.preventDefault();
+            event.stopPropagation();
             closeViewMenu(true);
         }
 

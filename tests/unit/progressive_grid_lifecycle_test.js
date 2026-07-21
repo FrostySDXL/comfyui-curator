@@ -727,7 +727,7 @@ function testReusedThumbUnschedulesBeforeSourceKeyChange() {
     assert(replacementEvents.length === 2 && replacementEvents[0].type === "unschedule" && replacementEvents[1].type === "schedule", "source cache-key change should unschedule before scheduling replacement work");
     assert(harness.scheduledKey(retained) !== oldKey, "replacement scheduler state should retain only the new cache key");
     assert(image.getAttribute("src") === "blob:old-visible-source", "source change should preserve the displayed src until replacement resolves");
-    assert(!image.classList.contains("loaded"), "genuinely different source may restart loaded-state presentation");
+    assert(image.classList.contains("loaded"), "source change should keep the displayed thumbnail visible until replacement resolves");
 }
 
 try {

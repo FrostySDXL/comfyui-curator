@@ -651,7 +651,6 @@ function updateThumbElement(thumb, img, index) {
 
             if (imageEl && imageEl.dataset.thumbnailCacheKey !== thumbnailCacheKey) {
                 if (imageEl.dataset.thumbnailCacheKey) unscheduleThumbnailLoad(thumb);
-                imageEl.classList.remove('loaded');
                 imageEl.dataset.thumbnailCacheKey = thumbnailCacheKey;
                 /* Stage 2: pass resolved source batch for scope-aware eviction.
                    Priority starts deferred; observers promote it in the viewport loader. */
