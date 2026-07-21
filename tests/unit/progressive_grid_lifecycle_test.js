@@ -279,6 +279,8 @@ function createHarness() {
     const document = new MockDocument();
     let nextRafId = 1;
     const rafQueue = new Map();
+    let nextTimerId = 1;
+    const timerQueue = new Map();
     const scheduleCalls = [];
     const unscheduleCalls = [];
     const scheduledElements = new Map();
@@ -299,6 +301,14 @@ function createHarness() {
         },
         cancelAnimationFrame(id) {
             rafQueue.delete(id);
+        },
+        setTimeout(callback) {
+            const id = nextTimerId++;
+            timerQueue.set(id, callback);
+            return id;
+        },
+        clearTimeout(id) {
+            timerQueue.delete(id);
         },
         window: {
             addEventListener(type, callback) {
@@ -401,6 +411,12 @@ function createHarness() {
             }
         },
         pendingRafCount() { return rafQueue.size; },
+        pendingTimerCount() { return timerQueue.size; },
+        flushTimers() {
+            const callbacks = [...timerQueue.values()];
+            timerQueue.clear();
+            callbacks.forEach((callback) => callback());
+        },
         isScheduled(element) { return scheduledElements.has(element); },
         scheduledKey(element) { return scheduledElements.get(element) || null; },
         dispatchWindow(type) {
@@ -647,6 +663,10 @@ function testSelectionLightboxAndResizeUseFullCanonicalList() {
     harness.document.content.scrollTop = 0;
     harness.context.setGridDensity("large");
     harness.dispatchWindow("resize");
+    harness.dispatchWindow("resize");
+    assert(harness.pendingTimerCount() === 1, "repeated resize notifications should share one settled growth recheck");
+    assert(harness.pendingRafCount() === 1, "density work should remain the only immediate progressive growth frame");
+    harness.flushTimers();
     harness.flushRaf(2);
     assert(harness.evaluate("getProgressiveGridState().renderLimit") === 240, "density/resize rechecks should preserve the render limit");
     assert(harness.document.grid.children[0] === first, "density/resize rechecks should preserve thumb identity");

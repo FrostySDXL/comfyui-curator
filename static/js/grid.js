@@ -13,6 +13,7 @@
         const PROGRESSIVE_GRID_NEAR_END_PX = 800;
         let _progressiveGridRenderLimit = PROGRESSIVE_GRID_INITIAL_LIMIT;
         let _progressiveGridGrowthRafId = null;
+        let _progressiveGridResizeTimerId = null;
         let _progressiveGridScrollBound = false;
         let _progressiveGridGeneration = 0;
         let _progressiveGridContextKey = null;
@@ -83,6 +84,16 @@
                 );
                 updateGrid();
             });
+        }
+
+        function _scheduleProgressiveGridResizeCheck() {
+            if (_progressiveGridResizeTimerId !== null) clearTimeout(_progressiveGridResizeTimerId);
+            const generation = _progressiveGridGeneration;
+            _progressiveGridResizeTimerId = setTimeout(() => {
+                _progressiveGridResizeTimerId = null;
+                if (generation !== _progressiveGridGeneration) return;
+                _scheduleProgressiveGridGrowthCheck();
+            }, 100);
         }
 
         function _bindProgressiveGridScrollGrowth(content) {
@@ -418,13 +429,13 @@ function initializeGridShellLayout() {
             if (!window._gridShellResizeObserver && window.ResizeObserver) {
                 window._gridShellResizeObserver = new ResizeObserver(() => {
                     updateGridShellLayout();
-                    _scheduleProgressiveGridGrowthCheck();
+                    _scheduleProgressiveGridResizeCheck();
                 });
                 window._gridShellResizeObserver.observe(content);
             } else if (!window._gridShellResizeBound) {
                 window.addEventListener('resize', () => {
                     updateGridShellLayout();
-                    _scheduleProgressiveGridGrowthCheck();
+                    _scheduleProgressiveGridResizeCheck();
                 });
                 window._gridShellResizeBound = true;
             }
