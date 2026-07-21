@@ -288,7 +288,7 @@ def test_thumbnail_blob_cache_unchanged():
     source = read_frontend_js()
     assert "const thumbnailBlobUrlCache = new Map();" in source
     assert "const thumbnailBlobInflight = new Map();" in source
-    assert "const THUMBNAIL_BLOB_CACHE_MAX = 200;" in source
+    assert "const THUMBNAIL_BLOB_CACHE_MAX = 1000;" in source
 
 
 def test_grid_thumb_map_preserved():
