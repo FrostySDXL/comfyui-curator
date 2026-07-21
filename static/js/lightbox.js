@@ -5,6 +5,7 @@
 let lightboxZoom = 1;
 const _prefetchRegistry = new Map();
 const _pendingCompareLoaders = [null, null];
+let _pendingSingleImageLoader = null;
 let lightboxImageToken = 0;
 let lightboxAiOpen = false;
 let lightboxBaseWidth = 0;
@@ -54,6 +55,8 @@ function openCompareLightbox() {
                 showToast('Select exactly two review images to compare');
                 return;
             }
+            _cancelSingleImageLoader();
+            _cleanupPrefetch();
             lightboxCompareMode = true;
             lightboxStickyCompareMode = false;
             lightboxComparePinnedIndex = -1;
@@ -80,6 +83,8 @@ function openStickyCompareLightbox() {
                 showToast('Open a review image with another image available to pin compare');
                 return;
             }
+            _cancelSingleImageLoader();
+            _cleanupPrefetch();
             const pinnedIndex = currentIndex;
             let candidateIndex = (pinnedIndex + 1) % lightboxImages.length;
             if (candidateIndex === pinnedIndex) candidateIndex = (candidateIndex + 1) % lightboxImages.length;
@@ -108,6 +113,7 @@ function getLightboxImages() {
 
 function closeLightbox() {
             _cleanupPrefetch();
+            _cancelSingleImageLoader();
             _cancelComparePaneLoader(0);
             _cancelComparePaneLoader(1);
             document.getElementById('lightbox').classList.remove('active');
@@ -678,41 +684,45 @@ function showCurrentImage() {
             resetLightboxZoom();
             const el = document.getElementById('lightbox-img');
             el.draggable = false;
-            // Immediately hide (no transition) to prevent flash of previous image.
-            // Do NOT removeAttribute('src') -- it collapses the <img> layout to 0x0
-            // and causes a visual jump.  Inline opacity:0 already hides the old image.
-            el.style.opacity = '0';
-            el.classList.add('loading');
-            el.onload = function() {
-                if (imageToken !== lightboxImageToken) return;
-                el.classList.remove('loading');
-                el.style.opacity = '';
-                currentLightboxDimensions = {w: this.naturalWidth, h: this.naturalHeight};
-                captureLightboxBaseSize();
-                updateLightboxInfo(img, this.naturalWidth, this.naturalHeight);
-                _prefetchAdjacentImages(imageToken);
-            };
-            el.onerror = function() {
-                el.classList.remove('loading');
-                el.style.opacity = '';
-            };
-            // Use decode() when available to avoid flash of partially-decoded image
+            el.onload = null;
+            el.onerror = null;
+            el.classList.remove('loading');
+            el.style.opacity = '';
+            _cancelSingleImageLoader();
             const source = getImageBatchAndFolder(img);
             const newSrc = ccImageUrl(source.batch, source.folder, img.name);
-            if (el.decode) {
+            const loaderEntry = _prefetchRegistry.get(newSrc) || _createLightboxImageLoader(newSrc);
+            _prefetchRegistry.delete(newSrc);
+            const pending = {entry: loaderEntry, token: imageToken};
+            _pendingSingleImageLoader = pending;
+            loaderEntry.ready.then(function() {
+                const lightbox = document.getElementById('lightbox');
+                if (_pendingSingleImageLoader !== pending || imageToken !== lightboxImageToken ||
+                    !lightbox || !lightbox.classList.contains('active') || lightboxCompareMode) return;
+                _pendingSingleImageLoader = null;
+                loaderEntry.img.onload = null;
+                loaderEntry.img.onerror = null;
+                el.onload = function() {
+                    if (imageToken !== lightboxImageToken) return;
+                    el.onload = null;
+                    el.onerror = null;
+                    captureLightboxBaseSize();
+                };
+                el.onerror = function() {
+                    if (imageToken !== lightboxImageToken) return;
+                    el.onload = null;
+                    el.onerror = null;
+                };
                 el.src = newSrc;
-                el.decode().then(() => {
-                    if (imageToken === lightboxImageToken) {
-                        el.classList.remove('loading');
-                        el.style.opacity = '';
-                    }
-                }).catch(() => {
-                    el.classList.remove('loading');
-                    el.style.opacity = '';
-                });
-            } else {
-                el.src = newSrc;
-            }
+                currentLightboxDimensions = {
+                    w: loaderEntry.img.naturalWidth,
+                    h: loaderEntry.img.naturalHeight,
+                };
+                updateLightboxInfo(img, currentLightboxDimensions.w, currentLightboxDimensions.h);
+                _prefetchAdjacentImages(imageToken);
+            }).catch(function() {
+                if (_pendingSingleImageLoader === pending) _pendingSingleImageLoader = null;
+            });
             loadLightboxMetadata(img, metadataToken);
             renderLightboxAiPanel();
             if (typeof syncLightboxPublicActions === 'function') syncLightboxPublicActions();
@@ -851,6 +861,50 @@ function navigate(delta) {
             showCurrentImage();
         }
 
+function _createLightboxImageLoader(url) {
+            const loader = new Image();
+            const entry = {img: loader, ready: null};
+            entry.ready = new Promise(function(resolve, reject) {
+                const settleReady = function() {
+                    loader.onload = null;
+                    loader.onerror = null;
+                    resolve(entry);
+                };
+                const failLoad = function(error) {
+                    loader.onload = null;
+                    loader.onerror = null;
+                    reject(error);
+                };
+                loader.onload = function() {
+                    if (loader.decode) {
+                        loader.decode().then(settleReady).catch(settleReady);
+                    } else {
+                        settleReady();
+                    }
+                };
+                loader.onerror = failLoad;
+            });
+            // Every caller installs its own lifecycle handler; this prevents a
+            // cancelled loader rejection from becoming an unhandled promise.
+            entry.ready.catch(function() {});
+            loader.src = url;
+            return entry;
+        }
+
+function _disposeLightboxImageLoader(entry) {
+            if (!entry) return;
+            entry.img.onload = null;
+            entry.img.onerror = null;
+            entry.img.src = '';
+        }
+
+function _cancelSingleImageLoader() {
+            const pending = _pendingSingleImageLoader;
+            if (!pending) return;
+            _pendingSingleImageLoader = null;
+            _disposeLightboxImageLoader(pending.entry);
+        }
+
 function _prefetchAdjacentImages(imageToken) {
             if (imageToken !== lightboxImageToken) return;
             const lb = document.getElementById('lightbox');
@@ -871,36 +925,26 @@ function _prefetchAdjacentImages(imageToken) {
             if (nextIdx !== prevIdx) addDesired(nextIdx);
             for (const [url, entry] of _prefetchRegistry) {
                 if (!desired.has(url)) {
-                    entry.img.onload = null;
-                    entry.img.onerror = null;
-                    entry.img.src = '';
+                    _disposeLightboxImageLoader(entry);
                     _prefetchRegistry.delete(url);
                 }
             }
             for (const url of desired) {
                 if (_prefetchRegistry.has(url)) continue;
-                const preload = new Image();
-                const entry = {img: preload, token: imageToken};
+                const entry = _createLightboxImageLoader(url);
                 _prefetchRegistry.set(url, entry);
-                preload.onload = function() {
+                entry.ready.catch(function() {
                     if (_prefetchRegistry.get(url) === entry) {
+                        _disposeLightboxImageLoader(entry);
                         _prefetchRegistry.delete(url);
                     }
-                };
-                preload.onerror = function() {
-                    if (_prefetchRegistry.get(url) === entry) {
-                        _prefetchRegistry.delete(url);
-                    }
-                };
-                preload.src = url;
+                });
             }
         }
 
 function _cleanupPrefetch() {
             for (const [, entry] of _prefetchRegistry) {
-                entry.img.onload = null;
-                entry.img.onerror = null;
-                entry.img.src = '';
+                _disposeLightboxImageLoader(entry);
             }
             _prefetchRegistry.clear();
         }

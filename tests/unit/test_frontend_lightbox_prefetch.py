@@ -1,4 +1,10 @@
-"""Source-invariant tests for lightbox adjacent-image prefetch and
+"""Source and executable tests for lightbox navigation and adjacent-image prefetch.
+
+The Node lifecycle harness executes the production lightbox script with controllable
+browser-like image load/decode completion. Source invariants cover the bounded
+registry and compare path.
+
+Source-invariant coverage includes lightbox adjacent-image prefetch and
 sticky-compare candidate-replacement smoothness.
 
 Verifies a bounded Map-based registry with:
@@ -18,7 +24,28 @@ Also verifies compare-pane replacement uses off-DOM load-then-swap:
 - Error path preserves old visible image
 """
 
+import json
+import subprocess
+from pathlib import Path
+
 from tests.unit.frontend_source import extract_function_body, read_frontend_js
+
+
+def test_lightbox_navigation_node_lifecycle() -> None:
+    completed = subprocess.run(
+        ["node", "tests/unit/lightbox_navigation_lifecycle_test.js"],
+        cwd=Path.cwd(),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert completed.stdout, completed.stderr
+    report = json.loads(completed.stdout)
+    failures = [detail["message"] for detail in report["details"] if not detail["pass"]]
+    assert completed.returncode == 0, "\n".join(failures) + "\n" + completed.stderr
+    assert report["failed"] == 0
 
 
 # ── Registry structure ──────────────────────────────────────────────────────
@@ -34,8 +61,11 @@ def test_prefetch_registry_is_module_scoped_map() -> None:
 
 def test_prefetch_registry_stores_image_objects() -> None:
     """Each entry must hold a live Image reference and the captured token."""
-    body = extract_function_body(read_frontend_js(), "function _prefetchAdjacentImages(")
-    assert "new Image()" in body
+    js = read_frontend_js()
+    body = extract_function_body(js, "function _prefetchAdjacentImages(")
+    loader_body = extract_function_body(js, "function _createLightboxImageLoader(")
+    assert "new Image()" in loader_body
+    assert "_createLightboxImageLoader(" in body
     assert "_prefetchRegistry.set(" in body
 
 
@@ -149,9 +179,12 @@ def test_prefetch_cleanup_function_exists() -> None:
 def test_prefetch_cleanup_detaches_handlers() -> None:
     """Cleanup must null preloader onload/onerror to prevent callbacks
     after close."""
-    body = extract_function_body(read_frontend_js(), "function _cleanupPrefetch(")
-    assert ".onload = null" in body or ".onload=null" in body
-    assert ".onerror = null" in body or ".onerror=null" in body
+    js = read_frontend_js()
+    body = extract_function_body(js, "function _cleanupPrefetch(")
+    dispose_body = extract_function_body(js, "function _disposeLightboxImageLoader(")
+    assert "_disposeLightboxImageLoader(entry)" in body
+    assert ".onload = null" in dispose_body or ".onload=null" in dispose_body
+    assert ".onerror = null" in dispose_body or ".onerror=null" in dispose_body
 
 
 def test_prefetch_cleanup_clears_registry() -> None:
