@@ -14,7 +14,7 @@ def test_thumbnail_reveal_separates_opacity_and_transform_timing() -> None:
     css = Path("static/css/grid.css").read_text(encoding="utf-8")
     image_rule = _rule_body(css, ".thumb img")
 
-    assert "transition: opacity 0.8s ease-out, transform 0.4s ease-out;" in image_rule
+    assert "transition: opacity 0.8s ease-in-out, transform 0.4s ease-out;" in image_rule
     assert "opacity: 0;" in image_rule
     assert "transform: scale(0.97);" in image_rule
     assert "opacity: 1;" in _rule_body(css, ".thumb img.loaded")
