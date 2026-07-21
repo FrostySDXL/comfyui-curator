@@ -66,7 +66,7 @@
         let folderRequestToken = 0;
         let gridThumbMap = new Map();
         const MAX_GRID_LOADING_PLACEHOLDERS = 200;
-        const THUMBNAIL_BLOB_CACHE_MAX = 1000;
+        const THUMBNAIL_BLOB_CACHE_MAX = 400;
         const thumbnailBlobUrlCache = new Map();
         const thumbnailBlobInflight = new Map();
         const SIDEBAR_WIDTH_DEFAULT = 240;
