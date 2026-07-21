@@ -373,7 +373,7 @@ function createHarness() {
         let folderRequestToken = 0;
         const GRID_DENSITY_KEY = 'imageCurator.gridDensity';
         const MAX_GRID_LOADING_PLACEHOLDERS = 200;
-        const THUMBNAIL_BLOB_CACHE_MAX = 400;
+        const THUMBNAIL_BLOB_CACHE_MAX = 200;
         const thumbnailBlobUrlCache = new Map();
         const thumbnailBlobInflight = new Map();
     `, context);

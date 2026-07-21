@@ -128,7 +128,7 @@ global.isDraggingImages = false;
 global.folderRequestToken = 0;
 global.gridThumbMap = new Map();
 global.MAX_GRID_LOADING_PLACEHOLDERS = 200;
-global.THUMBNAIL_BLOB_CACHE_MAX = 400;
+global.THUMBNAIL_BLOB_CACHE_MAX = 200;
 global.thumbnailBlobUrlCache = new Map();
 global.thumbnailBlobInflight = new Map();
 global.SIDEBAR_WIDTH_DEFAULT = 240;
@@ -606,26 +606,26 @@ function test06_overflow_eviction_lru_tie_break() {
     assert(thumbnailBlobUrlCache.has('o-def-3'), 'T06e: recently-touched entry survived');
 }
 
-function test07_exact_hard_cap_400() {
+function test07_exact_hard_cap_200() {
     _resetCacheState();
 
     /* Restore real cap */
-    _evalInCtx('THUMBNAIL_BLOB_CACHE_MAX = 400');
+    _evalInCtx('THUMBNAIL_BLOB_CACHE_MAX = 200');
 
-    /* Fill to exactly 400 */
-    for (var i = 0; i < 400; i++) {
+    /* Fill to exactly 200 */
+    for (var i = 0; i < 200; i++) {
         thumbnailBlobUrlCache.set('bulk-' + i, 'blob:bulk-' + i);
         _callUpdateCacheMetadata('bulk-' + i, JSON.stringify({ scopeBatch: 'batch-bulk', priority: 2 }));
     }
 
-    assert(_getCacheSize() === 400, 'T07a: cache at cap 400');
+    assert(_getCacheSize() === 200, 'T07a: cache at cap 200');
 
     /* Add one more -> evicts one */
     thumbnailBlobUrlCache.set('overflow-key', 'blob:overflow');
     _callUpdateCacheMetadata('overflow-key', JSON.stringify({ scopeBatch: 'batch-bulk', priority: 0 }));
     _callEvictIfNeeded();
 
-    assert(_getCacheSize() === 400, 'T07b: cache stays at cap 400 after overflow (got ' + _getCacheSize() + ')');
+    assert(_getCacheSize() === 200, 'T07b: cache stays at cap 200 after overflow (got ' + _getCacheSize() + ')');
     assert(thumbnailBlobUrlCache.has('overflow-key'), 'T07c: new entry (visible priority) was admitted');
 }
 
@@ -1711,7 +1711,7 @@ var syncTests = [
     test04_overflow_eviction_scope_class_ordering,
     test05_overflow_eviction_priority_within_scope,
     test06_overflow_eviction_lru_tie_break,
-    test07_exact_hard_cap_400,
+    test07_exact_hard_cap_200,
     test08_real_batch_transition_A_B_A,
     test09_same_batch_does_not_rotate_history,
     test10_virtual_batch_does_not_rotate_history,
