@@ -57,8 +57,8 @@
 | `api.js` | API wrapper helpers for route calls |
 | `sidebar.js` | Left sidebar width/open state and resize behavior |
 | `batches.js` | Batch list/search/sort, active-batch combobox, batch/folder selection, import/create batch |
-| `grid.js` | Thumbnail cache, image loading, sort controls, display filtering, grid rendering |
-| `viewport-loader.js` | Viewport-aware thumbnail load-start scheduling: 3-tier priority (visible/near/deferred), concurrency 16, single rAF pump, idle background drain, no-unload invariants |
+| `grid.js` | Thumbnail cache, image loading, sort controls, display filtering, progressive grid rendering |
+| `viewport-loader.js` | Viewport-aware thumbnail load-start scheduling: visible/near approach triggers, concurrency 16, single rAF pump, no-unload invariants, and background draining only when `IntersectionObserver` is unavailable |
 | `favorites.js` | Favorites filter/toggle and All Favorites view/count |
 | `publish.js` | Public export modal, batch Public view, All Public view/count, public copy/move/delete actions |
 | `moves.js` | Multi-select, drag/drop, move, undo, Empty Rejects modal |
@@ -97,6 +97,9 @@
 | `sidebarWidth` | `number` | Left sidebar width (px), persisted in localStorage |
 | `sidebarOpen` | `boolean` | Left sidebar visibility, persisted in localStorage |
 | `gridThumbMap` | `Map<filename, Element>` | Persistent thumb DOM elements keyed by filename |
+| `currentDisplayImages` | `array` | Full canonical display-order list used by selection and lightbox navigation, including unrendered items |
+| `_progressiveGridRenderLimit` | `number` | Current retained prefix limit; starts at 120 and grows in 120-item chunks |
+| `_progressiveGridContextKey` | `string\|null` | Batch/folder/favorites/sort context controlling safe prefix resets |
 | `thumbnailBlobUrlCache` | `Map<cacheKey, blobUrl>` | LRU metadata-aware cache (max 1000) with scope/priority eviction (Stage 2) |
 | `thumbnailBlobInflight` | `Map<cacheKey, Promise>` | Dedup map for in-flight thumbnail fetch requests |
 | `THUMBNAIL_LOAD_CONCURRENCY` | `const` (16) | Maximum simultaneous thumbnail loads via viewport scheduler |
@@ -243,6 +246,16 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
   sessions or when the modal reports a stale image count.
 - Background polling pauses during lightbox, drag, or resize so review is not
   interrupted.
+- The grid initially renders at most 120 thumbnails and appends retained
+  120-item chunks when `.content` approaches within 800px of its current
+  bottom. Rendered thumbs remain in the DOM for the life of that view; viewport
+  scheduling controls load start only and never unloads displayed images.
+- `currentDisplayImages` always retains the full display order for counts,
+  selection ranges, Select All, moves, and lightbox navigation. Batch, folder,
+  favorites-only, and sort/order context changes reset the progressive prefix
+  and scroll position. Retained same-key elements survive sort and favorites
+  changes with identity, source, loaded, selection, inspection, and pending
+  scheduler state intact. AI filters only update rendered CSS state.
 - Zoomed lightbox images can be dragged to pan around details.
 - Compare mode gives each side its own zoom and pan state; curation actions and
   metadata/AI panels apply to the active side only.
@@ -277,6 +290,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **`folderRequestToken` prevents stale renders:** When switching batches/folders rapidly, old fetch responses are discarded by checking a monotonically incrementing token. Any new async operation targeting the same data must follow this pattern.
 - **Polling skips during interaction:** `isInteractionBusy()` returns true during lightbox, drag, or resize. This prevents API responses from overwriting DOM elements the operator is actively interacting with.
 - **`_gridChildrenMatchDesiredOrder()` optimization:** The grid is only rebuilt if the order of thumb elements actually changed. Removing this check causes visible flicker on every poll cycle.
+- **Progressive DOM is append-and-retain, not virtualization:** `updateGrid()` keeps the full canonical list but renders a bounded prefix. Near-end growth uses one guarded rAF and no background timer. Sort, order, and favorites context resets reconcile retained elements in place without globally cancelling same-key pending work. Placeholder and empty-state resets globally cancel pending work and clear the map. A reused element changing source is unscheduled before its replacement key is scheduled. Never remove a rendered thumb merely because it leaves the viewport.
 - **Viewport-aware loading controls start only:** `viewport-loader.js` uses `IntersectionObserver` to decide WHEN to start a thumbnail load. Distant thumbnails register with both observers but stay pending until the operator scrolls them near the viewport; they never auto-drain in the background. Visible (0% margin) always outranks near (100% margin). A single rAF priority pump handles observer promotions, and a single microtask completion pump refills visible/near queues after loads complete. Concurrency is bounded at 16. `_admitAndLoad()` unconditionally unobserves from both observers before loading, so each thumb is observed exactly once. Thumbnails that have been displayed are never cleared, replaced, unloaded, or re-shimmered on viewport exit. An explicit fallback path (no `IntersectionObserver`) eagerly loads all deferred items through bounded concurrency waves.
 - **Stage 2 metadata-aware LRU cache:** The thumbnail blob URL cache (`thumbnailBlobUrlCache`) is augmented with a parallel metadata map (`_thumbnailMetadata`) that tracks per-entry strongest-observed priority (visible=0, near=1, deferred=2), real source-batch scope, a monotonic `_lruTouch` counter, and a `_resident` flag (0=probationary, 1=resident). Every cache hit in `resolveThumbnailBlobUrl` or `assignThumbnailSrcIfCached` touches LRU recency and promotes the entry to resident without revoking or recreating the blob URL. Newly fetched entries start probationary. Overflow eviction (`_evictIfNeeded`) selects victims by scope class first (other-batch < previous-batch < current-batch), then priority class (deferred < near < visible), then residency (probationary < resident), then LRU order as final tie-break. This scan-resistant ranking prevents newly-fetched deferred entries from evicting previously-retained entries of the same scope+priority before those retained entries get a chance to be reused. On real-batch transitions (`_updateRealBatchTracking`), entries belonging to the outgoing batch are marked resident in a single O(n) pass bounded by the cache cap (1,000); same-batch repeats and virtual sentinels (`__favorites__`, `__public__`) do not trigger this pass. The hard cap remains 1,000. Current and immediately-previous real batch are tracked by `_updateRealBatchTracking()`; virtual views do not rotate real-batch history. Inflight metadata aggregation (`_mergeInflightMetadata`/`_takeInflightMetadata`) ensures a visible requester joining an existing deferred inflight fetch promotes the eventual cached entry's metadata while using exactly one fetch/object URL. Blob URL revocation happens exactly once per evicted entry. Eviction never mutates a displayed `<img>` element's `src`, `loaded` class, or `thumbnailCacheKey` dataset attribute. Metadata maps are cleaned up in the `beforeunload` handler alongside the blob URL cache.
 - **Score gradient is hardcoded:** `aiScoreGradient()` uses a fixed dark-red-to-dark-yellow-to-green gradient. There is no configuration for color thresholds.

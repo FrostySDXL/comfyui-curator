@@ -4,6 +4,93 @@
  * Later-file globals called at runtime: aiGetImageScore, aiShouldShowImage, aiSortImages, aiScoreGradient.
  */
 
+        /* A 120-item initial prefix stays materially below the 2,000-image
+           benchmark while covering several desktop viewports. Matching
+           120-item chunks keep growth bounded; the 800px threshold starts the
+           next chunk before the operator reaches the current prefix boundary. */
+        const PROGRESSIVE_GRID_INITIAL_LIMIT = 120;
+        const PROGRESSIVE_GRID_APPEND_CHUNK = 120;
+        const PROGRESSIVE_GRID_NEAR_END_PX = 800;
+        let _progressiveGridRenderLimit = PROGRESSIVE_GRID_INITIAL_LIMIT;
+        let _progressiveGridGrowthRafId = null;
+        let _progressiveGridScrollBound = false;
+        let _progressiveGridGeneration = 0;
+        let _progressiveGridContextKey = null;
+
+        function getProgressiveGridState() {
+            return {
+                renderedCount: gridThumbMap.size,
+                renderLimit: _progressiveGridRenderLimit,
+                context: _progressiveGridContextKey,
+            };
+        }
+
+        function _getProgressiveGridContextKey() {
+            return JSON.stringify([
+                currentBatch,
+                currentFolder,
+                favoritesFilterOn,
+                currentSort,
+                currentOrder,
+            ]);
+        }
+
+        function _cancelProgressiveGridGrowthCheck() {
+            if (_progressiveGridGrowthRafId !== null) {
+                cancelAnimationFrame(_progressiveGridGrowthRafId);
+                _progressiveGridGrowthRafId = null;
+            }
+        }
+
+        function _resetProgressiveGridContext(contextKey) {
+            _progressiveGridGeneration += 1;
+            _cancelProgressiveGridGrowthCheck();
+            _progressiveGridRenderLimit = PROGRESSIVE_GRID_INITIAL_LIMIT;
+            _progressiveGridContextKey = contextKey;
+            const content = document.querySelector('.content');
+            if (content) content.scrollTop = 0;
+        }
+
+        function _resetProgressiveGridLifecycle() {
+            _progressiveGridGeneration += 1;
+            _cancelProgressiveGridGrowthCheck();
+            cancelScheduledViewportLoads();
+            for (const element of gridThumbMap.values()) unscheduleThumbnailLoad(element);
+            _progressiveGridRenderLimit = PROGRESSIVE_GRID_INITIAL_LIMIT;
+            _progressiveGridContextKey = null;
+            currentDisplayImages = [];
+            const content = document.querySelector('.content');
+            if (content) content.scrollTop = 0;
+        }
+
+        function _isProgressiveGridNearEnd(content) {
+            const distanceToBottom = content.scrollHeight - content.clientHeight - content.scrollTop;
+            return distanceToBottom <= PROGRESSIVE_GRID_NEAR_END_PX;
+        }
+
+        function _scheduleProgressiveGridGrowthCheck() {
+            if (_progressiveGridGrowthRafId !== null) return;
+            const generation = _progressiveGridGeneration;
+            _progressiveGridGrowthRafId = requestAnimationFrame(() => {
+                _progressiveGridGrowthRafId = null;
+                if (generation !== _progressiveGridGeneration) return;
+                const content = document.querySelector('.content');
+                if (!content || !_isProgressiveGridNearEnd(content)) return;
+                if (_progressiveGridRenderLimit >= currentDisplayImages.length) return;
+                _progressiveGridRenderLimit = Math.min(
+                    currentDisplayImages.length,
+                    _progressiveGridRenderLimit + PROGRESSIVE_GRID_APPEND_CHUNK,
+                );
+                updateGrid();
+            });
+        }
+
+        function _bindProgressiveGridScrollGrowth(content) {
+            if (_progressiveGridScrollBound) return;
+            content.addEventListener('scroll', _scheduleProgressiveGridGrowthCheck, {passive: true});
+            _progressiveGridScrollBound = true;
+        }
+
         /* ── Stage 2 cache metadata ──────────────────────────────────────
          * _thumbnailMetadata: Map<cacheKey, {priority, scopeBatch, _lruTouch, _resident}>
          *   - priority: strongest observed request priority (0=visible, 1=near, 2=deferred)
@@ -309,7 +396,7 @@ function updateGridShellLayout() {
             }
 
             const {track, gap} = getGridDensityConfig();
-            const displayCount = getDisplayImages().length || grid.querySelectorAll('.thumb.loading-placeholder').length;
+            const displayCount = currentDisplayImages.length || grid.querySelectorAll('.thumb.loading-placeholder').length;
             if (displayCount <= 0) {
                 grid.style.removeProperty('--grid-columns');
                 return;
@@ -327,11 +414,18 @@ function updateGridShellLayout() {
 function initializeGridShellLayout() {
             const content = document.querySelector('.content');
             if (!content) return;
+            _bindProgressiveGridScrollGrowth(content);
             if (!window._gridShellResizeObserver && window.ResizeObserver) {
-                window._gridShellResizeObserver = new ResizeObserver(() => updateGridShellLayout());
+                window._gridShellResizeObserver = new ResizeObserver(() => {
+                    updateGridShellLayout();
+                    _scheduleProgressiveGridGrowthCheck();
+                });
                 window._gridShellResizeObserver.observe(content);
             } else if (!window._gridShellResizeBound) {
-                window.addEventListener('resize', updateGridShellLayout);
+                window.addEventListener('resize', () => {
+                    updateGridShellLayout();
+                    _scheduleProgressiveGridGrowthCheck();
+                });
                 window._gridShellResizeBound = true;
             }
             updateGridShellLayout();
@@ -345,6 +439,7 @@ function setGridDensity(density) {
                 grid.classList.add(`density-${gridDensity}`);
             }
             updateGridShellLayout();
+            _scheduleProgressiveGridGrowthCheck();
             document.querySelectorAll('.density-btn').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.density === gridDensity);
                 btn.setAttribute('aria-pressed', btn.dataset.density === gridDensity ? 'true' : 'false');
@@ -544,6 +639,7 @@ function updateThumbElement(thumb, img, index) {
             }
 
             if (imageEl && imageEl.dataset.thumbnailCacheKey !== thumbnailCacheKey) {
+                if (imageEl.dataset.thumbnailCacheKey) unscheduleThumbnailLoad(thumb);
                 imageEl.classList.remove('loaded');
                 imageEl.dataset.thumbnailCacheKey = thumbnailCacheKey;
                 /* Stage 2: pass resolved source batch for scope-aware eviction.
@@ -566,7 +662,7 @@ function updateThumbElement(thumb, img, index) {
         }
 
 function showGridLoadingPlaceholders(batch, folder) {
-            cancelScheduledViewportLoads();
+            _resetProgressiveGridLifecycle();
             const grid = document.getElementById('grid');
             const expectedCount = allCounts[batch]?.[folder] || 0;
             gridThumbMap.clear();
@@ -593,9 +689,12 @@ function updateGrid() {
             const grid = document.getElementById('grid');
             const displayImages = getDisplayImages();
             currentDisplayImages = displayImages;
+            const nextContextKey = _getProgressiveGridContextKey();
+            const contextChanged = nextContextKey !== _progressiveGridContextKey;
+            if (contextChanged) _resetProgressiveGridContext(nextContextKey);
 
             if (images.length === 0 || displayImages.length === 0) {
-                cancelScheduledViewportLoads();
+                _resetProgressiveGridLifecycle();
                 grid.classList.add('is-empty');
                 grid.replaceChildren(createGridEmptyState(getGridEmptyStateMessage()));
                 gridThumbMap.clear();
@@ -604,7 +703,9 @@ function updateGrid() {
             }
             grid.classList.remove('is-empty');
 
-            const activeNames = new Set(displayImages.map(img => img.name));
+            const renderedImages = displayImages.slice(0, _progressiveGridRenderLimit);
+
+            const activeNames = new Set(renderedImages.map(img => img.name));
             for (const [name, element] of gridThumbMap.entries()) {
                 if (!activeNames.has(name)) {
                     unscheduleThumbnailLoad(element);
@@ -613,8 +714,7 @@ function updateGrid() {
                 }
             }
 
-            const fragment = document.createDocumentFragment();
-            displayImages.forEach((img) => {
+            renderedImages.forEach((img) => {
                 const displayIndex = getImageDisplayIndexByName(img.name);
                 let thumb = gridThumbMap.get(img.name);
                 if (!thumb) {
@@ -622,22 +722,24 @@ function updateGrid() {
                     gridThumbMap.set(img.name, thumb);
                 }
                 updateThumbElement(thumb, img, displayIndex);
-                fragment.appendChild(thumb);
             });
 
-            // Skip the replaceChildren() cycle when the live grid already
-            // holds the desired children in the desired order. This avoids
-            // a layout-thrashing detach/reattach on every poll tick, even
-            // when the visible set is unchanged. The fragment appendChild
-            // path above still guarantees correct ordering whenever the
-            // display set actually changed.
-            if (_gridChildrenMatchDesiredOrder(grid, displayImages)) {
+            if (_gridChildrenMatchDesiredOrder(grid, renderedImages)) {
                 updateGridShellLayout();
+                _scheduleProgressiveGridGrowthCheck();
                 return;
             }
-            // Replace all children atomically to prevent visible empty-grid flash
-            grid.replaceChildren(fragment);
+
+            renderedImages.forEach((img, index) => {
+                const thumb = gridThumbMap.get(img.name);
+                const liveAtIndex = grid.children[index] || null;
+                if (liveAtIndex !== thumb) grid.insertBefore(thumb, liveAtIndex);
+            });
+            while (grid.children.length > renderedImages.length) {
+                grid.children[grid.children.length - 1].remove();
+            }
             updateGridShellLayout();
+            _scheduleProgressiveGridGrowthCheck();
         }
 
 function _gridChildrenMatchDesiredOrder(grid, displayImages) {

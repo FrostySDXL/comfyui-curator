@@ -224,10 +224,11 @@ def test_empty_grid_state_cancels_scheduled_loads():
     """When updateGrid enters the empty state, it must call cancelScheduledViewportLoads."""
     source = read_frontend_js()
     update_grid_body = extract_function_body(source, "function updateGrid()")
-    # In the empty-state branch, cancelScheduledViewportLoads must be called
-    assert "cancelScheduledViewportLoads()" in update_grid_body, (
-        "updateGrid empty-state path must call cancelScheduledViewportLoads"
+    reset_body = extract_function_body(source, "function _resetProgressiveGridLifecycle()")
+    assert "_resetProgressiveGridLifecycle()" in update_grid_body, (
+        "updateGrid empty-state path must reset the progressive lifecycle"
     )
+    assert "cancelScheduledViewportLoads()" in reset_body
 
 
 def test_unschedule_removes_from_queues():
@@ -365,7 +366,9 @@ def test_show_placeholder_cancels_scheduled():
     placeholder_body = extract_function_body(
         source, "function showGridLoadingPlaceholders(batch, folder)"
     )
-    assert "cancelScheduledViewportLoads()" in placeholder_body
+    reset_body = extract_function_body(source, "function _resetProgressiveGridLifecycle()")
+    assert "_resetProgressiveGridLifecycle()" in placeholder_body
+    assert "cancelScheduledViewportLoads()" in reset_body
 
 
 # ── admission helper and lifecycle fixes ──────────────────────────────────
