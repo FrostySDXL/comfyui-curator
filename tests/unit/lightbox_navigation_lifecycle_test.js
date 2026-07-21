@@ -38,6 +38,8 @@ function createElement() {
         scrollTop: 0,
         clientWidth: 1000,
         clientHeight: 700,
+        offsetWidth: 800,
+        offsetHeight: 600,
         naturalWidth: 0,
         naturalHeight: 0,
         src: "",
@@ -185,6 +187,122 @@ async function finishLoader(loader) {
     await flushPromises();
 }
 
+async function prepareNewSession(context, loaders, targetIndex) {
+    context.closeLightbox();
+    context.openLightbox(targetIndex);
+    const loader = loaders.at(-1);
+    await finishLoader(loader);
+    return loader;
+}
+
+async function testNewSessionHidesPreviousImageUntilVisibleTargetLoads() {
+    const {context, elements, imageUrls, loaders} = createRuntime();
+    context.closeLightbox();
+    context.openLightbox(1);
+
+    check(!elements.lightbox.classList.contains("active"), "new session remains inactive while the target prepares");
+    check(elements["lightbox-img"].src !== imageUrls[0], "new session clears the previous session src before activation");
+
+    await finishLoader(loaderFor(loaders, imageUrls[1]));
+    check(!elements.lightbox.classList.contains("active"), "decoded off-DOM target does not activate before visible-image load");
+    check(elements["lightbox-img"].src === imageUrls[1], "decoded target is assigned to the hidden visible image");
+
+    if (elements["lightbox-img"].onload) elements["lightbox-img"].onload();
+    check(elements.lightbox.classList.contains("active"), "visible-image load activates the prepared new session");
+    check(vm.runInContext("lightboxBaseWidth > 0 && lightboxBaseHeight > 0", context), "new session measures nonzero base dimensions before activation");
+    check(vm.runInContext("lightboxZoom === 1", context), "new session activates at 100 percent zoom");
+}
+
+async function testNewSessionMeasuresUntransformedLayoutSize() {
+    const {context, elements, loaders} = createRuntime();
+    const visibleImage = elements["lightbox-img"];
+    visibleImage.offsetWidth = 800;
+    visibleImage.offsetHeight = 600;
+    visibleImage.getBoundingClientRect = () => ({left: 0, top: 0, width: 780, height: 585});
+
+    await prepareNewSession(context, loaders, 1);
+    if (visibleImage.onload) visibleImage.onload();
+
+    check(vm.runInContext("lightboxBaseWidth === 800 && lightboxBaseHeight === 600", context), "new session stores untransformed layout dimensions before activation");
+    check(visibleImage.style.width === "800px" && visibleImage.style.height === "600px", "new session applies untransformed dimensions at 100 percent zoom");
+}
+
+async function testClosePreservesCommittedInlineDimensions() {
+    const {context, elements, loaders} = createRuntime();
+    const visibleImage = elements["lightbox-img"];
+    await prepareNewSession(context, loaders, 1);
+    if (visibleImage.onload) visibleImage.onload();
+    const committedWidth = visibleImage.style.width;
+    const committedHeight = visibleImage.style.height;
+
+    context.closeLightbox();
+
+    check(committedWidth !== "" && committedHeight !== "", "active measured image has explicit committed dimensions before close");
+    check(visibleImage.style.width === committedWidth && visibleImage.style.height === committedHeight, "close preserves committed inline dimensions through fade-out");
+}
+
+async function testCloseCancelsNewSessionDuringLoadAndDecode() {
+    for (const phase of ["load", "decode"]) {
+        const {context, elements, imageUrls, loaders} = createRuntime();
+        context.closeLightbox();
+        context.openLightbox(1);
+        const targetLoader = loaderFor(loaders, imageUrls[1]);
+        if (phase === "decode") {
+            targetLoader.finishLoad();
+            await flushPromises();
+        }
+        context.closeLightbox();
+        if (phase === "load") targetLoader.finishLoad();
+        targetLoader.finishDecode();
+        await flushPromises();
+
+        check(!elements.lightbox.classList.contains("active"), `close during ${phase} keeps the new session inactive`);
+        check(elements["lightbox-img"].src !== imageUrls[1], `close during ${phase} prevents target assignment`);
+    }
+}
+
+async function testCloseAfterAssignmentCancelsVisibleLoadCompletion() {
+    const {context, elements, imageUrls, loaders} = createRuntime();
+    await prepareNewSession(context, loaders, 1);
+    const staleVisibleLoad = elements["lightbox-img"].onload;
+
+    check(typeof staleVisibleLoad === "function", "new session waits with a guarded visible-image load handler");
+    context.closeLightbox();
+    if (staleVisibleLoad) staleVisibleLoad();
+
+    check(!elements.lightbox.classList.contains("active"), "close after assignment prevents stale visible load activation");
+    check(vm.runInContext("lightboxBaseWidth === 0 && lightboxBaseHeight === 0", context), "stale visible load cannot capture closed-session dimensions");
+}
+
+async function testRapidCloseReopenAllowsOnlyLatestSessionToActivate() {
+    const {context, elements, imageUrls, loaders} = createRuntime();
+    await prepareNewSession(context, loaders, 1);
+    const staleVisibleLoad = elements["lightbox-img"].onload;
+
+    context.closeLightbox();
+    context.openLightbox(2);
+    if (staleVisibleLoad) staleVisibleLoad();
+    check(!elements.lightbox.classList.contains("active"), "stale prior-session visible load cannot activate a reopen");
+    check(elements["lightbox-img"].src !== imageUrls[1], "reopen does not expose the prior session target");
+
+    await finishLoader(loaderFor(loaders, imageUrls[2]));
+    check(!elements.lightbox.classList.contains("active"), "latest reopen still waits for its own visible load");
+    if (elements["lightbox-img"].onload) elements["lightbox-img"].onload();
+    check(elements.lightbox.classList.contains("active"), "latest reopen activates after its visible target loads");
+    check(elements["lightbox-img"].src === imageUrls[2], "latest reopen target wins");
+}
+
+async function testNewSessionFailureLeavesGridVisible() {
+    const {context, elements, imageUrls, loaders} = createRuntime();
+    context.closeLightbox();
+    context.openLightbox(1);
+    loaderFor(loaders, imageUrls[1]).failLoad();
+    await flushPromises();
+
+    check(!elements.lightbox.classList.contains("active"), "initial-open failure leaves the overlay inactive");
+    check(elements["lightbox-img"].src !== imageUrls[0], "initial-open failure does not restore the previous session image");
+}
+
 async function testCurrentImageRemainsVisibleUntilDecode() {
     const {context, elements, imageUrls, loaders} = createRuntime();
     context.navigate(1);
@@ -312,6 +430,13 @@ async function testResolvedPreloadsDetachEventHandlers() {
 }
 
 (async () => {
+    await testNewSessionHidesPreviousImageUntilVisibleTargetLoads();
+    await testNewSessionMeasuresUntransformedLayoutSize();
+    await testClosePreservesCommittedInlineDimensions();
+    await testCloseCancelsNewSessionDuringLoadAndDecode();
+    await testCloseAfterAssignmentCancelsVisibleLoadCompletion();
+    await testRapidCloseReopenAllowsOnlyLatestSessionToActivate();
+    await testNewSessionFailureLeavesGridVisible();
     await testCurrentImageRemainsVisibleUntilDecode();
     await testStaleNavigationCannotOverwriteNewerTarget();
     await testCompletedNeighborPreloadsStayBoundedAndRetained();

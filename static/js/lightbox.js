@@ -6,6 +6,8 @@ let lightboxZoom = 1;
 const _prefetchRegistry = new Map();
 const _pendingCompareLoaders = [null, null];
 let _pendingSingleImageLoader = null;
+let _pendingLightboxOpen = null;
+let lightboxOpenToken = 0;
 let lightboxImageToken = 0;
 let lightboxAiOpen = false;
 let lightboxBaseWidth = 0;
@@ -35,10 +37,97 @@ function openLightbox(index) {
             lightboxStickyCandidatePane = 1;
             lightboxCompareItems = [];
             currentIndex = index;
-            document.getElementById('lightbox').classList.add('active');
             syncLightboxModeUi();
+            _prepareLightboxOpen();
+        }
+
+function _prepareLightboxOpen() {
+            const openToken = ++lightboxOpenToken;
+            const lightboxImages = getLightboxImages();
+            const img = lightboxImages[currentIndex];
+            const lightbox = document.getElementById('lightbox');
+            const el = document.getElementById('lightbox-img');
+            _cancelPendingLightboxOpen();
+            _cancelSingleImageLoader();
+            _cleanupPrefetch();
+            ++lightboxImageToken;
+            if (!img || !lightbox || !el) return;
+
+            lightbox.classList.remove('active');
+            el.onload = null;
+            el.onerror = null;
+            el.src = '';
+            el.draggable = false;
+            el.classList.remove('loading');
+            el.style.opacity = '';
+            lightboxBaseWidth = 0;
+            lightboxBaseHeight = 0;
+            lightboxZoom = 1;
+            currentLightboxDimensions = {w: null, h: null};
+            currentLightboxMetadata = null;
+            currentLightboxMetadataError = null;
+            currentLightboxMetadataLoading = false;
+            const metadataToken = ++lightboxMetadataRequestToken;
+            resetLightboxPanelScroll();
             resetLightboxZoom();
-            showCurrentImage();
+            renderLightboxMetadataPanel();
+
+            const source = getImageBatchAndFolder(img);
+            const newSrc = ccImageUrl(source.batch, source.folder, img.name);
+            const loaderEntry = _createLightboxImageLoader(newSrc);
+            const pending = {entry: loaderEntry, token: openToken, visibleAssigned: false};
+            _pendingLightboxOpen = pending;
+
+            function isCurrentOpen() {
+                return _pendingLightboxOpen === pending && openToken === lightboxOpenToken && !lightboxCompareMode;
+            }
+            function failOpen(error) {
+                if (!isCurrentOpen()) return;
+                _pendingLightboxOpen = null;
+                el.onload = null;
+                el.onerror = null;
+                el.src = '';
+                lightboxBaseWidth = 0;
+                lightboxBaseHeight = 0;
+                currentLightboxDimensions = {w: null, h: null};
+                _disposeLightboxImageLoader(loaderEntry);
+                console.warn(`Unable to open lightbox image ${img.name}:`, error);
+                showToast('Unable to open image');
+            }
+
+            loaderEntry.ready.then(function() {
+                if (_pendingLightboxOpen !== pending || openToken !== lightboxOpenToken || lightboxCompareMode) return;
+                pending.visibleAssigned = true;
+                el.onload = function() {
+                    if (_pendingLightboxOpen !== pending || openToken !== lightboxOpenToken || lightboxCompareMode) return;
+                    el.onload = null;
+                    el.onerror = null;
+                    currentLightboxDimensions = {
+                        w: el.naturalWidth || loaderEntry.img.naturalWidth,
+                        h: el.naturalHeight || loaderEntry.img.naturalHeight,
+                    };
+                    lightboxZoom = 1;
+                    capturePreparedLightboxBaseSize();
+                    if (lightboxBaseWidth <= 0 || lightboxBaseHeight <= 0) {
+                        failOpen(new Error('image has no visible dimensions'));
+                        return;
+                    }
+                    resetLightboxZoom();
+                    _pendingLightboxOpen = null;
+                    _disposeLightboxImageLoader(loaderEntry);
+                    updateLightboxInfo(img, currentLightboxDimensions.w, currentLightboxDimensions.h);
+                    if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(img);
+                    lightbox.classList.add('active');
+                    loadLightboxMetadata(img, metadataToken);
+                    renderLightboxAiPanel();
+                    if (typeof syncLightboxPublicActions === 'function') syncLightboxPublicActions();
+                    _prefetchAdjacentImages(lightboxImageToken);
+                };
+                el.onerror = function(error) {
+                    failOpen(error || new Error('visible image load failed'));
+                };
+                el.src = newSrc;
+            }).catch(failOpen);
         }
 
 function isLightboxCompareMode() {
@@ -55,6 +144,8 @@ function openCompareLightbox() {
                 showToast('Select exactly two review images to compare');
                 return;
             }
+            ++lightboxOpenToken;
+            _cancelPendingLightboxOpen();
             _cancelSingleImageLoader();
             _cleanupPrefetch();
             lightboxCompareMode = true;
@@ -83,6 +174,8 @@ function openStickyCompareLightbox() {
                 showToast('Open a review image with another image available to pin compare');
                 return;
             }
+            ++lightboxOpenToken;
+            _cancelPendingLightboxOpen();
             _cancelSingleImageLoader();
             _cleanupPrefetch();
             const pinnedIndex = currentIndex;
@@ -112,13 +205,25 @@ function getLightboxImages() {
         }
 
 function closeLightbox() {
+            ++lightboxOpenToken;
+            ++lightboxImageToken;
+            ++lightboxMetadataRequestToken;
             _cleanupPrefetch();
+            _cancelPendingLightboxOpen();
             _cancelSingleImageLoader();
             _cancelComparePaneLoader(0);
             _cancelComparePaneLoader(1);
+            const el = document.getElementById('lightbox-img');
+            if (el) {
+                el.onload = null;
+                el.onerror = null;
+            }
             document.getElementById('lightbox').classList.remove('active');
-            resetLightboxZoom();
+            clearLightboxPanState();
+            lightboxZoom = 1;
             resetCompareZoom();
+            lightboxBaseWidth = 0;
+            lightboxBaseHeight = 0;
             lightboxCompareMode = false;
             lightboxStickyCompareMode = false;
             lightboxComparePinnedIndex = -1;
@@ -202,6 +307,16 @@ function captureLightboxBaseSize() {
             const rect = img.getBoundingClientRect();
             lightboxBaseWidth = rect.width || img.naturalWidth || 0;
             lightboxBaseHeight = rect.height || img.naturalHeight || 0;
+            applyLightboxZoom();
+        }
+
+function capturePreparedLightboxBaseSize() {
+            const img = document.getElementById('lightbox-img');
+            if (!img) return;
+            img.style.width = '';
+            img.style.height = '';
+            lightboxBaseWidth = img.offsetWidth || img.naturalWidth || 0;
+            lightboxBaseHeight = img.offsetHeight || img.naturalHeight || 0;
             applyLightboxZoom();
         }
 
@@ -902,6 +1017,19 @@ function _cancelSingleImageLoader() {
             const pending = _pendingSingleImageLoader;
             if (!pending) return;
             _pendingSingleImageLoader = null;
+            _disposeLightboxImageLoader(pending.entry);
+        }
+
+function _cancelPendingLightboxOpen() {
+            const pending = _pendingLightboxOpen;
+            if (!pending) return;
+            _pendingLightboxOpen = null;
+            const el = document.getElementById('lightbox-img');
+            if (el) {
+                el.onload = null;
+                el.onerror = null;
+                if (pending.visibleAssigned) el.src = '';
+            }
             _disposeLightboxImageLoader(pending.entry);
         }
 

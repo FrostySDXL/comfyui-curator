@@ -48,6 +48,45 @@ def test_lightbox_navigation_node_lifecycle() -> None:
     assert report["failed"] == 0
 
 
+def test_grid_open_uses_separate_prepare_before_activation_path() -> None:
+    """A grid-open session must not reuse preserve-current-image navigation."""
+    js = read_frontend_js()
+    open_body = extract_function_body(js, "function openLightbox(")
+    prepare_body = extract_function_body(js, "function _prepareLightboxOpen(")
+
+    assert "_prepareLightboxOpen(" in open_body
+    assert "showCurrentImage(" not in open_body
+    assert "classList.add('active')" in prepare_body
+    assert prepare_body.index("capturePreparedLightboxBaseSize()") < prepare_body.index(
+        "classList.add('active')"
+    )
+
+
+def test_grid_open_measures_untransformed_layout_dimensions() -> None:
+    """Preparation must avoid transform-scaled client rectangles."""
+    js = read_frontend_js()
+    prepare_body = extract_function_body(js, "function _prepareLightboxOpen(")
+    capture_body = extract_function_body(js, "function capturePreparedLightboxBaseSize(")
+
+    assert "capturePreparedLightboxBaseSize()" in prepare_body
+    assert "offsetWidth" in capture_body
+    assert "offsetHeight" in capture_body
+    assert "getBoundingClientRect()" not in capture_body
+
+
+def test_new_session_open_has_token_and_pending_loader_identity_guards() -> None:
+    """Close/reopen races require both monotonic token and entry identity checks."""
+    js = read_frontend_js()
+    prepare_body = extract_function_body(js, "function _prepareLightboxOpen(")
+    close_body = extract_function_body(js, "function closeLightbox(")
+
+    assert "++lightboxOpenToken" in prepare_body
+    assert "_pendingLightboxOpen !== pending" in prepare_body
+    assert "openToken !== lightboxOpenToken" in prepare_body
+    assert "++lightboxOpenToken" in close_body
+    assert "_cancelPendingLightboxOpen()" in close_body
+
+
 # ── Registry structure ──────────────────────────────────────────────────────
 
 
