@@ -1171,12 +1171,25 @@ let regionIndex = 0;
 let lastRecordedPosition = null;
 let targetBoundaryVisited = false;
 let finalBottomVisited = false;
+let terminalPartialBoundary = null;
+let partialScrollGuardInstalled = false;
+
+function guardTerminalPartialScroll(event) {
+    event.stopImmediatePropagation();
+}
+
+function lockTerminalPartialBoundary(maxScroll) {
+    terminalPartialBoundary = maxScroll;
+    content.addEventListener('scroll', guardTerminalPartialScroll, {capture: true});
+    partialScrollGuardInstalled = true;
+}
 
 function currentBoundary(maxScroll) {
     if (mode === 'partial' && initiallyFullyRendered) {
         const ratio = expectedCount > 0 ? Math.min(1, targetCount / expectedCount) : 0;
         return Math.min(maxScroll, Math.round(maxScroll * ratio));
     }
+    if (terminalPartialBoundary !== null) return Math.min(maxScroll, terminalPartialBoundary);
     return maxScroll;
 }
 
@@ -1225,6 +1238,10 @@ function step(now) {
     const clientHeight = content.clientHeight;
     const maxScroll = Math.max(0, currentScrollHeight - clientHeight);
     const stepSize = Math.max(300, Math.round(clientHeight * 0.6));
+    if (mode === 'partial' && !initiallyFullyRendered
+        && currentRendered >= targetCount && terminalPartialBoundary === null) {
+        lockTerminalPartialBoundary(maxScroll);
+    }
     const boundary = currentBoundary(maxScroll);
     const state = viewportSettled();
     const regionElapsed = now - regionStartTime;
@@ -1269,6 +1286,10 @@ function step(now) {
 }
 
 function finish(ready, frameCapReached, stagnationReason, unsettledReason) {
+    if (partialScrollGuardInstalled) {
+        content.removeEventListener('scroll', guardTerminalPartialScroll, {capture: true});
+        partialScrollGuardInstalled = false;
+    }
     const unsettled = visitedRegions.filter(function(r) { return !r.settled; }).length;
     done({
         available: true,

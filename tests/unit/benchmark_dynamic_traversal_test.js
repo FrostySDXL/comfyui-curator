@@ -48,6 +48,47 @@ function runAsyncScript(script, options) {
     let now = 0;
     let completed;
     const frames = [];
+    let growthPending = false;
+    const scrollListeners = [];
+
+    function scheduleGridGrowth() {
+        if (growthPending || options.allowGrowth === false || state.renderedCount >= state.expectedCount) return;
+        growthPending = true;
+        frames.push(() => {
+            growthPending = false;
+            const before = state.renderedCount;
+            state.renderedCount = Math.min(
+                state.expectedCount,
+                state.renderedCount + state.chunkSize,
+            );
+            for (let index = before; index < state.renderedCount; index += 1) {
+                state.loaded.add(index);
+            }
+            state.growthCount += 1;
+        });
+    }
+
+    function dispatchContentScroll() {
+        const event = {
+            type: "scroll",
+            propagationStopped: false,
+            stopImmediatePropagation() {
+                this.propagationStopped = true;
+            },
+        };
+        for (const listener of scrollListeners.filter((entry) => entry.capture)) {
+            listener.callback(event);
+            if (event.propagationStopped) return true;
+        }
+        scheduleGridGrowth();
+        if (event.propagationStopped) return true;
+        for (const listener of scrollListeners.filter((entry) => !entry.capture)) {
+            listener.callback(event);
+            if (event.propagationStopped) break;
+        }
+        return true;
+    }
+
     const content = {
         clientHeight: options.clientHeight || 500,
         _scrollTop: state.scrollTop,
@@ -59,24 +100,42 @@ function runAsyncScript(script, options) {
             return this._scrollTop;
         },
         set scrollTop(value) {
+            const previousScrollTop = this._scrollTop;
             const bottom = Math.max(0, this.scrollHeight - this.clientHeight);
             this._scrollTop = Math.max(0, Math.min(Number(value), bottom));
             state.scrollTop = this._scrollTop;
             state.scrollPositions.push(this._scrollTop);
+            const distanceToBottom = this.scrollHeight - this.clientHeight - this._scrollTop;
+            if (
+                options.productionScrollGrowth
+                && this._scrollTop !== previousScrollTop
+                && distanceToBottom <= (options.nearEndPx || 800)
+            ) {
+                dispatchContentScroll();
+            }
         },
         dispatchEvent() {
-            if (options.allowGrowth !== false && state.renderedCount < state.expectedCount) {
+            if (options.productionScrollGrowth) dispatchContentScroll();
+            else if (options.allowGrowth !== false && state.renderedCount < state.expectedCount) {
                 const before = state.renderedCount;
-                state.renderedCount = Math.min(
-                    state.expectedCount,
-                    state.renderedCount + state.chunkSize,
-                );
-                for (let index = before; index < state.renderedCount; index += 1) {
-                    state.loaded.add(index);
-                }
+                state.renderedCount = Math.min(state.expectedCount, state.renderedCount + state.chunkSize);
+                for (let index = before; index < state.renderedCount; index += 1) state.loaded.add(index);
                 state.growthCount += 1;
             }
             return true;
+        },
+        addEventListener(type, callback, optionsValue) {
+            if (type !== "scroll") return;
+            const capture = optionsValue === true || Boolean(optionsValue && optionsValue.capture);
+            scrollListeners.push({ callback, capture });
+        },
+        removeEventListener(type, callback, optionsValue) {
+            if (type !== "scroll") return;
+            const capture = optionsValue === true || Boolean(optionsValue && optionsValue.capture);
+            const index = scrollListeners.findIndex(
+                (entry) => entry.callback === callback && entry.capture === capture,
+            );
+            if (index >= 0) scrollListeners.splice(index, 1);
         },
     };
 
@@ -189,6 +248,45 @@ function testProgressivePartialStopsAtRenderedPrefixBottom() {
 }
 
 testProgressivePartialStopsAtRenderedPrefixBottom();
+
+function testProgressivePartialStopsAtFirstTargetPrefixWithProductionScrollTiming() {
+    const script = extractRawString("DYNAMIC_TRAVERSAL_GRID");
+    const large = runAsyncScript(script, {
+        expectedCount: 2000,
+        targetCount: 800,
+        renderedCount: 120,
+        chunkSize: 120,
+        rowHeight: 10,
+        clientHeight: 500,
+        mode: "partial",
+        productionScrollGrowth: true,
+    }).result;
+    const medium = runAsyncScript(script, {
+        expectedCount: 500,
+        targetCount: 200,
+        renderedCount: 120,
+        chunkSize: 120,
+        rowHeight: 10,
+        clientHeight: 500,
+        mode: "partial",
+        productionScrollGrowth: true,
+    }).result;
+
+    equal(large.ready, true, "2,000-image partial traversal should become ready");
+    equal(large.renderedCount, 840, "2,000-image partial traversal should stop at the first target prefix");
+    check(large.renderedCount < large.expectedCount, "2,000-image partial traversal must remain bounded");
+    equal(large.targetBoundaryVisited, true, "2,000-image target-prefix boundary should be visited");
+    equal(large.finalBottomVisited, true, "2,000-image target-prefix boundary should be its current bottom");
+    equal(large.finalScrollTop, large.targetBoundary, "2,000-image final position should match its reported boundary");
+    equal(medium.ready, true, "500-image partial traversal should become ready");
+    equal(medium.renderedCount, 240, "500-image partial traversal should stop at the first target prefix");
+    check(medium.renderedCount < medium.expectedCount, "500-image partial traversal must remain bounded");
+    equal(medium.targetBoundaryVisited, true, "500-image target-prefix boundary should be visited");
+    equal(medium.finalBottomVisited, true, "500-image target-prefix boundary should be its current bottom");
+    equal(medium.finalScrollTop, medium.targetBoundary, "500-image final position should match its reported boundary");
+}
+
+testProgressivePartialStopsAtFirstTargetPrefixWithProductionScrollTiming();
 
 function testPartialThenFullPreservesRenderedAndLoadedState() {
     const script = extractRawString("DYNAMIC_TRAVERSAL_GRID");
