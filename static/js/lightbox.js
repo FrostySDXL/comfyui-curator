@@ -28,6 +28,10 @@ let lightboxCompareViewState = [
     {zoom: 1, baseWidth: 0, baseHeight: 0},
 ];
 
+function isLightboxOpenPending() {
+    return _pendingLightboxOpen !== null;
+}
+
 function openLightbox(index) {
             lightboxCompareMode = false;
             lightboxStickyCompareMode = false;

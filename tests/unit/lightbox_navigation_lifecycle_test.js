@@ -429,6 +429,34 @@ async function testResolvedPreloadsDetachEventHandlers() {
     check(vm.runInContext("_prefetchRegistry.size === 2", context), "handler detachment preserves retained ready preload entries");
 }
 
+function testIsLightboxOpenPendingReturnsFalseWhenNoPendingOpen() {
+    const {context} = createRuntime();
+    vm.runInContext("_pendingLightboxOpen = null", context);
+    check(vm.runInContext("isLightboxOpenPending()", context) === false,
+        "isLightboxOpenPending returns false when _pendingLightboxOpen is null");
+}
+
+function testIsLightboxOpenPendingReturnsTrueWhenPendingOpenExists() {
+    const {context} = createRuntime();
+    vm.runInContext("_pendingLightboxOpen = { entry: {} };", context);
+    check(vm.runInContext("isLightboxOpenPending()", context) === true,
+        "isLightboxOpenPending returns true when _pendingLightboxOpen is set");
+}
+
+function testPendingOpenCancelViaEscapePreservesNormalGridState() {
+    const {context, elements} = createRuntime();
+    context.closeLightbox();
+    context.openLightbox(1);
+    vm.runInContext("const wasPending = isLightboxOpenPending()", context);
+    check(vm.runInContext("wasPending", context) === true,
+        "pending open is reported truthfully after openLightbox starts preparation");
+    context.closeLightbox();
+    check(vm.runInContext("isLightboxOpenPending()", context) === false,
+        "closeLightbox clears the pending open");
+    check(!elements.lightbox.classList.contains("active"),
+        "lightbox stays inactive after pending cancellation");
+}
+
 (async () => {
     await testNewSessionHidesPreviousImageUntilVisibleTargetLoads();
     await testNewSessionMeasuresUntransformedLayoutSize();
@@ -445,6 +473,9 @@ async function testResolvedPreloadsDetachEventHandlers() {
     await testCompareEntryCancelsPendingSingleLoader();
     await testLoaderErrorPreservesVisibleImageAndClearsOwnership();
     await testResolvedPreloadsDetachEventHandlers();
+    testIsLightboxOpenPendingReturnsFalseWhenNoPendingOpen();
+    testIsLightboxOpenPendingReturnsTrueWhenPendingOpenExists();
+    testPendingOpenCancelViaEscapePreservesNormalGridState();
     const failed = details.filter(detail => !detail.pass).length;
     process.stdout.write(JSON.stringify({total: details.length, failed, details}));
     process.exitCode = failed === 0 ? 0 : 1;

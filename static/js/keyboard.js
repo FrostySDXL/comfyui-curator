@@ -7,6 +7,14 @@ document.addEventListener('keydown', (e) => {
             const isTypingTarget = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable;
             const lightboxActive = document.getElementById('lightbox').classList.contains('active');
 
+            if (typeof isLightboxOpenPending === 'function' && isLightboxOpenPending()) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    closeLightbox();
+                }
+                return;
+            }
+
             if (e.key === "/" && !isTypingTarget) {
                 e.preventDefault();
                 ensureBatchSidebarOpen();
