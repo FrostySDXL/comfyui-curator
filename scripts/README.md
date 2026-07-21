@@ -153,12 +153,33 @@ request count, live blob count and bytes, DOM node count, browser RSS, frame
 intervals, long-task metrics where available, and server `.thumbs` file count
 and bytes.
 
-The full traversal checkpoint and the warm reload and A-B-A phases all use a
-controlled full traversal readiness gate (viewport settle with expected-count
-guard, region-by-region deterministic traversal, and traversal readiness
-verification) instead of requiring all thumbnail elements to reach terminal
-state. This is compatible with production approach-only loading where distant
-thumbnails remain pending until the region is approached.
+The full traversal checkpoint and the warm reload and A-B-A phases use a
+dynamically growing controlled traversal. `expected_count` is always the full
+fixture size; `target_count` is the count required by the current checkpoint.
+The traversal reads actual `.content.clientHeight`, current `scrollHeight`,
+rendered non-placeholder thumb count, and `scrollTop` at every step. It advances
+by a gap-free step of at most `max(300, round(clientHeight * 0.6))`. Any
+`scrollHeight` growth invalidates prior final-bottom satisfaction. At the bottom
+with fewer rendered thumbnails than the target, it dispatches scroll events and
+waits boundedly for rendered-count or extent growth.
+
+The partial target is `ceil(expected_count * 0.40)`, capped at
+`expected_count`. On a progressive grid, partial traversal reaches that target
+and settles the exact bottom of the currently rendered prefix. On a static
+full-DOM grid, it settles a deterministic proportional boundary based on
+`target_count / expected_count` and does not intentionally visit the remainder.
+Full traversal requires `rendered_count >= expected_count` and settles the exact
+current bottom after the last growth event. The terminal viewport itself must
+be settled; prior settled regions cannot satisfy completion on its behalf.
+
+Cold companion, warm reload, and A-B-A selections all use full dynamic
+traversal. Helper-level traversal and cold checkpoint capture restore
+`scrollTop` to 0. Stagnation, frame-cap, and unsettled-region failures propagate
+through phase/checkpoint warning contracts as `ready=false` with actionable
+reasons. The result keeps expected and target counts distinct and records growth,
+visited regions, initial/final extents, terminal boundary position, boundary and
+final-bottom satisfaction, unsettled count, frame-cap state, and stagnation
+reason.
 
 Each batch selection in warm reload and A-B-A gets its own viewport settle
 operation producing a per-batch first_viewport_ms.  A-B-A traversal order is

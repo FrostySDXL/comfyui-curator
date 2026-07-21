@@ -75,6 +75,7 @@ The `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tes
 | `tests/unit/test_scoring.py` | `ai_curate.scoring` -- `find_images`, `build_scoring_prompt`, `score_images` | `mock.patch` on VisionClient, cancel-check testing |
 | `tests/unit/test_storage.py` | `ai_curate.storage.RunStorage` -- save, load, list, latest, corrupt data, path traversal | `tmp_path`-based `tmp_batches` + `storage` fixtures |
 | `tests/unit/test_run_all_script.py` | `scripts/run_all.py` -- build checks, format display, parse args | `importlib.util` dynamic import |
+| `tests/unit/test_benchmark_thumbnails.py`, `benchmark_dynamic_traversal_test.js` | Thumbnail benchmark orchestration, report contracts, and executable dynamic traversal/viewport lifecycle | Shared Python WebDriver fake plus Node `vm` browser mock executing JS extracted from the harness |
 | `tests/unit/test_setup_local_browser_fixture.py` | `scripts/setup_local_browser_fixture.py` -- disposable manual-browser fixture creation and launch env output | `tmp_path`, `importlib.util` dynamic import |
 | `tests/unit/test_comfyui_extension.py` | Native `__init__.py` entrypoint, `py/curator_manager.py`, `web/comfyui/top_menu_extension.js` | `importlib`, `MagicMock`, mock modules for `server`, `aiohttp`, `jinja2` |
 | `tests/unit/test_comfyui_static_ui.py` | Native template parity, URL centralization, error propagation, page handler context | `frontend_source.read_frontend_js`, `subprocess` (node), `tmp_path`, `MagicMock` |

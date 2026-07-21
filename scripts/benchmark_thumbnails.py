@@ -802,81 +802,6 @@ requestAnimationFrame(step);
 """
 
 
-TRAVERSAL_GRID = r"""
-const done = arguments[arguments.length - 1];
-const positions = arguments[0];
-// Deterministic scroll-target positions (pre-computed by harness)
-const content = document.querySelector('.content');
-if (!content) { done({available: false, reason: 'Grid scroll container not found'}); return; }
-if (!Array.isArray(positions) || positions.length === 0) {
-    done({available: false, reason: 'Traversal positions array is empty or invalid'}); return;
-}
-
-const intervals = [];
-const visitedRegions = [];
-const started = performance.now();
-let previous = started;
-const maxTotalFrames = positions.length > 3 ? 5000 : 1500;
-
-let currentRegion = 0;
-let regionStartTime = started;
-
-function viewportSettled() {
-    const images = Array.from(
-        document.querySelectorAll('#grid .thumb:not(.loading-placeholder) img')
-    ).filter(Boolean);
-    const visible = images.filter(function(img) {
-        var rect = img.getBoundingClientRect();
-        return rect.bottom > 0 && rect.top < window.innerHeight;
-    });
-    if (visible.length === 0) return {settled: true, visible: 0, loaded: 0};
-    var loaded = visible.filter(function(img) { return img.classList.contains('loaded'); }).length;
-    return {settled: loaded === visible.length, visible: visible.length, loaded: loaded};
-}
-
-function step(now) {
-    var dt = now - previous;
-    intervals.push(dt);
-    previous = now;
-
-    if (currentRegion >= positions.length || intervals.length >= maxTotalFrames) {
-        done({
-            available: true,
-            elapsedMs: now - started,
-            intervals: intervals,
-            frameCapReached: intervals.length >= maxTotalFrames,
-            mode: 'traversal',
-            regionsVisited: currentRegion,
-            totalPositions: positions.length,
-            visitedRegions: visitedRegions
-        });
-        return;
-    }
-
-    content.scrollTop = positions[currentRegion];
-
-    var state = viewportSettled();
-    var regionElapsed = now - regionStartTime;
-
-    if (state.settled || regionElapsed > 5000) {
-        visitedRegions.push({
-            region: currentRegion,
-            scrollPosition: positions[currentRegion],
-            visibleCount: state.visible,
-            visibleLoaded: state.loaded,
-            settled: state.settled,
-            regionElapsedMs: Math.round(regionElapsed)
-        });
-        currentRegion++;
-        regionStartTime = now;
-    }
-
-    requestAnimationFrame(step);
-}
-requestAnimationFrame(step);
-"""
-
-
 VIEWPORT_SETTLE_ASYNC = r"""
 const done = arguments[arguments.length - 1];
 const expectedCount = Number(arguments[0]) || 0;
@@ -896,6 +821,8 @@ function readState() {
     });
     return {
         count: thumbs.length,
+        renderedCount: thumbs.length,
+        expectedCount: expectedCount,
         loaded: images.filter(function(img) { return img.classList.contains('loaded'); }).length,
         visibleCount: visible.length,
         visibleLoaded: visible.filter(function(img) { return img.classList.contains('loaded'); }).length,
@@ -910,8 +837,8 @@ function step(now) {
 
     var state = readState();
 
-    if (state.visibleCount > 0 && state.visibleLoaded === state.visibleCount
-        && state.count === expectedCount) {
+    if (state.renderedCount > 0 && state.renderedCount <= state.expectedCount
+        && state.visibleCount > 0 && state.visibleLoaded === state.visibleCount) {
         done({
             available: true,
             ready: true,
@@ -1193,61 +1120,248 @@ def _build_checkpoint_record(
     return record
 
 
-def _build_traversal_positions(total_height: int, client_height: int, mode: str) -> list[int]:
-    """Build deterministic scroll-target positions for grid traversal.
+DYNAMIC_TRAVERSAL_GRID = r"""
+// dynamic-traversal-growth-v1
+const done = arguments[arguments.length - 1];
+const expectedCount = Number(arguments[0]) || 0;
+const targetCount = Number(arguments[1]) || 0;
+const maxTotalFrames = Number(arguments[2]) || 5000;
+const mode = arguments[3] === 'partial' ? 'partial' : 'full';
+const content = document.querySelector('.content');
+if (!content) { done({available: false, reason: 'Grid scroll container not found'}); return; }
 
-    Args:
-        total_height: content.scrollHeight - clientHeight (0 if no scroll)
-        client_height: content.clientHeight (actual viewport height from browser)
-        mode: 'partial' (bounded subset) or 'full' (entire grid)
+const intervals = [];
+const visitedRegions = [];
+const growthEvents = [];
+const started = performance.now();
+let previous = started;
+let stagnationFrames = 0;
+const stagnationMax = 120;
+const regionTimeoutMs = 5000;
 
-    Returns a list of nondecreasing pixel positions. Full mode advances by
-    step with no gaps larger than step and includes exact total_height.
-    Partial mode steps sequentially through the first ~40% of the grid
-    at the same step size, ending at the exact bounded endpoint.
-    A zero-height grid returns [0].
+function renderedCount() {
+    const thumbs = document.querySelectorAll('#grid .thumb:not(.loading-placeholder)');
+    return thumbs.length;
+}
+
+function loadedImgCount() {
+    const images = document.querySelectorAll('#grid .thumb:not(.loading-placeholder) img.loaded');
+    return images.length;
+}
+
+function viewportSettled() {
+    const images = Array.from(
+        document.querySelectorAll('#grid .thumb:not(.loading-placeholder) img')
+    ).filter(Boolean);
+    const visible = images.filter(function(img) {
+        const rect = img.getBoundingClientRect();
+        return rect.bottom > 0 && rect.top < window.innerHeight;
+    });
+    if (visible.length === 0) return {settled: true, visible: 0, loaded: 0};
+    const loaded = visible.filter(function(img) { return img.classList.contains('loaded'); }).length;
+    return {settled: loaded === visible.length, visible: visible.length, loaded: loaded};
+}
+
+const initialScrollExtent = Math.max(0, content.scrollHeight - content.clientHeight);
+const initiallyFullyRendered = renderedCount() >= expectedCount;
+let previousScrollHeight = content.scrollHeight;
+let previousRenderedCount = renderedCount();
+let regionStartTime = started;
+let regionIndex = 0;
+let lastRecordedPosition = null;
+let targetBoundaryVisited = false;
+let finalBottomVisited = false;
+
+function currentBoundary(maxScroll) {
+    if (mode === 'partial' && initiallyFullyRendered) {
+        const ratio = expectedCount > 0 ? Math.min(1, targetCount / expectedCount) : 0;
+        return Math.min(maxScroll, Math.round(maxScroll * ratio));
+    }
+    return maxScroll;
+}
+
+function recordRegion(now, state) {
+    visitedRegions.push({
+        region: regionIndex,
+        scrollPosition: content.scrollTop,
+        visibleCount: state.visible,
+        visibleLoaded: state.loaded,
+        settled: state.settled,
+        regionElapsedMs: Math.round(now - regionStartTime)
+    });
+    regionIndex += 1;
+    lastRecordedPosition = content.scrollTop;
+}
+
+function step(now) {
+    const dt = now - previous;
+    intervals.push(dt);
+    previous = now;
+
+    if (intervals.length >= maxTotalFrames) {
+        finish(false, true, null);
+        return;
+    }
+
+    const currentScrollHeight = content.scrollHeight;
+    const currentRendered = renderedCount();
+    if (currentScrollHeight > previousScrollHeight || currentRendered > previousRenderedCount) {
+        growthEvents.push({
+            frame: intervals.length,
+            prevHeight: previousScrollHeight,
+            newHeight: currentScrollHeight,
+            prevRenderedCount: previousRenderedCount,
+            renderedCount: currentRendered
+        });
+        previousScrollHeight = currentScrollHeight;
+        previousRenderedCount = currentRendered;
+        stagnationFrames = 0;
+        targetBoundaryVisited = false;
+        finalBottomVisited = false;
+        lastRecordedPosition = null;
+        regionStartTime = now;
+    }
+
+    const clientHeight = content.clientHeight;
+    const maxScroll = Math.max(0, currentScrollHeight - clientHeight);
+    const stepSize = Math.max(300, Math.round(clientHeight * 0.6));
+    const boundary = currentBoundary(maxScroll);
+    const state = viewportSettled();
+    const regionElapsed = now - regionStartTime;
+
+    if (!state.settled && regionElapsed > regionTimeoutMs) {
+        recordRegion(now, state);
+        finish(false, false, null, 'Visible images did not settle at traversal boundary ' + content.scrollTop);
+        return;
+    }
+
+    if (!state.settled) {
+        requestAnimationFrame(step);
+        return;
+    }
+
+    if (lastRecordedPosition !== content.scrollTop) recordRegion(now, state);
+
+    const atBoundary = Math.abs(content.scrollTop - boundary) <= 2;
+    if (atBoundary && currentRendered >= targetCount) {
+        targetBoundaryVisited = true;
+        finalBottomVisited = Math.abs(content.scrollTop - maxScroll) <= 2;
+        const fullCountReached = mode !== 'full' || currentRendered >= expectedCount;
+        finish(fullCountReached, false, null);
+        return;
+    }
+
+    if (content.scrollTop < boundary - 2) {
+        content.scrollTop = Math.min(boundary, content.scrollTop + stepSize);
+        lastRecordedPosition = null;
+        regionStartTime = now;
+        stagnationFrames = 0;
+    } else if (currentRendered < targetCount) {
+        content.dispatchEvent(new Event('scroll', {bubbles: true}));
+        stagnationFrames += 1;
+        if (stagnationFrames > stagnationMax) {
+            finish(false, false, 'Grid growth stagnated at ' + currentRendered + ' of ' + targetCount + ' rendered images');
+            return;
+        }
+    }
+
+    requestAnimationFrame(step);
+}
+
+function finish(ready, frameCapReached, stagnationReason, unsettledReason) {
+    const unsettled = visitedRegions.filter(function(r) { return !r.settled; }).length;
+    done({
+        available: true,
+        ready: ready,
+        elapsedMs: performance.now() - started,
+        intervals: intervals,
+        frameCapReached: frameCapReached,
+        expectedCount: expectedCount,
+        targetCount: targetCount,
+        renderedCount: renderedCount(),
+        loadedCount: loadedImgCount(),
+        growthEvents: growthEvents,
+        regionsVisited: visitedRegions.length,
+        visitedRegions: visitedRegions,
+        initialScrollExtent: initialScrollExtent,
+        finalScrollExtent: Math.max(0, content.scrollHeight - content.clientHeight),
+        scrollExtent: Math.max(0, content.scrollHeight - content.clientHeight),
+        finalScrollTop: content.scrollTop,
+        targetBoundary: currentBoundary(Math.max(0, content.scrollHeight - content.clientHeight)),
+        targetBoundaryVisited: targetBoundaryVisited,
+        finalBottomVisited: finalBottomVisited,
+        bottomVisited: finalBottomVisited,
+        unsettledCount: unsettled,
+        stagnationReason: stagnationReason,
+        unsettledReason: unsettledReason || null,
+        scrollRestored: false
+    });
+}
+requestAnimationFrame(step);
+"""
+
+
+def _is_dynamic_traversal_ready(result: dict[str, Any]) -> bool:
+    """Return True when the dynamic traversal reached its target and settled.
+
+    The script must report ready, reach the target count and boundary, avoid
+    frame caps and failure reasons, and reach the final bottom for a full target.
     """
-    region_height = max(300, round(client_height * 0.6))
-    if total_height <= 0:
-        return [0]
-    if mode == "partial":
-        bounded = min(total_height, round(total_height * 0.4))
-        positions = [0]
-        current = 0
-        while current < bounded:
-            current = min(bounded, current + region_height)
-            positions.append(current)
-        return positions
-    # Full mode: step through entire grid, no gap > region_height
-    positions = [0]
-    current = 0
-    while current < total_height:
-        current = min(total_height, current + region_height)
-        positions.append(current)
-    return positions
-
-
-def _is_traversal_ready(traversal_data: dict[str, Any]) -> bool:
-    """Return True only when every traversal readiness condition is met.
-
-    The traversal must be available, must not have hit its frame cap, must
-    have visited every target region, and every visited region must have
-    settled (no timeout).
-    """
-    if not traversal_data.get("available", False):
+    if not result.get("available", False):
         return False
-    if traversal_data.get("frameCapReached", False):
+    if not result.get("ready", False):
         return False
-    visited = int(traversal_data.get("regionsVisited", 0))
-    target = int(traversal_data.get("totalPositions", 0))
-    if visited != target:
+    if result.get("frameCapReached", False):
         return False
-    regions = traversal_data.get("visitedRegions", [])
-    if not isinstance(regions, list):
+    if result.get("stagnationReason") is not None or result.get("unsettledReason") is not None:
         return False
-    if any(not region.get("settled", False) for region in regions):
+    rendered = int(result.get("renderedCount", 0))
+    target = int(result.get("targetCount", 0))
+    if rendered < target:
+        return False
+    if not result.get("targetBoundaryVisited", False):
+        return False
+    expected = int(result.get("expectedCount", 0))
+    if target >= expected and not result.get("finalBottomVisited", False):
+        return False
+    unsettled = int(result.get("unsettledCount", 0))
+    if unsettled > 0:
         return False
     return True
+
+
+def _dynamic_traversal_warnings(result: dict[str, Any], context: str = "") -> list[str]:
+    """Generate warnings from a dynamic traversal result."""
+    warnings: list[str] = []
+    if not result.get("available", False):
+        reason = result.get("reason") or "no reason supplied"
+        warnings.append(f"Dynamic traversal unavailable for {context}: {reason}")
+        return warnings
+    if result.get("frameCapReached", False):
+        warnings.append(f"Dynamic traversal frame-capped for {context}")
+    stagnation = result.get("stagnationReason")
+    if stagnation:
+        warnings.append(f"Dynamic traversal stagnated for {context}: {stagnation}")
+    unsettled_reason = result.get("unsettledReason")
+    if unsettled_reason:
+        warnings.append(
+            f"Dynamic traversal viewport was unsettled for {context}: {unsettled_reason}"
+        )
+    rendered = int(result.get("renderedCount", 0))
+    target = int(result.get("targetCount", 0))
+    if rendered < target:
+        warnings.append(
+            f"Dynamic traversal incomplete for {context}: {rendered}/{target} images rendered"
+        )
+    if not result.get("targetBoundaryVisited", False):
+        warnings.append(f"Dynamic traversal did not settle its target boundary for {context}")
+    expected = int(result.get("expectedCount", 0))
+    if target >= expected and not result.get("finalBottomVisited", False):
+        warnings.append(f"Dynamic traversal did not reach the current final bottom for {context}")
+    unsettled = int(result.get("unsettledCount", 0))
+    if unsettled > 0:
+        warnings.append(f"Dynamic traversal had {unsettled} unsettled region(s) for {context}")
+    return warnings
 
 
 def _build_checkpoint_warnings(checkpoint_name: str, readiness: dict[str, Any]) -> list[str]:
@@ -1312,25 +1426,15 @@ def _select_and_traverse(driver: Any, batch: str, count: int, timeout: float) ->
         round(float(viewport_result.get("elapsedMs", 0)), 3) if _vp_ok else None
     )
 
-    # ---- Full deterministic traversal ----
-    grid_info = driver.execute_script(
-        "var c=document.querySelector('.content');"
-        "if(!c)return[0,0];"
-        "return[Math.max(0,c.scrollHeight-c.clientHeight),c.clientHeight];"
+    # ---- Full dynamic traversal ----
+    dynamic_result: dict[str, Any] = driver.execute_async_script(
+        DYNAMIC_TRAVERSAL_GRID, count, count, 5000, "full"
     )
-    total_height = (
-        int(grid_info[0]) if isinstance(grid_info, (list, tuple)) and len(grid_info) > 0 else 0
-    )
-    client_height = (
-        int(grid_info[1]) if isinstance(grid_info, (list, tuple)) and len(grid_info) > 1 else 600
-    )
-    positions = _build_traversal_positions(total_height, client_height, "full")
-    traversal_result: dict[str, Any] = driver.execute_async_script(TRAVERSAL_GRID, positions)
-    traversal_available = bool(traversal_result.get("available", False))
-    traversal_ready = _is_traversal_ready(traversal_result) if traversal_available else False
+    traversal_available = bool(dynamic_result.get("available", False))
+    traversal_ready = _is_dynamic_traversal_ready(dynamic_result) if traversal_available else False
 
-    # Capture loaded count after traversal for state reporting
-    loaded_after = _query_grid_loaded(driver)
+    # Capture loaded count from dynamic result for state reporting
+    loaded_after = int(dynamic_result.get("loadedCount", 0)) if traversal_available else 0
 
     # Restore scrollTop=0 so subsequent phases start at top
     driver.execute_script("var c=document.querySelector('.content');if(c)c.scrollTop=0;")
@@ -1341,25 +1445,7 @@ def _select_and_traverse(driver: Any, batch: str, count: int, timeout: float) ->
         warnings.append(f"Viewport settle unavailable for batch {batch}")
     elif not viewport_ready:
         warnings.append(f"Viewport did not settle within timeout for batch {batch}")
-    if not traversal_available:
-        warnings.append(
-            f"Full traversal unavailable for batch {batch}: "
-            f"{traversal_result.get('reason', 'unknown')}"
-        )
-    elif not traversal_ready:
-        if traversal_result.get("frameCapReached"):
-            warnings.append(f"Full traversal frame-capped for batch {batch}")
-        unsettled = sum(
-            1 for r in traversal_result.get("visitedRegions", []) if not r.get("settled", False)
-        )
-        if unsettled:
-            warnings.append(f"Full traversal had {unsettled} unsettled region(s) for batch {batch}")
-        visited = int(traversal_result.get("regionsVisited", 0))
-        target = int(traversal_result.get("totalPositions", 0))
-        if visited != target:
-            warnings.append(
-                f"Full traversal incomplete for batch {batch} ({visited}/{target} regions)"
-            )
+    warnings.extend(_dynamic_traversal_warnings(dynamic_result, f"batch {batch}"))
 
     overall_ready = _vp_ok and traversal_ready and traversal_available
 
@@ -1373,20 +1459,25 @@ def _select_and_traverse(driver: Any, batch: str, count: int, timeout: float) ->
             parts.append("viewport did not settle within timeout")
         if not traversal_available:
             parts.append(
-                f"traversal script unavailable: {traversal_result.get('reason', 'unknown')}"
+                f"dynamic traversal script unavailable: {dynamic_result.get('reason', 'unknown')}"
             )
         elif not traversal_ready:
-            if traversal_result.get("frameCapReached"):
-                parts.append("traversal reached frame cap")
-            unsettled = sum(
-                1 for r in traversal_result.get("visitedRegions", []) if not r.get("settled", False)
-            )
-            if unsettled:
-                parts.append(f"{unsettled} traversal region(s) unsettled")
-            visited = int(traversal_result.get("regionsVisited", 0))
-            target = int(traversal_result.get("totalPositions", 0))
-            if visited != target:
-                parts.append(f"traversal incomplete ({visited}/{target} regions)")
+            if dynamic_result.get("frameCapReached"):
+                parts.append("dynamic traversal reached frame cap")
+            stagnation = dynamic_result.get("stagnationReason")
+            if stagnation:
+                parts.append(f"dynamic traversal stagnated: {stagnation}")
+            rendered = int(dynamic_result.get("renderedCount", 0))
+            target = int(dynamic_result.get("targetCount", 0))
+            if rendered < target:
+                parts.append(f"dynamic traversal incomplete ({rendered}/{target} rendered)")
+            if not dynamic_result.get("targetBoundaryVisited", False):
+                parts.append("dynamic traversal did not settle its target boundary")
+            if not dynamic_result.get("finalBottomVisited", False):
+                parts.append("dynamic traversal did not reach the current final bottom")
+            unsettled = int(dynamic_result.get("unsettledCount", 0))
+            if unsettled > 0:
+                parts.append(f"dynamic traversal had {unsettled} unsettled region(s)")
         if parts:
             reason = "; ".join(parts)
 
@@ -1398,6 +1489,9 @@ def _select_and_traverse(driver: Any, batch: str, count: int, timeout: float) ->
         "state": {
             "loaded": loaded_after,
             "count": count,
+            "rendered_count": int(dynamic_result.get("renderedCount", 0)),
+            "expected_count": count,
+            "target_count": count,
             "visibleCount": int(viewport_result.get("state", {}).get("visibleCount", 0))
             if viewport_available
             else 0,
@@ -1406,24 +1500,14 @@ def _select_and_traverse(driver: Any, batch: str, count: int, timeout: float) ->
             else 0,
             "traversal_ready": traversal_ready,
             "regions_visited": (
-                int(traversal_result.get("regionsVisited", 0)) if traversal_available else 0
+                int(dynamic_result.get("regionsVisited", 0)) if traversal_available else 0
             ),
-            "total_positions": (
-                int(traversal_result.get("totalPositions", 0)) if traversal_available else 0
-            ),
+            "total_positions": 0,  # dynamic: no static positions
             "frame_cap_reached": (
-                bool(traversal_result.get("frameCapReached", False))
-                if traversal_available
-                else False
+                bool(dynamic_result.get("frameCapReached", False)) if traversal_available else False
             ),
             "unsettled_region_count": (
-                sum(
-                    1
-                    for r in traversal_result.get("visitedRegions", [])
-                    if not r.get("settled", False)
-                )
-                if traversal_available
-                else 0
+                int(dynamic_result.get("unsettledCount", 0)) if traversal_available else 0
             ),
         },
         "reason": reason,
@@ -1685,41 +1769,42 @@ def _prepare_checkpoint_cold_phase(
     # Preserve first-viewport timing, but only when actually ready
     _first_viewport_ms = round(viewport_readiness["elapsed_ms"], 3) if _viewport_ready else None
 
-    # Compute traversal positions from the grid scroll dimensions
-    grid_info = driver.execute_script(
-        "var c=document.querySelector('.content');"
-        "if(!c)return[0,0];"
-        "return[Math.max(0,c.scrollHeight-c.clientHeight),c.clientHeight];"
+    # ---- Checkpoint 2: partial dynamic traversal ----
+    partial_target = max(1, int(math.ceil(spec.size * 0.4)))
+    partial_target = min(partial_target, spec.size)
+    partial_traversal: dict[str, Any] = driver.execute_async_script(
+        DYNAMIC_TRAVERSAL_GRID, spec.size, partial_target, 5000, "partial"
     )
-    total_grid_height = (
-        int(grid_info[0]) if isinstance(grid_info, (list, tuple)) and len(grid_info) > 0 else 0
-    )
-    client_height = (
-        int(grid_info[1]) if isinstance(grid_info, (list, tuple)) and len(grid_info) > 1 else 600
-    )
-
-    # ---- Checkpoint 2: partial controlled traversal ----
-    partial_positions = _build_traversal_positions(total_grid_height, client_height, "partial")
-    partial_traversal = driver.execute_async_script(TRAVERSAL_GRID, partial_positions)
-    loaded_after_partial = _query_grid_loaded(driver)
-    partial_ready = _is_traversal_ready(partial_traversal)
+    partial_ready = _is_dynamic_traversal_ready(partial_traversal)
     partial_state = {
-        "loaded": loaded_after_partial,
+        "loaded": partial_traversal.get("loadedCount") if partial_traversal.get("available") else 0,
         "regions_visited": partial_traversal.get("regionsVisited"),
-        "total_regions": partial_traversal.get("totalPositions"),
+        "total_regions": partial_traversal.get("regionsVisited"),
         "frame_cap_reached": partial_traversal.get("frameCapReached", False),
-        "unsettled_region_count": sum(
-            1 for r in partial_traversal.get("visitedRegions", []) if not r.get("settled", False)
+        "unsettled_region_count": (
+            int(partial_traversal.get("unsettledCount", 0))
+            if partial_traversal.get("available")
+            else 0
         ),
         "available": partial_traversal.get("available", False),
         "reason": partial_traversal.get("reason"),
+        "rendered_count": partial_traversal.get("renderedCount"),
+        "expected_count": spec.size,
+        "target_count": partial_target,
+        "target_boundary": partial_traversal.get("targetBoundary"),
+        "target_boundary_visited": partial_traversal.get("targetBoundaryVisited", False),
+        "final_bottom_visited": partial_traversal.get("finalBottomVisited", False),
     }
     cp2_readiness = {
         "ready": partial_ready,
         "elapsed_ms": partial_traversal.get("elapsedMs", 0),
         "state": partial_state,
         "available": partial_traversal.get("available", False),
-        "reason": partial_traversal.get("reason"),
+        "reason": (
+            partial_traversal.get("stagnationReason")
+            or partial_traversal.get("reason")
+            or (None if partial_ready else "partial dynamic traversal did not reach target")
+        ),
     }
     cp2 = _capture_checkpoint(
         driver,
@@ -1732,28 +1817,38 @@ def _prepare_checkpoint_cold_phase(
         frame_data=partial_traversal,
     )
 
-    # ---- Checkpoint 3: full traversal ----
-    full_positions = _build_traversal_positions(total_grid_height, client_height, "full")
-    full_traversal = driver.execute_async_script(TRAVERSAL_GRID, full_positions)
-    loaded_after_full = _query_grid_loaded(driver)
-    full_ready = _is_traversal_ready(full_traversal)
+    # ---- Checkpoint 3: full dynamic traversal ----
+    full_traversal: dict[str, Any] = driver.execute_async_script(
+        DYNAMIC_TRAVERSAL_GRID, spec.size, spec.size, 5000, "full"
+    )
+    full_ready = _is_dynamic_traversal_ready(full_traversal)
     full_state = {
-        "loaded": loaded_after_full,
+        "loaded": full_traversal.get("loadedCount") if full_traversal.get("available") else 0,
         "regions_visited": full_traversal.get("regionsVisited"),
-        "total_regions": full_traversal.get("totalPositions"),
+        "total_regions": full_traversal.get("regionsVisited"),
         "frame_cap_reached": full_traversal.get("frameCapReached", False),
-        "unsettled_region_count": sum(
-            1 for r in full_traversal.get("visitedRegions", []) if not r.get("settled", False)
+        "unsettled_region_count": (
+            int(full_traversal.get("unsettledCount", 0)) if full_traversal.get("available") else 0
         ),
         "available": full_traversal.get("available", False),
         "reason": full_traversal.get("reason"),
+        "rendered_count": full_traversal.get("renderedCount"),
+        "expected_count": spec.size,
+        "target_count": spec.size,
+        "target_boundary": full_traversal.get("targetBoundary"),
+        "target_boundary_visited": full_traversal.get("targetBoundaryVisited", False),
+        "final_bottom_visited": full_traversal.get("finalBottomVisited", False),
     }
     cp3_readiness = {
         "ready": full_ready,
         "elapsed_ms": full_traversal.get("elapsedMs", 0),
         "state": full_state,
         "available": full_traversal.get("available", False),
-        "reason": full_traversal.get("reason"),
+        "reason": (
+            full_traversal.get("stagnationReason")
+            or full_traversal.get("reason")
+            or (None if full_ready else "full dynamic traversal did not reach target")
+        ),
     }
     cp3 = _capture_checkpoint(
         driver,
@@ -1770,11 +1865,16 @@ def _prepare_checkpoint_cold_phase(
     # can produce meaningful frame data (full traversal left it at bottom)
     driver.execute_script("var c=document.querySelector('.content');if(c)c.scrollTop=0;")
 
-    # Build checkpoint warnings for defect 3
+    # Build checkpoint warnings
     cp_warnings: list[str] = []
     cp_warnings.extend(_build_checkpoint_warnings("first_viewport_settled", viewport_readiness))
     cp_warnings.extend(_build_checkpoint_warnings("partial_traversal", cp2_readiness))
     cp_warnings.extend(_build_checkpoint_warnings("full_traversal", cp3_readiness))
+    # Also include dynamic traversal warnings for stagnation/frame-cap/unsettled
+    cp_warnings.extend(
+        _dynamic_traversal_warnings(partial_traversal, "partial_traversal checkpoint")
+    )
+    cp_warnings.extend(_dynamic_traversal_warnings(full_traversal, "full_traversal checkpoint"))
 
     # ---- Final: wait for all thumbnails (preserves existing cold-phase contract) ----
     final_readiness = _wait_for_grid(driver, spec.size, timeout)

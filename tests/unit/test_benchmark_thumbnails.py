@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -351,6 +352,24 @@ def test_instrumentation_js_contracts():
     assert "blobBytes" in install
 
 
+def test_dynamic_traversal_javascript_lifecycle():
+    root = Path(__file__).parents[2]
+    script = root / "tests" / "unit" / "benchmark_dynamic_traversal_test.js"
+
+    completed = subprocess.run(
+        ["node", str(script)],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    match = re.search(r"(\d+) assertions passed", completed.stdout)
+    assert match is not None, completed.stdout
+    assert int(match.group(1)) >= 52
+
+
 def test_sidebar_instrumentation_uses_observable_css_widths_only():
     benchmark = load_benchmark_module()
     block = benchmark.SIDEBAR_WIDTH_PHASE
@@ -523,259 +542,6 @@ def test_checkpoint_unavailable_metrics_preserve_reason():
     assert record["thumbnail_disk"]["value"]["file_count"] == 0
 
 
-def test_full_traversal_visits_all_regions_without_requiring_all_elements_terminal():
-    """Full traversal must visit every grid region and settle each approached
-    region without requiring all DOM thumbnails to be in a loaded/error state
-    before declaring completion."""
-    benchmark = load_benchmark_module()
-    traverse = benchmark.TRAVERSAL_GRID
-
-    assert "totalPositions" in traverse
-    assert "regionsVisited" in traverse
-    assert "5000" in traverse or "regionElapsed" in traverse
-    assert "currentRegion" in traverse
-    # Must NOT gate on all images being loaded
-    full_loaded_check = re.search(r"(?<!visible)(?:all.*loaded|loaded.*===.*expected)", traverse)
-    assert full_loaded_check is None, "Full traversal must not require all thumbnails to be loaded"
-
-
-def test_viewport_settle_predicate_includes_expected_count_guard():
-    """VIEWPORT_SETTLE_ASYNC must require state.count === expectedCount so
-    that stale companion-batch thumbnails do not satisfy the settle
-    condition before the primary batch finishes rendering."""
-    benchmark = load_benchmark_module()
-    settle = benchmark.VIEWPORT_SETTLE_ASYNC
-
-    assert "state.count === expectedCount" in settle, (
-        "settle predicate must include expectedCount guard for stale companion rejection"
-    )
-    assert "state.visibleLoaded === state.visibleCount" in settle
-    assert "state.visibleCount > 0" in settle
-
-
-def _checkpoint_cold_driver(
-    benchmark,
-    spec,
-    *,
-    viewport="ready",
-    traversal="success",
-    grid_scroll=(2000, 700),
-    resource_count=50,
-    dom_extra=None,
-    monkeypatch=None,
-):
-    """FakeDriver/session/hooks for _prepare_checkpoint_cold_phase.
-    viewport: ready/timeout/unavailable; traversal: success/unsettled/frame_cap/unavailable."""
-
-    events: list = []
-    instrument_count = [0]
-    scroll_ops: list = []
-    traversal_calls: list = []
-    client_height_val = [None]
-    distinct_loaded_log: list = []
-    resource_requests_so_far = [0]
-
-    class FakeSession:
-        def switch(self, batch):
-            events.append(("switch", batch))
-
-    class FakeDriver:
-        def __init__(self):
-            self._active_batch = None
-            self._view_count = 0
-
-        def get(self, url):
-            events.append(("navigate", url))
-
-        def execute_script(self, script):
-            # DOM stats
-            if "getElementsByTagName" in script:
-                base = {
-                    "domNodeCount": 500,
-                    "blobCacheEntryCount": 3,
-                    "blobObservation": {"available": True, "reason": None},
-                    "longTasks": {
-                        "available": True,
-                        "entries": [{"startTime": 100, "duration": 50}],
-                    },
-                    "navigation": {"domContentLoadedMs": 300, "loadEventMs": 500},
-                }
-                if dom_extra:
-                    base.update(dom_extra)
-                return base
-            # Resource Timing entries
-            if "performance.getEntriesByType('resource')" in script:
-                active_size = (
-                    spec.size if self._active_batch == spec.primary_batch else spec.companion_size
-                )
-                count = min(resource_requests_so_far[0] + 10, active_size)
-                resource_requests_so_far[0] = count
-                return [
-                    {
-                        "name": f"http://localhost/curator/thumb/b/inbox/{i}.png",
-                        "duration": 8.0,
-                        "transferSize": 0,
-                        "encodedBodySize": 2048,
-                    }
-                    for i in range(min(count, resource_count))
-                ]
-            # Grid state (viewport settle / _query_grid_loaded)
-            if "visibleCount" in script and "visibleLoaded" in script:
-                self._view_count += 1
-                active_size = (
-                    spec.size if self._active_batch == spec.primary_batch else spec.companion_size
-                )
-                loaded = min(self._view_count * active_size, active_size)
-                distinct_loaded_log.append(loaded)
-                return {
-                    "count": active_size,
-                    "loaded": loaded,
-                    "visibleCount": min(15, active_size),
-                    "visibleLoaded": min(15, loaded),
-                    "currentBatch": self._active_batch,
-                }
-            # Grid dimension query
-            if "scrollHeight" in script and "clientHeight" in script:
-                client_height_val[0] = grid_scroll[1]
-                return [grid_scroll[0], grid_scroll[1]]
-            # ScrollTop set (captured for scroll restoration tests)
-            if "scrollTop" in script and ".content" in script and "=" in script:
-                m = re.search(r"scrollTop\s*=\s*(\d+)", script)
-                if m:
-                    scroll_ops.append(int(m.group(1)))
-            return {}
-
-        def execute_async_script(self, script, *args):
-            if "selectBatch" in script:
-                self._active_batch = args[0] if args else None
-                return {"ok": True}
-            if "blobUrls" in script or "curator-thumbnail-benchmark-bridge" in script:
-                return {"available": True, "count": 3, "bytes": 30000}
-            # Viewport settle async
-            if "expectedCount" in script and "timeoutMs" in script:
-                if viewport == "unavailable":
-                    return {
-                        "available": False,
-                        "reason": "Grid scroll container not found",
-                    }
-                if viewport == "timeout":
-                    return {
-                        "available": True,
-                        "ready": False,
-                        "elapsedMs": 5000.0,
-                        "intervals": [16, 17, 16],
-                        "state": {
-                            "count": spec.size,
-                            "loaded": 5,
-                            "visibleCount": 20,
-                            "visibleLoaded": 5,
-                        },
-                    }
-                # viewport == "ready"
-                return {
-                    "available": True,
-                    "ready": True,
-                    "elapsedMs": 350.0,
-                    "intervals": [16, 17, 18, 20, 16],
-                    "state": {
-                        "count": spec.size,
-                        "loaded": 15,
-                        "visibleCount": min(20, spec.size),
-                        "visibleLoaded": min(20, spec.size),
-                        "currentBatch": self._active_batch,
-                    },
-                }
-            # Traversal
-            if "viewportSettled" in script and "visitedRegions" in script:
-                positions = args[0] if args and isinstance(args[0], list) else []
-                traversal_calls.append(list(positions))
-                n = len(positions)
-                if traversal == "unavailable":
-                    return {"available": False, "reason": "Grid scroll container not found"}
-                if traversal == "frame_cap":
-                    return {
-                        "available": True,
-                        "elapsedMs": 150,
-                        "mode": "traversal",
-                        "intervals": [16, 17],
-                        "frameCapReached": True,
-                        "regionsVisited": n - 1 if n > 1 else 0,
-                        "totalPositions": n,
-                        "visitedRegions": [
-                            {
-                                "region": i,
-                                "scrollPosition": positions[i],
-                                "visibleCount": 10,
-                                "visibleLoaded": 10,
-                                "settled": True,
-                                "regionElapsedMs": 50,
-                            }
-                            for i in range(max(0, n - 1))
-                        ],
-                    }
-                regions = []
-                for i in range(n):
-                    settled = True
-                    if traversal == "unsettled" and i == n - 1:
-                        settled = False
-                    regions.append(
-                        {
-                            "region": i,
-                            "scrollPosition": positions[i] if i < n else 0,
-                            "visibleCount": 10,
-                            "visibleLoaded": 10,
-                            "settled": settled,
-                            "regionElapsedMs": 50,
-                        }
-                    )
-                return {
-                    "available": True,
-                    "elapsedMs": 300 if n <= 2 else 800,
-                    "mode": "traversal",
-                    "intervals": [16, 17, 18],
-                    "frameCapReached": False,
-                    "regionsVisited": n,
-                    "totalPositions": n,
-                    "visitedRegions": regions,
-                }
-            return {"available": True, "elapsedMs": 100, "intervals": []}
-
-    def fake_instrument(driver, count):
-        instrument_count[0] += 1
-
-    if monkeypatch is not None:
-        monkeypatch.setattr(benchmark, "_install_instrumentation", fake_instrument)
-
-    driver = FakeDriver()
-
-    # Minimal OptionalDependencies stand-in for psutil-based RSS
-    _MemInfo = type("_MemInfo", (), {"rss": 50_000_000})
-    _FakeProc = type(
-        "_FakeProc",
-        (),
-        {
-            "children": staticmethod(lambda recursive=False: []),
-            "name": staticmethod(lambda: spec.browser),
-            "memory_info": staticmethod(lambda: _MemInfo()),
-        },
-    )
-    _FakePsutil = type("_FakePsutil", (), {"Process": staticmethod(lambda pid: _FakeProc())})
-    _svc = type("_Svc", (), {"process": type("_Proc", (), {"pid": 1234})()})()
-    driver.service = _svc
-    deps = type("_FakeDeps", (), {"psutil": _FakePsutil()})()
-    session = FakeSession()
-
-    hooks = {
-        "events": events,
-        "instrument_count": instrument_count,
-        "scroll_ops": scroll_ops,
-        "traversal_calls": traversal_calls,
-        "client_height": client_height_val,
-        "distinct_loaded": distinct_loaded_log,
-    }
-    return driver, deps, session, hooks
-
-
 def test_cold_phase_orchestration_checkpoints_flow(monkeypatch, tmp_path):
     benchmark = load_benchmark_module()
 
@@ -789,13 +555,13 @@ def test_cold_phase_orchestration_checkpoints_flow(monkeypatch, tmp_path):
     )
     (Path(tmp_path) / spec.primary_batch / ".thumbs").mkdir(parents=True)
 
-    driver, deps, session, hooks = _checkpoint_cold_driver(
+    driver, deps, hooks = _shared_benchmark_driver(benchmark, spec, viewport="ready")
+    monkeypatch.setattr(
         benchmark,
-        spec,
-        viewport="ready",
-        resource_count=50,
-        monkeypatch=monkeypatch,
+        "_install_instrumentation",
+        lambda _driver, count: hooks["instrument_args"].append(count),
     )
+    session = type("FakeSession", (), {"switch": lambda _self, _batch: None})()
 
     checkpoints, companion_ready, final_readiness, cp_w = benchmark._prepare_checkpoint_cold_phase(
         driver,
@@ -826,27 +592,20 @@ def test_cold_phase_orchestration_checkpoints_flow(monkeypatch, tmp_path):
             assert key in cp
     assert companion_ready is not None
     assert final_readiness is not None
-    assert hooks["instrument_count"][0] == 1
+    assert hooks["instrument_args"] == [spec.size]
 
     cp1, cp2, cp3 = checkpoints
     assert cp1["thumbnail_request_count"] >= 0
     assert cp2["thumbnail_request_count"] >= cp1["thumbnail_request_count"]
     assert cp3["thumbnail_request_count"] >= cp2["thumbnail_request_count"]
+    assert cp1["loaded_image_count"] is not None
+    assert cp2["loaded_image_count"] is not None
+    assert cp3["loaded_image_count"] is not None
     assert cp1["loaded_image_count"] <= spec.size
     assert cp2["loaded_image_count"] <= spec.size
     assert cp3["loaded_image_count"] <= spec.size
-    assert len(hooks["traversal_calls"]) == 3  # companion + primary partial + primary full
 
-    # ---- Gap-free traversal, client height, scroll restore ----
-    assert hooks["client_height"][0] == 700
-    # First is companion, last two are primary partial + full
-    partial_pos = hooks["traversal_calls"][1]
-    full_pos = hooks["traversal_calls"][2]
-    region_step = round(700 * 0.6)
-    for positions, expected_last in [(partial_pos, 800), (full_pos, 2000)]:
-        for i in range(1, len(positions)):
-            assert positions[i] - positions[i - 1] <= region_step
-        assert positions[-1] == expected_last
+    # ---- Scroll restore ----
     assert hooks["scroll_ops"][-1] == 0
 
     # ---- first_viewport_ms from cp1 ----
@@ -889,13 +648,9 @@ def test_viewport_checkpoint_edge_cases(
     )
     (Path(tmp_path) / spec.primary_batch / ".thumbs").mkdir(parents=True)
 
-    driver, deps, session, _hooks = _checkpoint_cold_driver(
-        benchmark,
-        spec,
-        viewport=viewport_mode,
-        resource_count=50,
-        monkeypatch=monkeypatch,
-    )
+    driver, deps, _hooks = _shared_benchmark_driver(benchmark, spec, viewport=viewport_mode)
+    monkeypatch.setattr(benchmark, "_install_instrumentation", lambda *_args: None)
+    session = type("FakeSession", (), {"switch": lambda _self, _batch: None})()
 
     cp, _, final_readiness, cp_w = benchmark._prepare_checkpoint_cold_phase(
         driver,
@@ -958,12 +713,9 @@ def test_traversal_checkpoint_readiness(
     )
     (Path(tmp_path) / spec.primary_batch / ".thumbs").mkdir(parents=True)
 
-    driver, deps, session, _hooks = _checkpoint_cold_driver(
-        benchmark,
-        spec,
-        traversal=traversal_mode,
-        monkeypatch=monkeypatch,
-    )
+    driver, deps, _hooks = _shared_benchmark_driver(benchmark, spec, traversal=traversal_mode)
+    monkeypatch.setattr(benchmark, "_install_instrumentation", lambda *_args: None)
+    session = type("FakeSession", (), {"switch": lambda _self, _batch: None})()
 
     cp, _, _, cp_w = benchmark._prepare_checkpoint_cold_phase(
         driver,
@@ -1126,46 +878,6 @@ def test_summary_renders_each_phase_once_without_duplicate_or_swap():
 
 
 @pytest.mark.parametrize(
-    "total_h,client_h,expected_last",
-    [
-        (0, 1000, 0),
-        (200, 1000, 200),
-        (2000, 1000, 2000),
-    ],
-)
-def test_traversal_positions_full_includes_exact_bottom(total_h, client_h, expected_last):
-    benchmark = load_benchmark_module()
-    positions = benchmark._build_traversal_positions(total_h, client_h, "full")
-    assert positions[0] == 0
-    assert positions[-1] == expected_last, f"bottom: expected {expected_last}, got {positions}"
-    if expected_last > 0:
-        assert expected_last in positions
-    # No gap larger than region_height
-    region_h = max(300, round(client_h * 0.6))
-    for i in range(1, len(positions)):
-        assert positions[i] - positions[i - 1] <= region_h, (
-            f"gap {positions[i] - positions[i - 1]} at idx {i} exceeds {region_h}"
-        )
-
-
-@pytest.mark.parametrize(
-    "total_h,client_h,expected_last",
-    [
-        (2000, 1000, 800),
-    ],
-)
-def test_traversal_positions_partial_bounded_sequential(total_h, client_h, expected_last):
-    benchmark = load_benchmark_module()
-    positions = benchmark._build_traversal_positions(total_h, client_h, "partial")
-    assert positions[0] == 0
-    assert positions[-1] == expected_last
-    region_h = max(300, round(client_h * 0.6))
-    # Steps must be sequential / gap-free
-    for i in range(1, len(positions)):
-        assert positions[i] - positions[i - 1] <= region_h
-
-
-@pytest.mark.parametrize(
     "readiness,expect_keyword",
     [
         ({"ready": False, "available": True, "elapsed_ms": 5000.0, "state": {}}, "timed out"),
@@ -1214,60 +926,6 @@ def test_build_checkpoint_warnings_cases(readiness, expect_keyword):
     warnings = benchmark._build_checkpoint_warnings("test_cp", readiness)
     assert any(expect_keyword in w.lower() for w in warnings), (
         f"expected '{expect_keyword}' in warnings: {warnings}"
-    )
-
-
-def test_readiness_calculation_detects_timed_out_regions():
-    """_is_traversal_ready rejects unsettled, capped, mismatched, and unavailable traversals."""
-    benchmark = load_benchmark_module()
-    assert (
-        benchmark._is_traversal_ready(
-            {
-                "available": True,
-                "frameCapReached": False,
-                "regionsVisited": 3,
-                "totalPositions": 3,
-                "visitedRegions": [{"settled": True}, {"settled": True}, {"settled": True}],
-            }
-        )
-        is True
-    )
-    assert (
-        benchmark._is_traversal_ready(
-            {
-                "available": True,
-                "frameCapReached": False,
-                "regionsVisited": 3,
-                "totalPositions": 3,
-                "visitedRegions": [{"settled": True}, {"settled": False}, {"settled": True}],
-            }
-        )
-        is False
-    )
-    assert (
-        benchmark._is_traversal_ready(
-            {
-                "available": True,
-                "frameCapReached": True,
-                "regionsVisited": 5,
-                "totalPositions": 5,
-                "visitedRegions": [],
-            }
-        )
-        is False
-    )
-    assert benchmark._is_traversal_ready({"available": False}) is False
-    assert (
-        benchmark._is_traversal_ready(
-            {
-                "available": True,
-                "frameCapReached": False,
-                "regionsVisited": 2,
-                "totalPositions": 5,
-                "visitedRegions": [{"settled": True}, {"settled": True}],
-            }
-        )
-        is False
     )
 
 
@@ -1343,8 +1001,6 @@ def _shared_benchmark_driver(
     """Configurable FakeDriver for _select_and_traverse, cold, warm, A-B-A."""
     events: list = []
     scroll_ops: list[int] = []
-    client_height_val: list = [None]
-    positions_passed: list[list[int]] = []
     instrument_args: list[tuple] = []
     quit_flag = [False]
     resource_log: list[list[dict]] = [[]]
@@ -1364,7 +1020,6 @@ def _shared_benchmark_driver(
 
         def execute_script(self, script):
             if "scrollHeight" in script and "clientHeight" in script:
-                client_height_val[0] = grid_scroll[1]
                 return [grid_scroll[0], grid_scroll[1]]
             if "getElementsByTagName" in script:
                 return {
@@ -1423,6 +1078,8 @@ def _shared_benchmark_driver(
                         "intervals": [16, 17],
                         "state": {
                             "count": expected,
+                            "renderedCount": expected,
+                            "expectedCount": expected,
                             "loaded": 5,
                             "visibleCount": 20,
                             "visibleLoaded": 5,
@@ -1435,42 +1092,134 @@ def _shared_benchmark_driver(
                     "intervals": [16, 17, 18, 20, 16],
                     "state": {
                         "count": expected,
+                        "renderedCount": expected,
+                        "expectedCount": expected,
                         "loaded": 15,
                         "visibleCount": min(20, expected),
                         "visibleLoaded": min(20, expected),
                     },
                 }
-            if "viewportSettled" in script and "visitedRegions" in script:
-                positions = list(args[0]) if args and isinstance(args[0], list) else []
-                positions_passed.append(list(positions))
-                events.append(("traversal", len(positions)))
-                n = len(positions)
-                if traversal == "unavailable":
-                    return {"available": False, "reason": "Grid scroll container not found"}
-                capped = traversal == "frame_cap"
-                unsettled = traversal == "unsettled"
-                count = max(0, n - 1) if capped else n
-                regions = [
-                    {
-                        "region": i,
-                        "scrollPosition": positions[i] if i < len(positions) else 0,
-                        "visibleCount": 10,
-                        "visibleLoaded": 10,
-                        "settled": not (unsettled and i == n - 1),
-                        "regionElapsedMs": 50,
+            if "dynamic-traversal-growth-v1" in script:
+                expected_count = int(args[0]) if args else 50
+                target_count = int(args[1]) if len(args) > 1 else expected_count
+                mode = str(args[3]) if len(args) > 3 else "full"
+                events.append(("dynamic_traversal", expected_count, target_count, mode, traversal))
+                if traversal == "success":
+                    rendered = target_count
+                    ready = True
+                    bottom_visited = True
+                    growth_events = [
+                        {
+                            "frame": 10,
+                            "prevHeight": 700,
+                            "newHeight": 1200,
+                            "renderedCount": max(1, target_count // 2),
+                        },
+                        {
+                            "frame": 20,
+                            "prevHeight": 1200,
+                            "newHeight": 2000,
+                            "renderedCount": target_count,
+                        },
+                    ]
+                    stagnation_reason = None
+                    unsettled = 0
+                    frame_capped = False
+                elif traversal in ("unsettled",):
+                    rendered = target_count
+                    ready = False
+                    bottom_visited = True
+                    unsettled = 1
+                    stagnation_reason = None
+                    frame_capped = False
+                    growth_events = [
+                        {
+                            "frame": 5,
+                            "prevHeight": 700,
+                            "newHeight": 1000,
+                            "renderedCount": target_count // 2,
+                        },
+                    ]
+                elif traversal in ("frame_cap",):
+                    rendered = max(1, target_count - 5)
+                    ready = False
+                    bottom_visited = False
+                    unsettled = 0
+                    stagnation_reason = None
+                    frame_capped = True
+                    growth_events = []
+                elif traversal == "stagnation":
+                    rendered = max(1, target_count // 2)
+                    ready = False
+                    stagnation_reason = (
+                        f"Grid growth stagnated at {rendered} of {target_count} rendered images"
+                    )
+                    bottom_visited = True
+                    unsettled = 0
+                    frame_capped = False
+                    growth_events = [
+                        {
+                            "frame": 5,
+                            "prevHeight": 700,
+                            "newHeight": 900,
+                            "renderedCount": rendered // 2,
+                        },
+                    ]
+                elif traversal == "unavailable":
+                    dynamic_result = {
+                        "available": False,
+                        "reason": "Grid scroll container not found",
                     }
-                    for i in range(count)
-                ]
-                return {
+                    hooks["dynamic_result"] = dynamic_result
+                    return dynamic_result
+                else:
+                    rendered = target_count
+                    ready = True
+                    bottom_visited = True
+                    stagnation_reason = None
+                    unsettled = 0
+                    frame_capped = False
+                    growth_events = []
+
+                dynamic_result = {
                     "available": True,
-                    "elapsedMs": 150 if capped else 800,
-                    "mode": "traversal",
-                    "intervals": [16, 17] if capped else [16, 17, 18],
-                    "frameCapReached": capped,
-                    "regionsVisited": count,
-                    "totalPositions": n,
-                    "visitedRegions": regions,
+                    "ready": ready,
+                    "elapsedMs": 800.0,
+                    "intervals": [16, 17, 18, 20, 16, 16, 17],
+                    "frameCapReached": frame_capped,
+                    "expectedCount": expected_count,
+                    "targetCount": target_count,
+                    "renderedCount": rendered,
+                    "loadedCount": rendered,
+                    "growthEvents": growth_events,
+                    "regionsVisited": 5,
+                    "visitedRegions": [
+                        {
+                            "region": i,
+                            "scrollPosition": i * 200,
+                            "visibleCount": 10,
+                            "visibleLoaded": 10,
+                            "settled": i < 4 or unsettled == 0,
+                            "regionElapsedMs": 50,
+                        }
+                        for i in range(5)
+                    ],
+                    "scrollExtent": grid_scroll[0],
+                    "initialScrollExtent": grid_scroll[0],
+                    "finalScrollExtent": grid_scroll[0],
+                    "finalScrollTop": grid_scroll[0],
+                    "targetBoundary": grid_scroll[0],
+                    "targetBoundaryVisited": bottom_visited,
+                    "finalBottomVisited": bottom_visited,
+                    "bottomVisited": bottom_visited,
+                    "unsettledCount": unsettled,
+                    "stagnationReason": stagnation_reason,
+                    "unsettledReason": "Visible images did not settle" if unsettled else None,
+                    "scrollRestored": False,
                 }
+
+                hooks["dynamic_result"] = dynamic_result
+                return dynamic_result
             if "content.scrollTop" in script and "requestAnimationFrame" in script:
                 return {
                     "available": True,
@@ -1501,13 +1250,267 @@ def _shared_benchmark_driver(
     hooks = {
         "events": events,
         "scroll_ops": scroll_ops,
-        "client_height": client_height_val,
-        "positions_passed": positions_passed,
         "instrument_args": instrument_args,
         "quit_flag": quit_flag,
         "resource_log": resource_log,
     }
     return FakeDriver(), deps, hooks
+
+
+class TestDynamicTraversal:
+    """Python-side traversal orchestration, parsing, and warning contracts."""
+
+    def test_cold_companion_uses_full_target(self, monkeypatch, tmp_path):
+        """Cold companion selection must use full target count."""
+        benchmark = load_benchmark_module()
+        spec = benchmark.build_fixture_specs("run-cf", [50], ["firefox"])[0]
+        driver, deps, hooks, _s, runtime, session, args = _setup_benchmark_case(
+            monkeypatch, tmp_path, benchmark, traversal="success"
+        )
+        result = benchmark.benchmark_case(deps, args, runtime, spec, tmp_path / "profile", session)
+        cold = [p for p in result["phases"] if p["phase"] == "cold_initial_load"]
+        assert len(cold) == 1
+        gr = cold[0]["cross_browser_metrics"]["grid_readiness"]
+        assert gr["available"] and gr["value"]["ready"], f"Expected ready, got {gr}"
+
+    def test_warm_reload_uses_full_target(self, monkeypatch, tmp_path):
+        """Warm reload phase must use full target dynamic traversal."""
+        benchmark = load_benchmark_module()
+        driver, deps, hooks, spec, runtime, session, args = _setup_benchmark_case(
+            monkeypatch, tmp_path, benchmark, traversal="success"
+        )
+        result = benchmark.benchmark_case(deps, args, runtime, spec, tmp_path / "profile", session)
+        warm = [p for p in result["phases"] if p["phase"] == "warm_reload"]
+        assert len(warm) == 1
+        gr = warm[0]["cross_browser_metrics"]["grid_readiness"]
+        assert gr["available"] and gr["value"]["ready"]
+
+    def test_aba_uses_full_target(self, monkeypatch, tmp_path):
+        """A-B-A phase must use full target dynamic traversal for primary."""
+        benchmark = load_benchmark_module()
+        driver, deps, hooks, spec, runtime, session, args = _setup_benchmark_case(
+            monkeypatch, tmp_path, benchmark, traversal="success"
+        )
+        result = benchmark.benchmark_case(deps, args, runtime, spec, tmp_path / "profile", session)
+        aba = [p for p in result["phases"] if p["phase"] == "batch_a_b_a_switch"]
+        assert len(aba) == 1
+        gr = aba[0]["cross_browser_metrics"]["grid_readiness"]
+        assert gr["available"] and gr["value"]["ready"]
+
+    def test_scroll_restoration_after_full_traversal(self):
+        """ScrollTop is restored to 0 after dynamic full traversal."""
+        benchmark = load_benchmark_module()
+        spec = benchmark.build_fixture_specs("run-sr", [50], ["firefox"])[0]
+        driver, deps, hooks = _shared_benchmark_driver(
+            benchmark, spec, traversal="success", grid_scroll=(2000, 700)
+        )
+        benchmark._select_and_traverse(driver, "test-batch", 50, timeout=30.0)
+        # Last scroll operation should be restore to 0
+        assert hooks["scroll_ops"][-1] == 0, (
+            f"Expected scrollTop=0 as last op, got {hooks['scroll_ops'][-1]}"
+        )
+
+    def test_dynamic_schema_includes_required_fields(self):
+        """Response includes all structured evidence fields."""
+        benchmark = load_benchmark_module()
+        spec = benchmark.build_fixture_specs("run-sch", [50], ["firefox"])[0]
+        driver, deps, hooks = _shared_benchmark_driver(
+            benchmark, spec, traversal="success", grid_scroll=(2000, 700)
+        )
+        result = benchmark._select_and_traverse(driver, "test-batch", 50, timeout=30.0)
+        state = result.get("state", {})
+        # Check state includes dynamic traversal fields
+        for key in (
+            "loaded",
+            "count",
+            "rendered_count",
+            "expected_count",
+            "target_count",
+            "visibleCount",
+            "visibleLoaded",
+        ):
+            assert key in state, f"state missing key: {key}"
+
+    def test_stagnation_warning_propagates_to_phase(self, monkeypatch, tmp_path):
+        """Stagnation warnings reach the phase warning contract."""
+        benchmark = load_benchmark_module()
+        driver, deps, hooks, spec, runtime, session, args = _setup_benchmark_case(
+            monkeypatch, tmp_path, benchmark, traversal="stagnation"
+        )
+        result = benchmark.benchmark_case(deps, args, runtime, spec, tmp_path / "profile", session)
+        cold_warnings = " ".join(
+            w
+            for p in result["phases"]
+            if p["phase"] == "cold_initial_load"
+            for w in p.get("warnings", [])
+        )
+        assert "stagnat" in cold_warnings.lower()
+
+    def test_dynamic_readiness_helper_rejects_stagnation(self):
+        """_is_dynamic_traversal_ready rejects stagnation, frame caps, low rendered."""
+        benchmark = load_benchmark_module()
+        assert (
+            benchmark._is_dynamic_traversal_ready(
+                {
+                    "available": True,
+                    "ready": False,
+                    "frameCapReached": False,
+                    "renderedCount": 50,
+                    "expectedCount": 50,
+                    "targetCount": 50,
+                    "targetBoundaryVisited": True,
+                    "finalBottomVisited": True,
+                    "unsettledCount": 0,
+                    "stagnationReason": None,
+                    "unsettledReason": None,
+                }
+            )
+            is False
+        )
+        # stagnation
+        assert (
+            benchmark._is_dynamic_traversal_ready(
+                {
+                    "available": True,
+                    "ready": True,
+                    "frameCapReached": False,
+                    "renderedCount": 30,
+                    "expectedCount": 50,
+                    "targetCount": 50,
+                    "targetBoundaryVisited": True,
+                    "finalBottomVisited": True,
+                    "unsettledCount": 0,
+                    "stagnationReason": "stuck",
+                }
+            )
+            is False
+        )
+        # frame capped
+        assert (
+            benchmark._is_dynamic_traversal_ready(
+                {
+                    "available": True,
+                    "frameCapReached": True,
+                    "renderedCount": 50,
+                    "expectedCount": 50,
+                    "targetCount": 50,
+                    "targetBoundaryVisited": True,
+                    "finalBottomVisited": True,
+                    "unsettledCount": 0,
+                    "stagnationReason": None,
+                }
+            )
+            is False
+        )
+        # not enough rendered
+        assert (
+            benchmark._is_dynamic_traversal_ready(
+                {
+                    "available": True,
+                    "frameCapReached": False,
+                    "renderedCount": 40,
+                    "expectedCount": 50,
+                    "targetCount": 50,
+                    "targetBoundaryVisited": True,
+                    "finalBottomVisited": True,
+                    "unsettledCount": 0,
+                    "stagnationReason": None,
+                }
+            )
+            is False
+        )
+        # bottom not visited
+        assert (
+            benchmark._is_dynamic_traversal_ready(
+                {
+                    "available": True,
+                    "frameCapReached": False,
+                    "renderedCount": 50,
+                    "expectedCount": 50,
+                    "targetCount": 50,
+                    "targetBoundaryVisited": False,
+                    "finalBottomVisited": False,
+                    "unsettledCount": 0,
+                    "stagnationReason": None,
+                }
+            )
+            is False
+        )
+        # success
+        assert (
+            benchmark._is_dynamic_traversal_ready(
+                {
+                    "available": True,
+                    "ready": True,
+                    "frameCapReached": False,
+                    "renderedCount": 50,
+                    "expectedCount": 50,
+                    "targetCount": 50,
+                    "targetBoundaryVisited": True,
+                    "finalBottomVisited": True,
+                    "unsettledCount": 0,
+                    "stagnationReason": None,
+                }
+            )
+            is True
+        )
+
+    def test_dynamic_traversal_warnings_covers_all_failure_modes(self):
+        """_dynamic_traversal_warnings produces warnings for each failure."""
+        benchmark = load_benchmark_module()
+        # unavailable
+        w = benchmark._dynamic_traversal_warnings(
+            {"available": False, "reason": "Grid not found"}, "ctx"
+        )
+        assert any("unavailable" in x.lower() for x in w)
+        # stagnation
+        w = benchmark._dynamic_traversal_warnings(
+            {
+                "available": True,
+                "stagnationReason": "stuck at 30",
+                "renderedCount": 30,
+                "expectedCount": 50,
+                "targetCount": 50,
+                "targetBoundaryVisited": True,
+                "finalBottomVisited": True,
+                "unsettledCount": 0,
+                "frameCapReached": False,
+            },
+            "ctx",
+        )
+        assert any("stagnat" in x.lower() for x in w)
+        # frame cap
+        w = benchmark._dynamic_traversal_warnings(
+            {
+                "available": True,
+                "stagnationReason": None,
+                "renderedCount": 50,
+                "expectedCount": 50,
+                "targetCount": 50,
+                "targetBoundaryVisited": True,
+                "finalBottomVisited": True,
+                "unsettledCount": 0,
+                "frameCapReached": True,
+            },
+            "ctx",
+        )
+        assert any("frame-cap" in x.lower() for x in w)
+        # bottom not visited
+        w = benchmark._dynamic_traversal_warnings(
+            {
+                "available": True,
+                "stagnationReason": None,
+                "renderedCount": 50,
+                "expectedCount": 50,
+                "targetCount": 50,
+                "targetBoundaryVisited": False,
+                "finalBottomVisited": False,
+                "unsettledCount": 0,
+                "frameCapReached": False,
+            },
+            "ctx",
+        )
+        assert any("bottom" in x.lower() for x in w)
 
 
 class TestSelectAndTraverse:
@@ -1522,7 +1525,8 @@ class TestSelectAndTraverse:
         assert readiness["available"] is True
         assert readiness["reason"] is None
         assert readiness["warnings"] == []
-        assert readiness["state"]["loaded"] == 42
+        # Dynamic traversal returns loadedCount = target_count (50 in this case)
+        assert readiness["state"]["loaded"] >= 42
 
     @pytest.mark.parametrize(
         "vp,tr,expect_ready,expect_avail,expect_warnings",
@@ -1565,14 +1569,10 @@ class TestSelectAndTraverse:
         benchmark._select_and_traverse(driver, "t", 50, timeout=30.0)
         # Scroll restored to top
         assert hooks["scroll_ops"][-1] == 0
-        # Positions captured: gap-free, start=0, exact bottom
-        assert len(hooks["positions_passed"]) == 1
-        positions = hooks["positions_passed"][0]
-        region_h = max(300, round(700 * 0.6))
-        assert positions[0] == 0
-        assert positions[-1] == 2000
-        for i in range(1, len(positions)):
-            assert positions[i] - positions[i - 1] <= region_h
+        # Dynamic result confirms ready
+        dr = hooks.get("dynamic_result", {})
+        assert dr.get("ready") is True
+        assert dr.get("renderedCount") == 50
 
 
 def test_cold_companion_event_order(monkeypatch, tmp_path):
@@ -1616,7 +1616,7 @@ def test_cold_companion_event_order(monkeypatch, tmp_path):
     c_vp = next(
         i for i, e in enumerate(ev) if e[0] == "viewport_settle" and e[1] == spec.companion_size
     )
-    c_trv = next(i for i, e in enumerate(ev) if e[0] == "traversal")
+    c_trv = next(i for i, e in enumerate(ev) if e[0] == "dynamic_traversal")
     c_sr = next(i for i, e in enumerate(ev) if e[0] == "scroll_restore")
     ins = next(i for i, e in enumerate(ev) if e[0] == "instrument")
     p_sel = next(
@@ -1629,7 +1629,7 @@ def test_cold_companion_event_order(monkeypatch, tmp_path):
         f"c_trv={c_trv} c_sr={c_sr} ins={ins} p_sel={p_sel} p_vp={p_vp}"
     )
 
-    trv_events = [(i, e) for i, e in enumerate(ev) if e[0] == "traversal"]
+    trv_events = [(i, e) for i, e in enumerate(ev) if e[0] == "dynamic_traversal"]
     assert trv_events[0][0] == c_trv, "first traversal must be companion"
     pre_instr_primary = [
         i for i, e in enumerate(ev[:ins]) if e[0] == "select_batch" and e[1] == spec.primary_batch
