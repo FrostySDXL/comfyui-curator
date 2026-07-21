@@ -30,7 +30,7 @@ def contrast_ratio(first: str, second: str) -> float:
 
 def selectors_with_declaration(css: str, declaration: str) -> set[str]:
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
-    selectors = set()
+    selectors: set[str] = set()
     for match in re.finditer(r"(?P<selectors>[^{}]+)\{(?P<body>[^{}]*)\}", css):
         if declaration in match.group("body"):
             selectors.update(selector.strip() for selector in match.group("selectors").split(","))

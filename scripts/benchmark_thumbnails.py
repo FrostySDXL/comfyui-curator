@@ -295,8 +295,12 @@ def summarize_thumbnail_resources(
     thumbnail_entries = [
         entry for entry in entries if thumbnail_prefix in str(entry.get("name", ""))
     ]
-    encoded_values = [entry.get("encodedBodySize") for entry in thumbnail_entries]
-    transfer_values = [entry.get("transferSize") for entry in thumbnail_entries]
+    encoded_values: list[int | float | None] = [
+        entry.get("encodedBodySize") for entry in thumbnail_entries
+    ]
+    transfer_values: list[int | float | None] = [
+        entry.get("transferSize") for entry in thumbnail_entries
+    ]
     byte_sizes_available = all(
         isinstance(value, (int, float)) for value in encoded_values + transfer_values
     )
@@ -307,11 +311,11 @@ def summarize_thumbnail_resources(
         "methodology": "transferSize == 0 and encodedBodySize > 0",
     }
     if byte_sizes_available:
-        hits = sum(
-            1
-            for encoded, transfer in zip(encoded_values, transfer_values, strict=True)
-            if transfer == 0 and encoded > 0
-        )
+        hits = 0
+        for encoded, transfer in zip(encoded_values, transfer_values, strict=True):
+            if isinstance(encoded, (int, float)) and isinstance(transfer, (int, float)):
+                if transfer == 0 and encoded > 0:
+                    hits += 1
         heuristic["value"] = {
             "candidate_hits": hits,
             "candidate_misses": len(thumbnail_entries) - hits,
@@ -326,8 +330,16 @@ def summarize_thumbnail_resources(
         "duration_ms": round(
             sum(float(entry.get("duration") or 0) for entry in thumbnail_entries), 3
         ),
-        "encoded_body_bytes": int(sum(encoded_values)) if byte_sizes_available else None,
-        "transfer_bytes": int(sum(transfer_values)) if byte_sizes_available else None,
+        "encoded_body_bytes": (
+            int(sum(v for v in encoded_values if isinstance(v, (int, float))))
+            if byte_sizes_available
+            else None
+        ),
+        "transfer_bytes": (
+            int(sum(v for v in transfer_values if isinstance(v, (int, float))))
+            if byte_sizes_available
+            else None
+        ),
         "cache_hit_heuristic": heuristic,
         "methodology": "Resource Timing entries whose URL contains the runtime thumbnail prefix",
     }
@@ -2251,7 +2263,7 @@ def run(args: argparse.Namespace) -> int:
     manifest = _manifest_payload(run_id, runtime, specs)
     _write_json(manifest_path, manifest)
 
-    results = [
+    results: list[dict[str, Any]] = [
         {
             "browser": browser,
             "version": "unavailable",
