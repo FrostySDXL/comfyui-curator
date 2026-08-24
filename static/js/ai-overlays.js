@@ -3,11 +3,19 @@
  */
 function aiToggleOverlays() {
             aiShowOverlays = document.getElementById('ai-overlay-toggle').checked;
+            if (CURATOR_NATIVE && currentBatch && currentFolder && !isVirtualCollectionView() && !isPublicView() && aiFilterMode !== 'all') {
+                loadCurrentFolderImages({preserveScroll: true});
+                return;
+            }
             updateGrid();
         }
 
 function aiApplyFilter() {
             aiFilterMode = document.getElementById('ai-filter-mode').value;
+            if (CURATOR_NATIVE && currentBatch && currentFolder && !isVirtualCollectionView() && !isPublicView()) {
+                loadCurrentFolderImages({preserveScroll: true});
+                return;
+            }
             updateGrid();
         }
 

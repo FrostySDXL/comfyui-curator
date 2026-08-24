@@ -65,31 +65,33 @@ The `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tes
 | `tests/unit/test_elements.py` | `ai_curate.elements` -- `extract_elements`, `build_element_list`, `get_quality_elements` | Pure functions, no mocking |
 | `tests/unit/test_models.py` | `ai_curate.models` -- `JobState`, `ImageResult`, `RunTotals`, `CurationRun` round-trips | Pure unittests, no fixtures |
 | `tests/unit/test_png_metadata.py` | `image_curator.png_metadata` -- parsing, missing metadata, malformed input | `PIL.Image.new` + `PngInfo` for test PNGs |
+| `tests/unit/test_sidecar_metadata.py` | Adjacent JSON preference, bounded parsing, malformed/symlink safety, type-preserving Rule34 data, combined metadata | `tmp_path`, real JSON files |
 | `tests/unit/test_favorites.py` | `image_curator.favorites` -- batch/universal favorite load/save/toggle/resolve | `tmp_path`, real files, JSON shape checks |
 | `tests/unit/test_publish.py` | `image_curator.publish` -- public derivative creation, metadata stripping, watermark, public listing, export-root-gated copy/move/delete, symlink-safe file operations | `tmp_path`, Pillow PNG fixtures, real file copies/moves/deletes |
 | `tests/unit/test_prompt_history.py` | `image_curator.prompt_history` -- normalization, hash, PNG prompt index build/cache, plus symlink/escape safety rejection | `tmp_path`, `PIL.Image.new` + `PngInfo`, `monkeypatch` for resolve-escape tests |
 | `tests/unit/test_web_validation.py` | `image_curator.web_validation` -- path traversal blocking and existing-batch validation | `tmp_path`, pure helper assertions |
-| `tests/unit/test_media.py` | `image_curator.media` -- thumbnail cache names, freshness checks, WebP generation | `tmp_path`, `PIL.Image.new` |
+| `tests/unit/test_media.py` | `image_curator.media` -- extension-safe poster/preview cache names, freshness, WebP generation, decoder fallback | `tmp_path`, `PIL.Image.new` |
+| `tests/unit/test_folder_index.py` | Immutable background folder snapshots, non-blocking initial build, mutation refresh and revision publication | `tmp_path`, real worker threads, bounded waits |
 | `tests/unit/test_ai_job_validation.py` | `ai_curate.job_validation` -- AI submit payload validation and defaulting | Pure helper assertions with injected batch/model constants |
 | `tests/unit/test_queue.py` | `ai_curate.queue.QueueManager` -- 11 test classes, 30+ tests plus app worker interface coverage | `MagicMock` storage, custom `qm` fixture |
 | `tests/unit/test_scoring.py` | `ai_curate.scoring` -- `find_images`, `build_scoring_prompt`, `score_images` | `mock.patch` on VisionClient, cancel-check testing |
 | `tests/unit/test_storage.py` | `ai_curate.storage.RunStorage` -- save, load, list, latest, corrupt data, path traversal | `tmp_path`-based `tmp_batches` + `storage` fixtures |
 | `tests/unit/test_run_all_script.py` | `scripts/run_all.py` -- build checks, format display, parse args | `importlib.util` dynamic import |
 | `tests/unit/test_benchmark_thumbnails.py`, `benchmark_dynamic_traversal_test.js` | Thumbnail benchmark orchestration, report contracts, and executable dynamic traversal/viewport lifecycle | Shared Python WebDriver fake plus Node `vm` browser mock executing JS extracted from the harness |
-| `tests/unit/test_frontend_progressive_grid.py`, `progressive_grid_lifecycle_test.js` | Progressive grid constants/source invariants and executable real-`grid.js` DOM lifecycle | One shared Node DOM mock covering bounded prefixes, growth, reconciliation, resets, selection, full-list navigation, and resize rechecks |
+| `tests/unit/test_frontend_progressive_grid.py`, `progressive_grid_lifecycle_test.js` | Virtual-grid constants/source invariants and executable real-`grid.js` lifecycle | Node DOM mock traversing 30,000 canonical items while enforcing <=500 live thumbs, identity retention, and one hover decoder |
 | `tests/unit/test_setup_local_browser_fixture.py` | `scripts/setup_local_browser_fixture.py` -- disposable manual-browser fixture creation and launch env output | `tmp_path`, `importlib.util` dynamic import |
 | `tests/unit/test_comfyui_extension.py` | Native `__init__.py` entrypoint, `py/curator_manager.py`, `web/comfyui/top_menu_extension.js` | `importlib`, `MagicMock`, mock modules for `server`, `aiohttp`, `jinja2` |
 | `tests/unit/test_comfyui_static_ui.py` | Native template parity, URL centralization, error propagation, page handler context | `frontend_source.read_frontend_js`, `subprocess` (node), `tmp_path`, `MagicMock` |
 | `tests/unit/test_native_curator_settings.py` | Native config persistence, precedence, malformed/schema handling, target containment, secret-safe payload, and host defaults | Injected host callables, `tmp_path`, symlink and resolve monkeypatches |
 | `tests/unit/test_frontend_native_settings.py` | Native Settings modal fields, secret controls, API wiring, and focus integration | Ordered frontend source invariants |
 | `tests/unit/test_frontend_view_menu.py` | Workspace toolbar grouping, View menu semantics, keyboard/focus handling, responsive rules, and script ordering | Ordered frontend source and template invariants |
-| `tests/component/test_native_curator_api.py` | Native settings, batch/state/import, image, metadata, thumbnail, original, single-image move, multi-image move, delete-rejects, favorites, public publish/export, public listing/destinations, public copy/move/delete route contracts, and prompt-history symlink/escape safety rejection | Precise aiohttp web mocks, async handler execution, real `tmp_path` files |
+| `tests/component/test_native_curator_api.py` | Native settings plus legacy/v2 media listings, lightweight polls/pages, typed posters/originals, snapshot bulk move/undo, deletion, favorites, public and prompt-history contracts | Precise aiohttp web mocks, async handler execution, real `tmp_path` files |
 | `tests/unit/test_frontend_*.py` | Ordered `static/js/*.js` and `static/css/*.css` sources -- source scanning for function names, invariants, undefined references | `tests/unit/frontend_source.py` helpers + regex assertions |
 | `tests/component/test_batch_api.py` | Flask route contracts: batches, images, move, delete-rejects, thumbnails | `client` fixture, PIL image generation |
 | `tests/component/test_ai_curate_worker.py` | `app._run_scoring_worker_inner` -- cancel timing (scoring vs move vs race) | Real `QueueManager` + `RunStorage`, patched `score_images` |
 | `tests/component/test_workflow_constraints.py` | AI workflow invariants: move-after-scoring, cancel-no-history, failed-never-move | `RunStorage` + `QueueManager` integration |
 | `tests/integration/test_ai_curate_api.py` | Full AI API: preview, submit, get, list, cancel, runs, path traversal | `client` fixture, worker thread patched |
-| `tests/integration/test_image_metadata_api.py` | `/api/image-metadata` route -- PNG metadata, non-PNG, missing files | `client` fixture, `PngInfo`-rich PNGs |
+| `tests/integration/test_image_metadata_api.py` | `/api/image-metadata` route -- PNG metadata, JSON sidecars on typed media, missing files | `client` fixture, `PngInfo`-rich PNGs, adjacent JSON |
 | `tests/integration/test_import_all_pending.py` | `/api/import-all` -- moves available files into the selected batch | `client` fixture, ComfyUI output dir |
 | `tests/integration/test_favorites_api.py` | Favorites API -- batch/universal toggles and image response favorite flag | `client` fixture, real temp files |
 | `tests/integration/test_publish_api.py` | Public publish API -- export, list, serve/thumbnail public images, copy/move/delete route contracts | `client` fixture, `PIL.Image` PNGs, monkeypatched export root |
@@ -99,7 +101,7 @@ The `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tes
 
 | Gap | Risk | Notes |
 |-----|------|-------|
-| No browser-level frontend tests | **Medium** | Frontend tests are source-scraping. No DOM, interaction, or visual regression testing. |
+| No full browser automation in the default suite | **Medium** | Critical grid/lightbox lifecycles execute real JS under Node DOM mocks; native Firefox/Chrome and media playback remain manual/benchmark gates. |
 | No real AI client integration test | **Medium** | Worker is always patched/stubbed. No end-to-end test against even a mock LLM endpoint. |
 | No native ComfyUI integration test | **Medium** | `test_comfyui_extension.py` uses mock ComfyUI modules. Manual smoke test required: install extension into ComfyUI `custom_nodes`, confirm the action-bar button appears and `/curator` loads. |
 | No concurrent/multi-user stress tests | **Low** | QueueManager is single-threaded tested. Intended for single-user operation. |

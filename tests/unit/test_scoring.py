@@ -19,6 +19,12 @@ class TestFindImages:
         assert "photo2.jpg" in names
         assert "notes.txt" not in names
 
+    def test_excludes_animated_video_and_audio_boundaries(self, tmp_path):
+        for filename in ("still.webp", "animation.gif", "clip.mp4", "track.mp3"):
+            (tmp_path / filename).write_bytes(b"media")
+
+        assert [path.name for path in find_images(tmp_path)] == ["still.webp"]
+
     def test_returns_empty_for_nonexistent_dir(self, tmp_path):
         """find_images returns empty list for nonexistent directory."""
         result = find_images(tmp_path / "nonexistent")

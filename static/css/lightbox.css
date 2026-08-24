@@ -54,6 +54,27 @@
             max-width: none;
             max-height: none;
         }
+        #lightbox-video {
+            width: min(calc(100vw - 140px), 1600px);
+            max-height: calc(100vh - 190px);
+            background: #000;
+            border-radius: 8px;
+        }
+        .lightbox-audio {
+            width: min(640px, calc(100vw - 140px));
+            display: grid;
+            gap: 18px;
+            justify-items: center;
+        }
+        #lightbox-img[hidden], .lightbox-audio[hidden], #lightbox-video[hidden] { display: none; }
+        #lightbox-audio-art {
+            width: min(420px, 70vw);
+            height: min(420px, 70vw);
+            object-fit: cover;
+            border-radius: 12px;
+        }
+        #lightbox-audio-player { width: min(560px, 76vw); }
+        .lightbox.typed-media #lightbox-zoom-indicator { display: none; }
         .lightbox-compare {
             width: min(96vw, 1900px);
             height: calc(100vh - 190px);
@@ -311,6 +332,9 @@
             font-size: 12px;
             line-height: 1.45;
         }
+        .metadata-sidecar-text {
+            max-height: 420px;
+        }
         .metadata-actions {
             display: flex;
             flex-wrap: wrap;
@@ -331,6 +355,36 @@
             display: flex;
             flex-wrap: wrap;
             gap: 6px;
+        }
+        .metadata-tags,
+        .metadata-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .metadata-tag-chip {
+            padding: 4px 7px;
+            border-radius: 999px;
+            background: var(--accent-surface);
+            border: 1px solid var(--border-strong);
+            color: var(--text-secondary);
+            font-size: 11px;
+            overflow-wrap: anywhere;
+        }
+        .metadata-link {
+            padding: 5px 8px;
+            border-radius: 6px;
+            background: var(--surface-raised);
+            border: 1px solid var(--border-strong);
+            color: var(--accent-primary);
+            font-size: 11px;
+            text-decoration: none;
+        }
+        .metadata-link:hover,
+        .metadata-link:focus-visible {
+            background: var(--accent-surface);
+            border-color: var(--accent-primary);
+            color: var(--text-primary);
         }
         .metadata-lora-chip {
             padding: 5px 8px;

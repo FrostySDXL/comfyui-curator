@@ -8,6 +8,10 @@ def read_index_html() -> str:
     return Path("templates/index.html").read_text(encoding="utf-8")
 
 
+def read_curator_html() -> str:
+    return Path("templates/curator.html").read_text(encoding="utf-8")
+
+
 def rule_body(css: str, selector: str) -> str:
     match = re.search(rf"{re.escape(selector)}\s*\{{(?P<body>.*?)\}}", css, re.DOTALL)
     assert match, selector
@@ -87,6 +91,34 @@ def test_view_menu_preserves_existing_view_control_ids_and_state_semantics() -> 
     assert 'id="favorites-filter-btn"' in html and 'aria-pressed="false"' in html
     assert 'id="ai-overlay-toggle" tabindex="-1"' not in html
     assert 'id="ai-filter-mode" class="ai-select ai-select-sm" tabindex="-1"' not in html
+
+
+def test_view_menu_persists_lightbox_video_autoplay_and_loop_preference() -> None:
+    for html in (read_index_html(), read_curator_html()):
+        assert 'id="lightbox-video-autoplay-loop-toggle" checked' in html
+        assert "Autoplay + loop lightbox videos" in html
+
+    state = Path("static/js/state.js").read_text(encoding="utf-8")
+    events = Path("static/js/events.js").read_text(encoding="utf-8")
+    lightbox = Path("static/js/lightbox.js").read_text(encoding="utf-8")
+
+    assert (
+        "const LIGHTBOX_VIDEO_AUTOPLAY_LOOP_KEY = 'imageCurator.lightboxVideoAutoplayLoop';"
+        in state
+    )
+    assert (
+        "let lightboxVideoAutoplayLoopEnabled = "
+        "localStorage.getItem(LIGHTBOX_VIDEO_AUTOPLAY_LOOP_KEY) !== 'false';"
+    ) in state
+    assert "videoPlaybackToggle.checked = lightboxVideoAutoplayLoopEnabled;" in events
+    assert "setLightboxVideoAutoplayLoopEnabled(videoPlaybackToggle.checked);" in events
+    setter = extract_function_body(
+        lightbox,
+        "function setLightboxVideoAutoplayLoopEnabled(enabled)",
+    )
+    assert "localStorage.setItem(LIGHTBOX_VIDEO_AUTOPLAY_LOOP_KEY" in setter
+    assert "video.autoplay = lightboxVideoAutoplayLoopEnabled;" in setter
+    assert "video.loop = lightboxVideoAutoplayLoopEnabled;" in setter
 
 
 def test_view_panel_closes_on_keyboard_exit_outside_pointer_and_escape() -> None:

@@ -57,7 +57,7 @@ def test_selection_mode_resets_on_context_change_move_and_escape() -> None:
     assert "resetSelectionState();" in lightbox_move
     assert "resetSelectionState();" in public_refresh
     assert (
-        "if (e.key === 'Escape' && !lightboxActive && (selectionMode || selectedImages.size > 0))"
+        "if (e.key === 'Escape' && !lightboxActive && (selectionMode || serverSelection || selectedImages.size > 0))"
         in js
     )
     assert "resetSelectionState();" in js
@@ -67,8 +67,9 @@ def test_select_mode_keeps_zero_selection_action_bar_and_accessible_thumbnails()
     js = read_frontend_js()
     action_bar = extract_function_body(js, "function updateActionBar()")
 
-    assert "if (selectedImages.size > 0 || selectionMode)" in action_bar
-    assert "const hasSelection = selectedImages.size > 0;" in action_bar
+    assert "if (hasSelection || selectionMode)" in action_bar
+    assert "serverSelection.count - serverSelection.excluded.size" in action_bar
+    assert "const hasSelection = selectedCount > 0;" in action_bar
     assert "b.disabled = !hasSelection" in action_bar
     assert "select.type = 'button';" in js
     assert "selectBtn.setAttribute('aria-pressed', isSelected ? 'true' : 'false');" in js
@@ -120,3 +121,21 @@ def test_action_bar_uses_semantic_surfaces_and_public_action_tokens() -> None:
     assert "color: var(--text-disabled);" in css
     assert ".action-btn:hover:not(:disabled)" in css
     assert ".action-btn:focus-visible" in css
+
+
+def test_typed_selections_disable_incompatible_compare_and_publish_actions() -> None:
+    js = read_frontend_js()
+    action_bar = extract_function_body(js, "function updateActionBar()")
+    publish = extract_function_body(js, "function showPublishModal()")
+    lightbox_publish = extract_function_body(js, "function showLightboxPublishModal()")
+    sync_lightbox = extract_function_body(js, "function syncLightboxPublicActions()")
+
+    assert "selectedReviewMedia.every(isStillReviewMedia)" in action_bar
+    assert "Compare supports still images only" in action_bar
+    assert "Prepare Public supports still images only" in action_bar
+    assert "getSelectedSourceImages().some(img => !isStillReviewMedia(img))" in publish
+    assert "!isStillReviewMedia(img)" in lightbox_publish
+    assert (
+        "publishBtn.disabled = !activePublicView && !isStillReviewMedia(activeImage)"
+        in sync_lightbox
+    )

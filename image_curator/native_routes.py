@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -13,9 +14,18 @@ from .favorites import (
     resolve_universal_favorites,
     toggle_favorite,
 )
-from .media import generate_thumbnail, thumbnail_cache_path, thumbnail_is_fresh
+from .folder_index import DEFAULT_PAGE_SIZE, BulkMoveOperationStore, FolderIndexService
+from .media import (
+    generate_hover_preview,
+    generate_media_poster,
+    hover_preview_cache_path,
+    media_cache_is_fresh,
+    remove_cached_media_derivatives,
+    thumbnail_cache_path,
+    thumbnail_is_fresh,
+)
 from .native_settings import NativeConfigError, NativeCuratorSettings, SettingsConflictError
-from .png_metadata import extract_png_metadata
+from .sidecar_metadata import delete_json_sidecar, extract_media_metadata
 from .web_validation import safe_path
 
 THUMB_SIZE = (320, 320)
@@ -27,6 +37,8 @@ class NativeCuratorService:
 
     def __init__(self, settings: NativeCuratorSettings) -> None:
         self.settings = settings
+        self.folder_index = FolderIndexService()
+        self.bulk_move_operations = BulkMoveOperationStore()
 
     def batch_exists(self, batch: str) -> bool:
         try:
@@ -35,6 +47,9 @@ class NativeCuratorService:
             return False
         path = self.settings.batch_root / batch
         return path.is_dir() and not path.is_symlink()
+
+    def close(self) -> None:
+        self.folder_index.close()
 
     def resolve_content_directory(self, batch: str, folder: str):
         root = self.settings.batch_root.resolve()
@@ -106,6 +121,28 @@ class NativeCuratorService:
             raise ValueError("Invalid thumbnail cache path") from exc
         return real_cache
 
+    def resolve_hover_preview_cache(self, batch: str, folder: str, name: str):
+        root = self.settings.batch_root.resolve()
+        batch_path = self.settings.batch_root / batch
+        if not self.batch_exists(batch) or batch_path.is_symlink():
+            raise ValueError("Invalid preview cache path")
+        real_batch = batch_path.resolve()
+        cache = hover_preview_cache_path(self.settings.batch_root, batch, folder, name)
+        if cache.parent.is_symlink() or cache.is_symlink():
+            raise ValueError("Invalid preview cache path")
+        cache.parent.mkdir(exist_ok=True)
+        if cache.parent.is_symlink() or cache.is_symlink():
+            raise ValueError("Invalid preview cache path")
+        real_parent = cache.parent.resolve()
+        real_cache = cache.resolve()
+        try:
+            real_batch.relative_to(root)
+            real_parent.relative_to(real_batch)
+            real_cache.relative_to(real_batch)
+        except ValueError as exc:
+            raise ValueError("Invalid preview cache path") from exc
+        return real_cache
+
     def batches_payload(self) -> dict[str, Any]:
         root = self.settings.batch_root
         batches = [
@@ -117,6 +154,14 @@ class NativeCuratorService:
             "active_batch": state_batch if state_batch in batches else None,
             "counts": {batch: batch_store.get_batch_counts(root, batch) for batch in batches},
             "batch_meta": {batch: batch_store.get_batch_metadata(root, batch) for batch in batches},
+            "pending_count": batch_store.get_pending_count(self.settings.import_source),
+        }
+
+    def import_status_payload(self) -> dict[str, Any]:
+        """Return the lightweight state used by the Import All control."""
+        state_batch = batch_store.load_state(self.settings.state_file).get("active_batch")
+        return {
+            "active_batch": state_batch if state_batch and self.batch_exists(state_batch) else None,
             "pending_count": batch_store.get_pending_count(self.settings.import_source),
         }
 
@@ -134,7 +179,7 @@ class NativeCuratorService:
             return None, web.json_response({"error": "Invalid path"}, status=400)
         if filename.startswith(".") or "\\" in filename or "/" in filename:
             return None, web.json_response({"error": "Invalid path"}, status=400)
-        if not filename.lower().endswith(tuple(batch_store.IMAGE_EXTENSIONS)):
+        if not filename.lower().endswith(tuple(batch_store.VIEWABLE_MEDIA_EXTENSIONS)):
             return None, web.json_response({"error": "Invalid file type"}, status=400)
         for folder in batch_store.BATCH_FOLDERS:
             try:
@@ -195,7 +240,10 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             return web.json_response({"error": "Could not update settings"}, status=500)
 
     async def get_batches(_request):
-        return web.json_response(service.batches_payload())
+        return web.json_response(await asyncio.to_thread(service.batches_payload))
+
+    async def get_import_status(_request):
+        return web.json_response(await asyncio.to_thread(service.import_status_payload))
 
     async def create_batch(request):
         data = await _json_body(request)
@@ -240,9 +288,14 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             service.resolve_content_directory(batch, "inbox")
         except ValueError:
             return web.json_response({"error": "Invalid import destination"}, status=400)
-        count = batch_store.import_all_pending(
-            service.settings.import_source, service.settings.batch_root, batch
+        count = await asyncio.to_thread(
+            batch_store.import_all_pending,
+            service.settings.import_source,
+            service.settings.batch_root,
+            batch,
         )
+        if count:
+            service.folder_index.refresh(batch, "inbox")
         return web.json_response({"success": True, "count": count})
 
     async def get_images(request):
@@ -262,9 +315,14 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             directory = service.resolve_content_directory(batch, folder)
         except ValueError:
             return web.json_response({"error": "Invalid path"}, status=400)
-        favorites = get_batch_favorite_filenames(service.settings.batch_root, batch)
+        favorites = await asyncio.to_thread(
+            get_batch_favorite_filenames, service.settings.batch_root, batch
+        )
         payload = []
-        for image in batch_store.get_images(directory, sort_by=sort_by, order=order):
+        listed = await asyncio.to_thread(
+            batch_store.get_images, directory, sort_by=sort_by, order=order
+        )
+        for image in listed:
             try:
                 if image.is_symlink():
                     continue
@@ -272,10 +330,21 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
                 resolved_image.relative_to(directory)
                 if resolved_image.parent != directory:
                     continue
-                size = image.stat().st_size
+                stat = image.stat()
+                size = stat.st_size
+                mtime = stat.st_mtime_ns
             except (OSError, ValueError):
                 continue
-            payload.append({"name": image.name, "size": size, "favorite": image.name in favorites})
+            payload.append(
+                {
+                    "name": image.name,
+                    "size": size,
+                    "mtime": mtime,
+                    "favorite": image.name in favorites,
+                    "media_kind": batch_store.media_kind(image),
+                    "mime": batch_store.media_mime(image),
+                }
+            )
         return web.json_response(payload)
 
     def resolve_media(request):
@@ -290,7 +359,7 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             return None, web.json_response({"error": "Invalid path"}, status=400)
         if name.find("/") >= 0:
             return None, web.json_response({"error": "Invalid path"}, status=400)
-        if not name.lower().endswith(tuple(batch_store.IMAGE_EXTENSIONS)):
+        if not name.lower().endswith(tuple(batch_store.VIEWABLE_MEDIA_EXTENSIONS)):
             return None, web.json_response({"error": "Invalid file type"}, status=400)
         try:
             base = service.resolve_content_directory(batch, folder)
@@ -309,13 +378,16 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
         path, error_response = resolve_media(request)
         if error_response is not None:
             return error_response
-        return web.json_response(extract_png_metadata(path))
+        metadata = await asyncio.to_thread(extract_media_metadata, path)
+        return web.json_response(metadata)
 
     async def serve_image(request):
         path, error_response = resolve_media(request)
         if error_response is not None:
             return error_response
-        return web.FileResponse(path, headers=CACHE_HEADERS)
+        response = web.FileResponse(path, headers=CACHE_HEADERS)
+        response.content_type = batch_store.media_mime(path) or "application/octet-stream"
+        return response
 
     async def serve_thumbnail(request):
         source, error_response = resolve_media(request)
@@ -327,8 +399,22 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
                 request.match_info["folder"],
                 request.match_info["name"],
             )
-            if not thumbnail_is_fresh(cache, source, THUMB_SIZE):
-                generate_thumbnail(source, cache, THUMB_SIZE)
+            kind = batch_store.media_kind(source)
+            if kind is None:
+                return web.json_response({"error": "Invalid file type"}, status=400)
+            fresh = (
+                await asyncio.to_thread(thumbnail_is_fresh, cache, source, THUMB_SIZE)
+                if kind in {"image", "animated_image"}
+                else await asyncio.to_thread(media_cache_is_fresh, cache, source)
+            )
+            if not fresh:
+                await asyncio.to_thread(
+                    generate_media_poster,
+                    source,
+                    cache,
+                    THUMB_SIZE,
+                    media_kind=kind,
+                )
         except ValueError:
             return web.json_response({"error": "Invalid thumbnail cache path"}, status=400)
         except Exception:
@@ -338,9 +424,116 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             headers={"Content-Type": "image/webp", **CACHE_HEADERS},
         )
 
+    async def serve_hover_preview(request):
+        source, error_response = resolve_media(request)
+        if error_response is not None:
+            return error_response
+        kind = batch_store.media_kind(source)
+        if kind not in {"animated_image", "video"}:
+            return web.json_response({"error": "Hover preview unavailable"}, status=400)
+        try:
+            cache = service.resolve_hover_preview_cache(
+                request.match_info["batch"],
+                request.match_info["folder"],
+                request.match_info["name"],
+            )
+            fresh = await asyncio.to_thread(media_cache_is_fresh, cache, source)
+            if not fresh and not await asyncio.to_thread(
+                generate_hover_preview, source, cache, media_kind=kind
+            ):
+                return web.json_response({"error": "Hover preview unavailable"}, status=503)
+        except (OSError, ValueError):
+            return web.json_response({"error": "Hover preview unavailable"}, status=503)
+        return web.FileResponse(
+            cache,
+            headers={"Content-Type": "video/mp4", **CACHE_HEADERS},
+        )
+
+    def snapshot_request(request):
+        batch = request.match_info["batch"]
+        folder = request.match_info["folder"]
+        if not service.batch_exists(batch):
+            return (
+                None,
+                None,
+                None,
+                None,
+                web.json_response({"error": "Batch does not exist"}, status=404),
+            )
+        if folder not in batch_store.BATCH_FOLDERS:
+            return (
+                None,
+                None,
+                None,
+                None,
+                web.json_response({"error": "Invalid folder"}, status=400),
+            )
+        try:
+            directory = service.resolve_content_directory(batch, folder)
+        except ValueError:
+            return None, None, None, None, web.json_response({"error": "Invalid path"}, status=400)
+        sort_by = request.query.get("sort", "date")
+        order = request.query.get("order", "desc")
+        if sort_by not in ("date", "name", "shuffle"):
+            sort_by = "date"
+        if order not in ("asc", "desc"):
+            order = "desc"
+        return batch, folder, directory, (sort_by, order), None
+
+    async def get_folder_snapshot(request):
+        batch, folder, directory, sorting, error_response = snapshot_request(request)
+        if error_response is not None:
+            return error_response
+        sort_by, order = sorting
+        payload = service.folder_index.request_snapshot(batch, folder, directory, sort_by, order)
+        return web.json_response(payload, status=200 if payload["status"] == "ready" else 202)
+
+    async def poll_folder_snapshot(request):
+        batch, folder, directory, sorting, error_response = snapshot_request(request)
+        if error_response is not None:
+            return error_response
+        sort_by, order = sorting
+        payload = service.folder_index.poll(
+            batch,
+            folder,
+            directory,
+            sort_by,
+            order,
+            request.query.get("revision"),
+        )
+        return web.json_response(payload, status=200 if payload["status"] == "ready" else 202)
+
+    async def get_folder_items(request):
+        batch, folder, _directory, sorting, error_response = snapshot_request(request)
+        if error_response is not None:
+            return error_response
+        sort_by, order = sorting
+        try:
+            offset = int(request.query.get("offset", "0"))
+            limit = int(request.query.get("limit", str(DEFAULT_PAGE_SIZE)))
+        except ValueError:
+            return web.json_response({"error": "Invalid page range"}, status=400)
+        favorites = await asyncio.to_thread(
+            get_batch_favorite_filenames, service.settings.batch_root, batch
+        )
+        payload = service.folder_index.page(
+            batch,
+            folder,
+            sort_by,
+            order,
+            request.query.get("revision", ""),
+            offset,
+            limit,
+            favorites,
+        )
+        if payload is None:
+            return web.json_response({"error": "Snapshot revision is stale"}, status=409)
+        return web.json_response(payload)
+
     app.router.add_get("/api/curator/settings", get_settings)
     app.router.add_post("/api/curator/settings", post_settings)
     app.router.add_get("/api/curator/batches", get_batches)
+    app.router.add_get("/api/curator/import-status", get_import_status)
     app.router.add_post("/api/curator/batches", create_batch)
     app.router.add_post("/api/curator/active-batch", set_active_batch)
     app.router.add_post("/api/curator/import-all", import_all)
@@ -379,8 +572,9 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
                 return web.json_response({"error": "Invalid path"}, status=400)
         except OSError:
             return web.json_response({"error": "Invalid path"}, status=400)
-        if not batch_store.move_image(src_path, dst_path):
+        if not await asyncio.to_thread(batch_store.move_image, src_path, dst_path):
             return web.json_response({"error": f"Could not move {filename}"}, status=500)
+        service.folder_index.refresh(batch, source, destination)
         return web.json_response({"success": True})
 
     async def move_batch(request):
@@ -389,6 +583,7 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
         source = _string_field(data, "source")
         destination = _string_field(data, "destination")
         raw_filenames = data.get("filenames", [])
+        selection = data.get("selection")
         if not isinstance(raw_filenames, list):
             return web.json_response({"error": "Missing parameters"}, status=400)
         if None in (batch, source, destination):
@@ -404,6 +599,25 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             dst_dir = service.resolve_content_directory(batch, destination)
         except ValueError:
             return web.json_response({"error": "Invalid path"}, status=400)
+        if selection is not None:
+            if not isinstance(selection, dict) or selection.get("type") != "snapshot":
+                return web.json_response({"error": "Invalid selection"}, status=400)
+            selected_names = service.folder_index.names_for_revision(
+                batch,
+                source,
+                str(selection.get("sort", "date")),
+                str(selection.get("order", "desc")),
+                str(selection.get("revision", "")),
+            )
+            if selected_names is None:
+                return web.json_response({"error": "Snapshot revision is stale"}, status=409)
+            excluded_raw = selection.get("excluded", [])
+            if not isinstance(excluded_raw, list) or any(
+                not isinstance(name, str) for name in excluded_raw
+            ):
+                return web.json_response({"error": "Invalid selection exclusions"}, status=400)
+            excluded = set(excluded_raw)
+            raw_filenames = [name for name in selected_names if name not in excluded]
         skipped = 0
         valid_filenames: list[str] = []
         for filename in raw_filenames:
@@ -430,16 +644,46 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
                 continue
             valid_filenames.append(filename)
         moved = 0
+        moved_names: list[str] = []
         if valid_filenames:
-            moved, skipped_in_loop = batch_store.move_images(
+            moved, skipped_in_loop, moved_names = await asyncio.to_thread(
+                batch_store.move_images,
                 source_dir=src_dir,
                 names=valid_filenames,
                 dest_dir=dst_dir,
             )
             skipped += skipped_in_loop
+        service.folder_index.refresh(batch, source, destination)
         if moved == 0 and raw_filenames:
             return web.json_response({"success": False, "moved": 0, "skipped": skipped})
-        return web.json_response({"success": True, "moved": moved, "skipped": skipped})
+        payload = {"success": True, "moved": moved, "skipped": skipped}
+        if selection is not None and moved_names:
+            payload["operation_id"] = service.bulk_move_operations.record(
+                batch, source, destination, moved_names
+            )
+        return web.json_response(payload)
+
+    async def undo_snapshot_move(request):
+        data = await _json_body(request)
+        token = _string_field(data, "operation_id")
+        if not token:
+            return web.json_response({"error": "operation_id required"}, status=400)
+        operation = service.bulk_move_operations.pop(token)
+        if operation is None:
+            return web.json_response({"error": "Undo operation expired or not found"}, status=404)
+        try:
+            source_dir = service.resolve_content_directory(operation.batch, operation.destination)
+            destination_dir = service.resolve_content_directory(operation.batch, operation.source)
+        except ValueError:
+            return web.json_response({"error": "Invalid path"}, status=400)
+        moved, skipped, _moved_names = await asyncio.to_thread(
+            batch_store.move_images,
+            source_dir,
+            list(operation.names),
+            destination_dir,
+        )
+        service.folder_index.refresh(operation.batch, operation.source, operation.destination)
+        return web.json_response({"success": moved > 0, "moved": moved, "skipped": skipped})
 
     async def delete_rejects(request):
         batch = request.match_info["batch"]
@@ -449,51 +693,45 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             rejects_dir = service.resolve_content_directory(batch, "rejects")
         except ValueError:
             return web.json_response({"error": "Invalid path"}, status=400)
-        count = 0
-        failed = 0
-        for f in rejects_dir.iterdir():
-            if f.suffix.lower() not in batch_store.IMAGE_EXTENSIONS:
-                continue
-            try:
-                if f.is_symlink():
+
+        def delete_reject_files() -> tuple[int, int]:
+            count = 0
+            failed = 0
+            for f in rejects_dir.iterdir():
+                if f.suffix.lower() not in batch_store.VIEWABLE_MEDIA_EXTENSIONS:
                     continue
-            except OSError:
-                continue
-            try:
-                f.unlink()
-            except OSError:
-                failed += 1
-                continue
-            cache_file = thumbnail_cache_path(service.settings.batch_root, batch, "rejects", f.name)
-            cache_safe = False
-            try:
-                if not cache_file.is_symlink() and not cache_file.parent.is_symlink():
-                    root = service.settings.batch_root.resolve()
-                    real_batch = (service.settings.batch_root / batch).resolve()
-                    real_cache = cache_file.resolve()
-                    real_parent = cache_file.parent.resolve()
-                    real_batch.relative_to(root)
-                    real_parent.relative_to(root)
-                    real_parent.relative_to(real_batch)
-                    real_cache.relative_to(root)
-                    real_cache.relative_to(real_batch)
-                    cache_safe = True
-            except (OSError, ValueError):
-                pass
-            if cache_safe and cache_file.exists():
                 try:
-                    cache_file.unlink()
+                    if f.is_symlink():
+                        continue
+                    f.unlink()
                 except OSError:
-                    pass
-            count += 1
+                    failed += 1
+                    continue
+                sidecar_removed = delete_json_sidecar(f)
+                if not sidecar_removed:
+                    failed += 1
+                remove_cached_media_derivatives(
+                    service.settings.batch_root, batch, "rejects", f.name
+                )
+                count += 1
+            return count, failed
+
+        count, failed = await asyncio.to_thread(delete_reject_files)
+        if count:
+            service.folder_index.refresh(batch, "rejects")
         return web.json_response({"success": True, "count": count, "failed": failed})
 
     app.router.add_get("/api/curator/images/{batch}/{folder}", get_images)
+    app.router.add_get("/api/curator/v2/folders/{batch}/{folder}/snapshot", get_folder_snapshot)
+    app.router.add_get("/api/curator/v2/folders/{batch}/{folder}/poll", poll_folder_snapshot)
+    app.router.add_get("/api/curator/v2/folders/{batch}/{folder}/items", get_folder_items)
     app.router.add_get("/api/curator/image-metadata/{batch}/{folder}/{name}", get_metadata)
     app.router.add_get("/curator/thumb/{batch}/{folder}/{name}", serve_thumbnail)
     app.router.add_get("/curator/image/{batch}/{folder}/{name}", serve_image)
+    app.router.add_get("/curator/preview/{batch}/{folder}/{name}", serve_hover_preview)
     app.router.add_post("/api/curator/move", move_single)
     app.router.add_post("/api/curator/move-batch", move_batch)
+    app.router.add_post("/api/curator/move-batch/undo", undo_snapshot_move)
     app.router.add_post("/api/curator/delete-rejects/{batch}", delete_rejects)
 
     async def get_batch_favorites(request):

@@ -30,6 +30,7 @@ state.json
 
 # Thumbnail cache (per batch)
 **/.thumbs/
+**/.previews/
 
 # IDE
 .vscode/

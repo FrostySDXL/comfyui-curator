@@ -45,8 +45,15 @@ function createElement() {
         src: "",
         onload: null,
         onerror: null,
+        hidden: false,
+        paused: true,
+        playCalls: 0,
         replaceChildrenCount: 0,
         addEventListener() {},
+        pause() { this.paused = true; },
+        play() { this.playCalls++; this.paused = false; return Promise.resolve(); },
+        load() {},
+        removeAttribute(name) { if (name === "src") this.src = ""; },
         appendChild() {},
         replaceChildren() { this.replaceChildrenCount++; },
         querySelectorAll() { return []; },
@@ -67,6 +74,10 @@ function createRuntime() {
     const elements = {
         lightbox,
         "lightbox-img": visibleImage,
+        "lightbox-video": createElement(),
+        "lightbox-audio": createElement(),
+        "lightbox-audio-art": createElement(),
+        "lightbox-audio-player": createElement(),
         "lightbox-image-wrap": createElement(),
         "lightbox-info": createElement(),
         "lightbox-metadata-panel": createElement(),
@@ -137,6 +148,7 @@ function createRuntime() {
         currentBatch: "batch",
         currentFolder: "inbox",
         currentSort: "date",
+        lightboxVideoAutoplayLoopEnabled: true,
         selectedImages: new Set(),
         aiActiveRun: null,
         lightboxMetadataRequestToken: 0,
@@ -161,6 +173,7 @@ function createRuntime() {
         isVirtualCollectionView() { return false; },
         isPublicView() { return false; },
         ccImageUrl(batch, folder, name) { return `/image/${batch}/${folder}/${name}`; },
+        ccThumbUrl(batch, folder, name) { return `/thumb/${batch}/${folder}/${name}`; },
         loadLightboxMetadata() { return Promise.resolve(); },
         renderLightboxMetadataPanel() {},
         syncMetadataToggleButton() {},
@@ -172,7 +185,7 @@ function createRuntime() {
     };
     vm.createContext(context);
     vm.runInContext(source, context, {filename: "lightbox.js"});
-    return {context, elements, imageUrls, loaders};
+    return {context, elements, imageUrls, loaders, items};
 }
 
 function loaderFor(loaders, url) {
@@ -457,6 +470,45 @@ function testPendingOpenCancelViaEscapePreservesNormalGridState() {
         "lightbox stays inactive after pending cancellation");
 }
 
+function testTypedVideoNavigationReleasesPlayerResource() {
+    const {context, elements, items} = createRuntime();
+    items[1].media_kind = "video";
+    context.openLightbox(1);
+    check(elements.lightbox.classList.contains("typed-media"), "video opens typed-media lightbox mode");
+    check(elements["lightbox-video"].src.endsWith("/b.png"), "video player receives original media URL");
+    check(elements["lightbox-video"].hidden === false, "video player is visible");
+    context.navigate(1);
+    check(elements["lightbox-video"].src === "", "navigating away releases video source");
+    check(elements["lightbox-video"].paused === true, "navigating away pauses video playback");
+}
+
+function testTypedVideoAutoplaysLoopsAndTogglesBeforeNativeFocus() {
+    const {context, elements, items} = createRuntime();
+    const video = elements["lightbox-video"];
+    items[1].media_kind = "video";
+
+    context.openLightbox(1);
+    check(video.autoplay === true, "video reflects the enabled autoplay preference");
+    check(video.loop === true, "video reflects the enabled loop preference");
+    check(video.playCalls === 1 && video.paused === false, "video starts without a native-control click");
+
+    check(context.toggleLightboxVideoPlayback() === true, "visible video accepts app-level playback toggle");
+    check(video.paused === true, "first app-level toggle pauses the video");
+    check(context.toggleLightboxVideoPlayback() === true, "paused video accepts a second playback toggle");
+    check(video.playCalls === 2 && video.paused === false, "second app-level toggle resumes the video");
+}
+
+function testTypedAudioCloseReleasesPlayerAndArtwork() {
+    const {context, elements, items} = createRuntime();
+    items[0].media_kind = "audio";
+    context.openLightbox(0);
+    check(elements["lightbox-audio-player"].src.endsWith("/a.png"), "audio player receives original media URL");
+    check(elements["lightbox-audio-art"].src.includes("/thumb/"), "audio lightbox displays poster artwork");
+    context.closeLightbox();
+    check(elements["lightbox-audio-player"].src === "", "closing releases audio source");
+    check(elements["lightbox-audio-art"].src === "", "closing releases audio artwork");
+}
+
 (async () => {
     await testNewSessionHidesPreviousImageUntilVisibleTargetLoads();
     await testNewSessionMeasuresUntransformedLayoutSize();
@@ -476,6 +528,9 @@ function testPendingOpenCancelViaEscapePreservesNormalGridState() {
     testIsLightboxOpenPendingReturnsFalseWhenNoPendingOpen();
     testIsLightboxOpenPendingReturnsTrueWhenPendingOpenExists();
     testPendingOpenCancelViaEscapePreservesNormalGridState();
+    testTypedVideoNavigationReleasesPlayerResource();
+    testTypedVideoAutoplaysLoopsAndTogglesBeforeNativeFocus();
+    testTypedAudioCloseReleasesPlayerAndArtwork();
     const failed = details.filter(detail => !detail.pass).length;
     process.stdout.write(JSON.stringify({total: details.length, failed, details}));
     process.exitCode = failed === 0 ? 0 : 1;

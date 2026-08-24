@@ -9,20 +9,31 @@
         .grid-shell {
             display: flex;
             justify-content: center;
+            position: relative;
+            align-self: flex-start;
+            contain: layout paint style;
             width: 100%;
             max-width: 100%;
             min-width: 0;
         }
         .grid {
             display: grid;
+            overflow-anchor: none;
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
             width: auto;
             grid-template-columns: repeat(var(--grid-columns, 1), var(--grid-track-size, 180px));
             gap: var(--grid-gap, 12px);
             align-content: start;
             justify-content: start;
+            box-sizing: border-box;
         }
         .grid.is-empty {
             display: flex;
+            position: static;
+            left: auto;
+            transform: none;
             width: 100%;
             min-height: 100%;
             justify-content: stretch;
@@ -99,6 +110,18 @@
             opacity: 1;
             transform: scale(1);
         }
+        .thumb-hover-preview {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.16s ease;
+            z-index: 1;
+        }
+        .thumb.preview-active .thumb-hover-preview { opacity: 1; }
         .thumb:hover img { transform: scale(1.04); }
         .thumb.removing {
             opacity: 0;

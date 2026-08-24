@@ -19,10 +19,19 @@ function toggleSelect(index, event) {
             if (!displayImages[index]) return;
             if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(displayImages[index]);
             const name = displayImages[index].name;
+            if (serverSelection) {
+                if (serverSelection.excluded.has(name)) serverSelection.excluded.delete(name);
+                else serverSelection.excluded.add(name);
+                updateSelectionVisuals();
+                updateActionBar();
+                return;
+            }
             if (event.shiftKey && lastSelectIndex >= 0) {
                 const lo = Math.min(lastSelectIndex, index);
                 const hi = Math.max(lastSelectIndex, index);
-                for (let i = lo; i <= hi; i++) selectedImages.add(displayImages[i].name);
+                for (let i = lo; i <= hi; i++) {
+                    if (displayImages[i]) selectedImages.add(displayImages[i].name);
+                }
             } else {
                 if (selectedImages.has(name)) selectedImages.delete(name);
                 else selectedImages.add(name);
@@ -35,6 +44,7 @@ function toggleSelect(index, event) {
 
 function clearSelection() {
             selectedImages.clear();
+            serverSelection = null;
             lastSelectIndex = -1;
             updateSelectionVisuals();
             updateActionBar();
@@ -53,6 +63,7 @@ function setSelectionMode(active) {
 
 function resetSelectionState() {
             selectedImages.clear();
+            serverSelection = null;
             lastSelectIndex = -1;
             selectionMode = false;
             updateSelectionVisuals();
@@ -63,6 +74,18 @@ function resetSelectionState() {
 function selectAllDisplayedImages() {
             if (!currentBatch || images.length === 0) return;
             setSelectionMode(true);
+            if (pagedFolderMode && folderSnapshot) {
+                serverSelection = serverSelection ? null : {
+                    revision: folderSnapshot.revision,
+                    count: folderSnapshot.count,
+                    excluded: new Set(),
+                };
+                selectedImages.clear();
+                lastSelectIndex = images.length - 1;
+                updateSelectionVisuals();
+                updateActionBar();
+                return;
+            }
             const displayedNames = getDisplayImages().map(img => img.name);
             const allDisplayedSelected = displayedNames.length > 0 && displayedNames.every(name => selectedImages.has(name));
             selectedImages = allDisplayedSelected ? new Set() : new Set(displayedNames);
@@ -77,7 +100,9 @@ function updateSelectionVisuals() {
             thumbs.forEach(thumb => {
                 const fname = thumb.dataset.name;
                 if (!fname) return;
-                const isSelected = selectedImages.has(fname);
+                const isSelected = serverSelection
+                    ? !serverSelection.excluded.has(fname)
+                    : selectedImages.has(fname);
                 thumb.classList.toggle('selected', isSelected);
                 const selectBtn = thumb.querySelector('.thumb-select');
                 if (selectBtn) {
@@ -88,17 +113,29 @@ function updateSelectionVisuals() {
             });
         }
 
+function isStillReviewMedia(img) {
+            return Boolean(img) && (!img.media_kind || img.media_kind === 'image');
+        }
+
 function updateActionBar() {
             const bar = document.getElementById('action-bar');
             const grid = document.getElementById('grid');
             const showPublicActions = isPublicView();
             const showReviewMove = !isVirtualCollectionView() && !isPublicView();
-            const hasSelection = selectedImages.size > 0;
-            if (selectedImages.size > 0 || selectionMode) {
+            const selectedCount = serverSelection
+                ? Math.max(0, serverSelection.count - serverSelection.excluded.size)
+                : selectedImages.size;
+            const selectedReviewMedia = serverSelection
+                ? []
+                : getCurrentDisplayImages().filter(img => img && selectedImages.has(img.name));
+            const selectedMediaAreStill = selectedReviewMedia.length === selectedCount
+                && selectedReviewMedia.every(isStillReviewMedia);
+            const hasSelection = selectedCount > 0;
+            if (hasSelection || selectionMode) {
                 bar.classList.add('visible');
                 grid.classList.add('selecting');
                 document.body.classList.add('has-active-selection');
-                document.getElementById('action-count').textContent = selectedImages.size + ' selected';
+                document.getElementById('action-count').textContent = selectedCount + ' selected';
                 const reviewGroup = bar.querySelector('.action-group-review');
                 const publicGroup = bar.querySelector('.action-group-public');
                 if (reviewGroup) reviewGroup.style.display = showReviewMove ? '' : 'none';
@@ -110,7 +147,10 @@ function updateActionBar() {
                 const compareBtn = document.getElementById('compare-lightbox-btn');
                 if (compareBtn) {
                     compareBtn.style.display = showReviewMove ? '' : 'none';
-                    compareBtn.disabled = !(showReviewMove && selectedImages.size === 2);
+                    compareBtn.disabled = !(showReviewMove && !serverSelection && selectedCount === 2 && selectedMediaAreStill);
+                    compareBtn.title = selectedCount > 0 && !selectedMediaAreStill
+                        ? 'Compare supports still images only'
+                        : '';
                 }
                 ['public-copy-btn', 'public-move-btn', 'public-delete-btn'].forEach(id => {
                     const btn = document.getElementById(id);
@@ -119,6 +159,12 @@ function updateActionBar() {
                 bar.querySelectorAll('.action-btn:not(.action-clear)').forEach(b => {
                     if (b.id !== 'compare-lightbox-btn') b.disabled = !hasSelection;
                 });
+                if (publishBtn) {
+                    publishBtn.disabled = !hasSelection || Boolean(serverSelection) || !selectedMediaAreStill;
+                    publishBtn.title = serverSelection
+                        ? 'Public preparation requires an explicit loaded selection'
+                        : (!selectedMediaAreStill && hasSelection ? 'Prepare Public supports still images only' : '');
+                }
                 const clearBtn = bar.querySelector('.action-clear');
                 if (clearBtn) clearBtn.textContent = hasSelection ? 'Clear selection' : 'Done';
             } else {
@@ -201,7 +247,7 @@ async function animateThumbRemoval(names) {
 
 function removeImagesFromCurrentView(names) {
             const removeSet = new Set(names);
-            images = images.filter(img => !removeSet.has(img.name));
+            images = images.filter(img => img && !removeSet.has(img.name));
             names.forEach(name => gridThumbMap.delete(name));
             updateImageCountLabel();
         }
@@ -234,9 +280,12 @@ async function moveBatch(filenames, destination) {
                 await animateThumbRemoval(filenames);
                 recordLastAction(filenames, currentFolder, destination);
                 showToast(`Moved ${data.moved} image${data.moved!==1?'s':''} to ${destination}`, true);
-                removeImagesFromCurrentView(filenames);
                 resetSelectionState();
-                updateGrid();
+                if (pagedFolderMode) await loadCurrentFolderImages({preserveScroll: true});
+                else {
+                    removeImagesFromCurrentView(filenames);
+                    updateGrid();
+                }
                 loadBatches();
             } else {
                 const data = await resp.json().catch(() => ({}));
@@ -245,6 +294,34 @@ async function moveBatch(filenames, destination) {
         }
 
 async function moveSelected(destination) {
+            if (serverSelection) {
+                const resp = await fetch(ccApiPath('/api/move-batch'), {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        batch: currentBatch,
+                        source: currentFolder,
+                        destination,
+                        selection: {
+                            type: 'snapshot',
+                            revision: serverSelection.revision,
+                            sort: currentSort,
+                            order: currentOrder,
+                            excluded: [...serverSelection.excluded],
+                        },
+                    }),
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) { showToast(data.error || 'Move failed'); return; }
+                if (data.operation_id) {
+                    lastAction = {operationId: data.operation_id, expiresAt: Date.now() + 8000};
+                }
+                showToast(`Moved ${data.moved || 0} media item${data.moved === 1 ? '' : 's'} to ${destination}`, Boolean(data.operation_id));
+                resetSelectionState();
+                await loadCurrentFolderImages();
+                loadBatches();
+                return;
+            }
             if (selectedImages.size === 0) return;
             await moveBatch([...selectedImages], destination);
         }
@@ -279,6 +356,13 @@ async function moveImage(destination) {
                 }
                 recordLastAction([img.name], source.folder, destination, source.batch);
                 showToast(`Moved to ${destination}`, true);
+                if (pagedFolderMode) {
+                    closeLightbox();
+                    resetSelectionState();
+                    await loadCurrentFolderImages({preserveScroll: true});
+                    loadBatches();
+                    return;
+                }
                 removeImagesFromCurrentView([img.name]);
                 resetSelectionState();
                 loadBatches();
@@ -306,6 +390,20 @@ async function undoLastMove() {
             if (lastAction.expiresAt && Date.now() > lastAction.expiresAt) {
                 lastAction = null;
                 hideToast();
+                return;
+            }
+            if (lastAction.operationId) {
+                const resp = await fetch(ccApiPath('/api/move-batch/undo'), {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({operation_id: lastAction.operationId}),
+                });
+                const data = await resp.json().catch(() => ({}));
+                lastAction = null;
+                hideToast();
+                showToast(resp.ok ? `Restored ${data.moved || 0} media items` : (data.error || 'Nothing to restore'));
+                if (currentBatch && !isVirtualCollectionView()) loadCurrentFolderImages();
+                loadBatches();
                 return;
             }
             const {batch, filenames, source, destination} = lastAction;

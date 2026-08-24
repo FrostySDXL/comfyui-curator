@@ -4,17 +4,15 @@
  * Later-file globals called at runtime: aiGetImageScore, aiShouldShowImage, aiSortImages, aiScoreGradient.
  */
 
-        /* A 120-item initial prefix stays materially below the 2,000-image
-           benchmark while covering several desktop viewports. Matching
-           120-item chunks keep growth bounded; the 800px threshold starts the
-           next chunk before the operator reaches the current prefix boundary. */
-        const PROGRESSIVE_GRID_INITIAL_LIMIT = 120;
-        const PROGRESSIVE_GRID_APPEND_CHUNK = 120;
-        const PROGRESSIVE_GRID_NEAR_END_PX = 800;
-        let _progressiveGridRenderLimit = PROGRESSIVE_GRID_INITIAL_LIMIT;
+        const VIRTUAL_GRID_MAX_THUMBNAILS = 500;
+        const VIRTUAL_GRID_OVERSCAN_ROWS = 2;
+        const gridThumbPool = [];
+        let _progressiveGridRenderLimit = VIRTUAL_GRID_MAX_THUMBNAILS;
         let _progressiveGridGrowthRafId = null;
         let _progressiveGridResizeTimerId = null;
         let _progressiveGridScrollBound = false;
+        let _virtualGridFastScrolling = false;
+        let _virtualGridScrollIdleTimerId = null;
         let _progressiveGridGeneration = 0;
         let _progressiveGridContextKey = null;
 
@@ -23,8 +21,13 @@
                 renderedCount: gridThumbMap.size,
                 renderLimit: _progressiveGridRenderLimit,
                 context: _progressiveGridContextKey,
+                windowStart: _virtualGridWindowStart,
+                windowEnd: _virtualGridWindowEnd,
             };
         }
+
+        let _virtualGridWindowStart = 0;
+        let _virtualGridWindowEnd = 0;
 
         function _getProgressiveGridContextKey() {
             return JSON.stringify([
@@ -46,7 +49,7 @@
         function _resetProgressiveGridContext(contextKey) {
             _progressiveGridGeneration += 1;
             _cancelProgressiveGridGrowthCheck();
-            _progressiveGridRenderLimit = PROGRESSIVE_GRID_INITIAL_LIMIT;
+            _progressiveGridRenderLimit = VIRTUAL_GRID_MAX_THUMBNAILS;
             _progressiveGridContextKey = contextKey;
             const content = document.querySelector('.content');
             if (content) content.scrollTop = 0;
@@ -57,16 +60,11 @@
             _cancelProgressiveGridGrowthCheck();
             cancelScheduledViewportLoads();
             for (const element of gridThumbMap.values()) unscheduleThumbnailLoad(element);
-            _progressiveGridRenderLimit = PROGRESSIVE_GRID_INITIAL_LIMIT;
+            _progressiveGridRenderLimit = VIRTUAL_GRID_MAX_THUMBNAILS;
             _progressiveGridContextKey = null;
             currentDisplayImages = [];
             const content = document.querySelector('.content');
             if (content) content.scrollTop = 0;
-        }
-
-        function _isProgressiveGridNearEnd(content) {
-            const distanceToBottom = content.scrollHeight - content.clientHeight - content.scrollTop;
-            return distanceToBottom <= PROGRESSIVE_GRID_NEAR_END_PX;
         }
 
         function _scheduleProgressiveGridGrowthCheck() {
@@ -75,13 +73,6 @@
             _progressiveGridGrowthRafId = requestAnimationFrame(() => {
                 _progressiveGridGrowthRafId = null;
                 if (generation !== _progressiveGridGeneration) return;
-                const content = document.querySelector('.content');
-                if (!content || !_isProgressiveGridNearEnd(content)) return;
-                if (_progressiveGridRenderLimit >= currentDisplayImages.length) return;
-                _progressiveGridRenderLimit = Math.min(
-                    currentDisplayImages.length,
-                    _progressiveGridRenderLimit + PROGRESSIVE_GRID_APPEND_CHUNK,
-                );
                 updateGrid();
             });
         }
@@ -98,7 +89,28 @@
 
         function _bindProgressiveGridScrollGrowth(content) {
             if (_progressiveGridScrollBound) return;
-            content.addEventListener('scroll', _scheduleProgressiveGridGrowthCheck, {passive: true});
+            const settleVirtualScroll = () => {
+                if (_virtualGridScrollIdleTimerId !== null) {
+                    clearTimeout(_virtualGridScrollIdleTimerId);
+                    _virtualGridScrollIdleTimerId = null;
+                }
+                _virtualGridFastScrolling = false;
+                updateGrid();
+            };
+            const supportsScrollEnd = 'onscrollend' in content;
+            content.addEventListener('scroll', () => {
+                _virtualGridFastScrolling = true;
+                _scheduleProgressiveGridGrowthCheck();
+                if (_virtualGridScrollIdleTimerId !== null) {
+                    clearTimeout(_virtualGridScrollIdleTimerId);
+                }
+                _virtualGridScrollIdleTimerId = setTimeout(() => {
+                    settleVirtualScroll();
+                }, 80);
+            }, {passive: true});
+            if (supportsScrollEnd) {
+                content.addEventListener('scrollend', settleVirtualScroll, {passive: true});
+            }
             _progressiveGridScrollBound = true;
         }
 
@@ -273,7 +285,7 @@
             return currentBatch || null;
         }
         function getThumbnailCacheKey(imageSrc, img) {
-            return `${imageSrc}|${img.size || 0}`;
+            return `${imageSrc}|${img.mtime || img.modified_at || img.size || 0}`;
         }
 
         function rememberThumbnailBlobUrl(cacheKey, blobUrl, meta) {
@@ -356,17 +368,108 @@
             _inflightMetadataPriority.clear();
         });
 
-async function loadCurrentFolderImages() {
+function resetPagedFolderState() {
+            folderSnapshot = null;
+            folderPageInflight.clear();
+            pagedFolderMode = false;
+            displayIndexByName.clear();
+        }
+
+function requiresMaterializedNativeFolder() {
+            return favoritesFilterOn
+                || currentSort === 'score-desc'
+                || (aiShowOverlays && aiFilterMode !== 'all');
+        }
+
+function _folderTransportSort() {
+            return ['date', 'name', 'shuffle'].includes(currentSort) ? currentSort : 'date';
+        }
+
+async function ensureFolderPageForIndex(index) {
+            if (!pagedFolderMode || !folderSnapshot || index < 0 || index >= folderSnapshot.count) return null;
+            if (images[index]) return images[index];
+            const offset = Math.floor(index / FOLDER_PAGE_SIZE) * FOLDER_PAGE_SIZE;
+            if (!folderPageInflight.has(offset)) {
+                const snapshot = folderSnapshot;
+                const promise = apiGetFolderPage(
+                    currentBatch, currentFolder, _folderTransportSort(), currentOrder,
+                    snapshot.revision, offset, FOLDER_PAGE_SIZE,
+                ).then(async resp => {
+                    if (resp.status === 409) {
+                        loadCurrentFolderImages({preserveScroll: true});
+                        return null;
+                    }
+                    if (!resp.ok) return null;
+                    const page = await resp.json();
+                    if (!folderSnapshot || page.revision !== folderSnapshot.revision) return null;
+                    page.items.forEach(item => {
+                        images[item.index] = item;
+                        currentDisplayImages[item.index] = item;
+                        displayIndexByName.set(item.name, item.index);
+                    });
+                    updateGrid();
+                    return images[index] || null;
+                }).finally(() => folderPageInflight.delete(offset));
+                folderPageInflight.set(offset, promise);
+            }
+            await folderPageInflight.get(offset);
+            return images[index] || null;
+        }
+
+async function _waitForFolderSnapshot(batch, folder, requestToken) {
+            for (let attempt = 0; attempt < 100; attempt++) {
+                const resp = await apiGetFolderSnapshot(batch, folder, _folderTransportSort(), currentOrder);
+                if (requestToken !== folderRequestToken) return null;
+                if (resp.ok && resp.status !== 202) return resp.json();
+                await new Promise(resolve => setTimeout(resolve, Math.min(250, 25 + attempt * 10)));
+            }
+            return null;
+        }
+
+async function loadCurrentFolderImages(options = {}) {
             if (!currentBatch || !currentFolder) return;
             const requestToken = ++folderRequestToken;
             const batch = currentBatch;
             const folder = currentFolder;
             if (currentFolder === 'public') { await loadBatchPublic(batch); return; }
+            if (CURATOR_NATIVE) {
+                const content = document.querySelector('.content');
+                const priorScrollTop = content ? content.scrollTop : 0;
+                const snapshot = await _waitForFolderSnapshot(batch, folder, requestToken);
+                if (!snapshot || requestToken !== folderRequestToken) return;
+                if (requiresMaterializedNativeFolder()) {
+                    resetPagedFolderState();
+                    folderSnapshot = snapshot;
+                    const resp = await fetch(ccApiPath(`/api/images/${batch}/${folder}?sort=${_folderTransportSort()}&order=${currentOrder}`));
+                    if (!resp.ok) return;
+                    const nextImages = await resp.json();
+                    if (requestToken !== folderRequestToken) return;
+                    images = nextImages;
+                    displayIndexByName = new Map(images.map((img, index) => [img.name, index]));
+                    updateImageCountLabel();
+                    updateGrid();
+                    if (options.preserveScroll && content) content.scrollTop = priorScrollTop;
+                    return;
+                }
+                folderSnapshot = snapshot;
+                pagedFolderMode = true;
+                folderPageInflight.clear();
+                images = new Array(snapshot.count);
+                currentDisplayImages = images;
+                displayIndexByName.clear();
+                updateImageCountLabel();
+                updateGrid();
+                if (options.preserveScroll && content) content.scrollTop = priorScrollTop;
+                await ensureFolderPageForIndex(0);
+                return;
+            }
+            resetPagedFolderState();
             const resp = await fetch(ccApiPath(`/api/images/${batch}/${folder}?sort=${currentSort}&order=${currentOrder}`));
             if (!resp.ok) return;
             const nextImages = await resp.json();
             if (requestToken !== folderRequestToken) return;
             images = nextImages;
+            displayIndexByName = new Map(images.map((img, index) => [img.name, index]));
             updateImageCountLabel();
             updateGrid();
         }
@@ -396,6 +499,44 @@ function getGridDensityConfig(density = gridDensity) {
             return {track: 180, gap: 12};
         }
 
+function _calculateFittedGridColumns(displayCount) {
+            const content = document.querySelector('.content');
+            if (!content || displayCount <= 0) return 1;
+            const {track, gap} = getGridDensityConfig();
+            const styles = window.getComputedStyle(content);
+            const paddingLeft = parseFloat(styles.paddingLeft) || 0;
+            const paddingRight = parseFloat(styles.paddingRight) || 0;
+            const availableWidth = Math.max(0, content.clientWidth - paddingLeft - paddingRight);
+            const fitted = Math.max(1, Math.floor((availableWidth + gap) / (track + gap)));
+            return Math.max(1, Math.min(fitted, displayCount));
+        }
+
+function _captureGridAnchor(columns = null, density = gridDensity) {
+            const content = document.querySelector('.content');
+            const grid = document.getElementById('grid');
+            if (!content || !grid || currentDisplayImages.length === 0) return null;
+            const usedColumns = columns || Math.max(1, Number(grid.style.getPropertyValue('--grid-columns')) || 1);
+            const {track, gap} = getGridDensityConfig(density);
+            const visibleTop = Math.max(0, content.scrollTop - getGridScrollOrigin(grid));
+            return Math.min(currentDisplayImages.length - 1, Math.floor(visibleTop / (track + gap)) * usedColumns);
+        }
+
+function _restoreGridAnchor(index) {
+            if (index === null || index < 0) return;
+            const content = document.querySelector('.content');
+            const grid = document.getElementById('grid');
+            if (!content || !grid) return;
+            const columns = Math.max(1, Number(grid.style.getPropertyValue('--grid-columns')) || 1);
+            const {track, gap} = getGridDensityConfig();
+            content.scrollTop = getGridScrollOrigin(grid) + Math.floor(index / columns) * (track + gap);
+        }
+
+function getGridScrollOrigin(grid) {
+            const shell = document.getElementById('grid-shell');
+            if (shell && Number.isFinite(shell.offsetTop)) return shell.offsetTop;
+            return Number.isFinite(grid.offsetTop) ? grid.offsetTop : 0;
+        }
+
 function updateGridShellLayout() {
             const content = document.querySelector('.content');
             const shell = document.getElementById('grid-shell');
@@ -406,20 +547,17 @@ function updateGridShellLayout() {
                 return;
             }
 
-            const {track, gap} = getGridDensityConfig();
             const displayCount = currentDisplayImages.length || grid.querySelectorAll('.thumb.loading-placeholder').length;
             if (displayCount <= 0) {
                 grid.style.removeProperty('--grid-columns');
                 return;
             }
 
-            const styles = window.getComputedStyle(content);
-            const paddingLeft = parseFloat(styles.paddingLeft) || 0;
-            const paddingRight = parseFloat(styles.paddingRight) || 0;
-            const availableWidth = Math.max(0, content.clientWidth - paddingLeft - paddingRight);
-            const fittedColumns = Math.max(1, Math.floor((availableWidth + gap) / (track + gap)));
-            const usedColumns = Math.max(1, Math.min(fittedColumns, displayCount));
+            const previousColumns = Math.max(1, Number(grid.style.getPropertyValue('--grid-columns')) || 1);
+            const anchorIndex = _captureGridAnchor(previousColumns);
+            const usedColumns = _calculateFittedGridColumns(displayCount);
             grid.style.setProperty('--grid-columns', String(usedColumns));
+            if (usedColumns !== previousColumns) _restoreGridAnchor(anchorIndex);
         }
 
 function initializeGridShellLayout() {
@@ -443,6 +581,8 @@ function initializeGridShellLayout() {
         }
 
 function setGridDensity(density) {
+            const previousDensity = gridDensity;
+            const anchorIndex = _captureGridAnchor(null, previousDensity);
             gridDensity = normalizeGridDensity(density);
             const grid = document.getElementById('grid');
             if (grid) {
@@ -450,6 +590,7 @@ function setGridDensity(density) {
                 grid.classList.add(`density-${gridDensity}`);
             }
             updateGridShellLayout();
+            _restoreGridAnchor(anchorIndex);
             _scheduleProgressiveGridGrowthCheck();
             document.querySelectorAll('.density-btn').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.density === gridDensity);
@@ -480,7 +621,11 @@ function sortImagesForDisplay(imgList) {
         }
 
 function getDisplayImages() {
-            const filtered = favoritesFilterOn ? images.filter(img => img.favorite === true) : images;
+            if (typeof pagedFolderMode !== 'undefined' && pagedFolderMode) return images;
+            const favoritesFiltered = favoritesFilterOn ? images.filter(img => img.favorite === true) : images;
+            const filtered = aiShowOverlays && aiFilterMode !== 'all'
+                ? favoritesFiltered.filter(img => aiShouldShowImage(img))
+                : favoritesFiltered;
             return sortImagesForDisplay(filtered);
         }
 
@@ -489,7 +634,8 @@ function getCurrentDisplayImages() {
         }
 
 function getImageDisplayIndexByName(name) {
-            return getCurrentDisplayImages().findIndex(img => img.name === name);
+            if (typeof displayIndexByName !== 'undefined' && displayIndexByName.has(name)) return displayIndexByName.get(name);
+            return getCurrentDisplayImages().findIndex(img => img && img.name === name);
         }
 
 function getGridEmptyStateMessage() {
@@ -539,7 +685,7 @@ function createGridEmptyState(message) {
 function updateImageCountLabel() {
             const countEl = document.getElementById('img-count');
             if (!countEl) return;
-            const displayCount = getDisplayImages().length;
+            const displayCount = typeof pagedFolderMode !== 'undefined' && pagedFolderMode && folderSnapshot ? folderSnapshot.count : getDisplayImages().length;
             if (images.length === 0) countEl.textContent = '';
             else if (favoritesFilterOn && displayCount !== images.length) countEl.textContent = ` (${displayCount} of ${images.length})`;
             else countEl.textContent = ` (${images.length})`;
@@ -552,7 +698,65 @@ function getImageBatchAndFolder(img) {
         }
 
 function getImageIndexByName(name) {
-            return images.findIndex(img => img.name === name);
+            if (typeof displayIndexByName !== 'undefined' && displayIndexByName.has(name)) return displayIndexByName.get(name);
+            return images.findIndex(img => img && img.name === name);
+        }
+
+function stopActiveHoverPreview() {
+            if (hoverPreviewTimer) {
+                clearTimeout(hoverPreviewTimer);
+                hoverPreviewTimer = null;
+            }
+            if (!activeHoverPreview) return;
+            const video = activeHoverPreview.querySelector('.thumb-hover-preview');
+            if (video) {
+                video.pause();
+                video.removeAttribute('src');
+                video.load();
+            }
+            activeHoverPreview.classList.remove('preview-active');
+            activeHoverPreview = null;
+        }
+
+function scheduleHoverPreview(thumb) {
+            if (!hoverPreviewsEnabled || !thumb.classList.contains('preview-capable')) return;
+            stopActiveHoverPreview();
+            hoverPreviewTimer = setTimeout(() => {
+                hoverPreviewTimer = null;
+                const video = thumb.querySelector('.thumb-hover-preview');
+                if (!video || !video.dataset.previewSrc || !thumb.isConnected) return;
+                activeHoverPreview = thumb;
+                thumb.classList.add('preview-active');
+                video.src = video.dataset.previewSrc;
+                const started = video.play();
+                if (started && typeof started.catch === 'function') {
+                    started.catch(() => stopActiveHoverPreview());
+                }
+            }, 180);
+        }
+
+function toggleHoverPreviews() {
+            hoverPreviewsEnabled = !hoverPreviewsEnabled;
+            localStorage.setItem(HOVER_PREVIEWS_KEY, hoverPreviewsEnabled ? 'true' : 'false');
+            if (!hoverPreviewsEnabled) stopActiveHoverPreview();
+            const toggle = document.getElementById('hover-preview-toggle');
+            if (toggle) {
+                toggle.checked = hoverPreviewsEnabled;
+                toggle.setAttribute('aria-checked', hoverPreviewsEnabled ? 'true' : 'false');
+            }
+            showToast(`Hover previews ${hoverPreviewsEnabled ? 'on' : 'off'}`);
+        }
+
+function createThumbImageElement() {
+            const img = document.createElement('img');
+            img.draggable = false;
+            const markLoaded = () => {
+                img.dataset.loadedThumbnailCacheKey = img.dataset.thumbnailCacheKey || '';
+                img.classList.add('loaded');
+            };
+            img.addEventListener('load', markLoaded);
+            img.addEventListener('error', markLoaded);
+            return img;
         }
 
 function createThumbElement() {
@@ -589,10 +793,19 @@ function createThumbElement() {
                 toggleFavorite(Number(thumb.dataset.index));
             });
 
-            const img = document.createElement('img');
-            img.draggable = false;
-            img.addEventListener('load', () => requestAnimationFrame(() => img.classList.add('loaded')));
-            img.addEventListener('error', () => requestAnimationFrame(() => img.classList.add('loaded')));
+            const img = createThumbImageElement();
+
+            const preview = document.createElement('video');
+            preview.className = 'thumb-hover-preview';
+            preview.muted = true;
+            preview.loop = true;
+            preview.playsInline = true;
+            preview.preload = 'none';
+            preview.addEventListener('error', () => stopActiveHoverPreview());
+            thumb.addEventListener('pointerenter', () => scheduleHoverPreview(thumb));
+            thumb.addEventListener('pointerleave', () => {
+                if (activeHoverPreview === thumb || hoverPreviewTimer) stopActiveHoverPreview();
+            });
 
             const metaBatch = document.createElement('span');
             metaBatch.className = 'meta-batch hidden';
@@ -601,8 +814,36 @@ function createThumbElement() {
             meta.className = 'thumb-meta';
             meta.innerHTML = '<span class="meta-name"></span><span class="meta-detail"></span>';
 
-            thumb.append(badge, select, favStar, img, metaBatch, meta);
+            thumb.append(badge, select, favStar, img, preview, metaBatch, meta);
             return thumb;
+        }
+
+function getThumbRenderSignature(img, index) {
+            const scoreResult = aiGetImageScore ? aiGetImageScore(img.name) : null;
+            const shouldShow = aiShouldShowImage ? aiShouldShowImage(img) : true;
+            const source = getImageBatchAndFolder(img);
+            const selected = typeof serverSelection !== 'undefined' && serverSelection
+                ? !serverSelection.excluded.has(img.name)
+                : selectedImages.has(img.name);
+            return JSON.stringify([
+                index,
+                img.name,
+                img.size,
+                img.mtime,
+                img.favorite === true,
+                img.media_kind || '',
+                source.batch,
+                source.folder,
+                selected,
+                typeof aiInspectedImageName !== 'undefined' && aiInspectedImageName === img.name,
+                shouldShow,
+                aiShowOverlays,
+                scoreResult ? scoreResult.score : null,
+                scoreResult ? scoreResult.total : null,
+                scoreResult ? scoreResult.failed === true : null,
+                isVirtualCollectionView(),
+                _virtualGridFastScrolling,
+            ]);
         }
 
 function updateThumbElement(thumb, img, index) {
@@ -610,22 +851,36 @@ function updateThumbElement(thumb, img, index) {
             const shouldShow = aiShouldShowImage ? aiShouldShowImage(img) : true;
             const badge = thumb.querySelector('.ai-score-badge');
             const selectBtn = thumb.querySelector('.thumb-select');
-            const imageEl = thumb.querySelector('img');
+            let imageEl = thumb.querySelector('img');
+            const previewEl = thumb.querySelector('.thumb-hover-preview');
             const metaName = thumb.querySelector('.meta-name');
             const metaSize = thumb.querySelector('.meta-detail');
             const favStar = thumb.querySelector('.favorite-star');
             const source = getImageBatchAndFolder(img);
-            const imageSrc = ccThumbUrl(source.batch, source.folder, img.name);
+            const imageSrcBase = ccThumbUrl(source.batch, source.folder, img.name);
+            const version = encodeURIComponent(String(img.mtime || img.modified_at || img.size || 0));
+            const imageSrc = `${imageSrcBase}${imageSrcBase.includes('?') ? '&' : '?'}v=${version}`;
             const thumbnailCacheKey = getThumbnailCacheKey(imageSrc, img);
 
             thumb.dataset.name = img.name;
             thumb.dataset.index = String(index);
-            thumb.classList.toggle('selected', selectedImages.has(img.name));
+            const selected = typeof serverSelection !== 'undefined' && serverSelection
+                ? !serverSelection.excluded.has(img.name)
+                : selectedImages.has(img.name);
+            thumb.classList.toggle('selected', selected);
             thumb.classList.toggle('inspected', typeof aiInspectedImageName !== 'undefined' && aiInspectedImageName === img.name);
             thumb.classList.toggle('ai-filtered-out', !shouldShow);
             thumb.classList.remove('removing');
+            const previewCapable = img.media_kind === 'animated_image' || img.media_kind === 'video';
+            thumb.classList.toggle('preview-capable', previewCapable);
+            thumb.classList.toggle('media-audio', img.media_kind === 'audio');
+            if (previewEl) {
+                previewEl.dataset.previewSrc = previewCapable
+                    ? ccPreviewUrl(source.batch, source.folder, img.name)
+                    : '';
+            }
             if (selectBtn) {
-                const isSelected = selectedImages.has(img.name);
+                const isSelected = selected;
                 selectBtn.classList.toggle('selected', isSelected);
                 selectBtn.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
                 selectBtn.setAttribute('aria-label', `${isSelected ? 'Deselect' : 'Select'} ${img.name}`);
@@ -651,10 +906,15 @@ function updateThumbElement(thumb, img, index) {
 
             if (imageEl && imageEl.dataset.thumbnailCacheKey !== thumbnailCacheKey) {
                 if (imageEl.dataset.thumbnailCacheKey) unscheduleThumbnailLoad(thumb);
-                imageEl.dataset.thumbnailCacheKey = thumbnailCacheKey;
-                /* Stage 2: pass resolved source batch for scope-aware eviction.
-                   Priority starts deferred; observers promote it in the viewport loader. */
-                scheduleThumbnailLoad(thumb, imageSrc, thumbnailCacheKey, 2 /* DEFERRED */, _resolveSourceBatch(img));
+                if (_virtualGridFastScrolling) {
+                    thumb.dataset.pendingThumbnailCacheKey = thumbnailCacheKey;
+                } else {
+                    delete thumb.dataset.pendingThumbnailCacheKey;
+                    imageEl.dataset.thumbnailCacheKey = thumbnailCacheKey;
+                    /* Stage 2: pass resolved source batch for scope-aware eviction.
+                       Priority starts deferred; observers promote it in the viewport loader. */
+                    scheduleThumbnailLoad(thumb, imageSrc, thumbnailCacheKey, 2 /* DEFERRED */, _resolveSourceBatch(img));
+                }
             }
             if (metaName) metaName.textContent = img.name;
             if (metaSize) metaSize.textContent = isVirtualCollectionView()
@@ -693,12 +953,26 @@ function showGridLoadingPlaceholders(batch, folder) {
             grid.replaceChildren(fragment);
             grid.classList.remove('is-empty');
             updateGridShellLayout();
+            const shell = document.getElementById('grid-shell');
+            const {track, gap} = getGridDensityConfig();
+            const columns = _calculateFittedGridColumns(placeholderCount);
+            if (shell) {
+                shell.style.height = `${Math.max(track, Math.ceil(placeholderCount / columns) * (track + gap) - gap)}px`;
+            }
+            grid.style.transform = 'translateX(-50%)';
         }
 
 function updateGrid() {
             const grid = document.getElementById('grid');
+            const shell = document.getElementById('grid-shell');
             const displayImages = getDisplayImages();
             currentDisplayImages = displayImages;
+            grid.dataset.canonicalCount = String(displayImages.length);
+            if (typeof pagedFolderMode === 'undefined' || !pagedFolderMode) {
+                displayIndexByName = new Map(
+                    displayImages.filter(Boolean).map((img, index) => [img.name, index])
+                );
+            }
             const nextContextKey = _getProgressiveGridContextKey();
             const contextChanged = nextContextKey !== _progressiveGridContextKey;
             if (contextChanged) _resetProgressiveGridContext(nextContextKey);
@@ -706,50 +980,99 @@ function updateGrid() {
             if (images.length === 0 || displayImages.length === 0) {
                 _resetProgressiveGridLifecycle();
                 grid.classList.add('is-empty');
+                if (shell) shell.style.height = '';
+                grid.style.transform = '';
+                grid.style.paddingTop = '';
+                grid.style.paddingBottom = '';
                 grid.replaceChildren(createGridEmptyState(getGridEmptyStateMessage()));
                 gridThumbMap.clear();
                 updateGridShellLayout();
                 return;
             }
             grid.classList.remove('is-empty');
+            const content = document.querySelector('.content');
+            const {track, gap} = getGridDensityConfig();
+            const columns = _calculateFittedGridColumns(displayImages.length);
+            grid.style.setProperty('--grid-columns', String(columns));
+            const rowSpan = track + gap;
+            const gridTop = getGridScrollOrigin(grid);
+            grid.dataset.virtualScrollTop = String(content ? content.scrollTop : 0);
+            const visibleTop = Math.max(0, (content ? content.scrollTop : 0) - gridTop);
+            const firstVisibleRow = Math.floor(visibleTop / rowSpan);
+            const viewportRows = Math.ceil((content ? content.clientHeight : track * 4) / rowSpan);
+            const maxWindowRows = Math.max(1, Math.floor(VIRTUAL_GRID_MAX_THUMBNAILS / columns));
+            const requestedStartRow = Math.max(0, firstVisibleRow - VIRTUAL_GRID_OVERSCAN_ROWS);
+            const desiredRows = Math.min(
+                maxWindowRows,
+                viewportRows + (VIRTUAL_GRID_OVERSCAN_ROWS * 2),
+            );
+            const totalRows = Math.ceil(displayImages.length / columns);
+            const startRow = Math.min(requestedStartRow, Math.max(0, totalRows - desiredRows));
+            const endRow = Math.min(totalRows, startRow + desiredRows);
+            const startIndex = startRow * columns;
+            const endIndex = Math.min(displayImages.length, endRow * columns);
+            _virtualGridWindowStart = startIndex;
+            _virtualGridWindowEnd = endIndex;
+            grid.style.paddingTop = '';
+            grid.style.paddingBottom = '';
+            if (shell) shell.style.height = `${Math.max(track, totalRows * rowSpan - gap)}px`;
+            grid.style.transform = `translateX(-50%) translateY(${startRow * rowSpan}px)`;
 
-            const renderedImages = displayImages.slice(0, _progressiveGridRenderLimit);
+            if (typeof pagedFolderMode !== 'undefined' && pagedFolderMode && endIndex > startIndex) {
+                ensureFolderPageForIndex(startIndex);
+                ensureFolderPageForIndex(endIndex - 1);
+            }
 
-            const activeNames = new Set(renderedImages.map(img => img.name));
+            const renderedEntries = [];
+            for (let index = startIndex; index < endIndex; index++) {
+                renderedEntries.push({img: displayImages[index], index});
+            }
+            const activeNames = new Set(renderedEntries.filter(entry => entry.img).map(entry => entry.img.name));
             for (const [name, element] of gridThumbMap.entries()) {
                 if (!activeNames.has(name)) {
+                    if (activeHoverPreview === element) stopActiveHoverPreview();
                     unscheduleThumbnailLoad(element);
-                    element.remove();
                     gridThumbMap.delete(name);
+                    if (gridThumbPool.length < VIRTUAL_GRID_MAX_THUMBNAILS) {
+                        gridThumbPool.push(element);
+                    }
                 }
             }
-
-            renderedImages.forEach((img) => {
-                const displayIndex = getImageDisplayIndexByName(img.name);
+            const renderedNodes = [];
+            renderedEntries.forEach(({img, index}) => {
+                if (!img) {
+                    const placeholder = document.createElement('div');
+                    placeholder.className = 'thumb loading-placeholder';
+                    placeholder.setAttribute('aria-hidden', 'true');
+                    renderedNodes.push(placeholder);
+                    return;
+                }
                 let thumb = gridThumbMap.get(img.name);
                 if (!thumb) {
-                    thumb = createThumbElement();
+                    thumb = gridThumbPool.pop() || createThumbElement();
                     gridThumbMap.set(img.name, thumb);
                 }
-                updateThumbElement(thumb, img, displayIndex);
+                const renderSignature = getThumbRenderSignature(img, index);
+                if (thumb.dataset.renderSignature !== renderSignature) {
+                    updateThumbElement(thumb, img, index);
+                    thumb.dataset.renderSignature = renderSignature;
+                }
+                renderedNodes.push(thumb);
             });
-
-            if (_gridChildrenMatchDesiredOrder(grid, renderedImages)) {
+            const alreadyOrdered = grid.children.length === renderedNodes.length
+                && renderedNodes.every((node, index) => grid.children[index] === node);
+            if (alreadyOrdered) {
                 updateGridShellLayout();
-                _scheduleProgressiveGridGrowthCheck();
                 return;
             }
-
-            renderedImages.forEach((img, index) => {
-                const thumb = gridThumbMap.get(img.name);
-                const liveAtIndex = grid.children[index] || null;
-                if (liveAtIndex !== thumb) grid.insertBefore(thumb, liveAtIndex);
+            renderedNodes.forEach((node, index) => {
+                const current = grid.children[index] || null;
+                if (current !== node) grid.insertBefore(node, current);
             });
-            while (grid.children.length > renderedImages.length) {
-                grid.children[grid.children.length - 1].remove();
+            while (grid.children.length > renderedNodes.length) {
+                grid.removeChild(grid.lastElementChild);
             }
             updateGridShellLayout();
-            _scheduleProgressiveGridGrowthCheck();
         }
 
 function _gridChildrenMatchDesiredOrder(grid, displayImages) {

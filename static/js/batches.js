@@ -9,6 +9,32 @@ let folderCountSnapshot = {};
 let pendingActiveBatchSelection = null;
 let _initialLoadDone = false;
 let _lastBatchListKey = null;
+let importInFlight = false;
+
+function updatePendingImportUi(pendingCount, activeBatch) {
+            const pendingInfo = document.getElementById('pending-info');
+            const count = document.getElementById('pending-count');
+            const importBtn = document.querySelector('.import-btn');
+            const normalizedCount = Math.max(0, Number(pendingCount) || 0);
+            if (count) count.textContent = normalizedCount;
+            if (pendingInfo) pendingInfo.style.display = activeBatch ? 'flex' : 'none';
+            if (importBtn) {
+                importBtn.disabled = importInFlight || normalizedCount < 1;
+                importBtn.textContent = importInFlight ? 'Importing…' : 'Import All';
+            }
+        }
+
+async function pollImportAvailability() {
+            const resp = await fetch(ccApiPath('/api/import-status')).catch(() => null);
+            if (!resp || !resp.ok) return;
+            const data = await resp.json();
+            updatePendingImportUi(data.pending_count, data.active_batch);
+        }
+
+async function pollNativeBatchSummaries() {
+            if (!CURATOR_NATIVE || isInteractionBusy()) return;
+            await loadBatches();
+        }
 
 function saveBatchState() {
             if (currentBatch) localStorage.setItem(BATCH_STATE_KEY, currentBatch);
@@ -93,9 +119,7 @@ async function loadBatches() {
             allCounts = data.counts;
             const batchMeta = data.batch_meta || {};
 
-            const pendingInfo = document.getElementById('pending-info');
-            document.getElementById('pending-count').textContent = data.pending_count;
-            pendingInfo.style.display = (data.pending_count > 0 && activeBatch) ? 'flex' : 'none';
+            updatePendingImportUi(data.pending_count, activeBatch);
 
             const select = document.getElementById('active-batch-select');
             const selectedAutoImportBatch = pendingActiveBatchSelection !== null ? pendingActiveBatchSelection : activeBatch;
@@ -559,20 +583,31 @@ async function setActiveBatch(batch) {
         }
 
 async function importAll() {
+            if (importInFlight) return;
             const batch = document.getElementById('active-batch-select').value;
             if (!batch) { showToast('Select a batch first'); return; }
-            const resp = await fetch(ccApiPath('/api/import-all'), {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({batch: batch})
-            });
-            if (resp.ok) {
-                const data = await resp.json();
-                showToast(`Imported ${data.count} images`);
-                loadBatches();
-                if (currentBatch === batch && currentFolder === 'inbox')
-                    selectFolder(batch, 'inbox');
-            } else { showToast('Import failed'); }
+            importInFlight = true;
+            updatePendingImportUi(document.getElementById('pending-count')?.textContent, batch);
+            try {
+                const resp = await fetch(ccApiPath('/api/import-all'), {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({batch: batch})
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    showToast(`Imported ${data.count} media files`);
+                    updatePendingImportUi(0, batch);
+                    await loadBatches();
+                    if (currentBatch === batch && currentFolder === 'inbox')
+                        await selectFolder(batch, 'inbox');
+                } else {
+                    showToast('Import failed');
+                }
+            } finally {
+                importInFlight = false;
+                await pollImportAvailability();
+            }
         }
 
 async function createBatch() {

@@ -27,6 +27,18 @@ async function apiGetImages(batch, folder, sort, order) {
     return resp.json();
 }
 
+async function apiGetFolderSnapshot(batch, folder, sort, order) {
+    return fetch(ccApiPath(`/api/v2/folders/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}/snapshot?sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}`));
+}
+
+async function apiGetFolderPage(batch, folder, sort, order, revision, offset, limit) {
+    return fetch(ccApiPath(`/api/v2/folders/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}/items?sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&revision=${encodeURIComponent(revision)}&offset=${encodeURIComponent(offset)}&limit=${encodeURIComponent(limit)}`));
+}
+
+async function apiPollFolderSnapshot(batch, folder, sort, order, revision) {
+    return fetch(ccApiPath(`/api/v2/folders/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}/poll?sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&revision=${encodeURIComponent(revision || '')}`));
+}
+
 async function apiPostJson(url, body) {
     return fetch(ccApiPath(url), {
         method: 'POST',

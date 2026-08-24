@@ -16,7 +16,7 @@
 
 - **Batch filesystem workflow:** inbox/shortlisted/finals/rejects folders under `IMAGE_CURATOR_BATCHES/<batch>/`. Counts, metadata, operator-triggered Import All from ComfyUI outputs.
 - **Web review UI:** Asset-manager style batch sidebar, compact workspace toolbar, center thumbnail grid, right AI sidebar. Drag/drop moves, multi-select/Select All, undo toast, keyboard shortcuts, background polling.
-- **Lightbox viewer:** Full-image review with zoom, PNG generation metadata inspection (`M` toggle), scored-image navigation (`[`/`]`), keyboard folder moves (`S`/`F`/`R`).
+- **Lightbox viewer:** Full-media review with zoom, PNG generation metadata plus adjacent JSON sidecars (`M` toggle), scored-image navigation (`[`/`]`), keyboard folder moves (`S`/`F`/`R`).
 - **Favorites workflow:** One-click favorites update batch and universal scope, with a favorites-only filter and virtual All Favorites sidebar view.
 - **Public posting prep:** Selected originals export to metadata-stripped, optionally watermarked generated copies in `<batch>/public/`, with batch Public and virtual All Public views plus derivative-only copy/move/delete actions and export-root destination browsing/history.
 - **Prompt history:** Manual PNG metadata prompt indexes with searchable/copyable Prompt History modal and staleness warning.
@@ -30,11 +30,13 @@
 app.py (Flask routes) ← standalone, fully supported
   ├── image_curator/batch_store.py  ← filesystem ops (create, list, move, counts, import)
   ├── image_curator/png_metadata.py ← PNG text-chunk extraction (Pillow)
+  ├── image_curator/sidecar_metadata.py ← bounded adjacent JSON discovery/display + paired lifecycle helpers
   ├── image_curator/favorites.py    ← batch + universal favorites JSON storage
   ├── image_curator/publish.py      ← public derivative creation/list/copy/move/delete
   ├── image_curator/prompt_history.py ← manual PNG prompt index cache
   ├── image_curator/web_validation.py ← route path/batch validation helpers
-  ├── image_curator/media.py        ← thumbnail cache/generation helpers
+  ├── image_curator/media.py        ← typed poster/hover-preview cache and fallback helpers
+  ├── image_curator/folder_index.py ← immutable background revisions, pages, O(1) lookup, bulk undo records
   ├── ai_curate/config.py           ← env-backed constants, paths, caps
   ├── ai_curate/elements.py         ← prompt parsing + element extraction + quality checklists
   ├── ai_curate/job_validation.py   ← AI curation submit payload validation
@@ -77,6 +79,7 @@ Frontend (shared static/js/*.js + static/css/*.css)
 | | `curate.py` | CLI entrypoint for headless scoring (argparse, no queue) |
 | **Non-AI Backend** | `image_curator/batch_store.py` | Batch creation, folder layout, file moves, counts, import, state persistence |
 | | `image_curator/png_metadata.py` | ComfyUI/A1111 PNG text-chunk extraction (prompt, seed, sampler, CFG, LoRAs, etc.) |
+| | `image_curator/sidecar_metadata.py` | Prefers `asset.ext.json` then `asset.json`, safely parses bounded JSON without type coercion, and keeps the selected sidecar paired through moves/deletion |
 | | `image_curator/favorites.py` | Batch/universal favorites storage, toggle helper, universal favorite resolution |
 | | `image_curator/publish.py` | Metadata-stripped optional-watermark public copy creation, public listing, external copy/move/delete under configured export root |
 | | `image_curator/prompt_history.py` | Manual prompt-history cache builder from PNG metadata |
@@ -118,7 +121,7 @@ Frontend (shared static/js/*.js + static/css/*.css)
 | | `.env.example` | Documented environment variable reference (never read `.env` directly) |
 | **Deployment** | `image-curator.service.example` | Templated systemd unit (use this, not the production service file) |
 | **Guidance** | `README.md`, `CONTRIBUTING.md`, `AGENTS.md` | Operator docs, contributor workflow, agent startup |
-| **Generated** | `.thumbs/`, `<batch>/ai-curate/runs/`, `<batch>/ai-curate/latest.json`, `__pycache__/`, `*.egg-info/` | **Do not edit.** Created at runtime. |
+| **Generated** | `.thumbs/`, `.previews/`, `<batch>/ai-curate/runs/`, `<batch>/ai-curate/latest.json`, `__pycache__/`, `*.egg-info/` | **Do not edit.** Created at runtime. |
 
 ## Decision Tree
 
@@ -243,13 +246,19 @@ Treat these as stability-sensitive:
 - **`--panel` flag is deprecated (curate.py):** Use `--prompt`. `--panel` still works but prints a warning. `--prompt` takes precedence if both are provided.
 - **AI worker threads are daemons:** They die with the process. Shutdown tries to join for 5 seconds, then exits.
 - **Frontend tests are Python source-scraping:** The `test_frontend_*.py` files regex-scan ordered split JS/CSS sources through `tests/unit/frontend_source.py` for function names and invariants. No headless browser or JS test framework. Browser-only changes need manual verification.
-- **Generated files (never edit):** `.thumbs/` (thumbnail cache), `.favorites.json`, `<batch>/prompt-history.json`, `<batch>/ai-curate/runs/` (run history), `<batch>/ai-curate/latest.json`, `__pycache__/`, `*.egg-info/`.
+- **Generated files (never edit):** `.thumbs/` (poster cache), `.previews/` (hover proxies), `.favorites.json`, `<batch>/prompt-history.json`, `<batch>/ai-curate/runs/` (run history), `<batch>/ai-curate/latest.json`, `__pycache__/`, `*.egg-info/`.
 - **Favorites one click updates both scopes:** `toggle_favorite()` writes batch and universal stores; universal view uses `__favorites__` as a frontend sentinel, never as a real batch.
 - **Public copies are generated derivatives:** `public/` is not a normal curation stage. Do not move originals when preparing, copying, moving, or deleting public copies. External copy/move requires `IMAGE_CURATOR_PUBLIC_EXPORTS`; the destination browser lists directories only under that configured export root.
 - **Prompt history is manual:** Build/rebuild is synchronous and operator-triggered. Staleness checks compare total image count only.
 - **Score < 0 means failed:** `ImageResult.score` defaults to -1 for unscored/failed images. `normalized_score` also returns -1. Frontend checks `score >= 0` to distinguish scored from failed.
 - **No CORS headers:** The app binds to `127.0.0.1` by default. For remote access, use a reverse proxy with auth (nginx, Caddy).
-- **Thumbnail cache key includes folder name:** `<folder>__<stem>.webp` format prevents same-filename collisions across inbox/shortlisted/finals/rejects.
+- **Media cache keys include folder and source extension:** `<folder>__<stem>--<ext>.webp|.mp4` prevents folder and same-stem cross-format collisions.
+- **Typed-media boundaries:** Review/favorites/moves/reject deletion accept PNG/JPG/JPEG/WebP/GIF/MP4/MP3. AI scoring and public derivatives remain still-only; Prompt History remains PNG-only. Adjacent JSON sidecars are auxiliary (never listed independently) and follow imports, review moves/undo, and reject cleanup.
+- **Rule34 sidecar schema:** Flat objects use `category: "rule34"`; `subcategory`
+  is `post` or `favorite`; `tags` is whitespace-delimited; numeric-looking API
+  values generally remain strings while `favorite_id`/`total` may be integers.
+  Preserve those source types in backend responses.
+- **Large native folders:** Native real-folder views use immutable background revisions, 256-item pages, lightweight polls, and <=500 live thumbnails. Snapshot Select All is revision plus exclusions and undo is tokenized server-side.
 - **`ELEMENT_CAP` (12) truncation is silent:** `scoring.py` caps elements without logging a warning.
 - **Native extension scope:** Native settings, batch/image/thumbnail foundation routes, curation mutations, favorites, public workflow, prompt history, and AI scoring lifecycle are namespaced under `/api/curator/*` and `/curator/{thumb,image}/*`. Native AI uses a lifecycle-owned queue with bounded shutdown.
 - **Native public export root default:** `NativeCuratorSettings.from_host_paths()` resolves a ComfyUI-owned `public-exports` directory under the curator system user directory (`<system_dir>/public-exports`). The editable path appears only in the dedicated local-operator settings response, not general page or batch payloads.

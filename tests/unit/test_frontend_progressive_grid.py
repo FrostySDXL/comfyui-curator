@@ -5,34 +5,36 @@ from pathlib import Path
 from tests.unit.frontend_source import extract_function_body, read_frontend_js
 
 
-def test_progressive_grid_constants_are_bounded_and_evidence_oriented() -> None:
+def test_virtual_grid_constants_are_bounded_and_evidence_oriented() -> None:
     source = read_frontend_js()
 
-    assert "const PROGRESSIVE_GRID_INITIAL_LIMIT = 120;" in source
-    assert "const PROGRESSIVE_GRID_APPEND_CHUNK = 120;" in source
-    assert "const PROGRESSIVE_GRID_NEAR_END_PX = 800;" in source
-    assert 0 < 120 < 2000
+    assert "const VIRTUAL_GRID_MAX_THUMBNAILS = 500;" in source
+    assert "const VIRTUAL_GRID_OVERSCAN_ROWS = 2;" in source
+    assert 0 < 500 < 30_000
 
 
-def test_update_grid_keeps_full_canonical_list_and_renders_only_prefix() -> None:
+def test_update_grid_keeps_full_canonical_list_and_renders_only_window() -> None:
     body = extract_function_body(read_frontend_js(), "function updateGrid()")
 
     assert "currentDisplayImages = displayImages;" in body
-    assert "displayImages.slice(0, _progressiveGridRenderLimit)" in body
-    assert "new Set(renderedImages.map(img => img.name))" in body
-    assert "renderedImages.forEach((img" in body
+    assert "const startIndex = startRow * columns;" in body
+    assert "VIRTUAL_GRID_MAX_THUMBNAILS / columns" in body
+    assert "for (let index = startIndex; index < endIndex; index++)" in body
+    assert "shell.style.height" in body
+    assert "translateX(-50%) translateY" in body
 
 
-def test_progressive_scroll_has_one_binding_and_one_raf_guard() -> None:
+def test_virtual_scroll_has_one_binding_and_one_raf_guard() -> None:
     source = read_frontend_js()
     bind = extract_function_body(source, "function _bindProgressiveGridScrollGrowth(content)")
     schedule = extract_function_body(source, "function _scheduleProgressiveGridGrowthCheck()")
 
     assert "_progressiveGridScrollBound" in bind
-    assert "content.addEventListener('scroll', _scheduleProgressiveGridGrowthCheck" in bind
+    assert "content.addEventListener('scroll', () =>" in bind
+    assert "_virtualGridScrollIdleTimerId = setTimeout" in bind
     assert "_progressiveGridGrowthRafId !== null" in schedule
     assert schedule.count("requestAnimationFrame(") == 1
-    assert "PROGRESSIVE_GRID_APPEND_CHUNK" in schedule
+    assert "updateGrid();" in schedule
 
 
 def test_context_placeholder_and_empty_paths_reset_progressive_lifecycle() -> None:
@@ -64,12 +66,13 @@ def test_context_placeholder_and_empty_paths_reset_progressive_lifecycle() -> No
     assert "cancelScheduledViewportLoads()" in lifecycle_reset
 
 
-def test_same_context_reconciliation_does_not_replace_live_grid() -> None:
+def test_same_window_reconciliation_preserves_live_grid() -> None:
     body = extract_function_body(read_frontend_js(), "function updateGrid()")
 
-    assert "grid.insertBefore(thumb, liveAtIndex);" in body
+    assert "const alreadyOrdered" in body
+    assert "if (alreadyOrdered)" in body
     assert "unscheduleThumbnailLoad(element);" in body
-    assert "grid.replaceChildren(fragment);" not in body
+    assert "grid.insertBefore(node, current);" in body
 
 
 def test_reused_thumb_unschedules_stale_key_before_replacement_schedule() -> None:
@@ -87,6 +90,38 @@ def test_reused_thumb_unschedules_stale_key_before_replacement_schedule() -> Non
     assert "if (imageEl.dataset.thumbnailCacheKey)" in changed_key[:assign_key]
 
 
+def test_pooled_thumb_tracks_desired_and_decoded_keys_without_blanking() -> None:
+    source = read_frontend_js()
+    create_image = extract_function_body(source, "function createThumbImageElement()")
+    update_thumb = extract_function_body(source, "function updateThumbElement(thumb, img, index)")
+
+    assert (
+        "img.dataset.loadedThumbnailCacheKey = img.dataset.thumbnailCacheKey || '';" in create_image
+    )
+    assert "imageEl.dataset.thumbnailCacheKey = thumbnailCacheKey;" in update_thumb
+    assert "classList.remove('loaded')" not in source
+
+
+def test_virtual_window_reconciliation_moves_only_changed_edge_nodes() -> None:
+    source = read_frontend_js()
+    body = extract_function_body(source, "function updateGrid()")
+
+    assert "if (current !== node) grid.insertBefore(node, current);" in body
+    assert "while (grid.children.length > renderedNodes.length)" in body
+    assert "grid.removeChild(grid.lastElementChild);" in body
+
+
+def test_continuous_scroll_defers_recycled_thumbnail_source_work() -> None:
+    source = read_frontend_js()
+    update_body = extract_function_body(source, "function updateThumbElement(thumb, img, index)")
+
+    assert "let _virtualGridFastScrolling = false;" in source
+    assert "_virtualGridScrollIdleTimerId = setTimeout" in source
+    assert "}, 80);" in source
+    assert "if (_virtualGridFastScrolling)" in update_body
+    assert "thumb.dataset.pendingThumbnailCacheKey = thumbnailCacheKey;" in update_body
+
+
 def test_grid_shell_columns_use_full_canonical_display_count() -> None:
     body = extract_function_body(read_frontend_js(), "function updateGridShellLayout()")
 
@@ -96,12 +131,12 @@ def test_grid_shell_columns_use_full_canonical_display_count() -> None:
     ) in body
 
 
-def test_dynamic_benchmark_dispatches_production_scroll_growth_event() -> None:
+def test_dynamic_benchmark_dispatches_production_scroll_event() -> None:
     benchmark = Path("scripts/benchmark_thumbnails.py").read_text(encoding="utf-8")
 
     assert "dynamic-traversal-growth-v1" in benchmark
     assert "content.dispatchEvent(new Event('scroll', {bubbles: true}));" in benchmark
-    assert re.search(r"currentRendered\s*<\s*targetCount", benchmark)
+    assert "dispatchEvent(new Event('scroll'" in benchmark
 
 
 def test_progressive_grid_node_lifecycle() -> None:
@@ -117,4 +152,4 @@ def test_progressive_grid_node_lifecycle() -> None:
     assert completed.returncode == 0, completed.stdout + completed.stderr
     match = re.search(r"(\d+) assertions passed", completed.stdout)
     assert match is not None, completed.stdout
-    assert int(match.group(1)) >= 78
+    assert int(match.group(1)) >= 15

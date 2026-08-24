@@ -86,6 +86,26 @@ def test_create_public_copies_rejects_public_as_source_folder(tmp_path):
     assert result["files"][0]["error"] == "Invalid source folder"
 
 
+@pytest.mark.parametrize("filename", ["animation.gif", "clip.mp4", "track.mp3"])
+def test_create_public_copies_never_flattens_typed_media(tmp_path, filename):
+    batches_dir = tmp_path / "batches"
+    _make_batch(batches_dir)
+    source = batches_dir / "alpha" / "finals" / filename
+    source.write_bytes(b"original-media")
+
+    result = publish.create_public_copies(
+        batches_dir,
+        batch="alpha",
+        folder="finals",
+        filenames=[filename],
+    )
+
+    assert result["exported"] == 0
+    assert result["failed"] == 1
+    assert source.read_bytes() == b"original-media"
+    assert list((batches_dir / "alpha" / "public").iterdir()) == []
+
+
 def test_create_public_copies_applies_text_watermark(tmp_path):
     batches_dir = tmp_path / "batches"
     _make_batch(batches_dir)

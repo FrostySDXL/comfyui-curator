@@ -76,7 +76,12 @@ document.addEventListener('keydown', (e) => {
 
             if (isTypingTarget) return;
 
-            if (e.key === 'Escape' && !lightboxActive && (selectionMode || selectedImages.size > 0)) {
+            if (lightboxActive && e.code === 'Space' && toggleLightboxVideoPlayback()) {
+                e.preventDefault();
+                return;
+            }
+
+            if (e.key === 'Escape' && !lightboxActive && (selectionMode || serverSelection || selectedImages.size > 0)) {
                 e.preventDefault();
                 resetSelectionState();
                 return;
@@ -90,11 +95,7 @@ document.addEventListener('keydown', (e) => {
 
             if (!lightboxActive && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && currentBatch && currentFolder && images.length > 0) {
                 e.preventDefault();
-                setSelectionMode(true);
-                selectedImages = new Set(images.map(img => img.name));
-                lastSelectIndex = images.length - 1;
-                updateSelectionVisuals();
-                updateActionBar();
+                selectAllDisplayedImages();
                 return;
             }
 
@@ -131,6 +132,10 @@ document.addEventListener('keydown', (e) => {
                     case 'u':
                         e.preventDefault();
                         toggleBatchSidebar();
+                        return;
+                    case 'h':
+                        e.preventDefault();
+                        toggleHoverPreviews();
                         return;
                     case 'p':
                         e.preventDefault();

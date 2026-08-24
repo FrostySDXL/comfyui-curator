@@ -136,6 +136,14 @@
                         </div>
                         <div class="view-menu-section">
                             <button class="favorites-filter-btn view-menu-item" id="favorites-filter-btn" title="Favorites only (F)" type="button" aria-pressed="false">&#9734; <span>Favorites only</span><span class="shortcut-hint">F</span></button>
+                            <label class="ai-checkbox-label view-menu-item">
+                                <input type="checkbox" id="hover-preview-toggle" checked>
+                                Hover previews <span class="shortcut-hint">H</span>
+                            </label>
+                            <label class="ai-checkbox-label view-menu-item">
+                                <input type="checkbox" id="lightbox-video-autoplay-loop-toggle" checked>
+                                Autoplay + loop lightbox videos
+                            </label>
                         </div>
                         <div class="ai-display-controls hidden ai-header-controls view-menu-section" id="ai-display-controls">
                             <label class="ai-checkbox-label ai-header-toggle view-menu-item">
@@ -361,6 +369,11 @@
         <span class="lightbox-nav prev" role="button" aria-label="Previous image" tabindex="0">&#8249;</span>
         <div class="lightbox-image-wrap" id="lightbox-image-wrap">
             <img id="lightbox-img" src="">
+            <video id="lightbox-video" controls playsinline preload="metadata" hidden></video>
+            <div id="lightbox-audio" class="lightbox-audio" hidden>
+                <img id="lightbox-audio-art" alt="Audio artwork">
+                <audio id="lightbox-audio-player" controls preload="metadata"></audio>
+            </div>
         </div>
         <div class="lightbox-compare" id="lightbox-compare" hidden>
             <div class="lightbox-compare-pane active" data-compare-pane="0" tabindex="0">
@@ -566,6 +579,7 @@
                     <li><strong>U</strong> toggle the batch sidebar</li>
                     <li><strong>F</strong> toggle favorites-only filter</li>
                     <li><strong>B</strong> toggle AI badges when an AI run is available</li>
+                    <li><strong>H</strong> toggle muted GIF/video hover previews</li>
                     <li><strong>V</strong> toggle score sort when an AI run is available</li>
                     <li><strong>I</strong> toggle AI sidebar</li>
                     <li><strong>Esc</strong> exit selection, close lightbox or Help, or clear batch search (context-dependent)</li>
@@ -576,6 +590,7 @@
                 <ul class="help-list">
                     <li><strong>Left / Right</strong> previous or next image</li>
                     <li><strong>[ / ]</strong> previous or next scored image</li>
+                    <li><strong>Space</strong> play or pause the active lightbox video</li>
                     <li><strong>M</strong> toggle PNG generation metadata when available</li>
                     <li><strong>I</strong> toggle the lightbox AI review panel</li>
                     <li><strong>P</strong> prepare a public copy for the current image</li>
@@ -597,7 +612,7 @@
                     <li><strong>View</strong> contains density, favorites-only, and available AI display filters.</li>
                     <li><strong>Inbox</strong> holds new images for review.</li>
                     <li>Move keepers to <strong>Shortlisted</strong> or <strong>Finals</strong>; move rejects to <strong>Rejects</strong>.</li>
-                    <li>Use favorites, Prompt History, and metadata as review aids.</li>
+                    <li>Use favorites, Prompt History, and metadata as review aids. The lightbox detects adjacent <code>asset.ext.json</code> or <code>asset.json</code> sidecars and structures Rule34 post/favorite fields and tags.</li>
                     <li>Public posting creates generated derivatives; originals stay in review folders.</li>
                     <li>AI scores are advisory evidence. Manual moves remain authoritative.</li>
                 </ul>

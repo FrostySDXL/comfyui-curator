@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.unit.frontend_source import read_frontend_js
+from tests.unit.frontend_source import extract_function_body, read_frontend_js
 
 
 def test_thumbnail_grid_uses_blob_url_cache():
@@ -20,6 +20,23 @@ def test_thumbnail_grid_uses_blob_url_cache():
     assert "function setThumbnailImageSrc(imageEl, imageSrc, cacheKey" in source
     assert "setThumbnailImageSrc(imgEl," in source
     assert "imageEl.src = imageSrc;" not in source
+
+
+def test_thumbnail_identity_uses_mtime_for_same_name_same_size_replacements():
+    source = read_frontend_js()
+    cache_key = extract_function_body(source, "function getThumbnailCacheKey(imageSrc, img)")
+    update_thumb = extract_function_body(source, "function updateThumbElement(thumb, img, index)")
+
+    assert "img.mtime || img.modified_at || img.size || 0" in cache_key
+    assert (
+        "const version = encodeURIComponent(String(img.mtime || img.modified_at || img.size || 0));"
+        in update_thumb
+    )
+    assert "v=${version}" in update_thumb
+    assert (
+        "pagedFolderMode"
+        not in update_thumb.split("const thumbnailCacheKey", 1)[0].split("const imageSrcBase", 1)[1]
+    )
 
 
 def test_stage2_cache_metadata_infrastructure():

@@ -77,6 +77,27 @@ def test_resolve_universal_favorites_includes_present_file_folder(tmp_path):
     ]
 
 
+def test_resolve_universal_favorites_includes_typed_media(tmp_path):
+    make_batch(tmp_path)
+    for filename in ("animation.gif", "clip.mp4", "track.mp3"):
+        (tmp_path / "alpha" / "inbox" / filename).write_bytes(b"media")
+    save_favorites(
+        tmp_path,
+        [
+            {"batch": "alpha", "filename": filename, "added_at": "now"}
+            for filename in ("animation.gif", "clip.mp4", "track.mp3")
+        ],
+    )
+
+    resolved = resolve_universal_favorites(tmp_path)
+
+    assert {item["filename"] for item in resolved} == {
+        "animation.gif",
+        "clip.mp4",
+        "track.mp3",
+    }
+
+
 def test_resolve_universal_favorites_skips_missing_files(tmp_path):
     make_batch(tmp_path)
     save_favorites(tmp_path, [{"batch": "alpha", "filename": "missing.png", "added_at": "now"}])

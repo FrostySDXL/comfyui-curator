@@ -33,23 +33,36 @@
             return prefix + "/" + encodeURIComponent(batch) + "/" + encodeURIComponent(folder) + "/" + encodeURIComponent(name);
         }
 
+        function ccPreviewUrl(batch, folder, name) {
+            var prefix = CURATOR_NATIVE ? "/curator/preview" : "/preview";
+            return prefix + "/" + encodeURIComponent(batch) + "/" + encodeURIComponent(folder) + "/" + encodeURIComponent(name);
+        }
+
         const SIDEBAR_WIDTH_KEY = 'imageCurator.sidebarWidth';
         const SIDEBAR_OPEN_KEY = 'imageCurator.sidebarOpen';
         const BATCH_STATE_KEY = 'imageCurator.lastBatch';
         const FOLDER_STATE_KEY = 'imageCurator.lastFolder';
         const BATCH_SORT_KEY = 'imageCurator.batchSort';
         const GRID_DENSITY_KEY = 'imageCurator.gridDensity';
+        const HOVER_PREVIEWS_KEY = 'imageCurator.hoverPreviews';
+        const LIGHTBOX_VIDEO_AUTOPLAY_LOOP_KEY = 'imageCurator.lightboxVideoAutoplayLoop';
         const PROMPTS_COLLAPSE_KEY = 'imageCurator.promptsCollapseAll';
         const PROMPTS_SORT_KEY = 'imageCurator.promptsSort';
         let currentBatch = null;
         let currentFolder = null;
         let images = [];
         let currentDisplayImages = [];
+        let displayIndexByName = new Map();
+        let folderSnapshot = null;
+        let folderPageInflight = new Map();
+        let pagedFolderMode = false;
+        const FOLDER_PAGE_SIZE = 256;
         let currentIndex = 0;
         let allCounts = {};
         let currentSort = 'date';
         let currentOrder = 'desc';
         let selectedImages = new Set();
+        let serverSelection = null;
         let selectionMode = false;
         let lastSelectIndex = -1;
         let lastAction = null;
@@ -57,6 +70,10 @@
         let toastTimeout = null;
         let batchSort = (localStorage.getItem(BATCH_SORT_KEY) || 'alpha');
         let gridDensity = localStorage.getItem(GRID_DENSITY_KEY) || 'comfortable';
+        let hoverPreviewsEnabled = localStorage.getItem(HOVER_PREVIEWS_KEY) !== 'false';
+        let lightboxVideoAutoplayLoopEnabled = localStorage.getItem(LIGHTBOX_VIDEO_AUTOPLAY_LOOP_KEY) !== 'false';
+        let activeHoverPreview = null;
+        let hoverPreviewTimer = null;
         let batchFilterQuery = '';
         let batchFilterTimer = null;
         let favoritesFilterOn = false;

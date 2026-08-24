@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .batch_store import BATCH_FOLDERS, IMAGE_EXTENSIONS, _validate_name
+from .batch_store import BATCH_FOLDERS, VIEWABLE_MEDIA_EXTENSIONS, _validate_name
 
 _LOCK = threading.RLock()
 
@@ -126,7 +126,7 @@ def _find_file_folder(batches_dir: Path, batch: str, filename: str) -> str | Non
         real_batch.relative_to(root)
     except (OSError, ValueError):
         return None
-    if not filename.lower().endswith(tuple(IMAGE_EXTENSIONS)):
+    if not filename.lower().endswith(tuple(VIEWABLE_MEDIA_EXTENSIONS)):
         return None
     for folder in BATCH_FOLDERS:
         stage = batch_dir / folder
@@ -162,7 +162,7 @@ def resolve_universal_favorites(batches_dir: Path) -> list[dict[str, object]]:
     """Resolve universal favorites to existing files and their current folder.
 
     Skips entries whose batch, stage, or file path are symlinks, resolve
-    outside the configured root, or are not regular supported image files.
+    outside the configured root, or are not regular supported media files.
     """
     resolved = []
     for item in load_favorites(batches_dir):

@@ -25,11 +25,26 @@ def test_cli_defaults_are_firefox_first_and_native(monkeypatch):
     args = benchmark.parse_args()
 
     assert args.browser == "firefox"
-    assert args.sizes == [100, 500, 2000]
+    assert args.sizes == [100, 500, 2000, 30000]
     assert args.url == "http://127.0.0.1:8188/curator"
     assert args.mode == "native"
     assert args.headless is False
     assert args.output_root == Path("tmp/thumbnail-benchmarks")
+    assert benchmark.browser_script_timeout(args) == 900.0
+
+
+def test_browser_script_timeout_preserves_operator_larger_value():
+    benchmark = load_benchmark_module()
+    args = type("Args", (), {"sizes": [100], "timeout": 240.0})()
+
+    assert benchmark.browser_script_timeout(args) == 240.0
+
+
+def test_dynamic_frame_budget_scales_for_thirty_thousand_items():
+    benchmark = load_benchmark_module()
+
+    assert benchmark.dynamic_frame_budget(2000) == 8000
+    assert benchmark.dynamic_frame_budget(30000) == 120000
 
 
 def test_standalone_requires_explicit_batch_root_under_output_root(tmp_path):
@@ -249,10 +264,11 @@ def test_fixture_creation_uses_distinct_names_and_matching_markers(tmp_path):
 
     primary = root / specs[0].primary_batch
     companion = root / specs[0].companion_batch
-    images = sorted((primary / "inbox").glob("*.png"))
+    images = sorted(path for path in (primary / "inbox").iterdir() if path.is_file())
     marker = json.loads((primary / benchmark.OWNERSHIP_MARKER).read_text(encoding="utf-8"))
     assert len(images) == 5
     assert len({image.name for image in images}) == 5
+    assert {image.suffix for image in images} == {".png", ".jpg", ".jpeg", ".webp", ".gif"}
     assert marker == {
         "schema": benchmark.MARKER_SCHEMA,
         "run_id": "run-abc",
@@ -260,6 +276,33 @@ def test_fixture_creation_uses_distinct_names_and_matching_markers(tmp_path):
     }
     assert (companion / "inbox").is_dir()
     assert all((primary / folder).is_dir() for folder in benchmark.BATCH_FOLDERS)
+
+
+def test_thumbnail_disk_metrics_ignore_atomic_temps_and_stat_races(tmp_path, monkeypatch):
+    benchmark = load_benchmark_module()
+    thumbs = tmp_path / "alpha" / ".thumbs"
+    thumbs.mkdir(parents=True)
+    (thumbs / "stable.webp").write_bytes(b"stable")
+    (thumbs / ".poster.uuid.tmp.webp").write_bytes(b"temporary")
+    vanishing = thumbs / "vanishing.webp"
+    vanishing.write_bytes(b"gone")
+    real_stat = Path.stat
+    calls = 0
+
+    def racing_stat(path, *args, **kwargs):
+        nonlocal calls
+        if path == vanishing:
+            calls += 1
+            if calls > 1:
+                raise FileNotFoundError(path)
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", racing_stat)
+
+    assert benchmark._thumbnail_disk_metrics(tmp_path, "alpha") == {
+        "file_count": 1,
+        "disk_bytes": 6,
+    }
 
 
 def test_resource_metrics_keep_unavailable_values_truthful():
@@ -330,6 +373,8 @@ def test_instrumentation_js_contracts():
     assert "appendChild(script)" in install
     assert "script.remove()" in install
     assert benchmark.BRIDGE_ID in install
+    assert "grid.dataset.canonicalCount" in benchmark.DYNAMIC_TRAVERSAL_GRID
+    assert "if (mode === 'full') content.scrollTop = 0" in benchmark.DYNAMIC_TRAVERSAL_GRID
     assert "data-thumbnail-benchmark-bridge" in install
     assert "Main-realm instrumentation did not execute" in install
     assert "window.__thumbnailBenchmark" not in benchmark.PAGE_METRICS
@@ -1453,6 +1498,28 @@ class TestDynamicTraversal:
                 }
             )
             is True
+        )
+        # A virtual grid may expose the canonical 30k count while failing to
+        # visit/load every indexed item. That must not count as a completed traversal.
+        assert (
+            benchmark._is_dynamic_traversal_ready(
+                {
+                    "available": True,
+                    "ready": True,
+                    "frameCapReached": False,
+                    "canonicalCount": 30000,
+                    "renderedCount": 120,
+                    "traversedItemCount": 29999,
+                    "expectedCount": 30000,
+                    "targetCount": 30000,
+                    "targetBoundaryVisited": True,
+                    "finalBottomVisited": True,
+                    "unsettledCount": 0,
+                    "stagnationReason": None,
+                    "unsettledReason": None,
+                }
+            )
+            is False
         )
 
     def test_dynamic_traversal_warnings_covers_all_failure_modes(self):

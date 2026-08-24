@@ -7,6 +7,62 @@ import pytest
 from image_curator import batch_store
 
 
+def test_media_extension_sets_and_kinds_preserve_still_image_boundary():
+    assert batch_store.STILL_IMAGE_EXTENSIONS == {".png", ".jpg", ".jpeg", ".webp"}
+    assert batch_store.IMAGE_EXTENSIONS == batch_store.STILL_IMAGE_EXTENSIONS
+    assert batch_store.ANIMATED_IMAGE_EXTENSIONS == {".gif"}
+    assert batch_store.VIDEO_EXTENSIONS == {".mp4"}
+    assert batch_store.AUDIO_EXTENSIONS == {".mp3"}
+    assert batch_store.VIEWABLE_MEDIA_EXTENSIONS == {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".gif",
+        ".mp4",
+        ".mp3",
+    }
+    assert [batch_store.media_kind(name) for name in ("a.PNG", "b.gif", "c.mp4", "d.MP3")] == [
+        "image",
+        "animated_image",
+        "video",
+        "audio",
+    ]
+    assert batch_store.media_kind("notes.txt") is None
+
+
+def test_batch_listing_counts_and_import_include_all_viewable_media(tmp_path):
+    batches_dir = tmp_path / "batches"
+    output_dir = tmp_path / "comfyui-outputs"
+    output_dir.mkdir()
+    batch_store.create_batch(batches_dir, "alpha")
+    for name in (
+        "still.png",
+        "photo.jpg",
+        "photo.jpeg",
+        "web.webp",
+        "loop.gif",
+        "clip.mp4",
+        "sound.mp3",
+    ):
+        (output_dir / name).write_bytes(b"media")
+    (output_dir / "skip.txt").write_text("skip")
+
+    assert batch_store.get_pending_count(output_dir) == 7
+    assert batch_store.import_all_pending(output_dir, batches_dir, "alpha") == 7
+    listed = batch_store.get_images(batches_dir / "alpha" / "inbox", sort_by="name", order="asc")
+    assert [item.name for item in listed] == [
+        "clip.mp4",
+        "loop.gif",
+        "photo.jpeg",
+        "photo.jpg",
+        "sound.mp3",
+        "still.png",
+        "web.webp",
+    ]
+    assert batch_store.get_batch_counts(batches_dir, "alpha")["inbox"] == 7
+
+
 def test_batch_store_creates_batches_and_counts_supported_images(tmp_path):
     batches_dir = tmp_path / "batches"
     batch_store.create_batch(batches_dir, "alpha")
@@ -38,6 +94,23 @@ def test_batch_store_imports_pending_images(tmp_path):
     assert (batches_dir / "alpha" / "inbox" / "one.png").exists()
     assert (batches_dir / "alpha" / "inbox" / "two.jpg").exists()
     assert (output_dir / "skip.txt").exists()
+
+
+def test_import_renames_media_when_its_json_sidecar_destination_collides(tmp_path):
+    batches_dir = tmp_path / "batches"
+    output_dir = tmp_path / "incoming"
+    output_dir.mkdir()
+    batch_store.create_batch(batches_dir, "alpha")
+    inbox = batches_dir / "alpha" / "inbox"
+    (inbox / "favorite.json").write_text('{"existing": true}', encoding="utf-8")
+    (output_dir / "favorite.png").write_bytes(b"image")
+    (output_dir / "favorite.json").write_text('{"rating": 5}', encoding="utf-8")
+
+    assert batch_store.import_all_pending(output_dir, batches_dir, "alpha") == 1
+
+    assert (inbox / "favorite_1.png").read_bytes() == b"image"
+    assert (inbox / "favorite_1.json").read_text(encoding="utf-8") == '{"rating": 5}'
+    assert (inbox / "favorite.json").read_text(encoding="utf-8") == '{"existing": true}'
 
 
 def test_batch_store_import_all_pending_continues_after_move_failure(tmp_path, monkeypatch):
@@ -258,20 +331,54 @@ def test_move_image_creates_parent_dirs(tmp_path):
     assert dst.read_bytes() == b"x"
 
 
+def test_move_image_carries_filename_preserving_json_sidecar(tmp_path):
+    src = tmp_path / "source" / "clip.mp4"
+    src.parent.mkdir()
+    src.write_bytes(b"video")
+    sidecar = src.with_name("clip.mp4.json")
+    sidecar.write_text('{"rating": 5}', encoding="utf-8")
+    dst = tmp_path / "dest" / "renamed.mp4"
+
+    assert batch_store.move_image(src, dst) is True
+
+    assert dst.read_bytes() == b"video"
+    assert dst.with_name("renamed.mp4.json").read_text(encoding="utf-8") == '{"rating": 5}'
+    assert not sidecar.exists()
+
+
 def test_move_images_reports_moved_and_skipped(tmp_path):
     """move_images returns (moved_count, skipped_count) for a batch."""
     (tmp_path / "a.png").write_bytes(b"a")
     (tmp_path / "b.png").write_bytes(b"b")
     (tmp_path / "c.png").write_bytes(b"c")
 
-    moved, skipped = batch_store.move_images(
+    moved, skipped, moved_names = batch_store.move_images(
         source_dir=tmp_path,
         names=["a.png", "b.png", "missing.png", "c.png"],
         dest_dir=tmp_path / "dest",
     )
     assert moved == 3
     assert skipped == 1
+    assert moved_names == ["a.png", "b.png", "c.png"]
     assert sorted(p.name for p in (tmp_path / "dest").iterdir()) == ["a.png", "b.png", "c.png"]
+
+
+def test_move_images_returns_only_exact_successful_names(tmp_path):
+    """Partial failures must never enter a snapshot undo record."""
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "moved.png").write_bytes(b"moved")
+    (source / "also-moved.png").write_bytes(b"also")
+
+    moved, skipped, moved_names = batch_store.move_images(
+        source_dir=source,
+        names=["moved.png", "missing.png", "also-moved.png"],
+        dest_dir=tmp_path / "dest",
+    )
+
+    assert moved == 2
+    assert skipped == 1
+    assert moved_names == ["moved.png", "also-moved.png"]
 
 
 # ---------------------------------------------------------------------------
@@ -305,7 +412,7 @@ def test_move_images_skips_names_with_path_separators(tmp_path):
     dest = tmp_path / "dest"
     dest.mkdir()
 
-    moved, skipped = batch_store.move_images(
+    moved, skipped, moved_names = batch_store.move_images(
         source_dir=src,
         names=["valid.png", "../escape.png", "subdir/file.png", "ok_again.png"],
         dest_dir=dest,
@@ -313,6 +420,7 @@ def test_move_images_skips_names_with_path_separators(tmp_path):
 
     assert moved == 2
     assert skipped == 2
+    assert moved_names == ["valid.png", "ok_again.png"]
     # The valid names actually landed in dest.
     assert (dest / "valid.png").exists()
     assert (dest / "ok_again.png").exists()
@@ -330,7 +438,7 @@ def test_move_images_skips_dotfile_names(tmp_path):
     dest = tmp_path / "dest"
     dest.mkdir()
 
-    moved, skipped = batch_store.move_images(
+    moved, skipped, moved_names = batch_store.move_images(
         source_dir=src,
         names=["valid.png", ".hidden", ".."],
         dest_dir=dest,
@@ -338,6 +446,7 @@ def test_move_images_skips_dotfile_names(tmp_path):
 
     assert moved == 1
     assert skipped == 2
+    assert moved_names == ["valid.png"]
     assert (dest / "valid.png").exists()
 
 

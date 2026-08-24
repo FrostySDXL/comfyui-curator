@@ -11,11 +11,49 @@ import shutil
 from pathlib import Path
 from typing import Iterable
 
+from .sidecar_metadata import find_json_sidecar, sidecar_destination
+
 logger = logging.getLogger(__name__)
 
 
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+STILL_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+ANIMATED_IMAGE_EXTENSIONS = {".gif"}
+VIDEO_EXTENSIONS = {".mp4"}
+AUDIO_EXTENSIONS = {".mp3"}
+VIEWABLE_MEDIA_EXTENSIONS = (
+    STILL_IMAGE_EXTENSIONS | ANIMATED_IMAGE_EXTENSIONS | VIDEO_EXTENSIONS | AUDIO_EXTENSIONS
+)
+MEDIA_MIME_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".mp4": "video/mp4",
+    ".mp3": "audio/mpeg",
+}
+# Compatibility boundary used by vision scoring and public-image preparation.
+IMAGE_EXTENSIONS = STILL_IMAGE_EXTENSIONS
 BATCH_FOLDERS = ("inbox", "shortlisted", "finals", "rejects")
+
+
+def media_kind(path_or_name: str | Path) -> str | None:
+    """Return the operator-view media kind without widening AI image support."""
+    suffix = Path(path_or_name).suffix.lower()
+    if suffix in STILL_IMAGE_EXTENSIONS:
+        return "image"
+    if suffix in ANIMATED_IMAGE_EXTENSIONS:
+        return "animated_image"
+    if suffix in VIDEO_EXTENSIONS:
+        return "video"
+    if suffix in AUDIO_EXTENSIONS:
+        return "audio"
+    return None
+
+
+def media_mime(path_or_name: str | Path) -> str | None:
+    """Return the stable browser MIME for a supported viewable media file."""
+    return MEDIA_MIME_TYPES.get(Path(path_or_name).suffix.lower())
 
 
 def _validate_name(name: str, label: str = "name") -> None:
@@ -192,6 +230,10 @@ def _is_supported_image(path: Path, extensions: Iterable[str] = IMAGE_EXTENSIONS
     return path.suffix.lower() in extensions
 
 
+def _is_viewable_media(path: Path) -> bool:
+    return path.suffix.lower() in VIEWABLE_MEDIA_EXTENSIONS
+
+
 def get_images(directory: Path, sort_by: str = "date", order: str = "desc") -> list[Path]:
     """Return supported image files in a directory with configurable sorting.
 
@@ -214,7 +256,7 @@ def get_images(directory: Path, sort_by: str = "date", order: str = "desc") -> l
         try:
             if f.is_symlink():
                 continue
-            if not _is_supported_image(f):
+            if not _is_viewable_media(f):
                 continue
         except (FileNotFoundError, OSError):
             # File vanished after iterdir() — skip it.
@@ -246,7 +288,7 @@ def get_batch_counts(batches_dir: Path, batch_name: str) -> dict[str, int]:
     for folder in BATCH_FOLDERS:
         folder_path = get_batch_folder(batches_dir, batch_name, folder)
         if folder_path.exists():
-            counts[folder] = len([f for f in folder_path.iterdir() if _is_supported_image(f)])
+            counts[folder] = len([f for f in folder_path.iterdir() if _is_viewable_media(f)])
         else:
             counts[folder] = 0
     return counts
@@ -289,19 +331,29 @@ def get_pending_count(comfyui_output: Path) -> int:
     comfyui_output = Path(comfyui_output)
     if not comfyui_output.exists():
         return 0
-    return len([f for f in comfyui_output.iterdir() if _is_supported_image(f)])
+    return len([f for f in comfyui_output.iterdir() if _is_viewable_media(f)])
 
 
-def _collision_safe_name(dest_dir: Path, name: str) -> str:
-    """Return a filename that doesn't conflict with existing files in dest_dir."""
+def _collision_safe_name(dest_dir: Path, name: str, source_path: Path | None = None) -> str:
+    """Return a media name whose file and paired sidecar destinations are free."""
     stem = Path(name).stem
     suffix = Path(name).suffix
     candidate = name
     counter = 1
-    while (dest_dir / candidate).exists():
+    source_sidecar = find_json_sidecar(source_path) if source_path is not None else None
+    while True:
+        candidate_path = dest_dir / candidate
+        sidecar_path = (
+            sidecar_destination(source_path, candidate_path, source_sidecar)
+            if source_path is not None and source_sidecar is not None
+            else None
+        )
+        if not candidate_path.exists() and not (
+            sidecar_path is not None and (sidecar_path.exists() or sidecar_path.is_symlink())
+        ):
+            return candidate
         candidate = f"{stem}_{counter}{suffix}"
         counter += 1
-    return candidate
 
 
 def move_image(src: Path, dst: Path) -> bool:
@@ -318,19 +370,34 @@ def move_image(src: Path, dst: Path) -> bool:
     dst = Path(dst)
     if not src.exists():
         return False
+    sidecar = find_json_sidecar(src) if src.suffix.lower() in VIEWABLE_MEDIA_EXTENSIONS else None
+    sidecar_dst = sidecar_destination(src, dst, sidecar) if sidecar is not None else None
     try:
         dst.parent.mkdir(parents=True, exist_ok=True)
+        if sidecar_dst is not None and (sidecar_dst.exists() or sidecar_dst.is_symlink()):
+            return False
         shutil.move(str(src), str(dst))
+        if sidecar is not None and sidecar_dst is not None:
+            try:
+                shutil.move(str(sidecar), str(sidecar_dst))
+            except OSError:
+                try:
+                    shutil.move(str(dst), str(src))
+                except OSError:
+                    logger.error(
+                        "move_image could not roll back media after sidecar failure: %s", dst
+                    )
+                raise
         return True
     except OSError:
         logger.warning("move_image failed: %s -> %s", src, dst, exc_info=True)
         return False
 
 
-def move_images(source_dir: Path, names: list[str], dest_dir: Path) -> tuple[int, int]:
+def move_images(source_dir: Path, names: list[str], dest_dir: Path) -> tuple[int, int, list[str]]:
     """Move a batch of files from ``source_dir`` to ``dest_dir``.
 
-    Returns ``(moved, skipped)``. Missing source files and names that fail
+    Returns ``(moved, skipped, moved_names)``. Missing source files and names that fail
     ``_validate_name`` (path traversal, null bytes, dotfiles) count as
     skipped and do not raise. The destination directory is created if
     missing. Defense-in-depth validation is applied at this boundary so
@@ -341,6 +408,7 @@ def move_images(source_dir: Path, names: list[str], dest_dir: Path) -> tuple[int
     dest_dir.mkdir(parents=True, exist_ok=True)
     moved = 0
     skipped = 0
+    moved_names: list[str] = []
     for name in names:
         try:
             _validate_name(name, "file name")
@@ -352,9 +420,10 @@ def move_images(source_dir: Path, names: list[str], dest_dir: Path) -> tuple[int
         dst = dest_dir / name
         if move_image(src, dst):
             moved += 1
+            moved_names.append(name)
         else:
             skipped += 1
-    return moved, skipped
+    return moved, skipped, moved_names
 
 
 def import_all_pending(comfyui_output: Path, batches_dir: Path, batch_name: str) -> int:
@@ -372,8 +441,8 @@ def import_all_pending(comfyui_output: Path, batches_dir: Path, batch_name: str)
             is_symlink = path.is_symlink()
         except OSError:
             continue
-        if not is_symlink and _is_supported_image(path):
-            safe_name = _collision_safe_name(dest_inbox, path.name)
+        if not is_symlink and _is_viewable_media(path):
+            safe_name = _collision_safe_name(dest_inbox, path.name, path)
             dst = dest_inbox / safe_name
             if move_image(path, dst):
                 count += 1

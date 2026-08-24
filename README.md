@@ -13,7 +13,11 @@ before manual selection. Single-user, local-first, filesystem-backed.
   toast for the last operation.
 - **Lightbox viewer** -- full-size image review with zoom, keyboard
   navigation, scored-image jumps, PNG generation metadata (prompt,
-  seed, sampler, CFG, LoRAs), and two-image comparison from selected images.
+  seed, sampler, CFG, LoRAs), adjacent JSON sidecars, and two-image comparison
+  from selected images.
+- **Typed media review** -- PNG/JPG/JPEG/WebP stills, animated GIFs, MP4 video,
+  and MP3 audio share the filesystem workflow. The grid uses WebP posters;
+  GIF/video hover previews are optional, and video/audio play in the lightbox.
 - **Favorites** -- one-click stars persist favorites at both batch and
   universal scope, with a favorites-only filter and All Favorites sidebar view.
 - **Public posting prep** -- selected originals can be exported as
@@ -22,7 +26,8 @@ before manual selection. Single-user, local-first, filesystem-backed.
 - **Prompt history** -- manually build per-batch prompt indexes from PNG
   metadata, then search, copy, and inspect prompt groups from a header modal.
 - **Import from ComfyUI** -- one-click **Import All** moves available outputs
-  into the selected batch inbox.
+  and adjacent JSON sidecars into the selected batch inbox. A lightweight
+  one-second status check enables the always-visible control when media arrives.
 - **AI-assisted scoring (optional)** -- sends images to a local vision LLM
   to check for prompt elements and quality baselines. The AI sidebar includes a
   contextual image inspector plus Inspect / Score / Runs tabs. Scores are
@@ -96,6 +101,13 @@ configure `IMAGE_CURATOR_COMFYUI` as an optional import source.
 `requirements.txt` is the convenience install file. Use
 `requirements-lock.txt` when you need the pinned dependency set.
 
+FFmpeg is optional but recommended for GIF/MP4 hover previews and embedded
+MP3/MP4 artwork extraction. Install `ffmpeg` on `PATH`, or set
+`IMAGE_CURATOR_FFMPEG` to its absolute executable path. Missing or failing
+FFmpeg never removes originals: the grid uses a deterministic audio/video tile,
+and hover preview requests return an unavailable response while normal review
+continues.
+
 The repository, Python distribution, Registry package, and expected custom-node
 folder are named `comfyui-curator`. Internal Python modules, environment
 variables, the standalone service template, and existing local configuration
@@ -162,6 +174,7 @@ Other settings:
 | `IMAGE_CURATOR_MODEL` | (empty) | Model name (comma-separated for dropdown) |
 | `IMAGE_CURATOR_API_KEY` | (empty) | Bearer token if your LLM requires auth |
 | `IMAGE_CURATOR_TIMEOUT` | `120` | Vision LLM request timeout in seconds |
+| `IMAGE_CURATOR_FFMPEG` | `ffmpeg` | FFmpeg executable used lazily for typed-media posters and hover-preview MP4 proxies |
 | `IMAGE_CURATOR_HOST` | `127.0.0.1` | Bind address |
 | `IMAGE_CURATOR_PORT` | `5000` | Port |
 
@@ -189,14 +202,15 @@ See `.env.example` for the full commented reference.
 | `Ctrl+K` | Open batch sidebar if closed, then focus and select batch search |
 | `Esc` | Contextual: clear search, close lightbox, close modal |
 | `Ctrl+Z` | Undo last move (while toast is active) |
-| `Ctrl+A` | Select all images in current folder (not in lightbox) |
-| `Select All` button | Toggle selection for all currently visible thumbnails |
+| `Ctrl+A` | Select all indexed media in the current folder (not in lightbox) |
+| `Select All` button | Toggle selection for the current folder; large native folders use a revision-bound server selection |
 | `U` | Toggle batch sidebar |
 | `F` | Toggle favorites-only filter |
 | `P` | Open Prompt History |
 | `B` | Toggle AI score badges when an AI run is available |
 | `V` | Toggle score-based sort when an AI run is available |
 | `I` | Toggle AI sidebar |
+| `H` | Toggle animated GIF/MP4 hover previews |
 
 ### Lightbox
 
@@ -204,6 +218,7 @@ See `.env.example` for the full commented reference.
 |-----|--------|
 | `←` `→` | Previous / next image |
 | `[` `]` | Previous / next scored image |
+| `Space` | Play / pause the active video |
 | `M` | Toggle PNG metadata panel |
 | `I` | Toggle lightbox AI review panel |
 | `P` | Prepare a public copy for the current image |
@@ -224,8 +239,18 @@ to pin the active image and compare it against other images with Left/Right.
 ## UI behavior
 
 - Sidebar state and thumbnail density persist across sessions.
+- Lightbox videos autoplay and loop by default. Disable both together from
+  **View → Autoplay + loop lightbox videos**; the preference persists locally.
 - Background polling avoids interrupting lightbox review, drag/drop, and resize
-  interactions.
+  interactions. Import readiness uses a separate lightweight one-second poll;
+  native batch summaries refresh every ten seconds.
+- JSON sidecars named `asset.ext.json` (preferred) or `asset.json` follow media
+  through import, review-folder moves, undo, and reject cleanup. The lightbox
+  shows Rule34 post/favorite sidecars as structured fields, space-delimited tag
+  chips, safe links, and raw JSON. Unknown structures remain one formatted block.
+- Native real-folder views use immutable revisioned snapshots, 256-item pages,
+  and row virtualization. At most 500 thumbnail elements are live even for a
+  30,000-item folder; unchanged polls return only revision/count metadata.
 - Public copies are generated derivatives only; originals stay in their review
   folders.
 - Prompt history indexes are manual caches. Rebuild after significant curation
@@ -249,7 +274,8 @@ The repository includes a native ComfyUI integration:
 - `image_curator/native_settings.py` -- resolves ComfyUI-owned batch, import,
   state, and persistent native configuration without importing Flask.
 - `image_curator/native_routes.py` -- aiohttp adapter for settings, batches,
-  active state, manual import, image lists, metadata, thumbnails, originals,
+  active state, manual import, revisioned/paged media lists, metadata, posters,
+  previews, range-capable originals,
   single-image moves, multi-image moves, reject deletion, favorites
   (batch/universal toggles and All Favorites resolution), and public
   publish/export, listing, destination browsing, and copy/move/delete.
@@ -260,14 +286,17 @@ The repository includes a native ComfyUI integration:
   opens `/curator`.
 - `templates/curator.html` -- native page template derived from `index.html`
   with `/curator_static/` paths and `window.CURATOR_NATIVE = true`.
-- Shared frontend URL helpers (`ccApiPath`, `ccThumbUrl`, `ccImageUrl` in
+- Shared frontend URL helpers (`ccApiPath`, `ccThumbUrl`, `ccImageUrl`, and
+  `ccPreviewUrl` in
   `static/js/state.js`) switch between `/api`/`/thumb`/`/image` and
   `/api/curator`/`/curator/thumb`/`/curator/image` based on the native flag.
 - `GET` and `POST /api/curator/settings` back the native-only Settings modal;
   editable paths are returned only by this dedicated local-operator endpoint.
 
-Native foundation routes use `/api/curator/*` and media uses
-`/curator/thumb/*` and `/curator/image/*`. Single-image moves, multi-image
+Native foundation routes use `/api/curator/*`; media uses
+`/curator/thumb/*`, `/curator/preview/*`, and `/curator/image/*`. Real-folder
+transport uses `/api/curator/v2/folders/*` snapshot, poll, and item pages.
+Single-image moves, multi-image
 moves (undo-compatible reverse calls), reject deletion, favorites
 (batch/universal toggles, All Favorites), and public publish/export, listing,
 destination browsing, copy/move/delete, prompt history, and AI scoring lifecycle

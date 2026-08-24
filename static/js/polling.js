@@ -9,13 +9,32 @@ function isInteractionBusy() {
         }
 
 function buildImageSignature(list) {
-            return list.map(img => `${img.name}:${img.size}`).join('|');
+            return list.map(img => `${img.name}:${img.size}:${img.mtime || img.modified_at || 0}`).join('|');
         }
 
 async function pollForChanges() {
             if (isInteractionBusy()) return;
-            await loadBatches();
-            if (!currentBatch || isVirtualCollectionView() || isPublicView() || !currentFolder || selectedImages.size > 0 || isInteractionBusy()) return;
+            if (!CURATOR_NATIVE) await loadBatches();
+            if (!currentBatch || isVirtualCollectionView() || isPublicView() || !currentFolder || serverSelection || selectedImages.size > 0 || isInteractionBusy()) return;
+            if (CURATOR_NATIVE && folderSnapshot) {
+                const [snapshotResp, runResp] = await Promise.all([
+                    apiPollFolderSnapshot(
+                        currentBatch, currentFolder, _folderTransportSort(), currentOrder, folderSnapshot.revision,
+                    ),
+                    fetch(ccApiPath(`/api/ai-curate/batches/${currentBatch}/runs`)),
+                ]);
+                if (!snapshotResp.ok || !runResp.ok) return;
+                const [snapshotData, runData] = await Promise.all([snapshotResp.json(), runResp.json()]);
+                if (snapshotData.status === 'ready' && snapshotData.changed) {
+                    await loadCurrentFolderImages({preserveScroll: true});
+                }
+                const latestRunId = runData.runs && runData.runs.length > 0 ? runData.runs[runData.runs.length - 1] : null;
+                if ((aiLatestRun?.run_id || null) !== latestRunId) {
+                    await aiRefreshRunData(runData.runs || []);
+                    if (aiShowOverlays || aiFilterMode !== 'all' || (aiCompareRunId && aiCompareRunId !== 'latest')) updateGrid();
+                }
+                return;
+            }
             const [imageResp, runResp] = await Promise.all([
                 fetch(ccApiPath(`/api/images/${currentBatch}/${currentFolder}?sort=${currentSort}&order=${currentOrder}`)),
                 fetch(ccApiPath(`/api/ai-curate/batches/${currentBatch}/runs`)),

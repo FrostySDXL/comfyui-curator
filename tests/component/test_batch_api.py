@@ -62,6 +62,7 @@ def test_delete_rejects_removes_files(client, app_module, make_file):
 
     make_file(rejects_dir / "bad1.png")
     make_file(rejects_dir / "bad2.webp")
+    (rejects_dir / "bad1.png.json").write_text('{"reason":"duplicate"}', encoding="utf-8")
 
     response = client.post("/api/delete-rejects/test-batch")
 
@@ -70,6 +71,7 @@ def test_delete_rejects_removes_files(client, app_module, make_file):
     assert payload["count"] == 2
     assert not (rejects_dir / "bad1.png").exists()
     assert not (rejects_dir / "bad2.webp").exists()
+    assert not (rejects_dir / "bad1.png.json").exists()
 
 
 @pytest.mark.component
@@ -79,19 +81,31 @@ def test_delete_rejects_removes_namespaced_thumbnail_cache(client, app_module, m
     thumbs_dir = app_module.BATCHES_DIR / "test-batch" / ".thumbs"
 
     make_file(rejects_dir / "bad1.png")
-    make_file(thumbs_dir / "rejects__bad1.webp")
+    make_file(thumbs_dir / "rejects__bad1--png.webp")
 
     response = client.post("/api/delete-rejects/test-batch")
 
     assert response.status_code == 200
     assert not (rejects_dir / "bad1.png").exists()
-    assert not (thumbs_dir / "rejects__bad1.webp").exists()
+    assert not (thumbs_dir / "rejects__bad1--png.webp").exists()
 
 
 @pytest.mark.component
 def test_delete_rejects_nonexistent_batch(client):
     response = client.post("/api/delete-rejects/no-such-batch")
     assert response.status_code == 404
+
+
+@pytest.mark.component
+def test_import_status_is_lightweight_and_reports_active_batch(client, app_module, make_file):
+    app_module.create_batch("focus")
+    app_module.save_state({"active_batch": "focus"})
+    make_file(app_module.COMFYUI_OUTPUT / "waiting.mp4")
+
+    response = client.get("/api/import-status")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"active_batch": "focus", "pending_count": 1}
 
 
 @pytest.mark.component
@@ -163,6 +177,75 @@ def test_api_images_returns_sorted_list(client, app_module, make_file):
     assert data[0]["name"] == "a.jpg"
     assert data[1]["name"] == "b.png"
     assert "size" in data[0]
+    assert data[0]["mtime"] > 0
+
+
+@pytest.mark.component
+def test_api_images_adds_media_kind_and_mime_without_changing_still_items(
+    client, app_module, make_file
+):
+    app_module.create_batch("media")
+    inbox = app_module.BATCHES_DIR / "media" / "inbox"
+    for name in (
+        "still.png",
+        "photo.jpg",
+        "legacy.jpeg",
+        "web.webp",
+        "loop.gif",
+        "clip.mp4",
+        "sound.mp3",
+    ):
+        make_file(inbox / name)
+
+    response = client.get("/api/images/media/inbox?sort=name&order=asc")
+
+    assert response.status_code == 200
+    items = {item["name"]: item for item in response.get_json()}
+    assert items["still.png"]["media_kind"] == "image"
+    assert items["still.png"]["mime"] == "image/png"
+    assert items["photo.jpg"]["media_kind"] == "image"
+    assert items["legacy.jpeg"]["mime"] == "image/jpeg"
+    assert items["web.webp"]["mime"] == "image/webp"
+    assert items["loop.gif"]["size"] == 1
+    assert items["loop.gif"]["favorite"] is False
+    assert items["loop.gif"]["media_kind"] == "animated_image"
+    assert items["loop.gif"]["mime"] == "image/gif"
+    assert items["loop.gif"]["mtime"] > 0
+    assert items["clip.mp4"]["mime"] == "video/mp4"
+    assert items["sound.mp3"]["mime"] == "audio/mpeg"
+
+
+@pytest.mark.component
+def test_audio_original_supports_mime_ranges_and_fallback_poster(client, app_module, make_file):
+    app_module.create_batch("batch")
+    track = app_module.BATCHES_DIR / "batch" / "inbox" / "track.mp3"
+    make_file(track, b"0123456789")
+
+    original = client.get(
+        "/image/batch/inbox/track.mp3",
+        headers={"Range": "bytes=2-5"},
+    )
+    poster = client.get("/thumb/batch/inbox/track.mp3")
+
+    assert original.status_code == 206
+    assert original.mimetype == "audio/mpeg"
+    assert original.data == b"2345"
+    assert poster.status_code == 200
+    assert poster.mimetype == "image/webp"
+
+
+@pytest.mark.component
+def test_hover_preview_missing_ffmpeg_is_stable_unavailable_response(
+    client, app_module, make_file, monkeypatch, tmp_path
+):
+    app_module.create_batch("batch")
+    make_file(app_module.BATCHES_DIR / "batch" / "inbox" / "loop.gif", b"bad-gif")
+    monkeypatch.setenv("IMAGE_CURATOR_FFMPEG", str(tmp_path / "missing-ffmpeg.exe"))
+
+    response = client.get("/preview/batch/inbox/loop.gif")
+
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "Hover preview unavailable"}
 
 
 @pytest.mark.component
@@ -170,6 +253,45 @@ def test_api_images_nonexistent_batch(client):
     """GET /api/images returns 404 for nonexistent batch."""
     response = client.get("/api/images/nope/inbox")
     assert response.status_code == 404
+
+
+@pytest.mark.component
+def test_v2_folder_snapshot_is_paged_revision_bound_and_poll_is_lightweight(
+    client, app_module, make_file
+):
+    app_module.create_batch("paged")
+    inbox = app_module.BATCHES_DIR / "paged" / "inbox"
+    for index in range(5):
+        make_file(inbox / f"item-{index}.png", bytes([index]))
+
+    first = client.get("/api/v2/folders/paged/inbox/snapshot?sort=name&order=asc")
+    assert first.status_code in {200, 202}
+    assert app_module._folder_index.wait_until_ready("paged", "inbox", "name", "asc", timeout=2)
+    snapshot = client.get("/api/v2/folders/paged/inbox/snapshot?sort=name&order=asc")
+    metadata = snapshot.get_json()
+    revision = metadata["revision"]
+
+    page = client.get(
+        f"/api/v2/folders/paged/inbox/items?sort=name&order=asc&revision={revision}&offset=1&limit=2"
+    )
+    poll = client.get(f"/api/v2/folders/paged/inbox/poll?sort=name&order=asc&revision={revision}")
+    stale = client.get(
+        "/api/v2/folders/paged/inbox/items?sort=name&order=asc&revision=stale&offset=0&limit=2"
+    )
+
+    assert metadata == {"status": "ready", "revision": revision, "count": 5}
+    assert [item["name"] for item in page.get_json()["items"]] == [
+        "item-1.png",
+        "item-2.png",
+    ]
+    assert poll.get_json() == {
+        "status": "ready",
+        "changed": False,
+        "revision": revision,
+        "count": 5,
+    }
+    assert stale.status_code == 409
+    assert "items" not in poll.get_json()
 
 
 @pytest.mark.component
@@ -253,6 +375,45 @@ def test_api_move_batch_bulk_moves_files(client, app_module, make_file):
     assert not (app_module.BATCHES_DIR / "batch" / "inbox" / "two.jpg").exists()
     assert (app_module.BATCHES_DIR / "batch" / "finals" / "one.png").exists()
     assert (app_module.BATCHES_DIR / "batch" / "finals" / "two.jpg").exists()
+
+
+@pytest.mark.component
+def test_snapshot_bulk_move_uses_revision_and_operation_token_for_undo(
+    client, app_module, make_file
+):
+    app_module.create_batch("batch")
+    inbox = app_module.BATCHES_DIR / "batch" / "inbox"
+    for name in ("one.png", "two.gif", "three.mp4"):
+        make_file(inbox / name)
+    client.get("/api/v2/folders/batch/inbox/snapshot?sort=name&order=asc")
+    assert app_module._folder_index.wait_until_ready("batch", "inbox", "name", "asc", timeout=2)
+    metadata = client.get("/api/v2/folders/batch/inbox/snapshot?sort=name&order=asc").get_json()
+
+    moved = client.post(
+        "/api/move-batch",
+        json={
+            "batch": "batch",
+            "source": "inbox",
+            "destination": "finals",
+            "selection": {
+                "type": "snapshot",
+                "revision": metadata["revision"],
+                "sort": "name",
+                "order": "asc",
+                "excluded": ["two.gif"],
+            },
+        },
+    )
+
+    assert moved.status_code == 200
+    payload = moved.get_json()
+    assert payload["moved"] == 2
+    assert payload["operation_id"]
+    assert (inbox / "two.gif").exists()
+    restored = client.post("/api/move-batch/undo", json={"operation_id": payload["operation_id"]})
+    assert restored.status_code == 200
+    assert restored.get_json()["moved"] == 2
+    assert all((inbox / name).exists() for name in ("one.png", "two.gif", "three.mp4"))
 
 
 @pytest.mark.component

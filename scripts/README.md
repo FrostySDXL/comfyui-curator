@@ -119,7 +119,9 @@ $env:IMAGE_CURATOR_PORT="5000"
   --sizes 100
 ```
 
-Each browser/size case gets unique A/B batches, deterministic PNG aliases, a
+Each browser/size case gets unique A/B batches and deterministic mixed-extension
+aliases covering PNG/JPG/JPEG/WebP/GIF/MP4/MP3 (the sparse non-PNG aliases are
+fixture transport markers, not playback-validation media), a
 new server-side `.thumbs` cache, and an isolated browser profile. The small B
 companion is activated and loaded before instrumentation; the untouched A batch
 is selected only after timings are cleared, making A the measured cold load. A
@@ -151,25 +153,37 @@ traversal), controlled scroll, warm reload, A-to-B-to-A switching, and restored
 sidebar width changes. Each checkpoint records loaded image count, thumbnail
 request count, live blob count and bytes, DOM node count, browser RSS, frame
 intervals, long-task metrics where available, and server `.thumbs` file count
-and bytes.
+and bytes. The default size matrix is `100 500 2000 30000`.
 
 The full traversal checkpoint and the warm reload and A-B-A phases use a
 dynamically growing controlled traversal. `expected_count` is always the full
 fixture size; `target_count` is the count required by the current checkpoint.
 The traversal reads actual `.content.clientHeight`, current `scrollHeight`,
-rendered non-placeholder thumb count, and `scrollTop` at every step. It advances
-by a gap-free step of at most `max(300, round(clientHeight * 0.6))`. Any
+canonical snapshot count, live non-placeholder thumb count, and `scrollTop` at
+every step. It advances with gap-free
+`max(180, round(clientHeight * 0.5))` steps. An exact-coverage recovery branch
+remains as a guard for unusual browser geometry. The separate frame-timed
+controlled scroll uses real W3C wheel input in 3,000px or smaller deltas with
+10ms action pauses, while an independent in-page rAF collector measures frame
+intervals. Production cells defer image-source replacement until the 80 ms
+scroll-idle boundary. Any
 `scrollHeight` growth invalidates prior final-bottom satisfaction. At the bottom
-with fewer rendered thumbnails than the target, it dispatches scroll events and
-waits boundedly for rendered-count or extent growth.
+with visible placeholder rows it waits for their page before advancing. It
+tracks distinct indexed filenames visited so a 30,000-item canonical count
+cannot masquerade as a complete traversal.
+The rAF safety budget is `max(5000, expected_count * 4)`, allowing idle-window
+reconciliation and real thumbnail settling at 30k without converting the cap
+into a readiness shortcut.
 
 The partial target is `ceil(expected_count * 0.40)`, capped at
-`expected_count`. On a progressive grid, partial traversal reaches that target
+`expected_count`. On a virtual/paged grid, partial traversal reaches that target
 and settles the exact bottom of the currently rendered prefix. On a static
 full-DOM grid, it settles a deterministic proportional boundary based on
 `target_count / expected_count` and does not intentionally visit the remainder.
-Full traversal requires `rendered_count >= expected_count` and settles the exact
-current bottom after the last growth event. The terminal viewport itself must
+Full traversal requires `canonical_count >= expected_count`, all observable
+indexed items visited, and the exact current bottom. The live DOM remains
+bounded and is reported separately as `live_thumbnail_count`; a value over 500
+is a warning. The terminal viewport itself must
 be settled; prior settled regions cannot satisfy completion on its behalf.
 
 Cold companion, warm reload, and A-B-A selections all use full dynamic
@@ -188,7 +202,8 @@ across both traversals because instrumentation is installed once before the
 switches. The primary readiness retains total switch elapsed_ms while
 preserving its own first_viewport_ms separately.  Traversal-unavailable,
 frame-capped, unsettled, or incomplete states produce ready=false and
-actionable phase warnings without hanging for the global timeout.
+actionable phase warnings without hanging for the global timeout. Controlled
+scroll phases also warn when frame p95 misses 33ms or a long task exceeds 100ms.
 
 Shared metrics use
 Resource Timing, in-page cache/DOM evaluation, animation-frame intervals,

@@ -78,6 +78,11 @@ class CuratorManager:
         # callbacks. The caller (__init__.py) invokes add_routes() exactly once.
         app.on_startup.append(ai_lifecycle.startup)
         app.on_shutdown.append(ai_lifecycle.shutdown)
+
+        async def close_curator_service(_app):
+            service.close()
+
+        app.on_shutdown.append(close_curator_service)
         register_native_ai_routes(app, service, ai_lifecycle)
 
         cls._registered = True

@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 from tests.unit.frontend_source import extract_function_body, read_frontend_css, read_frontend_js
@@ -108,8 +109,8 @@ def test_lightbox_navigation_uses_display_order_for_virtual_collections() -> Non
 
     assert "function getLightboxImages()" in js
     assert "function getImageDisplayIndexByName(name)" in js
-    assert "const displayIndex = getImageDisplayIndexByName(img.name);" in update_grid_body
-    assert "updateThumbElement(thumb, img, displayIndex);" in update_grid_body
+    assert "updateThumbElement(thumb, img, index);" in update_grid_body
+    assert "displayIndexByName" in js
     assert "const lightboxImages = getLightboxImages();" in lightbox_body
     assert "const img = lightboxImages[currentIndex];" in lightbox_body
     assert "const lightboxImages = getLightboxImages();" in navigation_body
@@ -401,6 +402,17 @@ def test_lightbox_navigation_sits_below_metadata_panels() -> None:
     assert ".lightbox-nav.next { right: 20px; }" in css
 
 
+def test_hidden_main_lightbox_image_stays_out_of_layout_for_typed_media() -> None:
+    css = read_frontend_css()
+
+    hidden_rule = re.search(
+        r"[^{}]*#lightbox-img\[hidden\][^{}]*\{\s*display:\s*none;\s*\}",
+        css,
+    )
+
+    assert hidden_rule is not None
+
+
 def test_lightbox_zoom_has_anchor_pan_and_status_affordances() -> None:
     html = read_index_html()
     js = read_frontend_js()
@@ -428,8 +440,11 @@ def test_lightbox_compare_mode_has_two_panes_and_action_bar_entry() -> None:
     assert 'id="lightbox-compare"' in html
     assert 'data-compare-pane="0"' in html
     assert 'data-compare-pane="1"' in html
-    assert "selectedImages.size === 2" in js
-    assert "compareBtn.disabled = !(showReviewMove && selectedImages.size === 2);" in js
+    assert "!serverSelection && selectedCount === 2" in js
+    assert (
+        "compareBtn.disabled = !(showReviewMove && !serverSelection && selectedCount === 2 && selectedMediaAreStill);"
+        in js
+    )
     assert "compareBtn.style.display = showReviewMove ? '' : 'none';" in js
     assert ".action-btn.action-compare" in css
     assert ".action-btn.action-compare:disabled" in css

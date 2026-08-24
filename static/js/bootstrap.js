@@ -12,4 +12,11 @@ document.querySelectorAll('.batch-sort-btn').forEach(b => b.classList.toggle('ac
 setInterval(() => {
     pollForChanges().catch(() => { console.warn('pollForChanges failed'); });
 }, 5000);
+setInterval(() => {
+    pollImportAvailability().catch(() => { console.warn('pollImportAvailability failed'); });
+}, 1000);
+setInterval(() => {
+    pollNativeBatchSummaries().catch(() => { console.warn('pollNativeBatchSummaries failed'); });
+}, 10000);
 loadBatches();
+pollImportAvailability();

@@ -29,15 +29,21 @@ async function loadLightboxMetadata(img, token) {
             syncMetadataToggleButton();
             try {
                 const source = getImageBatchAndFolder(img);
-                const resp = await fetch(ccApiPath(`/api/image-metadata/${encodeURIComponent(source.batch)}/${encodeURIComponent(source.folder)}/${encodeURIComponent(img.name)}`));
+                const resp = await fetch(
+                    ccApiPath(`/api/image-metadata/${encodeURIComponent(source.batch)}/${encodeURIComponent(source.folder)}/${encodeURIComponent(img.name)}`),
+                    {cache: 'no-store'}
+                );
                 if (!resp.ok) throw new Error(`metadata request failed (${resp.status})`);
                 const data = await resp.json();
                 if (token !== lightboxMetadataRequestToken) return;
-                lightboxMetadataCache.set(cacheKey, data);
-                // Evict oldest entries if cache exceeds limit
-                while (lightboxMetadataCache.size > LIGHTBOX_METADATA_CACHE_MAX) {
-                    const firstKey = lightboxMetadataCache.keys().next().value;
-                    lightboxMetadataCache.delete(firstKey);
+                // Sidecars can be added or edited independently of their media.
+                // Only cache stable, positive PNG-only metadata responses.
+                if (data.has_metadata && !data.has_sidecar) {
+                    lightboxMetadataCache.set(cacheKey, data);
+                    while (lightboxMetadataCache.size > LIGHTBOX_METADATA_CACHE_MAX) {
+                        const firstKey = lightboxMetadataCache.keys().next().value;
+                        lightboxMetadataCache.delete(firstKey);
+                    }
                 }
                 currentLightboxMetadata = data;
                 currentLightboxMetadataError = null;
@@ -117,6 +123,113 @@ function addMetadataTextSection(panel, title, value, copyLabel) {
             return { section, actions };
         }
 
+function isRule34Sidecar(data) {
+            return Boolean(data)
+                && !Array.isArray(data)
+                && typeof data === 'object'
+                && data.category === 'rule34';
+        }
+
+function renderRule34Sidecar(panel, sidecar) {
+            const data = sidecar.data;
+            const overview = document.createElement('section');
+            overview.className = 'metadata-section';
+            overview.appendChild(createTextElement(
+                'div',
+                'metadata-section-title',
+                `Rule34 ${data.subcategory || 'post'} · ${sidecar.name}`
+            ));
+            const overviewGrid = document.createElement('div');
+            overviewGrid.className = 'metadata-grid';
+            addMetadataField(overviewGrid, 'Post ID', data.id);
+            addMetadataField(overviewGrid, 'Favorite ID', data.favorite_id);
+            addMetadataField(overviewGrid, 'Record type', data.subcategory);
+            addMetadataField(overviewGrid, 'Rating', data.rating);
+            addMetadataField(overviewGrid, 'Score', data.score);
+            addMetadataField(overviewGrid, 'Status', data.status);
+            addMetadataField(overviewGrid, 'Dimensions', data.width && data.height ? `${data.width} × ${data.height}` : null);
+            addMetadataField(overviewGrid, 'Total', data.total);
+            overview.appendChild(overviewGrid);
+            panel.appendChild(overview);
+
+            const details = document.createElement('section');
+            details.className = 'metadata-section';
+            details.appendChild(createTextElement('div', 'metadata-section-title', 'Post details'));
+            const detailsGrid = document.createElement('div');
+            detailsGrid.className = 'metadata-grid';
+            addMetadataField(detailsGrid, 'Filename', data.filename);
+            addMetadataField(detailsGrid, 'Extension', data.extension);
+            addMetadataField(detailsGrid, 'MD5', data.md5);
+            addMetadataField(detailsGrid, 'Creator ID', data.creator_id);
+            addMetadataField(detailsGrid, 'Parent ID', data.parent_id);
+            addMetadataField(detailsGrid, 'Created at', data.created_at);
+            addMetadataField(detailsGrid, 'Extracted at', data.date);
+            addMetadataField(detailsGrid, 'Changed', data.change);
+            addMetadataField(detailsGrid, 'Has children', data.has_children);
+            addMetadataField(detailsGrid, 'Has comments', data.has_comments);
+            addMetadataField(detailsGrid, 'Has notes', data.has_notes);
+            addMetadataField(detailsGrid, 'Preview', data.preview_width && data.preview_height ? `${data.preview_width} × ${data.preview_height}` : null);
+            addMetadataField(detailsGrid, 'Sample', data.sample_width && data.sample_height ? `${data.sample_width} × ${data.sample_height}` : null);
+            if (detailsGrid.childElementCount > 0) {
+                details.appendChild(detailsGrid);
+                panel.appendChild(details);
+            }
+
+            const tags = typeof data.tags === 'string'
+                ? [...new Set(data.tags.split(/\s+/).filter(Boolean))]
+                : [];
+            if (tags.length > 0) {
+                const tagSection = document.createElement('section');
+                tagSection.className = 'metadata-section';
+                tagSection.appendChild(createTextElement('div', 'metadata-section-title', `Tags · ${tags.length}`));
+                const tagList = document.createElement('div');
+                tagList.className = 'metadata-tags';
+                tags.forEach(tag => tagList.appendChild(createTextElement('span', 'metadata-tag-chip', tag)));
+                tagSection.appendChild(tagList);
+                panel.appendChild(tagSection);
+            }
+
+            const linkValues = [
+                ['File', data.file_url],
+                ['Sample', data.sample_url],
+                ['Preview', data.preview_url],
+                ['Source', data.source],
+            ];
+            const safeLinks = linkValues.flatMap(([label, value]) => {
+                if (typeof value !== 'string' || !value.trim()) return [];
+                try {
+                    const parsed = new URL(value);
+                    if (!['http:', 'https:'].includes(parsed.protocol)) return [];
+                    return [[label, parsed.href]];
+                } catch (_error) {
+                    return [];
+                }
+            });
+            if (safeLinks.length > 0) {
+                const linkSection = document.createElement('section');
+                linkSection.className = 'metadata-section';
+                linkSection.appendChild(createTextElement('div', 'metadata-section-title', 'Links'));
+                const linkList = document.createElement('div');
+                linkList.className = 'metadata-links';
+                safeLinks.forEach(([label, href]) => {
+                    const link = document.createElement('a');
+                    link.className = 'metadata-link';
+                    link.href = href;
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                    link.textContent = label;
+                    link.title = href;
+                    linkList.appendChild(link);
+                });
+                linkSection.appendChild(linkList);
+                panel.appendChild(linkSection);
+            }
+
+            const raw = addMetadataTextSection(panel, 'Raw JSON', sidecar.text, 'Rule34 JSON');
+            const rawText = raw?.section.querySelector('.metadata-text');
+            if (rawText) rawText.classList.add('metadata-sidecar-text');
+        }
+
 function copyPromptAsElements(promptText) {
             if (!promptText) return;
             // Strip LoRA tags before splitting (already done for display, but ensure clean text)
@@ -155,7 +268,7 @@ function renderLightboxMetadataPanel() {
             if (!lightboxMetadataOpen) return;
 
             if (currentLightboxMetadataLoading) {
-                panel.appendChild(createTextElement('div', 'metadata-loading', 'Loading PNG generation metadata...'));
+                panel.appendChild(createTextElement('div', 'metadata-loading', 'Loading media metadata...'));
                 return;
             }
             if (currentLightboxMetadataError) {
@@ -163,7 +276,7 @@ function renderLightboxMetadataPanel() {
                 return;
             }
             if (!currentLightboxMetadata || !currentLightboxMetadata.has_metadata) {
-                panel.appendChild(createTextElement('div', 'metadata-empty', 'No PNG generation metadata found for this image.'));
+                panel.appendChild(createTextElement('div', 'metadata-empty', 'No media metadata found.'));
                 return;
             }
 
@@ -173,54 +286,84 @@ function renderLightboxMetadataPanel() {
             header.className = 'metadata-header';
             const titleWrap = document.createElement('div');
             titleWrap.append(
-                createTextElement('div', 'metadata-title', 'Generation metadata'),
-                createTextElement('div', 'metadata-subtitle', `Raw chunks: ${(metadata.raw_keys || []).join(', ') || 'none'}`)
+                createTextElement('div', 'metadata-title', 'Media metadata'),
+                createTextElement(
+                    'div',
+                    'metadata-subtitle',
+                    metadata.has_png_metadata
+                        ? `PNG chunks: ${(metadata.raw_keys || []).join(', ') || 'none'}`
+                        : 'Adjacent JSON sidecar'
+                )
             );
             header.appendChild(titleWrap);
             panel.appendChild(header);
 
-            const summary = document.createElement('section');
-            summary.className = 'metadata-section';
-            summary.appendChild(createTextElement('div', 'metadata-section-title', 'Summary'));
-            const grid = document.createElement('div');
-            grid.className = 'metadata-grid';
-            addMetadataField(grid, 'Model', params.model);
-            addMetadataField(grid, 'Model hash', params.model_hash);
-            addMetadataField(grid, 'Seed', params.seed);
-            addMetadataField(grid, 'Size', params.width && params.height ? `${params.width}x${params.height}` : null);
-            addMetadataField(grid, 'Steps', params.steps);
-            addMetadataField(grid, 'Sampler', params.sampler);
-            addMetadataField(grid, 'CFG', params.cfg_scale);
-            addMetadataField(grid, 'Clip skip', params.clip_skip);
-            addMetadataField(grid, 'Version', params.version);
-            addMetadataField(grid, 'Workflow JSON', metadata.workflow_available ? `${metadata.workflow_size} bytes available` : 'not present');
-            summary.appendChild(grid);
-            panel.appendChild(summary);
+            if (metadata.has_png_metadata) {
+                const summary = document.createElement('section');
+                summary.className = 'metadata-section';
+                summary.appendChild(createTextElement('div', 'metadata-section-title', 'Generation summary'));
+                const grid = document.createElement('div');
+                grid.className = 'metadata-grid';
+                addMetadataField(grid, 'Model', params.model);
+                addMetadataField(grid, 'Model hash', params.model_hash);
+                addMetadataField(grid, 'Seed', params.seed);
+                addMetadataField(grid, 'Size', params.width && params.height ? `${params.width}x${params.height}` : null);
+                addMetadataField(grid, 'Steps', params.steps);
+                addMetadataField(grid, 'Sampler', params.sampler);
+                addMetadataField(grid, 'CFG', params.cfg_scale);
+                addMetadataField(grid, 'Clip skip', params.clip_skip);
+                addMetadataField(grid, 'Version', params.version);
+                addMetadataField(grid, 'Workflow JSON', metadata.workflow_available ? `${metadata.workflow_size} bytes available` : 'not present');
+                summary.appendChild(grid);
+                panel.appendChild(summary);
 
-            const posSection = addMetadataTextSection(panel, 'Positive prompt', stripLoraTags(params.prompt), 'positive prompt');
-            if (posSection && params.prompt) {
-                const copyElemsBtn = document.createElement('button');
-                copyElemsBtn.type = 'button';
-                copyElemsBtn.className = 'metadata-copy-btn';
-                copyElemsBtn.textContent = 'Copy as elements';
-                copyElemsBtn.addEventListener('click', () => copyPromptAsElements(params.prompt));
-                posSection.actions.appendChild(copyElemsBtn);
+                const posSection = addMetadataTextSection(panel, 'Positive prompt', stripLoraTags(params.prompt), 'positive prompt');
+                if (posSection && params.prompt) {
+                    const copyElemsBtn = document.createElement('button');
+                    copyElemsBtn.type = 'button';
+                    copyElemsBtn.className = 'metadata-copy-btn';
+                    copyElemsBtn.textContent = 'Copy as elements';
+                    copyElemsBtn.addEventListener('click', () => copyPromptAsElements(params.prompt));
+                    posSection.actions.appendChild(copyElemsBtn);
+                }
+                addMetadataTextSection(panel, 'Negative prompt', stripLoraTags(params.negative_prompt), 'negative prompt');
+
+                if (metadata.loras && metadata.loras.length > 0) {
+                    const section = document.createElement('section');
+                    section.className = 'metadata-section';
+                    section.appendChild(createTextElement('div', 'metadata-section-title', 'LoRAs'));
+                    const loras = document.createElement('div');
+                    loras.className = 'metadata-loras';
+                    metadata.loras.forEach(lora => {
+                        const weight = lora.weight === null || lora.weight === undefined ? '?' : lora.weight;
+                        loras.appendChild(createTextElement('span', 'metadata-lora-chip', `${lora.name} · ${weight}`));
+                    });
+                    section.appendChild(loras);
+                    panel.appendChild(section);
+                }
+
+                addMetadataTextSection(panel, 'Raw parameters', metadata.raw_parameters, 'parameters');
             }
-            addMetadataTextSection(panel, 'Negative prompt', stripLoraTags(params.negative_prompt), 'negative prompt');
 
-            if (metadata.loras && metadata.loras.length > 0) {
-                const section = document.createElement('section');
-                section.className = 'metadata-section';
-                section.appendChild(createTextElement('div', 'metadata-section-title', 'LoRAs'));
-                const loras = document.createElement('div');
-                loras.className = 'metadata-loras';
-                metadata.loras.forEach(lora => {
-                    const weight = lora.weight === null || lora.weight === undefined ? '?' : lora.weight;
-                    loras.appendChild(createTextElement('span', 'metadata-lora-chip', `${lora.name} · ${weight}`));
-                });
-                section.appendChild(loras);
-                panel.appendChild(section);
+            if (metadata.has_sidecar && metadata.sidecar) {
+                const sidecar = metadata.sidecar;
+                if (sidecar.error) {
+                    const section = document.createElement('section');
+                    section.className = 'metadata-section';
+                    section.appendChild(createTextElement('div', 'metadata-section-title', `JSON sidecar · ${sidecar.name}`));
+                    section.appendChild(createTextElement('div', 'metadata-error', sidecar.error));
+                    panel.appendChild(section);
+                } else if (isRule34Sidecar(sidecar.data)) {
+                    renderRule34Sidecar(panel, sidecar);
+                } else {
+                    const rendered = addMetadataTextSection(
+                        panel,
+                        `JSON sidecar · ${sidecar.name}`,
+                        sidecar.text,
+                        'JSON sidecar'
+                    );
+                    const text = rendered?.section.querySelector('.metadata-text');
+                    if (text) text.classList.add('metadata-sidecar-text');
+                }
             }
-
-            addMetadataTextSection(panel, 'Raw parameters', metadata.raw_parameters, 'parameters');
         }

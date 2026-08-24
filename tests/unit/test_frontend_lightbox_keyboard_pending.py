@@ -95,3 +95,16 @@ def test_pending_guard_returns_before_any_shortcut_execution() -> None:
             "pending guard must have a top-level return; after Escape handling "
             "to suppress all other shortcuts"
         )
+
+
+def test_space_toggles_visible_lightbox_video_before_native_controls_have_focus() -> None:
+    """Space must be owned by the active lightbox even when BODY still has focus."""
+    source = _read_keyboard()
+    body = extract_function_body(
+        source,
+        "if (lightboxActive && e.code === 'Space' && toggleLightboxVideoPlayback())",
+    )
+
+    assert "e.preventDefault()" in body
+    assert "return;" in body
+    assert source.index("e.code === 'Space'") < source.index("isLightboxCompareMode")

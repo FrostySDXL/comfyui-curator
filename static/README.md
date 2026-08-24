@@ -10,10 +10,10 @@
 - **Dual-mode serving:** The same `static/js/*.js` and `static/css/*.css` files serve both the standalone Flask page (`templates/index.html`, `/static/` paths) and the native ComfyUI extension page (`templates/curator.html`, `/curator_static/` paths). Mode detection uses `window.CURATOR_NATIVE` in `state.js`.
 - **Keyboard-first navigation:** 15+ shortcuts for search, selection, AI toggles, lightbox, undo.
 - **Drag/drop curation:** HTML5 drag from grid to folder tabs for single or multi-select moves.
-- **Lightbox viewer:** Full-image review with zoom, scored-image navigation, PNG metadata inspection, and two-image compare mode.
+- **Lightbox viewer:** Full-media review with zoom, scored-image navigation, PNG generation metadata plus adjacent JSON sidecars, and two-image compare mode.
 - **AI score integration:** Overlay badges, score gradient coloring, filter/sort by score, accessible Inspect / Score / Runs tabs, contextual image and batch inspection, guided scoring with a visible 12-check cap, and truthful job/history states.
 - **Public output workflow:** selected-image export modal, batch Public folder view, virtual All Public view, and derivative-only public copy/move/delete actions.
-- **Background polling:** 5-second interval for batches, images, and AI runs, with interaction-aware skip logic.
+- **Background polling:** interaction-aware 5-second content polling, a lightweight 1-second import-readiness poll, and 10-second native batch-summary refreshes.
 - **Local storage persistence:** Sidebar widths, open states, last batch/folder, grid density, and batch sort.
 - **Native settings modal:** Native-only editable paths, public-export enablement,
   model/endpoint/timeout controls, and secret replace/clear controls backed by
@@ -57,13 +57,13 @@
 | `api.js` | API wrapper helpers for route calls |
 | `sidebar.js` | Left sidebar width/open state and resize behavior |
 | `batches.js` | Batch list/search/sort, active-batch combobox, batch/folder selection, import/create batch |
-| `grid.js` | Thumbnail cache, image loading, sort controls, display filtering, progressive grid rendering |
+| `grid.js` | Thumbnail cache, paged folder loading, typed posters/hover previews, sort/filter controls, and bounded row virtualization |
 | `viewport-loader.js` | Viewport-aware thumbnail load-start scheduling: visible/near approach triggers, concurrency 16, single rAF pump, no-unload invariants, and background draining only when `IntersectionObserver` is unavailable |
 | `favorites.js` | Favorites filter/toggle and All Favorites view/count |
 | `publish.js` | Public export modal, batch Public view, All Public view/count, public copy/move/delete actions |
 | `moves.js` | Multi-select, drag/drop, move, undo, Empty Rejects modal |
-| `lightbox.js` | Lightbox open/close, navigation, zoom, scored navigation, lightbox favorite UI |
-| `metadata.js` | PNG metadata loading/cache/rendering and prompt copy helpers |
+| `lightbox.js` | Still/GIF image review, MP4/MP3 playback and cleanup, navigation, zoom, scored navigation, and favorite UI |
+| `metadata.js` | PNG + adjacent JSON sidecar metadata loading/rendering, structured Rule34 post/favorite fields and tag chips, and prompt/JSON copy helpers |
 | `prompts.js` | Prompt History modal state, scope selector, selected-row detail modes, labeled row rendering, build/rebuild controls |
 | `ai-state.js` | Shared AI globals, storage keys, and sidebar constants |
 | `ai-sidebar.js` | AI sidebar open/width state and resize behavior |
@@ -89,7 +89,7 @@
 |----------|------|---------|
 | `currentBatch` | `string\|null` | Currently viewed batch |
 | `currentFolder` | `string` | Active folder tab (inbox/shortlisted/finals/rejects) |
-| `images` | `array` | Image objects for current folder (from `/api/images`) |
+| `images` | `array` | Materialized items or a sparse revision-sized array populated by v2 pages |
 | `currentIndex` | `number` | Lightbox navigation index (also used for scored-image jumps) |
 | `currentOrder` | `string` | Sort direction ('asc' / 'desc') |
 | `allCounts` | `object` | Cached batch folder counts for polling |
@@ -98,8 +98,10 @@
 | `sidebarOpen` | `boolean` | Left sidebar visibility, persisted in localStorage |
 | `gridThumbMap` | `Map<filename, Element>` | Persistent thumb DOM elements keyed by filename |
 | `currentDisplayImages` | `array` | Full canonical display-order list used by selection and lightbox navigation, including unrendered items |
-| `_progressiveGridRenderLimit` | `number` | Current retained prefix limit; starts at 120 and grows in 120-item chunks |
-| `_progressiveGridContextKey` | `string\|null` | Batch/folder/favorites/sort context controlling safe prefix resets |
+| `folderSnapshot` | `object\|null` | Current immutable native folder revision and canonical count |
+| `displayIndexByName` | `Map<filename, index>` | O(1) lookup for loaded items and lightbox/selection navigation |
+| `serverSelection` | `object\|null` | Revision-bound Select All representation with a small exclusion set |
+| `_virtualGridWindowStart` / `_virtualGridWindowEnd` | `number` | Current overscanned row window; live thumbnail cap is 500 |
 | `thumbnailBlobUrlCache` | `Map<cacheKey, blobUrl>` | LRU metadata-aware cache (max 1000) with scope/priority eviction (Stage 2) |
 | `thumbnailBlobInflight` | `Map<cacheKey, Promise>` | Dedup map for in-flight thumbnail fetch requests |
 | `THUMBNAIL_LOAD_CONCURRENCY` | `const` (16) | Maximum simultaneous thumbnail loads via viewport scheduler |
@@ -110,6 +112,7 @@
 | `draggedFiles` | `array\<filename\>` | Files being dragged |
 | `lastAction` | `object\|null` | Last move for undo (batch, filenames, source, dest, expiry) |
 | `lightboxZoom` | `number` | Current lightbox zoom level (0.6--3) |
+| `lightboxVideoAutoplayLoopEnabled` | `boolean` | Persistent preference controlling both autoplay and looping for lightbox videos |
 | `lightboxPanState` | `object\|null` | Active pointer-drag pan state for zoomed lightbox images |
 | `lightboxCompareMode` | `boolean` | Whether the lightbox is showing selected images side-by-side |
 | `lightboxStickyCompareMode` | `boolean` | Whether compare mode has a pinned left image and arrow-replaced right image |
@@ -154,7 +157,7 @@
 | **Lightbox** | `openLightbox`, `openCompareLightbox`, `openStickyCompareLightbox`, `navigateStickyCompare`, `closeLightbox`, `navigate`, `navigateScored`, `zoomLightbox`, `zoomComparePane`, `toggleLightboxMetadata`, `toggleLightboxAiPanel`, `loadLightboxMetadata` | `#lightbox` |
 | **AI Sidebar** | `toggleAiSidebar`, `syncAiSidebarUi`, `aiSetPanelTab`, `aiSubmitJob`, `aiPollJobStatus`, `aiRefreshRunData`, `aiLoadElementHistory`, `aiRenderImageInspector` | `#ai-sidebar-shell`, `#ai-curate-panel`, `#ai-image-inspector` |
 | **AI Grid Overlay** | `aiToggleOverlays`, `aiScoreGradient`, `aiShouldShowImage`, `aiSortImages`, `aiShowHeaderControls` | `.ai-score-badge`, `#ai-display-controls` |
-| **Polling** | `pollForChanges` (5s interval), `isInteractionBusy`, `aiPollJobStatus` (2s interval) | `setInterval` |
+| **Polling** | `pollForChanges` (5s), `pollImportAvailability` (1s), `pollNativeBatchSummaries` (10s), `isInteractionBusy`, `aiPollJobStatus` (2s) | `setInterval` |
 | **Batch Search** | `setBatchFilter`, `filterBatches`, `clearBatchSearch` | `#batch-search` |
 | **Modals** | `showHelpModal`, `hideHelpModal`, `showPromptsModal`, `hidePromptsModal`, `loadPromptsData`, `renderPromptsList`, `updatePromptsFooter`, `updateBuildBtn`, `updateScopeChip`, `buildPromptIndex`, `_setPromptsCollapse`, `_setPromptsSort`, `_selectPromptEntry`, `_setPromptDetailMode`, `_schedulePromptsRender`, `_trapFocus`, `_releaseFocusTrap` | `#help-modal`, `#prompts-modal`, `#new-batch-modal`, `#delete-modal` |
 | **Custom Combobox** | `_openCustomDropdown`, `_populateCustomDropdown`, `_commitCustomSelectSelection` | `#active-batch-custom` |
@@ -166,10 +169,12 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 | Fetch Call | JS Source Function | Trigger |
 |-----------|-------------|---------|
 | `GET /api/batches` | `loadBatches()`, `pollForChanges()` | Init, 5s poll, batch create |
+| `GET /api/import-status` | `pollImportAvailability()` | Init and 1s lightweight Import All readiness poll |
 | `POST /api/batches` | `createBatch()` | New batch form submit |
 | `POST /api/active-batch` | `setActiveBatch()`, `setCurrentBatchAsAutoImport()` | Auto-import target change |
 | `POST /api/import-all` | `importAll()` | Import button click |
 | `GET /api/images/<batch>/<folder>?sort=&order=` | `loadCurrentFolderImages()`, `pollForChanges()` | Batch switch, folder switch, 5s poll |
+| `GET /api/v2/folders/<batch>/<folder>/{snapshot,poll,items}` | `loadCurrentFolderImages()`, `ensureFolderPageForIndex()`, `pollForChanges()` | Native revision metadata, unchanged lightweight polls, and 256-item pages |
 | `POST /api/move-batch` | `moveBatch()`, `undoLastMove()` | Drag drop, action bar, undo |
 | `POST /api/move` | `moveImage()` | Lightbox keyboard move (S/F/R) |
 | `POST /api/delete-rejects/<batch>` | `confirmDeleteRejects()` | Empty Rejects button |
@@ -190,6 +195,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 | `POST /api/prompt-history/<batch>/build` | `buildPromptIndex()` | Prompt index build/rebuild |
 | `GET /thumb/<batch>/<folder>/<name>` | `resolveThumbnailBlobUrl()` | Thumb render (lazy, via blob cache) |
 | `GET /image/<batch>/<folder>/<name>` | `showCurrentImage()` | Lightbox image src |
+| `GET /preview/<batch>/<folder>/<name>` | `scheduleHoverPreview()` | Delayed one-at-a-time GIF/MP4 hover proxy |
 | `GET /api/ai-curate/batches/<batch>/runs` | `aiRefreshRunData()`, `aiLoadBatchRunCounts()`, `pollForChanges()` | Batch switch, 5s poll |
 | `GET /api/ai-curate/batches/<batch>/runs/<runId>` | `aiFetchRun()` | Run select, compare run select |
 | `GET /api/ai-curate/batches/<batch>/element-history` | `aiLoadElementHistory()` | AI panel open |
@@ -208,6 +214,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 | `imageCurator.lastFolder` | Last viewed folder |
 | `imageCurator.batchSort` | Batch list sort mode |
 | `imageCurator.gridDensity` | Thumbnail density mode (`compact`, `comfortable`, `large`) |
+| `imageCurator.lightboxVideoAutoplayLoop` | Lightbox video autoplay-and-loop preference (`true`/`false`) |
 | `imageCurator.aiSidebarWidth` | AI sidebar width (px) |
 | `imageCurator.aiSidebarOpen` | AI sidebar visibility ('true'/'false') |
 | `imageCurator.promptsCollapseAll` | Prompt History collapse-all preference |
@@ -246,16 +253,28 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
   sessions or when the modal reports a stale image count.
 - Background polling pauses during lightbox, drag, or resize so review is not
   interrupted.
-- The grid initially renders at most 120 thumbnails and appends retained
-  120-item chunks when `.content` approaches within 800px of its current
-  bottom. Rendered thumbs remain in the DOM for the life of that view; viewport
-  scheduling controls load start only and never unloads displayed images.
-- `currentDisplayImages` always retains the full display order for counts,
-  selection ranges, Select All, moves, and lightbox navigation. Batch, folder,
-  favorites-only, and sort/order context changes reset the progressive prefix
-  and scroll position. Retained same-key elements survive sort and favorites
-  changes with identity, source, loaded, selection, inspection, and pending
-  scheduler state intact. AI filters only update rendered CSS state.
+- Native real folders use immutable revision metadata and 256-item pages.
+  `images` stays sparse until a row window or lightbox navigation needs a page;
+  unchanged five-second polls return revision/count only. Favorites/AI filters
+  materialize the legacy list on demand but continue using revision-only polls.
+- The grid computes visible rows plus two overscan rows and never creates more
+  than 500 live thumbnail elements. Same-key elements inside an unchanged
+  window retain identity, decoded sources, selection, inspection, and loader
+  state. Density/sidebar column changes re-anchor the first visible item.
+- During continuous scrolling, recycled cells update canonical identity and
+  layout immediately but defer source replacement until an 80 ms idle
+  boundary. Fetch/decode callbacks stay off fling frames, then the final
+  viewport loads through the normal priority scheduler.
+  Modern browsers use native `scrollend`; the 80 ms debounce is the fallback
+  for engines without that event.
+- Select All in a paged folder stores revision plus exclusions instead of
+  materializing thousands of names. Move and short-lived undo are server-side;
+  stale revisions return 409 and trigger safe reconciliation.
+- Hover previews are persisted by the View-menu/`H` toggle, delayed by 180ms,
+  muted, and limited to one decoder. Leaving a thumb releases its proxy source;
+  closing or navigating the lightbox pauses and releases MP4/MP3 resources.
+- Lightbox videos autoplay and loop by default; the View menu persists a single
+  switch for both behaviors, and Space always plays or pauses the visible video.
 - Zoomed lightbox images can be dragged to pan around details.
 - Compare mode gives each side its own zoom and pan state; curation actions and
   metadata/AI panels apply to the active side only.
@@ -265,7 +284,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 
 - **Never:** Change keyboard shortcut keybindings without updating the Help modal in both `templates/index.html` and `templates/curator.html`.
 - **Never:** Add a frontend framework or build step -- the project is intentionally vanilla JS.
-- **Never:** Use raw `/api/`, `/thumb/`, or `/image/` URL strings in `fetch()` calls -- always route through `ccApiPath`, `ccThumbUrl`, or `ccImageUrl` helpers.
+- **Never:** Use raw `/api/`, `/thumb/`, `/preview/`, or `/image/` URL strings in `fetch()` calls -- use `ccApiPath`, `ccThumbUrl`, `ccPreviewUrl`, or `ccImageUrl`.
 - **Always:** When changing `templates/index.html`, mirror the same change to `templates/curator.html` using the two-transform rule (`/static/` → `/curator_static/` plus native-mode script block).
 - **Always:** Use `folderRequestToken` pattern (increment + check) when making async fetch calls that may be superseded by a newer request.
 - **Always:** Check `isInteractionBusy()` before executing polling-triggered DOM updates to avoid interrupting drag, lightbox, or resize interactions.
@@ -290,7 +309,9 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **`folderRequestToken` prevents stale renders:** When switching batches/folders rapidly, old fetch responses are discarded by checking a monotonically incrementing token. Any new async operation targeting the same data must follow this pattern.
 - **Polling skips during interaction:** `isInteractionBusy()` returns true during lightbox, drag, or resize. This prevents API responses from overwriting DOM elements the operator is actively interacting with.
 - **`_gridChildrenMatchDesiredOrder()` optimization:** The grid is only rebuilt if the order of thumb elements actually changed. Removing this check causes visible flicker on every poll cycle.
-- **Progressive DOM is append-and-retain, not virtualization:** `updateGrid()` keeps the full canonical list but renders a bounded prefix. Near-end growth uses one guarded rAF and no background timer. Sort, order, and favorites context resets reconcile retained elements in place without globally cancelling same-key pending work. Placeholder and empty-state resets globally cancel pending work and clear the map. A reused element changing source is unscheduled before its replacement key is scheduled. Never remove a rendered thumb merely because it leaves the viewport.
+- **Grid DOM is true row virtualization:** canonical count/order lives in the
+  immutable snapshot/sparse array while `updateGrid()` reconciles only the
+  visible+overscan window. Preserve the 500-element cap and key-based reuse.
 - **Viewport-aware loading controls start only:** `viewport-loader.js` uses `IntersectionObserver` to decide WHEN to start a thumbnail load. Distant thumbnails register with both observers but stay pending until the operator scrolls them near the viewport; they never auto-drain in the background. Visible (0% margin) always outranks near (100% margin). A single rAF priority pump handles observer promotions, and a single microtask completion pump refills visible/near queues after loads complete. Concurrency is bounded at 16. `_admitAndLoad()` unconditionally unobserves from both observers before loading, so each thumb is observed exactly once. Thumbnails that have been displayed are never cleared, replaced, unloaded, or re-shimmered on viewport exit. An explicit fallback path (no `IntersectionObserver`) eagerly loads all deferred items through bounded concurrency waves.
 - **Stage 2 metadata-aware LRU cache:** The thumbnail blob URL cache (`thumbnailBlobUrlCache`) is augmented with a parallel metadata map (`_thumbnailMetadata`) that tracks per-entry strongest-observed priority (visible=0, near=1, deferred=2), real source-batch scope, a monotonic `_lruTouch` counter, and a `_resident` flag (0=probationary, 1=resident). Every cache hit in `resolveThumbnailBlobUrl` or `assignThumbnailSrcIfCached` touches LRU recency and promotes the entry to resident without revoking or recreating the blob URL. Newly fetched entries start probationary. Overflow eviction (`_evictIfNeeded`) selects victims by scope class first (other-batch < previous-batch < current-batch), then priority class (deferred < near < visible), then residency (probationary < resident), then LRU order as final tie-break. This scan-resistant ranking prevents newly-fetched deferred entries from evicting previously-retained entries of the same scope+priority before those retained entries get a chance to be reused. On real-batch transitions (`_updateRealBatchTracking`), entries belonging to the outgoing batch are marked resident in a single O(n) pass bounded by the cache cap (1000); same-batch repeats and virtual sentinels (`__favorites__`, `__public__`) do not trigger this pass. The hard cap remains 1000. Current and immediately-previous real batch are tracked by `_updateRealBatchTracking()`; virtual views do not rotate real-batch history. Inflight metadata aggregation (`_mergeInflightMetadata`/`_takeInflightMetadata`) ensures a visible requester joining an existing deferred inflight fetch promotes the eventual cached entry's metadata while using exactly one fetch/object URL. Blob URL revocation happens exactly once per evicted entry. Eviction never mutates a displayed `<img>` element's `src`, `loaded` class, or `thumbnailCacheKey` dataset attribute. Metadata maps are cleaned up in the `beforeunload` handler alongside the blob URL cache.
 - **Score gradient is hardcoded:** `aiScoreGradient()` uses a fixed dark-red-to-dark-yellow-to-green gradient. There is no configuration for color thresholds.
@@ -301,6 +322,10 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **Lightbox arrows sit low:** `.lightbox-nav` is positioned near the lower left/right so the metadata and AI panels do not cover navigation controls.
 - **Lightbox zoom is image-anchored:** `Ctrl+wheel` zooms around the cursor on `#lightbox-image-wrap`; zoomed images use layout-sized dimensions plus pointer-drag panning instead of transform-only scaling.
 - **Compare mode is active-pane based:** `Compare in Lightbox` is enabled for exactly two selected review-folder images. Click a pane to make it active; zoom, metadata, AI, favorite, public prep, and move actions apply to the active pane, with independent zoom/pan state per side. Metadata and AI overlays are positioned over the inactive pane. `C` pins the active image; Left/Right replace the other pane.
+- **Rule34 sidecars are flat and type-preserving:** `metadata.js` recognizes
+  `category: "rule34"`, renders optional post/favorite fields, splits the string
+  `tags` field on whitespace, permits only HTTP(S) outbound links, and retains
+  raw JSON. Other categories use the generic JSON block.
 - **CSS variables for layout only, not theming:** `--sidebar-width`, `--sidebar-effective-width`, `--ai-sidebar-width`. All colors are hardcoded.
 - **Single responsive breakpoint at 900px:** Rules live in `responsive.css`, which must load last. Below this, sidebars shrink, AI sidebar moves below grid, resizers hide.
 - **`__favorites__` is a virtual batch sentinel:** Do not call real batch APIs with it. Use per-image `img.batch` and `img.folder` for image src, lightbox metadata, and lightbox moves.

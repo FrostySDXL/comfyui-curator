@@ -44,6 +44,10 @@ function showPublishModal() {
                 showToast('Select source images in a review folder first');
                 return;
             }
+            if (getSelectedSourceImages().some(img => !isStillReviewMedia(img))) {
+                showToast('Prepare Public supports still images only');
+                return;
+            }
             const modal = document.getElementById('publish-modal');
             const count = document.getElementById('publish-selected-count');
             if (count) count.textContent = String(selectedImages.size);
@@ -72,6 +76,10 @@ function showLightboxPublishModal() {
                 : getLightboxImages()[currentIndex];
             if (!img || isVirtualCollectionView() || isPublicView()) {
                 showToast('Select a source image in a review folder first');
+                return;
+            }
+            if (!isStillReviewMedia(img)) {
+                showToast('Prepare Public supports still images only');
                 return;
             }
             selectedImages = new Set([img.name]);
@@ -1045,6 +1053,14 @@ async function confirmPublicDelete() {
 function syncLightboxPublicActions() {
             const activePublicView = isVirtualCollectionView() || isPublicView();
             const compareActive = typeof isLightboxCompareMode === 'function' && isLightboxCompareMode();
+            const activeImage = typeof getActiveLightboxImage === 'function'
+                ? getActiveLightboxImage()
+                : getLightboxImages()[currentIndex];
+            const publishBtn = document.getElementById('lightbox-publish-btn');
+            if (publishBtn) {
+                publishBtn.disabled = !activePublicView && !isStillReviewMedia(activeImage);
+                publishBtn.title = publishBtn.disabled ? 'Prepare Public supports still images only' : '';
+            }
             document.querySelectorAll('#lightbox-actions .btn-shortlist, #lightbox-actions .btn-finals, #lightbox-actions .btn-reject, #lightbox-publish-btn').forEach(btn => {
                 btn.closest('div').style.display = activePublicView ? 'none' : '';
             });

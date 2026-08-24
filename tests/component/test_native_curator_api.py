@@ -93,6 +93,138 @@ def _editable_request(settings, **changes):
     return payload
 
 
+def test_native_v2_folder_snapshot_pages_poll_and_stale_revision(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        inbox = settings.batch_root / "alpha" / "inbox"
+        for name in ("a.png", "b.gif", "c.mp4", "d.mp3"):
+            (inbox / name).write_bytes(name.encode())
+        service = native_routes.NativeCuratorService(settings)
+        router = _Router()
+        native_routes.register_native_routes(SimpleNamespace(router=router), service)
+        route = "/api/curator/v2/folders/{batch}/{folder}/snapshot"
+        match = {"batch": "alpha", "folder": "inbox"}
+        query = {"sort": "name", "order": "asc"}
+
+        status, payload = await _invoke(router, "GET", route, match_info=match, query=query)
+        assert (status, payload) == (202, {"status": "building"})
+        assert service.folder_index.wait_until_ready("alpha", "inbox", "name", "asc", timeout=2)
+        status, snapshot = await _invoke(router, "GET", route, match_info=match, query=query)
+        revision = snapshot["revision"]
+        status, page = await _invoke(
+            router,
+            "GET",
+            "/api/curator/v2/folders/{batch}/{folder}/items",
+            match_info=match,
+            query={**query, "revision": revision, "offset": "1", "limit": "2"},
+        )
+        status_poll, poll = await _invoke(
+            router,
+            "GET",
+            "/api/curator/v2/folders/{batch}/{folder}/poll",
+            match_info=match,
+            query={**query, "revision": revision},
+        )
+        stale_status, _stale = await _invoke(
+            router,
+            "GET",
+            "/api/curator/v2/folders/{batch}/{folder}/items",
+            match_info=match,
+            query={**query, "revision": "stale", "offset": "0", "limit": "2"},
+        )
+
+        assert status == status_poll == 200
+        assert [item["name"] for item in page["items"]] == ["b.gif", "c.mp4"]
+        assert poll == {
+            "status": "ready",
+            "changed": False,
+            "revision": revision,
+            "count": 4,
+        }
+        assert "items" not in poll
+        assert stale_status == 409
+        service.close()
+
+    asyncio.run(scenario())
+
+
+def test_native_snapshot_bulk_move_exclusion_and_token_undo(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        inbox = settings.batch_root / "alpha" / "inbox"
+        for name in ("one.png", "two.gif", "three.mp4"):
+            (inbox / name).write_bytes(b"media")
+        service = native_routes.NativeCuratorService(settings)
+        router = _Router()
+        native_routes.register_native_routes(SimpleNamespace(router=router), service)
+        match = {"batch": "alpha", "folder": "inbox"}
+        query = {"sort": "name", "order": "asc"}
+        await _invoke(
+            router,
+            "GET",
+            "/api/curator/v2/folders/{batch}/{folder}/snapshot",
+            match_info=match,
+            query=query,
+        )
+        assert service.folder_index.wait_until_ready("alpha", "inbox", "name", "asc", timeout=2)
+        _status, snapshot = await _invoke(
+            router,
+            "GET",
+            "/api/curator/v2/folders/{batch}/{folder}/snapshot",
+            match_info=match,
+            query=query,
+        )
+        status, moved = await _invoke(
+            router,
+            "POST",
+            "/api/curator/move-batch",
+            {
+                "batch": "alpha",
+                "source": "inbox",
+                "destination": "finals",
+                "selection": {
+                    "type": "snapshot",
+                    "revision": snapshot["revision"],
+                    "sort": "name",
+                    "order": "asc",
+                    "excluded": ["two.gif"],
+                },
+            },
+        )
+        assert status == 200
+        assert moved["moved"] == 2
+        assert (inbox / "two.gif").exists()
+
+        undo_status, undone = await _invoke(
+            router,
+            "POST",
+            "/api/curator/move-batch/undo",
+            {"operation_id": moved["operation_id"]},
+        )
+        assert undo_status == 200
+        assert undone["moved"] == 2
+        assert all((inbox / name).exists() for name in ("one.png", "two.gif", "three.mp4"))
+        service.close()
+
+    asyncio.run(scenario())
+
+
 def test_native_settings_and_batch_state_contracts(tmp_path, monkeypatch):
     async def scenario():
         native_routes = _load_native_routes(monkeypatch)
@@ -144,6 +276,12 @@ def test_native_settings_and_batch_state_contracts(tmp_path, monkeypatch):
         }
         assert payload["batch_meta"]["alpha"]["modified_at"] > 0
         assert payload["pending_count"] == 0
+
+        settings.import_source.mkdir(parents=True, exist_ok=True)
+        (settings.import_source / "waiting.gif").write_bytes(b"gif")
+        status, payload = await _invoke(router, "GET", "/api/curator/import-status")
+        assert status == 200
+        assert payload == {"active_batch": "alpha", "pending_count": 1}
 
     asyncio.run(scenario())
 
@@ -345,6 +483,11 @@ def test_native_metadata_and_media_contracts_enforce_boundaries(tmp_path, monkey
         png_info = PngInfo()
         png_info.add_text("parameters", "prompt text\nSteps: 12, Seed: 7")
         Image.new("RGB", (4, 4), color="blue").save(image_path, pnginfo=png_info)
+        video_path = settings.batch_root / "alpha" / "inbox" / "sample.mp4"
+        video_path.write_bytes(b"video")
+        video_path.with_name("sample.mp4.json").write_text(
+            '{"website":"example"}', encoding="utf-8"
+        )
         public_dir = settings.batch_root / "alpha" / "public"
         public_dir.mkdir()
         public_path = public_dir / "posted.jpg"
@@ -368,6 +511,16 @@ def test_native_metadata_and_media_contracts_enforce_boundaries(tmp_path, monkey
         assert payload["has_metadata"] is True
         assert payload["parameters"]["prompt"] == "prompt text"
 
+        status, payload = await _invoke(
+            router,
+            "GET",
+            metadata_route,
+            match_info={"batch": "alpha", "folder": "inbox", "name": "sample.mp4"},
+        )
+        assert status == 200
+        assert payload["has_sidecar"] is True
+        assert '"website": "example"' in payload["sidecar"]["text"]
+
         image_response = await _invoke_response(
             router,
             "GET",
@@ -383,7 +536,7 @@ def test_native_metadata_and_media_contracts_enforce_boundaries(tmp_path, monkey
             "/curator/thumb/{batch}/{folder}/{name}",
             {"batch": "alpha", "folder": "inbox", "name": "sample.png"},
         )
-        assert thumb_response.path.name == "inbox__sample.webp"
+        assert thumb_response.path.name == "inbox__sample--png.webp"
         assert thumb_response.headers == {
             "Content-Type": "image/webp",
             "Cache-Control": "public, max-age=3600, immutable",
@@ -712,6 +865,7 @@ def test_native_images_contract_sorting_and_validation(tmp_path, monkeypatch):
         inbox = settings.batch_root / "alpha" / "inbox"
         (inbox / "b.png").write_bytes(b"bb")
         (inbox / "a.jpg").write_bytes(b"a")
+        (inbox / "c.gif").write_bytes(b"gif")
         (inbox / "ignored.txt").write_text("no", encoding="utf-8")
         toggle_favorite(settings.batch_root, "alpha", "a.jpg")
         router = _Router()
@@ -728,9 +882,32 @@ def test_native_images_contract_sorting_and_validation(tmp_path, monkeypatch):
             query={"sort": "name", "order": "asc"},
         )
         assert status == 200
-        assert payload == [
-            {"name": "a.jpg", "size": 1, "favorite": True},
-            {"name": "b.png", "size": 2, "favorite": False},
+        assert all(item["mtime"] > 0 for item in payload)
+        payload_without_mtime = [
+            {key: value for key, value in item.items() if key != "mtime"} for item in payload
+        ]
+        assert payload_without_mtime == [
+            {
+                "name": "a.jpg",
+                "size": 1,
+                "favorite": True,
+                "media_kind": "image",
+                "mime": "image/jpeg",
+            },
+            {
+                "name": "b.png",
+                "size": 2,
+                "favorite": False,
+                "media_kind": "image",
+                "mime": "image/png",
+            },
+            {
+                "name": "c.gif",
+                "size": 3,
+                "favorite": False,
+                "media_kind": "animated_image",
+                "mime": "image/gif",
+            },
         ]
 
         status, payload = await _invoke(
@@ -1363,6 +1540,8 @@ def test_native_delete_rejects_removes_files_and_thumbnail_cache(tmp_path, monke
         rejects_dir = settings.batch_root / "alpha" / "rejects"
         bad = rejects_dir / "bad.png"
         bad.write_bytes(b"bad-image")
+        sidecar = rejects_dir / "bad.png.json"
+        sidecar.write_text('{"reason":"duplicate"}', encoding="utf-8")
 
         # Create a matching thumbnail cache entry
         from image_curator.media import thumbnail_cache_path
@@ -1386,6 +1565,7 @@ def test_native_delete_rejects_removes_files_and_thumbnail_cache(tmp_path, monke
         assert payload["success"] is True
         assert payload["count"] == 1
         assert not bad.exists()
+        assert not sidecar.exists()
         assert not cache.exists()
 
     asyncio.run(scenario())
@@ -1748,7 +1928,7 @@ def test_native_delete_rejects_skips_cache_resolved_into_sibling_batch(tmp_path,
         bad.write_bytes(b"bad-image")
         thumbs_dir = settings.batch_root / "alpha" / ".thumbs"
         thumbs_dir.mkdir()
-        cache_file = thumbs_dir / "rejects__bad.webp"
+        cache_file = thumbs_dir / "rejects__bad--png.webp"
         cache_file.write_bytes(b"cache-data")
         other_thumbs = settings.batch_root / "other" / ".thumbs"
         other_thumbs.mkdir(parents=True)
@@ -1756,7 +1936,7 @@ def test_native_delete_rejects_skips_cache_resolved_into_sibling_batch(tmp_path,
 
         def resolve(path, *args, **kwargs):
             if path == cache_file:
-                return other_thumbs / "rejects__bad.webp"
+                return other_thumbs / "rejects__bad--png.webp"
             if path == cache_file.parent:
                 return other_thumbs
             return real_resolve(path, *args, **kwargs)
@@ -2041,7 +2221,7 @@ def test_native_delete_rejects_skips_cache_when_thumbs_is_symlink(tmp_path, monk
         bad.write_bytes(b"bad-image")
         thumbs_dir = settings.batch_root / "alpha" / ".thumbs"
         thumbs_dir.mkdir()
-        cache_file = thumbs_dir / "rejects__bad.webp"
+        cache_file = thumbs_dir / "rejects__bad--png.webp"
         cache_file.write_bytes(b"cache-data")
         real_is_symlink = Path.is_symlink
 
@@ -2087,7 +2267,7 @@ def test_native_delete_rejects_skips_cache_when_cache_file_is_symlink(tmp_path, 
         bad.write_bytes(b"bad-image")
         thumbs_dir = settings.batch_root / "alpha" / ".thumbs"
         thumbs_dir.mkdir()
-        cache_file = thumbs_dir / "rejects__bad.webp"
+        cache_file = thumbs_dir / "rejects__bad--png.webp"
         cache_file.write_bytes(b"cache-data")
         real_is_symlink = Path.is_symlink
 
@@ -2135,13 +2315,13 @@ def test_native_delete_rejects_skips_cache_when_resolved_outside_root(tmp_path, 
         outside.mkdir()
         thumbs_dir = settings.batch_root / "alpha" / ".thumbs"
         thumbs_dir.mkdir()
-        cache_file = thumbs_dir / "rejects__bad.webp"
+        cache_file = thumbs_dir / "rejects__bad--png.webp"
         cache_file.write_bytes(b"cache-data")
         real_resolve = Path.resolve
 
         def resolve(path, *args, **kwargs):
             if path == cache_file:
-                return outside / "rejects__bad.webp"
+                return outside / "rejects__bad--png.webp"
             return real_resolve(path, *args, **kwargs)
 
         monkeypatch.setattr(Path, "resolve", resolve)

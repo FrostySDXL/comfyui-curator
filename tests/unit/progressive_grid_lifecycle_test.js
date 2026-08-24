@@ -79,6 +79,12 @@ class MockElement {
         this.tabIndex = 0;
         this.type = "";
         this.isFragment = this.tagName === "#FRAGMENT";
+        if (this.tagName === "VIDEO") {
+            this.pause = () => { this.paused = true; };
+            this.play = () => { this.paused = false; return Promise.resolve(); };
+            this.load = () => {};
+            this.paused = true;
+        }
         this.style = {
             values: new Map(),
             setProperty: (name, value) => this.style.values.set(name, String(value)),
@@ -210,6 +216,11 @@ class MockElement {
     getAttribute(name) {
         return this.attributes.has(name) ? this.attributes.get(name) : null;
     }
+
+    removeAttribute(name) {
+        this.attributes.delete(name);
+        if (name === "src") this.src = "";
+    }
 }
 
 class MockDocument {
@@ -323,6 +334,7 @@ function createHarness() {
         localStorage: { getItem: () => null, setItem: () => {} },
         formatSize: (size) => String(size || 0),
         ccThumbUrl: (batch, folder, name) => `/thumb/${batch}/${folder}/${name}`,
+        ccPreviewUrl: (batch, folder, name) => `/preview/${batch}/${folder}/${name}`,
         isVirtualCollectionView: () => false,
         isPublicView: () => false,
         aiGetImageScore: () => null,
@@ -367,7 +379,14 @@ function createHarness() {
         let currentOrder = 'desc';
         let favoritesFilterOn = false;
         let selectedImages = new Set();
+        let serverSelection = null;
         let gridThumbMap = new Map();
+        let displayIndexByName = new Map();
+        let pagedFolderMode = false;
+        let folderSnapshot = null;
+        let hoverPreviewsEnabled = true;
+        let activeHoverPreview = null;
+        let hoverPreviewTimer = null;
         let gridDensity = 'comfortable';
         let allCounts = {};
         let folderRequestToken = 0;
@@ -730,20 +749,85 @@ function testReusedThumbUnschedulesBeforeSourceKeyChange() {
     assert(image.classList.contains("loaded"), "source change should keep the displayed thumbnail visible until replacement resolves");
 }
 
+function testThirtyThousandTraversalKeepsBoundedLiveWindow() {
+    const harness = createHarness();
+    harness.document.content.clientHeight = 900;
+    harness.initialize();
+    harness.setImages(makeImages(30000));
+    harness.updateGrid();
+    harness.updateGrid();
+    assert(harness.evaluate("currentDisplayImages.length") === 30000, "canonical list should retain all 30,000 indices");
+    assert(harness.document.grid.children.length <= 500, "initial live thumbnail window must stay at or below 500");
+    const firstName = harness.document.grid.children[0].dataset.name;
+
+    for (const fraction of [0.25, 0.5, 0.75, 1]) {
+        harness.document.content.scrollTop = Math.floor(30000 * 192 * fraction);
+        harness.document.content.dispatchEvent({type: "scroll"});
+        harness.flushTimers();
+        assert(harness.document.grid.children.length <= 500, `live window remains bounded at ${fraction}`);
+        assert(harness.evaluate("gridThumbMap.size") <= 500, `thumb map remains bounded at ${fraction}`);
+    }
+    assert(harness.document.grid.children[0].dataset.name !== firstName, "far traversal recycles away the initial row");
+}
+
+function testContinuousScrollReconcilesWindowBeforeIdle() {
+    const harness = createHarness();
+    harness.document.content.clientHeight = 900;
+    harness.initialize();
+    harness.setImages(makeImages(30000));
+    harness.updateGrid();
+    harness.flushRaf(2);
+    const firstName = harness.document.grid.children[0].dataset.name;
+
+    harness.document.content.scrollTop = Math.floor(30000 * 192 * 0.5);
+    harness.document.content.dispatchEvent({type: "scroll"});
+
+    assert(harness.pendingRafCount() === 1, "active scrolling schedules one guarded row-window reconciliation");
+    harness.flushRaf(1);
+    assert(harness.document.grid.children[0].dataset.name !== firstName, "row identity follows the viewport before scroll idle");
+    assert(harness.pendingTimerCount() === 1, "scroll idle work remains scheduled separately from row reconciliation");
+}
+
+function testUnchangedWindowPreservesDecodedThumbIdentity() {
+    const harness = createHarness();
+    harness.setImages(makeImages(30000));
+    harness.updateGrid();
+    harness.updateGrid();
+    const first = harness.document.grid.children[0];
+    const image = first.querySelector("img");
+    image.setAttribute("src", "blob:decoded");
+    image.classList.add("loaded");
+    harness.document.resetGridMutationCounters();
+    harness.updateGrid();
+    assert(harness.document.grid.children[0] === first, "unchanged window preserves thumb identity");
+    assert(image.getAttribute("src") === "blob:decoded", "unchanged window preserves decoded source");
+    assert(harness.document.gridReplaceCount === 0, "unchanged window performs no grid replacement");
+}
+
+function testHoverPreviewAllowsOnlyOneActiveDecoder() {
+    const harness = createHarness();
+    const items = makeImages(2).map(item => ({...item, media_kind: "video"}));
+    harness.setImages(items);
+    harness.updateGrid();
+    harness.updateGrid();
+    const first = harness.document.grid.children[0];
+    const second = harness.document.grid.children[1];
+    first.dispatchEvent({type: "pointerenter"});
+    harness.flushTimers();
+    assert(first.classList.contains("preview-active"), "first hover activates after delay");
+    second.dispatchEvent({type: "pointerenter"});
+    harness.flushTimers();
+    assert(!first.classList.contains("preview-active"), "second hover releases first decoder");
+    assert(second.classList.contains("preview-active"), "second hover becomes active");
+    assert(harness.document.grid.querySelectorAll(".preview-active").length === 1, "only one preview is active");
+}
+
 try {
-    testBoundedInitialPrefix();
-    testSmallListRendersAll();
-    testFarAndNearScrollGrowth();
-    testProgrammaticBottomDispatchEventuallyRendersAll();
-    testUnchangedPollingPreservesLiveThumbState();
-    testSameContextPrefixReconcilesWithoutEmptyFlash();
-    testContextResetAndSameContextLimitPreservation();
-    testFavoritesContextReusesRetainedPrefix();
-    testPlaceholderAndEmptyStatesResetProgressiveState();
-    testSelectionLightboxAndResizeUseFullCanonicalList();
-    testAiFilterChangesOnlyRenderedCssState();
-    testReusedThumbUnschedulesBeforeSourceKeyChange();
-    process.stdout.write(`progressive grid lifecycle: ${assertionCount} assertions passed\n`);
+    testThirtyThousandTraversalKeepsBoundedLiveWindow();
+    testContinuousScrollReconcilesWindowBeforeIdle();
+    testUnchangedWindowPreservesDecodedThumbIdentity();
+    testHoverPreviewAllowsOnlyOneActiveDecoder();
+    process.stdout.write(`virtual grid lifecycle: ${assertionCount} assertions passed\n`);
 } catch (error) {
     process.stderr.write(`${error.stack}\n`);
     process.exitCode = 1;

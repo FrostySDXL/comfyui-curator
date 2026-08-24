@@ -73,6 +73,22 @@ function _bindDelegatedEvents() {
 
             const favFilterBtn = document.getElementById('favorites-filter-btn');
             if (favFilterBtn) favFilterBtn.addEventListener('click', toggleFavoritesFilter);
+            const hoverPreviewToggle = document.getElementById('hover-preview-toggle');
+            if (hoverPreviewToggle) {
+                hoverPreviewToggle.checked = hoverPreviewsEnabled;
+                hoverPreviewToggle.addEventListener('change', () => {
+                    hoverPreviewsEnabled = hoverPreviewToggle.checked;
+                    localStorage.setItem(HOVER_PREVIEWS_KEY, hoverPreviewsEnabled ? 'true' : 'false');
+                    if (!hoverPreviewsEnabled) stopActiveHoverPreview();
+                });
+            }
+            const videoPlaybackToggle = document.getElementById('lightbox-video-autoplay-loop-toggle');
+            if (videoPlaybackToggle) {
+                videoPlaybackToggle.checked = lightboxVideoAutoplayLoopEnabled;
+                videoPlaybackToggle.addEventListener('change', () => {
+                    setLightboxVideoAutoplayLoopEnabled(videoPlaybackToggle.checked);
+                });
+            }
 
             const selectAllBtn = document.getElementById('workspace-select-all-btn');
             if (selectAllBtn) selectAllBtn.addEventListener('click', selectAllDisplayedImages);
@@ -444,7 +460,7 @@ function _bindDelegatedEvents() {
                     const btn = e.target.closest('.action-btn');
                     if (!btn) return;
                     if (btn.classList.contains('action-clear')) {
-                        if (selectedImages.size > 0) clearSelection();
+                        if (serverSelection || selectedImages.size > 0) clearSelection();
                         else setSelectionMode(false);
                     } else if (btn.id === 'compare-lightbox-btn') {
                         openCompareLightbox();

@@ -54,6 +54,18 @@ def test_build_index_collects_png_metadata_and_sorts_by_count(tmp_path):
     assert [entry["count"] for entry in index["prompts"]] == [1, 1]
 
 
+def test_build_index_ignores_non_png_typed_media(tmp_path):
+    make_batch(tmp_path)
+    write_png(tmp_path / "alpha" / "inbox" / "prompt.png", "cat\nSteps: 1")
+    for filename in ("animation.gif", "clip.mp4", "track.mp3"):
+        (tmp_path / "alpha" / "inbox" / filename).write_bytes(b"media")
+
+    index = build_prompt_index(tmp_path, "alpha")
+
+    assert index["image_count"] == 1
+    assert index["prompts"][0]["images"] == [{"filename": "prompt.png", "folder": "inbox"}]
+
+
 def test_build_index_dedups_same_normalized_prompt_and_negative(tmp_path):
     make_batch(tmp_path)
     write_png(

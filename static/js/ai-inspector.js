@@ -4,12 +4,12 @@
 function aiGetSingleSelectedImage() {
             if (selectedImages.size !== 1) return null;
             const [name] = selectedImages;
-            return images.find(img => img.name === name) || null;
+            return images.find(img => img && img.name === name) || null;
         }
 
 function aiGetInspectedImage() {
             if (!aiInspectedImageName) return null;
-            return images.find(img => img.name === aiInspectedImageName) || null;
+            return images.find(img => img && img.name === aiInspectedImageName) || null;
         }
 
 function aiSetInspectedImage(img) {
@@ -78,7 +78,7 @@ function aiRenderSelectionInspector() {
             inspector.replaceChildren();
             inspector.className = 'ai-image-inspector ai-selection-summary';
 
-            const selected = images.filter(img => selectedImages.has(img.name));
+            const selected = images.filter(img => img && selectedImages.has(img.name));
             inspector.appendChild(createTextElement('div', 'ai-inspector-title', `${selected.length} selected`));
 
             if (!aiActiveRun) {

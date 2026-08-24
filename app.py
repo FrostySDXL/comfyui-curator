@@ -24,8 +24,21 @@ from image_curator.favorites import (
     resolve_universal_favorites,
     toggle_favorite,
 )
-from image_curator.png_metadata import extract_png_metadata
-from image_curator.media import generate_thumbnail, thumbnail_cache_path, thumbnail_is_fresh
+from image_curator.sidecar_metadata import delete_json_sidecar, extract_media_metadata
+from image_curator.media import (
+    generate_hover_preview,
+    generate_media_poster,
+    hover_preview_cache_path,
+    media_cache_is_fresh,
+    remove_cached_media_derivatives,
+    thumbnail_cache_path,
+    thumbnail_is_fresh,
+)
+from image_curator.folder_index import (
+    DEFAULT_PAGE_SIZE,
+    BulkMoveOperationStore,
+    FolderIndexService,
+)
 from image_curator.prompt_history import (
     build_prompt_index,
     count_prompt_index_images,
@@ -75,6 +88,9 @@ THUMB_SIZE = (320, 320)
 IMAGE_EXTENSIONS = batch_store.IMAGE_EXTENSIONS
 _PUBLIC_EXPORT_ROOT_RAW = os.environ.get("IMAGE_CURATOR_PUBLIC_EXPORTS", "").strip()
 PUBLIC_EXPORT_ROOT = Path(_PUBLIC_EXPORT_ROOT_RAW).expanduser() if _PUBLIC_EXPORT_ROOT_RAW else None
+_folder_index = FolderIndexService()
+_bulk_move_operations = BulkMoveOperationStore()
+atexit.register(_folder_index.close)
 
 # Warn on startup if critical defaults are unlikely to work
 if os.environ.get("IMAGE_CURATOR_LLM_URL", "").strip() == "":
@@ -232,6 +248,8 @@ def api_import_all():
     if not batch:
         return jsonify({"error": "Batch required"}), 400
     count = import_all_pending(batch)
+    if count:
+        _folder_index.refresh(batch, "inbox")
     return jsonify({"success": True, "count": count})
 
 
@@ -253,7 +271,14 @@ def api_images(batch, folder):
     fav_set = get_batch_favorite_filenames(BATCHES_DIR, batch_name)
     return jsonify(
         [
-            {"name": img.name, "size": img.stat().st_size, "favorite": img.name in fav_set}
+            {
+                "name": img.name,
+                "size": img.stat().st_size,
+                "mtime": img.stat().st_mtime_ns,
+                "favorite": img.name in fav_set,
+                "media_kind": batch_store.media_kind(img),
+                "mime": batch_store.media_mime(img),
+            }
             for img in images
             if img.exists()
         ]
@@ -274,7 +299,7 @@ def api_image_metadata(batch, folder, filename):
     if not filepath.exists():
         return jsonify({"error": "File not found"}), 404
 
-    return jsonify(extract_png_metadata(filepath))
+    return jsonify(extract_media_metadata(filepath))
 
 
 @app.route("/api/move", methods=["POST"])
@@ -306,6 +331,7 @@ def api_move():
 
     if not batch_store.move_image(src_path, dst_path):
         return jsonify({"error": f"Could not move {filename}"}), 500
+    _folder_index.refresh(batch_name, source, destination)
     return jsonify({"success": True})
 
 
@@ -317,17 +343,38 @@ def api_move_batch():
     if err:
         return jsonify(err[0]), err[1]
     filenames = data.get("filenames", [])
+    selection = data.get("selection")
     source = data.get("source")
     destination = data.get("destination")
 
-    if not all([batch_name, filenames, source, destination]):
+    if not batch_name or not source or not destination or (not filenames and not selection):
         return jsonify({"error": "Missing parameters"}), 400
 
     if source not in batch_store.BATCH_FOLDERS or destination not in batch_store.BATCH_FOLDERS:
         return jsonify({"error": "Invalid source or destination folder"}), 400
 
+    if selection is not None:
+        if not isinstance(selection, dict) or selection.get("type") != "snapshot":
+            return jsonify({"error": "Invalid selection"}), 400
+        revision = str(selection.get("revision", ""))
+        sort_by = str(selection.get("sort", "date"))
+        order = str(selection.get("order", "desc"))
+        selected_names = _folder_index.names_for_revision(
+            batch_name, source, sort_by, order, revision
+        )
+        if selected_names is None:
+            return jsonify({"error": "Snapshot revision is stale"}), 409
+        excluded_raw = selection.get("excluded", [])
+        if not isinstance(excluded_raw, list) or any(
+            not isinstance(name, str) for name in excluded_raw
+        ):
+            return jsonify({"error": "Invalid selection exclusions"}), 400
+        excluded = set(excluded_raw)
+        filenames = [name for name in selected_names if name not in excluded]
+
     moved = 0
     skipped = 0
+    moved_names: list[str] = []
     valid_filenames: list[str] = []
     source_dir = get_batch_folder(batch_name, source)
     dest_dir = get_batch_folder(batch_name, destination)
@@ -342,19 +389,56 @@ def api_move_batch():
             continue
         valid_filenames.append(filename)
     if valid_filenames:
-        moved, skipped_in_loop = batch_store.move_images(
+        moved, skipped_in_loop, moved_names = batch_store.move_images(
             source_dir=source_dir,
             names=valid_filenames,
             dest_dir=dest_dir,
         )
         skipped += skipped_in_loop
+    _folder_index.refresh(batch_name, source, destination)
     if moved == 0 and filenames:
         # Zero files moved is a legitimate no-op (e.g. all requested files
         # were already in the destination or no longer exist), not a client
         # error. Surface success=False so the UI can show a hint, but keep
         # a 200 status so callers don't treat this as a 4xx failure.
         return jsonify({"success": False, "moved": 0, "skipped": skipped})
-    return jsonify({"success": True, "moved": moved, "skipped": skipped})
+    payload = {"success": True, "moved": moved, "skipped": skipped}
+    if selection is not None and moved_names:
+        payload["operation_id"] = _bulk_move_operations.record(
+            batch_name, source, destination, moved_names
+        )
+    return jsonify(payload)
+
+
+@app.route("/api/move-batch/undo", methods=["POST"])
+def api_undo_snapshot_move():
+    data = request.json or {}
+    token = data.get("operation_id", "")
+    if not isinstance(token, str) or not token:
+        return jsonify({"error": "operation_id required"}), 400
+    operation = _bulk_move_operations.pop(token)
+    if operation is None:
+        return jsonify({"error": "Undo operation expired or not found"}), 404
+    if operation.batch not in get_batches():
+        return jsonify({"error": "Batch does not exist"}), 404
+    source_dir = get_batch_folder(operation.batch, operation.destination)
+    dest_dir = get_batch_folder(operation.batch, operation.source)
+    moved, skipped, _moved_names = batch_store.move_images(
+        source_dir, list(operation.names), dest_dir
+    )
+    _folder_index.refresh(operation.batch, operation.source, operation.destination)
+    return jsonify({"success": moved > 0, "moved": moved, "skipped": skipped})
+
+
+@app.route("/api/import-status", methods=["GET"])
+def api_import_status():
+    """Return only the inexpensive state needed by the Import All control."""
+    return jsonify(
+        {
+            "active_batch": load_state().get("active_batch"),
+            "pending_count": get_pending_count(),
+        }
+    )
 
 
 @app.route("/api/delete-rejects/<batch>", methods=["POST"])
@@ -369,20 +453,19 @@ def api_delete_rejects(batch):
     count = 0
     failed = 0
     for f in rejects_dir.iterdir():
-        if f.suffix.lower() in IMAGE_EXTENSIONS:
+        if f.suffix.lower() in batch_store.VIEWABLE_MEDIA_EXTENSIONS:
             try:
                 f.unlink()
             except OSError:
                 failed += 1
                 continue
-            # Remove cached thumbnail too
-            cache_file = thumbnail_cache_path(BATCHES_DIR, batch_name, "rejects", f.name)
-            if cache_file.exists():
-                try:
-                    cache_file.unlink()
-                except OSError:
-                    pass
+            sidecar_removed = delete_json_sidecar(f)
+            if not sidecar_removed:
+                failed += 1
+            remove_cached_media_derivatives(BATCHES_DIR, batch_name, "rejects", f.name)
             count += 1
+    if count:
+        _folder_index.refresh(batch_name, "rejects")
     return jsonify({"success": True, "count": count, "failed": failed})
 
 
@@ -600,22 +683,96 @@ def serve_thumbnail(batch, folder, filename):
         return jsonify({"error": err}), 400
     if not filepath.exists():
         return jsonify({"error": "File not found"}), 404
+    kind = batch_store.media_kind(filepath)
+    if kind is None:
+        return jsonify({"error": "Invalid file type"}), 400
 
     cache_path = thumbnail_cache_path(BATCHES_DIR, batch_name, folder, filename)
 
-    if thumbnail_is_fresh(cache_path, filepath, THUMB_SIZE):
+    fresh = (
+        thumbnail_is_fresh(cache_path, filepath, THUMB_SIZE)
+        if kind in {"image", "animated_image"}
+        else media_cache_is_fresh(cache_path, filepath)
+    )
+    if fresh:
         resp = send_file(str(cache_path), mimetype="image/webp", max_age=3600)
         resp.headers["Cache-Control"] = "public, max-age=3600, immutable"
         return resp
 
     try:
-        generate_thumbnail(filepath, cache_path, THUMB_SIZE)
+        generate_media_poster(filepath, cache_path, THUMB_SIZE, media_kind=kind)
         resp = send_file(str(cache_path), mimetype="image/webp", max_age=3600)
         resp.headers["Cache-Control"] = "public, max-age=3600, immutable"
         return resp
     except Exception:
         print(f"Thumbnail generation failed for {filepath}", flush=True)
         return jsonify({"error": "Failed to generate thumbnail"}), 500
+
+
+def _folder_snapshot_request(batch: str, folder: str):
+    batch_name, err = _require_batch(batch)
+    if err:
+        return None, None, None, None, (jsonify(err[0]), err[1])
+    if folder not in batch_store.BATCH_FOLDERS:
+        return None, None, None, None, (jsonify({"error": "Invalid folder"}), 400)
+    sort_by = request.args.get("sort", "date")
+    order = request.args.get("order", "desc")
+    if sort_by not in ("date", "name", "shuffle"):
+        sort_by = "date"
+    if order not in ("asc", "desc"):
+        order = "desc"
+    return batch_name, get_batch_folder(batch_name, folder), sort_by, order, None
+
+
+@app.route("/api/v2/folders/<batch>/<folder>/snapshot")
+def api_v2_folder_snapshot(batch, folder):
+    batch_name, directory, sort_by, order, error = _folder_snapshot_request(batch, folder)
+    if error:
+        return error
+    payload = _folder_index.request_snapshot(batch_name, folder, directory, sort_by, order)
+    return jsonify(payload), (200 if payload["status"] == "ready" else 202)
+
+
+@app.route("/api/v2/folders/<batch>/<folder>/poll")
+def api_v2_folder_poll(batch, folder):
+    batch_name, directory, sort_by, order, error = _folder_snapshot_request(batch, folder)
+    if error:
+        return error
+    payload = _folder_index.poll(
+        batch_name,
+        folder,
+        directory,
+        sort_by,
+        order,
+        request.args.get("revision"),
+    )
+    return jsonify(payload), (200 if payload["status"] == "ready" else 202)
+
+
+@app.route("/api/v2/folders/<batch>/<folder>/items")
+def api_v2_folder_items(batch, folder):
+    batch_name, _directory, sort_by, order, error = _folder_snapshot_request(batch, folder)
+    if error:
+        return error
+    revision = request.args.get("revision", "")
+    try:
+        offset = int(request.args.get("offset", "0"))
+        limit = int(request.args.get("limit", str(DEFAULT_PAGE_SIZE)))
+    except ValueError:
+        return jsonify({"error": "Invalid page range"}), 400
+    payload = _folder_index.page(
+        batch_name,
+        folder,
+        sort_by,
+        order,
+        revision,
+        offset,
+        limit,
+        get_batch_favorite_filenames(BATCHES_DIR, batch_name),
+    )
+    if payload is None:
+        return jsonify({"error": "Snapshot revision is stale"}), 409
+    return jsonify(payload)
 
 
 @app.route("/image/<batch>/<folder>/<filename>")
@@ -630,7 +787,38 @@ def serve_image(batch, folder, filename):
         return jsonify({"error": err}), 400
     if not filepath.exists():
         return jsonify({"error": "File not found"}), 404
-    resp = send_file(filepath, max_age=3600)
+    mime = batch_store.media_mime(filepath)
+    if mime is None:
+        return jsonify({"error": "Invalid file type"}), 400
+    resp = send_file(filepath, mimetype=mime, conditional=True, max_age=3600)
+    resp.headers["Cache-Control"] = "public, max-age=3600, immutable"
+    return resp
+
+
+@app.route("/preview/<batch>/<folder>/<filename>")
+def serve_hover_preview(batch, folder, filename):
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
+    if not _is_viewable_folder(folder):
+        return jsonify({"error": "Invalid folder"}), 400
+    filepath, err = _safe_path(get_batch_content_folder(batch_name, folder), filename)
+    if err:
+        return jsonify({"error": err}), 400
+    if not filepath.exists():
+        return jsonify({"error": "File not found"}), 404
+    kind = batch_store.media_kind(filepath)
+    if kind not in {"animated_image", "video"}:
+        return jsonify({"error": "Hover preview unavailable"}), 400
+    cache_path = hover_preview_cache_path(BATCHES_DIR, batch_name, folder, filename)
+    try:
+        if not media_cache_is_fresh(cache_path, filepath) and not generate_hover_preview(
+            filepath, cache_path, media_kind=kind
+        ):
+            return jsonify({"error": "Hover preview unavailable"}), 503
+    except (OSError, ValueError):
+        return jsonify({"error": "Hover preview unavailable"}), 503
+    resp = send_file(cache_path, mimetype="video/mp4", conditional=True, max_age=3600)
     resp.headers["Cache-Control"] = "public, max-age=3600, immutable"
     return resp
 

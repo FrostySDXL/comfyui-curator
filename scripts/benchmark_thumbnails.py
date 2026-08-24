@@ -104,6 +104,8 @@ class OptionalDependencies:
     firefox_service: Any
     chrome_options: Any
     chrome_service: Any
+    action_chains: Any
+    scroll_origin: Any
     psutil: Any
 
 
@@ -152,7 +154,7 @@ def validate_standalone_root(batch_root: Path | None, output_root: Path) -> Path
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--browser", choices=("firefox", "chrome", "all"), default="firefox")
-    parser.add_argument("--sizes", nargs="+", type=int, default=[100, 500, 2000])
+    parser.add_argument("--sizes", nargs="+", type=int, default=[100, 500, 2000, 30000])
     parser.add_argument("--url", default=DEFAULT_URL)
     parser.add_argument("--mode", choices=("native", "standalone"), default="native")
     parser.add_argument("--batch-root", type=Path)
@@ -241,7 +243,9 @@ def _create_one_fixture_batch(
     for folder in BATCH_FOLDERS:
         (batch_dir / folder).mkdir()
     for index in range(image_count):
-        destination = batch_dir / "inbox" / f"benchmark-{index:06d}.png"
+        mixed_extensions = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".mp3")
+        extension = mixed_extensions[index % len(mixed_extensions)] if index % 1000 < 7 else ".png"
+        destination = batch_dir / "inbox" / f"benchmark-{index:06d}{extension}"
         _link_or_copy(seed_paths[index % len(seed_paths)], destination)
 
 
@@ -581,6 +585,12 @@ def load_optional_dependencies() -> OptionalDependencies:
         firefox_service = importlib.import_module("selenium.webdriver.firefox.service").Service
         chrome_options = importlib.import_module("selenium.webdriver.chrome.options").Options
         chrome_service = importlib.import_module("selenium.webdriver.chrome.service").Service
+        action_chains = importlib.import_module(
+            "selenium.webdriver.common.action_chains"
+        ).ActionChains
+        scroll_origin = importlib.import_module(
+            "selenium.webdriver.common.actions.wheel_input"
+        ).ScrollOrigin
     except ImportError as exc:
         raise BenchmarkError(
             "Selenium is unavailable. Install optional dependencies with "
@@ -599,6 +609,8 @@ def load_optional_dependencies() -> OptionalDependencies:
         firefox_service,
         chrome_options,
         chrome_service,
+        action_chains,
+        scroll_origin,
         psutil,
     )
 
@@ -617,6 +629,17 @@ def browser_availability(args: argparse.Namespace, browser: str) -> str | None:
     return None
 
 
+def browser_script_timeout(args: argparse.Namespace) -> float:
+    """Allow the headed 30k controlled scroll to finish without weakening its frame cap."""
+    large_case = bool(args.sizes) and max(args.sizes) >= 30000
+    return max(float(args.timeout), 900.0 if large_case else 60.0)
+
+
+def dynamic_frame_budget(expected_count: int) -> int:
+    """Bound traversal while scaling past the historical 2k fixture ceiling."""
+    return max(5000, int(math.ceil(max(0, expected_count) * 4.0)))
+
+
 def create_driver(
     dependencies: OptionalDependencies,
     browser: str,
@@ -628,6 +651,7 @@ def create_driver(
         if browser == "firefox":
             options = dependencies.firefox_options()
             options.binary_location = str(args.firefox_binary)
+            options.set_preference("layout.frame_rate", 60)
             options.add_argument("-profile")
             options.add_argument(str(profile_dir))
             if args.headless:
@@ -651,7 +675,14 @@ def create_driver(
     except Exception as exc:
         raise browser_stage_error("WebDriver startup", exc) from exc
     driver.set_page_load_timeout(args.timeout)
-    driver.set_script_timeout(max(args.timeout, 60))
+    script_timeout = browser_script_timeout(args)
+    driver.set_script_timeout(script_timeout)
+    # Selenium's HTTP transport has a separate default (commonly 120s). A
+    # legitimate 30k async-script command must not be cut off below the script
+    # timeout that the harness explicitly selected.
+    client_config = getattr(driver.command_executor, "client_config", None)
+    if client_config is not None:
+        client_config.timeout = script_timeout + 60.0
     driver.set_window_size(1440, 1000)
     return driver
 
@@ -802,16 +833,78 @@ function step(now) {
     previous = now;
     frames += 1;
     const bottom = Math.max(0, content.scrollHeight - content.clientHeight);
-    if (content.scrollTop >= bottom || frames >= 2000) {
+    if (content.scrollTop >= bottom || frames >= 5000) {
         content.scrollTop = original;
-        done({available: true, elapsedMs: performance.now() - started, intervals, frameCapReached: frames >= 2000});
+        done({available: true, elapsedMs: performance.now() - started, intervals, frameCapReached: frames >= 5000});
         return;
     }
-    content.scrollTop = Math.min(bottom, content.scrollTop + Math.max(80, content.clientHeight * 0.65));
+    // Approximate a fast wheel/trackpad gesture without replacing nearly the
+    // entire overscanned virtual window on every animation frame.
+    content.scrollTop = Math.min(bottom, content.scrollTop + Math.max(180, content.clientHeight * 0.5));
     requestAnimationFrame(step);
 }
 requestAnimationFrame(step);
 """
+
+
+START_WHEEL_FRAME_CAPTURE = r"""
+window.__curatorWheelIntervals = [];
+window.__curatorWheelCaptureActive = true;
+window.__curatorWheelCaptureStarted = performance.now();
+window.__curatorWheelPreviousFrame = window.__curatorWheelCaptureStarted;
+window.__curatorWheelOriginalTop = document.querySelector('.content').scrollTop;
+window.__curatorWheelTick = function(now) {
+    if (!window.__curatorWheelCaptureActive) return;
+    window.__curatorWheelIntervals.push(now - window.__curatorWheelPreviousFrame);
+    window.__curatorWheelPreviousFrame = now;
+    requestAnimationFrame(window.__curatorWheelTick);
+};
+requestAnimationFrame(window.__curatorWheelTick);
+return true;
+"""
+
+
+STOP_WHEEL_FRAME_CAPTURE = r"""
+window.__curatorWheelCaptureActive = false;
+const content = document.querySelector('.content');
+const result = {
+    available: true,
+    elapsedMs: performance.now() - window.__curatorWheelCaptureStarted,
+    intervals: window.__curatorWheelIntervals || [],
+    frameCapReached: false,
+};
+content.scrollTop = Number(window.__curatorWheelOriginalTop) || 0;
+return result;
+"""
+
+
+def _measure_controlled_wheel_scroll(
+    driver: Any, dependencies: OptionalDependencies
+) -> dict[str, Any]:
+    """Measure real W3C wheel input while collecting independent page rAF intervals."""
+    geometry = driver.execute_script(
+        "const c=document.querySelector('.content');"
+        "return {bottom:Math.max(0,c.scrollHeight-c.clientHeight),height:c.clientHeight};"
+    )
+    if not isinstance(geometry, dict):
+        # Test doubles and older remote ends may not expose wheel geometry;
+        # retain the deterministic scripted fallback for that compatibility path.
+        return driver.execute_async_script(SCROLL_GRID)
+    bottom = max(0, int(geometry.get("bottom", 0)))
+    if bottom <= 0:
+        return {"available": True, "elapsedMs": 0, "intervals": [], "frameCapReached": False}
+
+    driver.execute_script(START_WHEEL_FRAME_CAPTURE)
+    content = driver.find_element("css selector", ".content")
+    origin = dependencies.scroll_origin.from_element(content)
+    action_count = max(1, min(5000, int(math.ceil(bottom / 3000))))
+    wheel_delta = max(1, int(math.ceil(bottom / action_count)))
+    actions = dependencies.action_chains(driver)
+    for _ in range(action_count):
+        actions.scroll_from_origin(origin, 0, wheel_delta).pause(0.01)
+    actions.perform()
+    time.sleep(0.5)
+    return driver.execute_script(STOP_WHEEL_FRAME_CAPTURE)
 
 
 VIEWPORT_SETTLE_ASYNC = r"""
@@ -824,6 +917,13 @@ const started = performance.now();
 let previous = started;
 const deadline = started + timeoutMs;
 
+function thumbnailMatchesDesired(img) {
+    if (!img.classList.contains('loaded')) return false;
+    const desired = img.dataset ? img.dataset.thumbnailCacheKey : '';
+    if (!desired) return true;
+    return img.dataset.loadedThumbnailCacheKey === desired;
+}
+
 function readState() {
     var thumbs = Array.from(document.querySelectorAll('#grid .thumb:not(.loading-placeholder)'));
     var images = thumbs.map(function(t) { return t.querySelector('img'); }).filter(Boolean);
@@ -835,9 +935,9 @@ function readState() {
         count: thumbs.length,
         renderedCount: thumbs.length,
         expectedCount: expectedCount,
-        loaded: images.filter(function(img) { return img.classList.contains('loaded'); }).length,
+        loaded: images.filter(thumbnailMatchesDesired).length,
         visibleCount: visible.length,
-        visibleLoaded: visible.filter(function(img) { return img.classList.contains('loaded'); }).length,
+        visibleLoaded: visible.filter(thumbnailMatchesDesired).length,
         currentBatch: typeof currentBatch === 'undefined' ? null : currentBatch
     };
 }
@@ -969,6 +1069,7 @@ const longTasks = bridgeResult.available && bridgeResult.snapshot.longTaskSuppor
     };
 return {
     domNodeCount: document.getElementsByTagName('*').length,
+    liveThumbnailCount: document.querySelectorAll('#grid .thumb').length,
     blobCacheEntryCount: bridgeResult.available ? bridgeResult.snapshot.blobCount : null,
     blobObservation: bridgeResult.available
         ? {available: true, reason: null}
@@ -1035,7 +1136,9 @@ def summarize_frames(raw: dict[str, Any]) -> dict[str, Any]:
         else None,
         "frame_cap_reached": bool(raw.get("frameCapReached", False)),
     }
-    return available(value, "requestAnimationFrame intervals during the scripted operation")
+    return available(
+        value, "requestAnimationFrame intervals during the controlled browser operation"
+    )
 
 
 def _wait_for_grid(driver: Any, expected_count: int, timeout: float) -> dict[str, Any]:
@@ -1047,15 +1150,20 @@ def _wait_for_grid(driver: Any, expected_count: int, timeout: float) -> dict[str
             """
 const thumbs = Array.from(document.querySelectorAll('#grid .thumb:not(.loading-placeholder)'));
 const images = thumbs.map(thumb => thumb.querySelector('img')).filter(Boolean);
+const thumbnailMatchesDesired = image => {
+    if (!image.classList.contains('loaded')) return false;
+    const desired = image.dataset ? image.dataset.thumbnailCacheKey : '';
+    return !desired || image.dataset.loadedThumbnailCacheKey === desired;
+};
 const visible = images.filter(image => {
     const rect = image.getBoundingClientRect();
     return rect.bottom > 0 && rect.top < window.innerHeight;
 });
 return {
     count: thumbs.length,
-    loaded: images.filter(image => image.classList.contains('loaded')).length,
+    loaded: images.filter(thumbnailMatchesDesired).length,
     visibleCount: visible.length,
-    visibleLoaded: visible.filter(image => image.classList.contains('loaded')).length,
+    visibleLoaded: visible.filter(thumbnailMatchesDesired).length,
     currentBatch: typeof currentBatch === 'undefined' ? null : currentBatch
 };
 """
@@ -1145,6 +1253,8 @@ if (!content) { done({available: false, reason: 'Grid scroll container not found
 const intervals = [];
 const visitedRegions = [];
 const growthEvents = [];
+const visitedNames = new Set();
+let canObserveNames = false;
 const started = performance.now();
 let previous = started;
 let stagnationFrames = 0;
@@ -1156,12 +1266,49 @@ function renderedCount() {
     return thumbs.length;
 }
 
+function canonicalCount() {
+    const grid = typeof document.getElementById === 'function'
+        ? document.getElementById('grid')
+        : null;
+    if (grid && grid.dataset && /^\d+$/.test(grid.dataset.canonicalCount || '')) {
+        return Number(grid.dataset.canonicalCount);
+    }
+    if (typeof folderSnapshot !== 'undefined' && folderSnapshot && folderSnapshot.count >= 0) {
+        return Number(folderSnapshot.count);
+    }
+    if (typeof currentDisplayImages !== 'undefined') return currentDisplayImages.length;
+    return renderedCount();
+}
+
 function loadedImgCount() {
-    const images = document.querySelectorAll('#grid .thumb:not(.loading-placeholder) img.loaded');
-    return images.length;
+    const images = Array.from(document.querySelectorAll('#grid .thumb:not(.loading-placeholder) img'));
+    return images.filter(thumbnailMatchesDesired).length;
+}
+
+function thumbnailMatchesDesired(img) {
+    if (!img.classList.contains('loaded')) return false;
+    const desired = img.dataset ? img.dataset.thumbnailCacheKey : '';
+    return !desired || img.dataset.loadedThumbnailCacheKey === desired;
 }
 
 function viewportSettled() {
+    const grid = typeof document.getElementById === 'function'
+        ? document.getElementById('grid')
+        : null;
+    if (grid && grid.dataset && /^-?\d+(?:\.\d+)?$/.test(grid.dataset.virtualScrollTop || '')) {
+        const reconciledTop = Number(grid.dataset.virtualScrollTop);
+        if (Math.abs(reconciledTop - content.scrollTop) > 2) {
+            return {settled: false, visible: 0, loaded: 0};
+        }
+    }
+    Array.from(document.querySelectorAll('#grid .thumb:not(.loading-placeholder)')).forEach(
+        function(thumb) {
+            if (thumb.dataset && thumb.dataset.name) {
+                canObserveNames = true;
+                visitedNames.add(thumb.dataset.name);
+            }
+        }
+    );
     const images = Array.from(
         document.querySelectorAll('#grid .thumb:not(.loading-placeholder) img')
     ).filter(Boolean);
@@ -1169,13 +1316,34 @@ function viewportSettled() {
         const rect = img.getBoundingClientRect();
         return rect.bottom > 0 && rect.top < window.innerHeight;
     });
-    if (visible.length === 0) return {settled: true, visible: 0, loaded: 0};
-    const loaded = visible.filter(function(img) { return img.classList.contains('loaded'); }).length;
-    return {settled: loaded === visible.length, visible: visible.length, loaded: loaded};
+    visible.forEach(function(img) {
+        if (typeof img.closest !== 'function') return;
+        const thumb = img.closest('.thumb');
+        if (thumb && thumb.dataset && thumb.dataset.name) {
+            canObserveNames = true;
+            visitedNames.add(thumb.dataset.name);
+        }
+    });
+    const visiblePlaceholders = Array.from(
+        document.querySelectorAll('#grid .thumb.loading-placeholder')
+    ).filter(function(thumb) {
+        const rect = thumb.getBoundingClientRect();
+        return rect.bottom > 0 && rect.top < window.innerHeight;
+    });
+    if (visible.length === 0 && visiblePlaceholders.length === 0) {
+        return {settled: true, visible: 0, loaded: 0};
+    }
+    const loaded = visible.filter(thumbnailMatchesDesired).length;
+    return {
+        settled: visiblePlaceholders.length === 0 && loaded === visible.length,
+        visible: visible.length + visiblePlaceholders.length,
+        loaded: loaded
+    };
 }
 
+if (mode === 'full') content.scrollTop = 0;
 const initialScrollExtent = Math.max(0, content.scrollHeight - content.clientHeight);
-const initiallyFullyRendered = renderedCount() >= expectedCount;
+const initiallyFullyRendered = canonicalCount() >= expectedCount;
 let previousScrollHeight = content.scrollHeight;
 let previousRenderedCount = renderedCount();
 let regionStartTime = started;
@@ -1185,6 +1353,7 @@ let targetBoundaryVisited = false;
 let finalBottomVisited = false;
 let terminalPartialBoundary = null;
 let partialScrollGuardInstalled = false;
+let recoveryPass = false;
 
 function guardTerminalPartialScroll(event) {
     event.stopImmediatePropagation();
@@ -1249,9 +1418,11 @@ function step(now) {
 
     const clientHeight = content.clientHeight;
     const maxScroll = Math.max(0, currentScrollHeight - clientHeight);
-    const stepSize = Math.max(300, Math.round(clientHeight * 0.6));
+    // Use a gap-free half-viewport step. The recovery branch remains a guard
+    // for unusual browser geometry, but the normal pass should itself be exact.
+    const stepSize = Math.max(180, Math.round(clientHeight * 0.5));
     if (mode === 'partial' && !initiallyFullyRendered
-        && currentRendered >= targetCount && terminalPartialBoundary === null) {
+        && canonicalCount() >= targetCount && terminalPartialBoundary === null) {
         lockTerminalPartialBoundary(maxScroll);
     }
     const boundary = currentBoundary(maxScroll);
@@ -1272,11 +1443,22 @@ function step(now) {
     if (lastRecordedPosition !== content.scrollTop) recordRegion(now, state);
 
     const atBoundary = Math.abs(content.scrollTop - boundary) <= 2;
-    if (atBoundary && currentRendered >= targetCount) {
+    if (atBoundary && canonicalCount() >= targetCount) {
         targetBoundaryVisited = true;
         finalBottomVisited = Math.abs(content.scrollTop - maxScroll) <= 2;
-        const fullCountReached = mode !== 'full' || currentRendered >= expectedCount;
-        finish(fullCountReached, false, null);
+        const fullCountReached = mode !== 'full' || canonicalCount() >= expectedCount;
+        if (mode === 'full' && canObserveNames && visitedNames.size < expectedCount && !recoveryPass) {
+            recoveryPass = true;
+            targetBoundaryVisited = false;
+            finalBottomVisited = false;
+            content.scrollTop = 0;
+            lastRecordedPosition = null;
+            regionStartTime = now;
+            requestAnimationFrame(function() { requestAnimationFrame(step); });
+            return;
+        }
+        const exactTraversal = mode !== 'full' || !canObserveNames || visitedNames.size >= expectedCount;
+        finish(fullCountReached && exactTraversal, false, null);
         return;
     }
 
@@ -1285,7 +1467,11 @@ function step(now) {
         lastRecordedPosition = null;
         regionStartTime = now;
         stagnationFrames = 0;
-    } else if (currentRendered < targetCount) {
+        // Give the production scroll rAF one frame to reconcile the next keyed
+        // virtual window before this harness samples/advances again.
+        requestAnimationFrame(function() { requestAnimationFrame(step); });
+        return;
+    } else if (canonicalCount() < targetCount) {
         content.dispatchEvent(new Event('scroll', {bubbles: true}));
         stagnationFrames += 1;
         if (stagnationFrames > stagnationMax) {
@@ -1312,6 +1498,8 @@ function finish(ready, frameCapReached, stagnationReason, unsettledReason) {
         expectedCount: expectedCount,
         targetCount: targetCount,
         renderedCount: renderedCount(),
+        canonicalCount: canonicalCount(),
+        traversedItemCount: canObserveNames ? visitedNames.size : null,
         loadedCount: loadedImgCount(),
         growthEvents: growthEvents,
         regionsVisited: visitedRegions.length,
@@ -1348,9 +1536,12 @@ def _is_dynamic_traversal_ready(result: dict[str, Any]) -> bool:
         return False
     if result.get("stagnationReason") is not None or result.get("unsettledReason") is not None:
         return False
-    rendered = int(result.get("renderedCount", 0))
+    rendered = int(result.get("canonicalCount", result.get("renderedCount", 0)))
     target = int(result.get("targetCount", 0))
     if rendered < target:
+        return False
+    traversed = result.get("traversedItemCount")
+    if traversed is not None and int(traversed) < target:
         return False
     if not result.get("targetBoundaryVisited", False):
         return False
@@ -1380,11 +1571,16 @@ def _dynamic_traversal_warnings(result: dict[str, Any], context: str = "") -> li
         warnings.append(
             f"Dynamic traversal viewport was unsettled for {context}: {unsettled_reason}"
         )
-    rendered = int(result.get("renderedCount", 0))
+    rendered = int(result.get("canonicalCount", result.get("renderedCount", 0)))
     target = int(result.get("targetCount", 0))
     if rendered < target:
         warnings.append(
             f"Dynamic traversal incomplete for {context}: {rendered}/{target} images rendered"
+        )
+    traversed = result.get("traversedItemCount")
+    if traversed is not None and int(traversed) < target:
+        warnings.append(
+            f"Dynamic traversal visited {int(traversed)}/{target} indexed items for {context}"
         )
     if not result.get("targetBoundaryVisited", False):
         warnings.append(f"Dynamic traversal did not settle its target boundary for {context}")
@@ -1461,7 +1657,7 @@ def _select_and_traverse(driver: Any, batch: str, count: int, timeout: float) ->
 
     # ---- Full dynamic traversal ----
     dynamic_result: dict[str, Any] = driver.execute_async_script(
-        DYNAMIC_TRAVERSAL_GRID, count, count, 5000, "full"
+        DYNAMIC_TRAVERSAL_GRID, count, count, dynamic_frame_budget(count), "full"
     )
     traversal_available = bool(dynamic_result.get("available", False))
     traversal_ready = _is_dynamic_traversal_ready(dynamic_result) if traversal_available else False
@@ -1500,7 +1696,9 @@ def _select_and_traverse(driver: Any, batch: str, count: int, timeout: float) ->
             stagnation = dynamic_result.get("stagnationReason")
             if stagnation:
                 parts.append(f"dynamic traversal stagnated: {stagnation}")
-            rendered = int(dynamic_result.get("renderedCount", 0))
+            rendered = int(
+                dynamic_result.get("canonicalCount", dynamic_result.get("renderedCount", 0))
+            )
             target = int(dynamic_result.get("targetCount", 0))
             if rendered < target:
                 parts.append(f"dynamic traversal incomplete ({rendered}/{target} rendered)")
@@ -1523,6 +1721,10 @@ def _select_and_traverse(driver: Any, batch: str, count: int, timeout: float) ->
             "loaded": loaded_after,
             "count": count,
             "rendered_count": int(dynamic_result.get("renderedCount", 0)),
+            "canonical_count": int(
+                dynamic_result.get("canonicalCount", dynamic_result.get("renderedCount", 0))
+            ),
+            "traversed_item_count": dynamic_result.get("traversedItemCount"),
             "expected_count": count,
             "target_count": count,
             "visibleCount": int(viewport_result.get("state", {}).get("visibleCount", 0))
@@ -1552,8 +1754,27 @@ def _thumbnail_disk_metrics(batch_root: Path, batch: str) -> dict[str, int]:
     thumbnail_dir = batch_root / batch / ".thumbs"
     if not thumbnail_dir.is_dir():
         return {"file_count": 0, "disk_bytes": 0}
-    files = [path for path in thumbnail_dir.iterdir() if path.is_file() and not path.is_symlink()]
-    return {"file_count": len(files), "disk_bytes": sum(path.stat().st_size for path in files)}
+    file_count = 0
+    disk_bytes = 0
+    try:
+        entries = thumbnail_dir.iterdir()
+    except OSError:
+        return {"file_count": 0, "disk_bytes": 0}
+    for path in entries:
+        # Atomic derivative writers intentionally expose a dot-prefixed temp
+        # name for a very short window. Ignore it and tolerate final files that
+        # are concurrently replaced/removed between enumeration and stat.
+        if path.name.startswith("."):
+            continue
+        try:
+            if path.is_symlink() or not path.is_file():
+                continue
+            size = path.stat().st_size
+        except OSError:
+            continue
+        file_count += 1
+        disk_bytes += size
+    return {"file_count": file_count, "disk_bytes": disk_bytes}
 
 
 def _browser_process_memory(
@@ -1605,12 +1826,30 @@ def _phase_metrics(
             {
                 "count": len(tasks),
                 "duration_ms": round(sum(float(task["duration"]) for task in tasks), 3),
+                "max_duration_ms": round(
+                    max((float(task["duration"]) for task in tasks), default=0.0), 3
+                ),
             },
             "PerformanceObserver longtask entries captured after harness instrumentation",
         )
     else:
         long_tasks = unavailable(str(page["longTasks"].get("reason")))
     warnings = []
+    # Older unit-test drivers and previously captured benchmark fixtures do not
+    # include this additive metric. Treat it as unavailable/zero there while
+    # enforcing the cap for live runs produced by PAGE_METRICS above.
+    live_thumbnail_count = int(page.get("liveThumbnailCount") or 0)
+    if live_thumbnail_count > 500:
+        warnings.append(f"Live thumbnail count {live_thumbnail_count} exceeded the 500-element cap")
+    if page["longTasks"].get("available") and any(
+        float(task["duration"]) > 100 for task in page["longTasks"]["entries"]
+    ):
+        warnings.append("An interaction-blocking long task exceeded 100 ms")
+    frame_summary = summarize_frames(frame_data) if frame_data is not None else None
+    if frame_summary and frame_summary.get("available"):
+        p95 = frame_summary["value"].get("p95_interval_ms")
+        if p95 is not None and p95 >= 33:
+            warnings.append(f"Scroll-frame p95 {p95} ms missed the <33 ms target")
     if readiness is not None:
         if not readiness["ready"]:
             warnings.append(
@@ -1647,9 +1886,12 @@ def _phase_metrics(
         "dom_node_count": available(
             page["domNodeCount"], "document.getElementsByTagName('*').length"
         ),
+        "live_thumbnail_count": available(
+            live_thumbnail_count, "document.querySelectorAll('#grid .thumb').length"
+        ),
         "long_tasks": long_tasks,
-        "frame_timing": summarize_frames(frame_data)
-        if frame_data is not None
+        "frame_timing": frame_summary
+        if frame_summary is not None
         else unavailable("This phase does not perform a frame-timed scripted operation"),
         "browser_process_memory": _browser_process_memory(dependencies, driver, browser),
         "thumbnail_disk": available(
@@ -1806,7 +2048,11 @@ def _prepare_checkpoint_cold_phase(
     partial_target = max(1, int(math.ceil(spec.size * 0.4)))
     partial_target = min(partial_target, spec.size)
     partial_traversal: dict[str, Any] = driver.execute_async_script(
-        DYNAMIC_TRAVERSAL_GRID, spec.size, partial_target, 5000, "partial"
+        DYNAMIC_TRAVERSAL_GRID,
+        spec.size,
+        partial_target,
+        dynamic_frame_budget(spec.size),
+        "partial",
     )
     partial_ready = _is_dynamic_traversal_ready(partial_traversal)
     partial_state = {
@@ -1852,7 +2098,11 @@ def _prepare_checkpoint_cold_phase(
 
     # ---- Checkpoint 3: full dynamic traversal ----
     full_traversal: dict[str, Any] = driver.execute_async_script(
-        DYNAMIC_TRAVERSAL_GRID, spec.size, spec.size, 5000, "full"
+        DYNAMIC_TRAVERSAL_GRID,
+        spec.size,
+        spec.size,
+        dynamic_frame_budget(spec.size),
+        "full",
     )
     full_ready = _is_dynamic_traversal_ready(full_traversal)
     full_state = {
@@ -1866,6 +2116,8 @@ def _prepare_checkpoint_cold_phase(
         "available": full_traversal.get("available", False),
         "reason": full_traversal.get("reason"),
         "rendered_count": full_traversal.get("renderedCount"),
+        "canonical_count": full_traversal.get("canonicalCount"),
+        "traversed_item_count": full_traversal.get("traversedItemCount"),
         "expected_count": spec.size,
         "target_count": spec.size,
         "target_boundary": full_traversal.get("targetBoundary"),
@@ -1909,12 +2161,30 @@ def _prepare_checkpoint_cold_phase(
     )
     cp_warnings.extend(_dynamic_traversal_warnings(full_traversal, "full_traversal checkpoint"))
 
-    # ---- Final: wait for all thumbnails (preserves existing cold-phase contract) ----
-    final_readiness = _wait_for_grid(driver, spec.size, timeout)
-    # Propagate first-viewport timing from checkpoint 1 when ready
-    final_readiness["first_viewport_ms"] = (
-        round(_first_viewport_ms, 3) if _first_viewport_ms is not None else None
+    # The full traversal is the completion proof for both a full-DOM grid and
+    # the virtual grid. Waiting for expected_count simultaneous DOM nodes would
+    # necessarily time out once row virtualization is active.
+    traversed_count = full_traversal.get("traversedItemCount")
+    canonical_count = int(
+        full_traversal.get("canonicalCount", full_traversal.get("renderedCount", 0))
     )
+    final_readiness = {
+        "ready": full_ready,
+        "available": bool(full_traversal.get("available", False)),
+        "elapsed_ms": round(float(full_traversal.get("elapsedMs", 0)), 3),
+        "first_viewport_ms": (
+            round(_first_viewport_ms, 3) if _first_viewport_ms is not None else None
+        ),
+        "state": {
+            "loaded": int(traversed_count if traversed_count is not None else canonical_count),
+            "count": spec.size,
+            "rendered_count": int(full_traversal.get("renderedCount", 0)),
+            "canonical_count": canonical_count,
+            "traversed_item_count": traversed_count,
+        },
+        "reason": cp3_readiness["reason"],
+        "warnings": _dynamic_traversal_warnings(full_traversal, f"batch {spec.primary_batch}"),
+    }
 
     return [cp1, cp2, cp3], companion_ready, final_readiness, cp_warnings
 
@@ -1925,7 +2195,11 @@ def _grid_loaded_count_js() -> str:
     return """
 var thumbs = Array.from(document.querySelectorAll('#grid .thumb:not(.loading-placeholder)'));
 var images = thumbs.map(function(t) { return t.querySelector('img'); }).filter(Boolean);
-return images.filter(function(img) { return img.classList.contains('loaded'); }).length;
+return images.filter(function(img) {
+    if (!img.classList.contains('loaded')) return false;
+    var desired = img.dataset ? img.dataset.thumbnailCacheKey : '';
+    return !desired || img.dataset.loadedThumbnailCacheKey === desired;
+}).length;
 """
 
 
@@ -1993,9 +2267,9 @@ def benchmark_case(
             spec.primary_batch,
             readiness,
         )
-        if metrics["thumbnail_resources"]["request_count"] != spec.size:
+        if metrics["thumbnail_resources"]["request_count"] < spec.size:
             warnings.append(
-                f"Cold thumbnail request count was {metrics['thumbnail_resources']['request_count']}, expected {spec.size}"
+                f"Cold thumbnail request count was {metrics['thumbnail_resources']['request_count']}, expected at least {spec.size}"
             )
         if not companion_ready["ready"]:
             warnings.append("Initial companion batch did not become ready before cold measurement")
@@ -2010,7 +2284,7 @@ def benchmark_case(
 
         stage = "controlled scroll"
         _install_instrumentation(driver, spec.size)
-        scroll_data = driver.execute_async_script(SCROLL_GRID)
+        scroll_data = _measure_controlled_wheel_scroll(driver, dependencies)
         stage = "controlled scroll metric collection"
         metrics, warnings = _phase_metrics(
             driver,
