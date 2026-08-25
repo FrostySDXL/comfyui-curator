@@ -27,21 +27,24 @@ async function apiGetImages(batch, folder, sort, order) {
     return resp.json();
 }
 
-async function apiGetFolderSnapshot(batch, folder, sort, order) {
-    return fetch(ccApiPath(`/api/v2/folders/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}/snapshot?sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}`));
+async function apiGetFolderSnapshot(batch, folder, sort, order, shuffleSeed) {
+    const params = new URLSearchParams({sort, order, shuffle_seed: shuffleSeed || ''});
+    return fetch(ccApiPath(`/api/v2/folders/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}/snapshot?${params.toString()}`));
 }
 
-async function apiGetFolderPage(batch, folder, sort, order, revision, offset, limit) {
-    return fetch(ccApiPath(`/api/v2/folders/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}/items?sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&revision=${encodeURIComponent(revision)}&offset=${encodeURIComponent(offset)}&limit=${encodeURIComponent(limit)}`));
+async function apiGetFolderPage(batch, folder, sort, order, revision, offset, limit, shuffleSeed) {
+    const params = new URLSearchParams({sort, order, revision, offset, limit, shuffle_seed: shuffleSeed || ''});
+    return fetch(ccApiPath(`/api/v2/folders/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}/items?${params.toString()}`));
 }
 
-async function apiGetFolderItemIndex(batch, folder, sort, order, revision, name) {
-    const params = new URLSearchParams({sort, order, revision, name});
+async function apiGetFolderItemIndex(batch, folder, sort, order, revision, name, shuffleSeed) {
+    const params = new URLSearchParams({sort, order, revision, name, shuffle_seed: shuffleSeed || ''});
     return fetch(ccApiPath(`/api/v2/folders/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}/lookup?${params.toString()}`));
 }
 
-async function apiPollFolderSnapshot(batch, folder, sort, order, revision) {
-    return fetch(ccApiPath(`/api/v2/folders/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}/poll?sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&revision=${encodeURIComponent(revision || '')}`));
+async function apiPollFolderSnapshot(batch, folder, sort, order, revision, shuffleSeed) {
+    const params = new URLSearchParams({sort, order, revision: revision || '', shuffle_seed: shuffleSeed || ''});
+    return fetch(ccApiPath(`/api/v2/folders/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}/poll?${params.toString()}`));
 }
 
 async function apiPostJson(url, body) {

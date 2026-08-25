@@ -14,7 +14,12 @@ from .favorites import (
     resolve_universal_favorites,
     toggle_favorite,
 )
-from .folder_index import DEFAULT_PAGE_SIZE, BulkMoveOperationStore, FolderIndexService
+from .folder_index import (
+    DEFAULT_PAGE_SIZE,
+    BulkMoveOperationStore,
+    FolderIndexService,
+    normalize_shuffle_seed,
+)
 from .media import (
     generate_hover_preview,
     generate_media_poster,
@@ -478,21 +483,33 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             sort_by = "date"
         if order not in ("asc", "desc"):
             order = "desc"
-        return batch, folder, directory, (sort_by, order), None
+        try:
+            shuffle_seed = normalize_shuffle_seed(sort_by, request.query.get("shuffle_seed", ""))
+        except ValueError:
+            return (
+                None,
+                None,
+                None,
+                None,
+                web.json_response({"error": "Invalid shuffle seed"}, status=400),
+            )
+        return batch, folder, directory, (sort_by, order, shuffle_seed), None
 
     async def get_folder_snapshot(request):
         batch, folder, directory, sorting, error_response = snapshot_request(request)
         if error_response is not None:
             return error_response
-        sort_by, order = sorting
-        payload = service.folder_index.request_snapshot(batch, folder, directory, sort_by, order)
+        sort_by, order, shuffle_seed = sorting
+        payload = service.folder_index.request_snapshot(
+            batch, folder, directory, sort_by, order, shuffle_seed
+        )
         return web.json_response(payload, status=200 if payload["status"] == "ready" else 202)
 
     async def poll_folder_snapshot(request):
         batch, folder, directory, sorting, error_response = snapshot_request(request)
         if error_response is not None:
             return error_response
-        sort_by, order = sorting
+        sort_by, order, shuffle_seed = sorting
         payload = service.folder_index.poll(
             batch,
             folder,
@@ -500,6 +517,7 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             sort_by,
             order,
             request.query.get("revision"),
+            shuffle_seed,
         )
         return web.json_response(payload, status=200 if payload["status"] == "ready" else 202)
 
@@ -507,7 +525,7 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
         batch, folder, _directory, sorting, error_response = snapshot_request(request)
         if error_response is not None:
             return error_response
-        sort_by, order = sorting
+        sort_by, order, shuffle_seed = sorting
         try:
             offset = int(request.query.get("offset", "0"))
             limit = int(request.query.get("limit", str(DEFAULT_PAGE_SIZE)))
@@ -525,6 +543,7 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             offset,
             limit,
             favorites,
+            shuffle_seed,
         )
         if payload is None:
             return web.json_response({"error": "Snapshot revision is stale"}, status=409)
@@ -534,17 +553,28 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
         batch, folder, _directory, sorting, error_response = snapshot_request(request)
         if error_response is not None:
             return error_response
-        sort_by, order = sorting
+        sort_by, order, shuffle_seed = sorting
         revision = request.query.get("revision", "")
         name = request.query.get("name", "")
         try:
             batch_store._validate_name(name, "file name")
         except (TypeError, ValueError):
             return web.json_response({"error": "Invalid file name"}, status=400)
-        index = service.folder_index.index_of(batch, folder, sort_by, order, revision, name)
+        index = service.folder_index.index_of(
+            batch, folder, sort_by, order, revision, name, shuffle_seed
+        )
         if index is not None:
             return web.json_response({"revision": revision, "index": index})
-        current = service.folder_index.page(batch, folder, sort_by, order, revision, 0, 1)
+        current = service.folder_index.page(
+            batch,
+            folder,
+            sort_by,
+            order,
+            revision,
+            0,
+            1,
+            shuffle_seed=shuffle_seed,
+        )
         if current is None:
             return web.json_response({"error": "Snapshot revision is stale"}, status=409)
         return web.json_response({"error": "File not found"}, status=404)
@@ -621,12 +651,18 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
         if selection is not None:
             if not isinstance(selection, dict) or selection.get("type") != "snapshot":
                 return web.json_response({"error": "Invalid selection"}, status=400)
+            sort_by = str(selection.get("sort", "date"))
+            try:
+                shuffle_seed = normalize_shuffle_seed(sort_by, selection.get("shuffle_seed", ""))
+            except ValueError:
+                return web.json_response({"error": "Invalid shuffle seed"}, status=400)
             selected_names = service.folder_index.names_for_revision(
                 batch,
                 source,
-                str(selection.get("sort", "date")),
+                sort_by,
                 str(selection.get("order", "desc")),
                 str(selection.get("revision", "")),
+                shuffle_seed,
             )
             if selected_names is None:
                 return web.json_response({"error": "Snapshot revision is stale"}, status=409)

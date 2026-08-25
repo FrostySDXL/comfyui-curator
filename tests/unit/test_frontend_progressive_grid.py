@@ -66,6 +66,30 @@ def test_context_placeholder_and_empty_paths_reset_progressive_lifecycle() -> No
     assert "cancelScheduledViewportLoads()" in lifecycle_reset
 
 
+def test_native_shuffle_session_rotates_and_follows_every_revision_bound_request() -> None:
+    source = read_frontend_js()
+    context_key = extract_function_body(source, "function _getProgressiveGridContextKey()")
+    set_sort = extract_function_body(source, "function setSort(")
+    wait_snapshot = extract_function_body(source, "async function _waitForFolderSnapshot(")
+    page = extract_function_body(source, "async function ensureFolderPageForIndex(")
+    poll = extract_function_body(source, "async function pollForChanges()")
+    lookup = extract_function_body(source, "async function openMediaSearchResult(")
+    select_all = extract_function_body(source, "function selectAllDisplayedImages()")
+    move_selected = extract_function_body(source, "async function moveSelected(")
+
+    assert "let folderShuffleSeed = '';" in source
+    assert "function resetFolderShuffleOrder()" in source
+    assert "folderShuffleSeed" in context_key
+    assert "resetFolderShuffleOrder();" in set_sort
+    assert "folderShuffleSeed" in wait_snapshot
+    assert "folderShuffleSeed" in page
+    assert "folderShuffleSeed" in poll
+    assert "folderShuffleSeed" in lookup
+    assert "shuffleSeed: folderShuffleSeed" in select_all
+    assert "shuffle_seed: serverSelection.shuffleSeed" in move_selected
+    assert source.count("shuffle_seed") >= 5
+
+
 def test_same_window_reconciliation_preserves_live_grid() -> None:
     body = extract_function_body(read_frontend_js(), "function updateGrid()")
 

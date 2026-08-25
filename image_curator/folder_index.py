@@ -17,6 +17,17 @@ from .batch_store import VIEWABLE_MEDIA_EXTENSIONS, media_kind, media_mime
 
 DEFAULT_PAGE_SIZE = 256
 MAX_PAGE_SIZE = 512
+MAX_SHUFFLE_SEED_LENGTH = 64
+MAX_SHUFFLE_SESSIONS_PER_VIEW = 4
+
+
+def normalize_shuffle_seed(sort_by: str, value: object) -> str:
+    """Return a bounded shuffle session token, ignored for non-shuffle sorts."""
+    if sort_by != "shuffle":
+        return ""
+    if not isinstance(value, str) or len(value) > MAX_SHUFFLE_SEED_LENGTH:
+        raise ValueError("Invalid shuffle seed")
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +58,7 @@ class FolderSnapshot:
     built_at: float
 
 
-IndexKey = tuple[str, str, str, str]
+IndexKey = tuple[str, str, str, str, str]
 
 
 class FolderIndexService:
@@ -63,13 +74,21 @@ class FolderIndexService:
         self._futures: dict[IndexKey, Future[FolderSnapshot]] = {}
         self._directories: dict[IndexKey, Path] = {}
         self._dirty: set[IndexKey] = set()
+        self._last_access: dict[IndexKey, int] = {}
+        self._access_counter = 0
         self._closed = False
 
-    @staticmethod
-    def _key(batch: str, folder: str, sort_by: str, order: str) -> IndexKey:
-        return batch, folder, sort_by, order
+    def _touch(self, key: IndexKey) -> None:
+        self._access_counter += 1
+        self._last_access[key] = self._access_counter
 
-    def _scan_directory(self, directory: Path, sort_by: str, order: str) -> tuple[FolderItem, ...]:
+    @staticmethod
+    def _key(batch: str, folder: str, sort_by: str, order: str, shuffle_seed: str = "") -> IndexKey:
+        return batch, folder, sort_by, order, shuffle_seed if sort_by == "shuffle" else ""
+
+    def _scan_directory(
+        self, directory: Path, sort_by: str, order: str, shuffle_seed: str = ""
+    ) -> tuple[FolderItem, ...]:
         items: list[FolderItem] = []
         try:
             entries = directory.iterdir()
@@ -93,7 +112,9 @@ class FolderIndexService:
         if sort_by == "name":
             items.sort(key=lambda item: item.name.lower(), reverse=reverse)
         elif sort_by == "shuffle":
-            seed = "\0".join(sorted(item.name for item in items))
+            items.sort(key=lambda item: item.name.lower())
+            names_seed = "\0".join(item.name for item in items)
+            seed = f"{shuffle_seed}\0{names_seed}" if shuffle_seed else names_seed
             random.Random(seed).shuffle(items)
             if reverse:
                 items.reverse()
@@ -114,8 +135,10 @@ class FolderIndexService:
         lookup = MappingProxyType({item.name: index for index, item in enumerate(items)})
         return FolderSnapshot(digest.hexdigest(), items, lookup, time.monotonic())
 
-    def _build(self, directory: Path, sort_by: str, order: str) -> FolderSnapshot:
-        return self._snapshot_for(self._scan_directory(directory, sort_by, order))
+    def _build(
+        self, directory: Path, sort_by: str, order: str, shuffle_seed: str = ""
+    ) -> FolderSnapshot:
+        return self._snapshot_for(self._scan_directory(directory, sort_by, order, shuffle_seed))
 
     def _finish_build(self, key: IndexKey, future: Future[FolderSnapshot]) -> None:
         try:
@@ -138,9 +161,38 @@ class FolderIndexService:
         if self._closed or key in self._futures:
             return
         self._directories[key] = Path(directory)
-        future = self._executor.submit(self._build, Path(directory), key[2], key[3])
+        future = self._executor.submit(self._build, Path(directory), key[2], key[3], key[4])
         self._futures[key] = future
         future.add_done_callback(lambda completed: self._finish_build(key, completed))
+
+    def _prune_old_shuffle_sessions(self, active_key: IndexKey) -> None:
+        if active_key[2] != "shuffle" or not active_key[4]:
+            return
+        matching_keys = {
+            key
+            for key in set(self._snapshots)
+            | set(self._futures)
+            | set(self._directories)
+            | set(self._dirty)
+            | set(self._last_access)
+            if key[:4] == active_key[:4] and key != active_key
+        }
+        excess = max(
+            0,
+            len(matching_keys) + 1 - MAX_SHUFFLE_SESSIONS_PER_VIEW,
+        )
+        stale_keys = sorted(
+            matching_keys,
+            key=lambda key: self._last_access.get(key, 0),
+        )[:excess]
+        for key in stale_keys:
+            future = self._futures.pop(key, None)
+            if future is not None:
+                future.cancel()
+            self._snapshots.pop(key, None)
+            self._directories.pop(key, None)
+            self._dirty.discard(key)
+            self._last_access.pop(key, None)
 
     @staticmethod
     def _metadata(snapshot: FolderSnapshot) -> dict[str, Any]:
@@ -151,10 +203,18 @@ class FolderIndexService:
         }
 
     def request_snapshot(
-        self, batch: str, folder: str, directory: Path, sort_by: str, order: str
+        self,
+        batch: str,
+        folder: str,
+        directory: Path,
+        sort_by: str,
+        order: str,
+        shuffle_seed: str = "",
     ) -> dict[str, Any]:
-        key = self._key(batch, folder, sort_by, order)
+        key = self._key(batch, folder, sort_by, order, shuffle_seed)
         with self._lock:
+            self._touch(key)
+            self._prune_old_shuffle_sessions(key)
             snapshot = self._snapshots.get(key)
             if snapshot is None:
                 self._schedule(key, directory)
@@ -171,8 +231,9 @@ class FolderIndexService:
         sort_by: str,
         order: str,
         revision: str | None,
+        shuffle_seed: str = "",
     ) -> dict[str, Any]:
-        result = self.request_snapshot(batch, folder, directory, sort_by, order)
+        result = self.request_snapshot(batch, folder, directory, sort_by, order, shuffle_seed)
         if result["status"] != "ready":
             return result
         return {
@@ -192,10 +253,13 @@ class FolderIndexService:
         offset: int,
         limit: int = DEFAULT_PAGE_SIZE,
         favorites: set[str] | None = None,
+        shuffle_seed: str = "",
     ) -> dict[str, Any] | None:
-        key = self._key(batch, folder, sort_by, order)
+        key = self._key(batch, folder, sort_by, order, shuffle_seed)
         with self._lock:
             snapshot = self._snapshots.get(key)
+            if snapshot is not None:
+                self._touch(key)
         if snapshot is None or snapshot.revision != revision:
             return None
         safe_offset = max(0, offset)
@@ -214,21 +278,38 @@ class FolderIndexService:
         }
 
     def index_of(
-        self, batch: str, folder: str, sort_by: str, order: str, revision: str, name: str
+        self,
+        batch: str,
+        folder: str,
+        sort_by: str,
+        order: str,
+        revision: str,
+        name: str,
+        shuffle_seed: str = "",
     ) -> int | None:
-        key = self._key(batch, folder, sort_by, order)
+        key = self._key(batch, folder, sort_by, order, shuffle_seed)
         with self._lock:
             snapshot = self._snapshots.get(key)
+            if snapshot is not None:
+                self._touch(key)
         if snapshot is None or snapshot.revision != revision:
             return None
         return snapshot.name_to_index.get(name)
 
     def names_for_revision(
-        self, batch: str, folder: str, sort_by: str, order: str, revision: str
+        self,
+        batch: str,
+        folder: str,
+        sort_by: str,
+        order: str,
+        revision: str,
+        shuffle_seed: str = "",
     ) -> tuple[str, ...] | None:
-        key = self._key(batch, folder, sort_by, order)
+        key = self._key(batch, folder, sort_by, order, shuffle_seed)
         with self._lock:
             snapshot = self._snapshots.get(key)
+            if snapshot is not None:
+                self._touch(key)
         if snapshot is None or snapshot.revision != revision:
             return None
         return tuple(item.name for item in snapshot.items)
@@ -239,6 +320,7 @@ class FolderIndexService:
             for key in list(self._snapshots):
                 if key[0] == batch and (not folder_set or key[1] in folder_set):
                     self._snapshots.pop(key, None)
+                    self._last_access.pop(key, None)
 
     def refresh(self, batch: str, *folders: str) -> None:
         """Schedule mutation reconciliation now while keeping the last snapshot readable."""
@@ -264,12 +346,15 @@ class FolderIndexService:
         folder: str,
         sort_by: str,
         order: str,
+        shuffle_seed: str = "",
         *,
         timeout: float,
     ) -> bool:
-        key = self._key(batch, folder, sort_by, order)
+        key = self._key(batch, folder, sort_by, order, shuffle_seed)
         with self._lock:
             future = self._futures.get(key)
+            if future is not None or key in self._snapshots:
+                self._touch(key)
         if future is None:
             with self._lock:
                 return key in self._snapshots

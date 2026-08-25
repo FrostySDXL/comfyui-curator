@@ -300,6 +300,57 @@ def test_v2_folder_snapshot_is_paged_revision_bound_and_poll_is_lightweight(
 
 
 @pytest.mark.component
+def test_v2_folder_shuffle_seed_rotates_a_stable_paged_order(client, app_module, make_file):
+    app_module.create_batch("shuffle")
+    inbox = app_module.BATCHES_DIR / "shuffle" / "inbox"
+    for index in range(20):
+        make_file(inbox / f"item-{index:02}.png", bytes([index]))
+
+    def names_for_seed(seed):
+        query = f"sort=shuffle&order=asc&shuffle_seed={seed}"
+        client.get(f"/api/v2/folders/shuffle/inbox/snapshot?{query}")
+        assert app_module._folder_index.wait_until_ready(
+            "shuffle", "inbox", "shuffle", "asc", seed, timeout=2
+        )
+        snapshot = client.get(f"/api/v2/folders/shuffle/inbox/snapshot?{query}").get_json()
+        page = client.get(
+            f"/api/v2/folders/shuffle/inbox/items?{query}"
+            f"&revision={snapshot['revision']}&offset=0&limit=256"
+        )
+        assert page.status_code == 200
+        return snapshot["revision"], [item["name"] for item in page.get_json()["items"]]
+
+    first_revision, first_names = names_for_seed("one")
+    second_revision, second_names = names_for_seed("two")
+
+    assert second_revision != first_revision
+    assert second_names != first_names
+    assert set(second_names) == set(first_names)
+    too_long = client.get(
+        "/api/v2/folders/shuffle/inbox/snapshot?sort=shuffle&shuffle_seed=" + "x" * 65
+    )
+    assert too_long.status_code == 400
+    moved = client.post(
+        "/api/move-batch",
+        json={
+            "batch": "shuffle",
+            "source": "inbox",
+            "destination": "finals",
+            "selection": {
+                "type": "snapshot",
+                "revision": second_revision,
+                "sort": "shuffle",
+                "order": "asc",
+                "shuffle_seed": "two",
+                "excluded": [],
+            },
+        },
+    )
+    assert moved.status_code == 200
+    assert moved.get_json()["moved"] == 20
+
+
+@pytest.mark.component
 def test_api_move_moves_single_file(client, app_module, make_file):
     """POST /api/move moves a single image between folders."""
     app_module.create_batch("batch")

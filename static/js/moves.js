@@ -84,6 +84,7 @@ function selectAllDisplayedImages() {
                 serverSelection = serverSelection ? null : {
                     revision: folderSnapshot.revision,
                     count: folderSnapshot.count,
+                    shuffleSeed: folderShuffleSeed,
                     excluded: new Set(),
                 };
                 selectedImages.clear();
@@ -326,6 +327,7 @@ async function moveSelected(destination) {
                             revision: serverSelection.revision,
                             sort: currentSort,
                             order: currentOrder,
+                            shuffle_seed: serverSelection.shuffleSeed,
                             excluded: [...serverSelection.excluded],
                         },
                     }),

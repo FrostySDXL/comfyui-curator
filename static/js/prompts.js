@@ -448,6 +448,7 @@
                     currentOrder,
                     folderSnapshot.revision,
                     result.name,
+                    folderShuffleSeed,
                 );
                 if (resp.ok) {
                     const payload = await resp.json();

@@ -20,6 +20,7 @@ async function pollForChanges() {
                 const [snapshotResp, runResp] = await Promise.all([
                     apiPollFolderSnapshot(
                         currentBatch, currentFolder, _folderTransportSort(), currentOrder, folderSnapshot.revision,
+                        folderShuffleSeed,
                     ),
                     fetch(ccApiPath(`/api/ai-curate/batches/${currentBatch}/runs`)),
                 ]);

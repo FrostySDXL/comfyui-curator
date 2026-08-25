@@ -165,6 +165,87 @@ def test_native_v2_folder_snapshot_pages_poll_and_stale_revision(tmp_path, monke
     asyncio.run(scenario())
 
 
+def test_native_v2_folder_shuffle_seed_rotates_a_stable_paged_order(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        inbox = settings.batch_root / "alpha" / "inbox"
+        for index in range(20):
+            (inbox / f"item-{index:02}.png").write_bytes(bytes([index]))
+        service = native_routes.NativeCuratorService(settings)
+        router = _Router()
+        native_routes.register_native_routes(SimpleNamespace(router=router), service)
+        route = "/api/curator/v2/folders/{batch}/{folder}/snapshot"
+        match = {"batch": "alpha", "folder": "inbox"}
+
+        async def names_for_seed(seed):
+            query = {"sort": "shuffle", "order": "asc", "shuffle_seed": seed}
+            await _invoke(router, "GET", route, match_info=match, query=query)
+            assert service.folder_index.wait_until_ready(
+                "alpha", "inbox", "shuffle", "asc", seed, timeout=2
+            )
+            _status, snapshot = await _invoke(router, "GET", route, match_info=match, query=query)
+            status, page = await _invoke(
+                router,
+                "GET",
+                "/api/curator/v2/folders/{batch}/{folder}/items",
+                match_info=match,
+                query={
+                    **query,
+                    "revision": snapshot["revision"],
+                    "offset": "0",
+                    "limit": "256",
+                },
+            )
+            assert status == 200
+            return snapshot["revision"], [item["name"] for item in page["items"]]
+
+        first_revision, first_names = await names_for_seed("one")
+        second_revision, second_names = await names_for_seed("two")
+
+        assert second_revision != first_revision
+        assert second_names != first_names
+        assert set(second_names) == set(first_names)
+        invalid_status, _invalid = await _invoke(
+            router,
+            "GET",
+            route,
+            match_info=match,
+            query={"sort": "shuffle", "shuffle_seed": "x" * 65},
+        )
+        assert invalid_status == 400
+        moved_status, moved = await _invoke(
+            router,
+            "POST",
+            "/api/curator/move-batch",
+            payload={
+                "batch": "alpha",
+                "source": "inbox",
+                "destination": "finals",
+                "selection": {
+                    "type": "snapshot",
+                    "revision": second_revision,
+                    "sort": "shuffle",
+                    "order": "asc",
+                    "shuffle_seed": "two",
+                    "excluded": [],
+                },
+            },
+        )
+        assert moved_status == 200
+        assert moved["moved"] == 20
+        service.close()
+
+    asyncio.run(scenario())
+
+
 def test_native_snapshot_bulk_move_exclusion_and_token_undo(tmp_path, monkeypatch):
     from image_curator import batch_store
 

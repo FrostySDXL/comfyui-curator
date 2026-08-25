@@ -37,6 +37,7 @@
                 favoritesFilterOn,
                 currentSort,
                 currentOrder,
+                currentSort === 'shuffle' ? folderShuffleSeed : '',
                 typeof workspaceSearchFilter !== 'undefined' ? (workspaceSearchFilter?.key || '') : '',
             ]);
         }
@@ -396,7 +397,7 @@ async function ensureFolderPageForIndex(index) {
                 const snapshot = folderSnapshot;
                 const promise = apiGetFolderPage(
                     currentBatch, currentFolder, _folderTransportSort(), currentOrder,
-                    snapshot.revision, offset, FOLDER_PAGE_SIZE,
+                    snapshot.revision, offset, FOLDER_PAGE_SIZE, folderShuffleSeed,
                 ).then(async resp => {
                     if (resp.status === 409) {
                         loadCurrentFolderImages({preserveScroll: true});
@@ -421,7 +422,9 @@ async function ensureFolderPageForIndex(index) {
 
 async function _waitForFolderSnapshot(batch, folder, requestToken) {
             for (let attempt = 0; attempt < 100; attempt++) {
-                const resp = await apiGetFolderSnapshot(batch, folder, _folderTransportSort(), currentOrder);
+                const resp = await apiGetFolderSnapshot(
+                    batch, folder, _folderTransportSort(), currentOrder, folderShuffleSeed,
+                );
                 if (requestToken !== folderRequestToken) return null;
                 if (resp.ok && resp.status !== 202) return resp.json();
                 await new Promise(resolve => setTimeout(resolve, Math.min(250, 25 + attempt * 10)));
@@ -479,7 +482,10 @@ async function loadCurrentFolderImages(options = {}) {
 
 function setSort(sort) {
             currentSort = sort;
-            if (sort === 'shuffle') resetVirtualShuffleOrder();
+            if (sort === 'shuffle') {
+                resetVirtualShuffleOrder();
+                resetFolderShuffleOrder();
+            }
             document.querySelectorAll('.sort-btn:not(.batch-sort-btn)').forEach(b => b.classList.toggle('active', b.dataset.sort === sort));
             document.getElementById('sort-dir-btn').classList.toggle('is-placeholder', sort === 'shuffle' || sort === 'score-desc');
             if (isVirtualCollectionView() || isPublicView()) { updateGrid(); return; }
@@ -639,6 +645,11 @@ function initializeGridDensity() {
 
 function resetVirtualShuffleOrder() {
             virtualShuffleRanks.clear();
+        }
+
+function resetFolderShuffleOrder() {
+            folderShuffleGeneration += 1;
+            folderShuffleSeed = `${folderShuffleSession}-${folderShuffleGeneration}`;
         }
 
 function getVirtualShuffleRank(img) {

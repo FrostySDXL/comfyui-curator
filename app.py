@@ -38,6 +38,7 @@ from image_curator.folder_index import (
     DEFAULT_PAGE_SIZE,
     BulkMoveOperationStore,
     FolderIndexService,
+    normalize_shuffle_seed,
 )
 from image_curator.prompt_history import (
     build_prompt_index,
@@ -364,8 +365,12 @@ def api_move_batch():
         revision = str(selection.get("revision", ""))
         sort_by = str(selection.get("sort", "date"))
         order = str(selection.get("order", "desc"))
+        try:
+            shuffle_seed = normalize_shuffle_seed(sort_by, selection.get("shuffle_seed", ""))
+        except ValueError:
+            return jsonify({"error": "Invalid shuffle seed"}), 400
         selected_names = _folder_index.names_for_revision(
-            batch_name, source, sort_by, order, revision
+            batch_name, source, sort_by, order, revision, shuffle_seed
         )
         if selected_names is None:
             return jsonify({"error": "Snapshot revision is stale"}), 409
@@ -759,30 +764,40 @@ def serve_thumbnail(batch, folder, filename):
 def _folder_snapshot_request(batch: str, folder: str):
     batch_name, err = _require_batch(batch)
     if err:
-        return None, None, None, None, (jsonify(err[0]), err[1])
+        return None, None, None, None, None, (jsonify(err[0]), err[1])
     if folder not in batch_store.BATCH_FOLDERS:
-        return None, None, None, None, (jsonify({"error": "Invalid folder"}), 400)
+        return None, None, None, None, None, (jsonify({"error": "Invalid folder"}), 400)
     sort_by = request.args.get("sort", "date")
     order = request.args.get("order", "desc")
     if sort_by not in ("date", "name", "shuffle"):
         sort_by = "date"
     if order not in ("asc", "desc"):
         order = "desc"
-    return batch_name, get_batch_folder(batch_name, folder), sort_by, order, None
+    try:
+        shuffle_seed = normalize_shuffle_seed(sort_by, request.args.get("shuffle_seed", ""))
+    except ValueError:
+        return None, None, None, None, None, (jsonify({"error": "Invalid shuffle seed"}), 400)
+    return batch_name, get_batch_folder(batch_name, folder), sort_by, order, shuffle_seed, None
 
 
 @app.route("/api/v2/folders/<batch>/<folder>/snapshot")
 def api_v2_folder_snapshot(batch, folder):
-    batch_name, directory, sort_by, order, error = _folder_snapshot_request(batch, folder)
+    batch_name, directory, sort_by, order, shuffle_seed, error = _folder_snapshot_request(
+        batch, folder
+    )
     if error:
         return error
-    payload = _folder_index.request_snapshot(batch_name, folder, directory, sort_by, order)
+    payload = _folder_index.request_snapshot(
+        batch_name, folder, directory, sort_by, order, shuffle_seed
+    )
     return jsonify(payload), (200 if payload["status"] == "ready" else 202)
 
 
 @app.route("/api/v2/folders/<batch>/<folder>/poll")
 def api_v2_folder_poll(batch, folder):
-    batch_name, directory, sort_by, order, error = _folder_snapshot_request(batch, folder)
+    batch_name, directory, sort_by, order, shuffle_seed, error = _folder_snapshot_request(
+        batch, folder
+    )
     if error:
         return error
     payload = _folder_index.poll(
@@ -792,13 +807,16 @@ def api_v2_folder_poll(batch, folder):
         sort_by,
         order,
         request.args.get("revision"),
+        shuffle_seed,
     )
     return jsonify(payload), (200 if payload["status"] == "ready" else 202)
 
 
 @app.route("/api/v2/folders/<batch>/<folder>/items")
 def api_v2_folder_items(batch, folder):
-    batch_name, _directory, sort_by, order, error = _folder_snapshot_request(batch, folder)
+    batch_name, _directory, sort_by, order, shuffle_seed, error = _folder_snapshot_request(
+        batch, folder
+    )
     if error:
         return error
     revision = request.args.get("revision", "")
@@ -816,6 +834,7 @@ def api_v2_folder_items(batch, folder):
         offset,
         limit,
         get_batch_favorite_filenames(BATCHES_DIR, batch_name),
+        shuffle_seed,
     )
     if payload is None:
         return jsonify({"error": "Snapshot revision is stale"}), 409
@@ -824,7 +843,9 @@ def api_v2_folder_items(batch, folder):
 
 @app.route("/api/v2/folders/<batch>/<folder>/lookup")
 def api_v2_folder_lookup(batch, folder):
-    batch_name, _directory, sort_by, order, error = _folder_snapshot_request(batch, folder)
+    batch_name, _directory, sort_by, order, shuffle_seed, error = _folder_snapshot_request(
+        batch, folder
+    )
     if error:
         return error
     revision = request.args.get("revision", "")
@@ -833,10 +854,19 @@ def api_v2_folder_lookup(batch, folder):
         batch_store._validate_name(name, "file name")
     except (TypeError, ValueError):
         return jsonify({"error": "Invalid file name"}), 400
-    index = _folder_index.index_of(batch_name, folder, sort_by, order, revision, name)
+    index = _folder_index.index_of(batch_name, folder, sort_by, order, revision, name, shuffle_seed)
     if index is not None:
         return jsonify({"revision": revision, "index": index})
-    current = _folder_index.page(batch_name, folder, sort_by, order, revision, 0, 1)
+    current = _folder_index.page(
+        batch_name,
+        folder,
+        sort_by,
+        order,
+        revision,
+        0,
+        1,
+        shuffle_seed=shuffle_seed,
+    )
     if current is None:
         return jsonify({"error": "Snapshot revision is stale"}), 409
     return jsonify({"error": "File not found"}), 404

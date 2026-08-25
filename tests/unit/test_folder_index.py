@@ -66,3 +66,64 @@ def test_folder_page_exposes_nanosecond_mtime_for_thumbnail_cache_identity(tmp_p
     assert page is not None
     assert page["items"][0]["mtime"] == expected_mtime
     service.close()
+
+
+def test_shuffle_sessions_are_stable_within_a_session_and_rotate_between_sessions(tmp_path):
+    for index in range(20):
+        (tmp_path / f"item-{index:02}.png").write_bytes(bytes([index]))
+
+    service = FolderIndexService(reconcile_interval=60)
+
+    def shuffled_names(shuffle_seed):
+        service.request_snapshot(
+            "alpha", "inbox", tmp_path, "shuffle", "asc", shuffle_seed=shuffle_seed
+        )
+        assert service.wait_until_ready(
+            "alpha",
+            "inbox",
+            "shuffle",
+            "asc",
+            shuffle_seed=shuffle_seed,
+            timeout=2,
+        )
+        snapshot = service.request_snapshot(
+            "alpha", "inbox", tmp_path, "shuffle", "asc", shuffle_seed=shuffle_seed
+        )
+        page = service.page(
+            "alpha",
+            "inbox",
+            "shuffle",
+            "asc",
+            snapshot["revision"],
+            0,
+            256,
+            shuffle_seed=shuffle_seed,
+        )
+        assert page is not None
+        return snapshot["revision"], [item["name"] for item in page["items"]]
+
+    first_revision, first_names = shuffled_names("session-one")
+    repeated_revision, repeated_names = shuffled_names("session-one")
+    second_revision, second_names = shuffled_names("session-two")
+
+    assert repeated_revision == first_revision
+    assert repeated_names == first_names
+    assert second_revision != first_revision
+    assert second_names != first_names
+    assert set(second_names) == set(first_names)
+    for session in ("three", "four", "five"):
+        shuffled_names(session)
+    assert (
+        service.page(
+            "alpha",
+            "inbox",
+            "shuffle",
+            "asc",
+            first_revision,
+            0,
+            256,
+            shuffle_seed="session-one",
+        )
+        is None
+    )
+    service.close()
