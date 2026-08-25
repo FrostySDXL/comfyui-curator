@@ -1,0 +1,414 @@
+"""Rebuildable media search indexes for filenames and local metadata."""
+
+from __future__ import annotations
+
+import json
+import hashlib
+import re
+import threading
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from . import batch_store
+from .sidecar_metadata import extract_media_metadata
+
+
+SEARCH_INDEX_FILENAME = "search-index.json"
+SEARCH_INDEX_VERSION = 1
+SEARCH_QUERY_MAX_CHARS = 256
+SEARCH_RESULT_LIMIT = 200
+SEARCH_RESULT_LIMIT_MAX = 500
+SIDECAR_SEARCH_MAX_DEPTH = 8
+SIDECAR_SEARCH_MAX_VALUES = 1000
+SIDECAR_SEARCH_MAX_CHARS = 64 * 1024
+SIDECAR_SUMMARY_STRING_MAX_CHARS = 4096
+
+_LOCK = threading.RLock()
+_SEPARATOR_RE = re.compile(r"[_\-]+")
+_CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def _normalize(value: object) -> str:
+    text = _CAMEL_BOUNDARY_RE.sub(" ", str(value))
+    return " ".join(_SEPARATOR_RE.sub(" ", text.casefold()).split())
+
+
+def _cache_path(batches_dir: Path, batch: str) -> Path:
+    batch_store._validate_name(batch, "batch name")
+    return Path(batches_dir) / batch / SEARCH_INDEX_FILENAME
+
+
+def _resolved_batch(batches_dir: Path, batch: str) -> tuple[Path, Path, Path]:
+    batch_store._validate_name(batch, "batch name")
+    root = Path(batches_dir).resolve()
+    batch_dir = Path(batches_dir) / batch
+    if batch_dir.is_symlink() or not batch_dir.is_dir():
+        raise ValueError("Unsafe search index path")
+    resolved_batch = batch_dir.resolve()
+    try:
+        resolved_batch.relative_to(root)
+    except (OSError, ValueError) as exc:
+        raise ValueError("Unsafe search index path") from exc
+    return root, batch_dir, resolved_batch
+
+
+def _safe_stage(root: Path, batch_dir: Path, resolved_batch: Path, folder: str) -> Path:
+    stage = batch_dir / folder
+    try:
+        if stage.is_symlink() or not stage.is_dir():
+            raise ValueError("Unsafe search index path")
+        resolved = stage.resolve()
+        resolved.relative_to(root)
+        resolved.relative_to(resolved_batch)
+    except (OSError, ValueError) as exc:
+        raise ValueError("Unsafe search index path") from exc
+    return resolved
+
+
+def _safe_cache_target(root: Path, resolved_batch: Path, path: Path) -> bool:
+    try:
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            return False
+        resolved = path.resolve()
+        resolved.relative_to(root)
+        resolved.relative_to(resolved_batch)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _flatten_sidecar(value: Any) -> tuple[str, dict[str, Any]]:
+    parts: list[str] = []
+    summary: dict[str, Any] = {}
+    char_count = 0
+    value_count = 0
+    summary_keys = {
+        "category",
+        "subcategory",
+        "tags",
+        "title",
+        "author",
+        "artist",
+        "website",
+        "site",
+        "source",
+        "id",
+        "post_id",
+        "favorite_id",
+        "url",
+    }
+
+    def append(token: object) -> bool:
+        nonlocal char_count, value_count
+        if value_count >= SIDECAR_SEARCH_MAX_VALUES or char_count >= SIDECAR_SEARCH_MAX_CHARS:
+            return False
+        text = str(token)[:4096]
+        remaining = SIDECAR_SEARCH_MAX_CHARS - char_count
+        text = text[:remaining]
+        if text:
+            parts.append(text)
+            char_count += len(text)
+            value_count += 1
+        return char_count < SIDECAR_SEARCH_MAX_CHARS
+
+    def walk(node: Any, depth: int, top_key: str | None = None) -> None:
+        if depth > SIDECAR_SEARCH_MAX_DEPTH or char_count >= SIDECAR_SEARCH_MAX_CHARS:
+            return
+        if isinstance(node, dict):
+            for key, child in node.items():
+                key_text = str(key)
+                if not append(key_text):
+                    return
+                if (
+                    depth == 0
+                    and key_text in summary_keys
+                    and isinstance(child, (str, int, float, bool))
+                ):
+                    summary[key_text] = (
+                        child[:SIDECAR_SUMMARY_STRING_MAX_CHARS]
+                        if isinstance(child, str)
+                        else child
+                    )
+                walk(child, depth + 1, key_text)
+            return
+        if isinstance(node, list):
+            for child in node:
+                walk(child, depth + 1, top_key)
+            return
+        if node is None:
+            return
+        append(node)
+
+    walk(value, 0)
+    return " ".join(parts), summary
+
+
+def _build_item(batch: str, folder: str, path: Path) -> dict[str, Any]:
+    stat = path.stat()
+    metadata = extract_media_metadata(path)
+    sidecar = metadata.get("sidecar") or {}
+    sidecar_text = ""
+    sidecar_summary: dict[str, Any] = {}
+    if sidecar.get("error") is None and "data" in sidecar:
+        sidecar_text, sidecar_summary = _flatten_sidecar(sidecar["data"])
+    parameters = metadata.get("parameters") or {}
+    prompt = str(parameters.get("prompt") or "").strip()
+    negative_prompt = str(parameters.get("negative_prompt") or "").strip()
+    seed = parameters.get("seed")
+    model = parameters.get("model")
+    sampler = parameters.get("sampler")
+    loras = [
+        str(lora.get("name"))
+        for lora in metadata.get("loras") or []
+        if isinstance(lora, dict) and lora.get("name")
+    ]
+    fields = {
+        "filename": path.name,
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "seed": "" if seed is None else str(seed),
+        "model": "" if model is None else str(model),
+        "sampler": "" if sampler is None else str(sampler),
+        "lora": " ".join(loras),
+        "sidecar": sidecar_text,
+    }
+    sources = []
+    if metadata.get("has_png_metadata"):
+        sources.append("png")
+    if sidecar_text:
+        sources.append("sidecar")
+    return {
+        "batch": batch,
+        "folder": folder,
+        "name": path.name,
+        "size": stat.st_size,
+        "mtime": stat.st_mtime_ns,
+        "media_kind": batch_store.media_kind(path),
+        "mime": batch_store.media_mime(path),
+        "metadata_sources": sources,
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "seed": seed,
+        "model": model,
+        "sampler": sampler,
+        "loras": loras,
+        "sidecar_summary": sidecar_summary,
+        "_search_fields": fields,
+        "_search_text": _normalize(" ".join(fields.values())),
+    }
+
+
+def _source_state(batches_dir: Path, batch: str) -> dict[str, int]:
+    root, batch_dir, resolved_batch = _resolved_batch(batches_dir, batch)
+    return {
+        folder: _safe_stage(root, batch_dir, resolved_batch, folder).stat().st_mtime_ns
+        for folder in batch_store.BATCH_FOLDERS
+    }
+
+
+def _save_index(batches_dir: Path, batch: str, index: dict[str, Any]) -> None:
+    with _LOCK:
+        root, _batch_dir, resolved_batch = _resolved_batch(batches_dir, batch)
+        path = _cache_path(batches_dir, batch)
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        if not _safe_cache_target(root, resolved_batch, path) or not _safe_cache_target(
+            root, resolved_batch, tmp_path
+        ):
+            raise ValueError("Unsafe search index path")
+        tmp_path.write_text(json.dumps(index, ensure_ascii=False), encoding="utf-8")
+        tmp_path.replace(path)
+
+
+def build_search_index(batches_dir: Path, batch: str) -> dict[str, Any]:
+    """Build and atomically persist one batch's media metadata search index."""
+    root, batch_dir, resolved_batch = _resolved_batch(batches_dir, batch)
+    items: list[dict[str, Any]] = []
+    for folder in batch_store.BATCH_FOLDERS:
+        stage = _safe_stage(root, batch_dir, resolved_batch, folder)
+        for path in batch_store.get_images(stage, sort_by="name", order="asc"):
+            try:
+                if path.is_symlink() or path.resolve().parent != stage:
+                    raise ValueError("Unsafe search index path")
+                items.append(_build_item(batch, folder, path))
+            except OSError:
+                continue
+    index = {
+        "version": SEARCH_INDEX_VERSION,
+        "built_at": datetime.now(timezone.utc).isoformat(),
+        "batch": batch,
+        "item_count": len(items),
+        "source_state": _source_state(batches_dir, batch),
+        "items": items,
+    }
+    _save_index(batches_dir, batch, index)
+    return index
+
+
+def summarize_search_index(index: dict[str, Any]) -> dict[str, Any]:
+    """Return the bounded build response without echoing the full cached corpus."""
+    return {
+        "version": index.get("version"),
+        "built_at": index.get("built_at"),
+        "batch": index.get("batch"),
+        "item_count": index.get("item_count", 0),
+    }
+
+
+def load_search_index(batches_dir: Path, batch: str) -> dict[str, Any] | None:
+    """Load a safe, schema-compatible search index or return ``None``."""
+    try:
+        root, _batch_dir, resolved_batch = _resolved_batch(batches_dir, batch)
+        path = _cache_path(batches_dir, batch)
+        if not path.is_file() or not _safe_cache_target(root, resolved_batch, path):
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("version") != SEARCH_INDEX_VERSION:
+        return None
+    if data.get("batch") != batch or not isinstance(data.get("items"), list):
+        return None
+    for item in data["items"]:
+        if not isinstance(item, dict):
+            return None
+        if item.get("batch") != batch or item.get("folder") not in batch_store.BATCH_FOLDERS:
+            return None
+        name = item.get("name")
+        if not isinstance(name, str):
+            return None
+        try:
+            batch_store._validate_name(name, "file name")
+        except ValueError:
+            return None
+        if not isinstance(item.get("_search_text"), str) or not isinstance(
+            item.get("_search_fields"), dict
+        ):
+            return None
+    return data
+
+
+def _public_item(item: dict[str, Any], tokens: list[str]) -> dict[str, Any]:
+    fields = item.get("_search_fields") or {}
+    matched_fields = [
+        name
+        for name, value in fields.items()
+        if any(token in _normalize(value) for token in tokens)
+    ]
+    return {key: value for key, value in item.items() if not key.startswith("_")} | {
+        "matched_fields": matched_fields
+    }
+
+
+def _query_snapshot(
+    query: str,
+    batch: str | None,
+    folder: str | None,
+    index_states: list[dict[str, Any]],
+) -> str:
+    payload = {
+        "query": query,
+        "batch": batch,
+        "folder": folder,
+        "indexes": index_states,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def query_search_indices(
+    batches_dir: Path,
+    query: str,
+    *,
+    batch: str | None = None,
+    folder: str | None = None,
+    limit: int = SEARCH_RESULT_LIMIT,
+    offset: int = 0,
+    snapshot: str | None = None,
+) -> dict[str, Any]:
+    """Query built indexes using case-insensitive AND-token matching."""
+    query = str(query or "").strip()[:SEARCH_QUERY_MAX_CHARS]
+    tokens = _normalize(query).split()
+    limit = max(1, min(int(limit), SEARCH_RESULT_LIMIT_MAX))
+    offset = max(0, int(offset))
+    batches = [batch] if batch else batch_store.get_batches(Path(batches_dir))
+    loaded_indexes: list[tuple[str, dict[str, Any] | None]] = [
+        (batch_name, load_search_index(batches_dir, batch_name)) for batch_name in batches
+    ]
+    snapshot_value = _query_snapshot(
+        query,
+        batch,
+        folder,
+        [
+            {
+                "batch": batch_name,
+                "built_at": index.get("built_at") if index else None,
+                "source_state": index.get("source_state") if index else None,
+            }
+            for batch_name, index in loaded_indexes
+        ],
+    )
+    if snapshot is not None and snapshot != snapshot_value:
+        return {
+            "query": query,
+            "items": [],
+            "total": 0,
+            "limit": limit,
+            "offset": offset,
+            "next_offset": None,
+            "has_more": False,
+            "truncated": False,
+            "snapshot": snapshot_value,
+            "snapshot_expired": True,
+            "indexed_batches": [],
+            "missing_batches": [],
+            "stale_batches": [],
+        }
+
+    matches: list[dict[str, Any]] = []
+    indexed_batches: list[str] = []
+    missing_batches: list[str] = []
+    stale_batches: list[str] = []
+    for batch_name, index in loaded_indexes:
+        if index is None:
+            missing_batches.append(batch_name)
+            continue
+        try:
+            stale = index.get("source_state") != _source_state(batches_dir, batch_name)
+        except (OSError, ValueError):
+            stale = True
+        if stale:
+            stale_batches.append(batch_name)
+            if snapshot is None:
+                continue
+        indexed_batches.append(batch_name)
+        for item in index["items"]:
+            if folder and item.get("folder") != folder:
+                continue
+            search_text = item.get("_search_text", "")
+            if tokens and not all(token in search_text for token in tokens):
+                continue
+            matches.append(item)
+    matches.sort(
+        key=lambda item: (item["batch"].casefold(), item["folder"], item["name"].casefold())
+    )
+    total = len(matches)
+    page_matches = matches[offset : offset + limit]
+    items = [_public_item(item, tokens) for item in page_matches]
+    next_offset = offset + len(items)
+    has_more = next_offset < total
+    return {
+        "query": query,
+        "items": items,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "next_offset": next_offset if has_more else None,
+        "has_more": has_more,
+        "truncated": has_more,
+        "snapshot": snapshot_value,
+        "snapshot_expired": False,
+        "indexed_batches": indexed_batches,
+        "missing_batches": missing_batches,
+        "stale_batches": stale_batches,
+    }

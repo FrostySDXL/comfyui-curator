@@ -1023,7 +1023,14 @@ function updateCompareInfo() {
 function updateLightboxInfo(img, w, h) {
             const infoEl = document.getElementById('lightbox-info');
             infoEl.replaceChildren();
+            const workspaceSearchActive = typeof isWorkspaceSearchView === 'function'
+                && isWorkspaceSearchView()
+                && typeof workspaceSearchFilter !== 'undefined'
+                && workspaceSearchFilter;
             let line1 = `${currentIndex+1} / ${getLightboxImages().length}  -  ${img.name}`;
+            if (workspaceSearchActive) {
+                line1 = `${currentIndex+1} / ${workspaceSearchFilter.total}  -  ${img.name}`;
+            }
             if (w && h) line1 += `  (${w}x${h})`;
             const lineEl = document.createElement('div');
             lineEl.className = 'lightbox-info-line';
@@ -1074,7 +1081,7 @@ function updateLightboxInfo(img, w, h) {
 async function toggleLightboxFavorite() {
             const img = getActiveLightboxImage();
             if (!img) return;
-            const index = getImageDisplayIndexByName(img.name);
+            const index = getImageDisplayIndex(img);
             if (index < 0) return;
             await toggleFavorite(index);
             if (lightboxCompareMode) updateCompareInfo();
@@ -1092,8 +1099,32 @@ async function navigate(delta) {
             if (lightboxCompareMode) return;
             const lightboxImages = getLightboxImages();
             if (lightboxImages.length === 0) return;
-            currentIndex = (currentIndex + delta + lightboxImages.length) % lightboxImages.length;
-            if (typeof pagedFolderMode !== 'undefined' && pagedFolderMode && !lightboxImages[currentIndex]) {
+            const activeImageKey = typeof getImageRenderKey === 'function'
+                ? getImageRenderKey(lightboxImages[currentIndex])
+                : null;
+            let navigationImages = lightboxImages;
+            const workspaceSearchActive = typeof isWorkspaceSearchView === 'function'
+                && isWorkspaceSearchView()
+                && typeof workspaceSearchFilter !== 'undefined'
+                && workspaceSearchFilter?.hasMore;
+            if (workspaceSearchActive) {
+                if (delta > 0 && currentIndex === lightboxImages.length - 1) {
+                    await loadMoreWorkspaceSearchResults();
+                    navigationImages = getLightboxImages();
+                    const reanchoredIndex = activeImageKey === null
+                        ? -1
+                        : navigationImages.findIndex(image => getImageRenderKey(image) === activeImageKey);
+                    if (reanchoredIndex >= 0) currentIndex = reanchoredIndex;
+                } else if (delta < 0 && currentIndex === 0) {
+                    return;
+                }
+            }
+            if (workspaceSearchActive) {
+                currentIndex = (currentIndex + delta + navigationImages.length) % navigationImages.length;
+            } else {
+                currentIndex = (currentIndex + delta + lightboxImages.length) % lightboxImages.length;
+            }
+            if (typeof pagedFolderMode !== 'undefined' && pagedFolderMode && !navigationImages[currentIndex]) {
                 await ensureFolderPageForIndex(currentIndex);
             }
             showCurrentImage();

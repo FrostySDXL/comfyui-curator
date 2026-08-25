@@ -15,6 +15,7 @@
         let _virtualGridScrollIdleTimerId = null;
         let _progressiveGridGeneration = 0;
         let _progressiveGridContextKey = null;
+        const virtualShuffleRanks = new Map();
 
         function getProgressiveGridState() {
             return {
@@ -36,6 +37,7 @@
                 favoritesFilterOn,
                 currentSort,
                 currentOrder,
+                typeof workspaceSearchFilter !== 'undefined' ? (workspaceSearchFilter?.key || '') : '',
             ]);
         }
 
@@ -373,6 +375,7 @@ function resetPagedFolderState() {
             folderPageInflight.clear();
             pagedFolderMode = false;
             displayIndexByName.clear();
+            displayIndexByKey.clear();
         }
 
 function requiresMaterializedNativeFolder() {
@@ -476,6 +479,7 @@ async function loadCurrentFolderImages(options = {}) {
 
 function setSort(sort) {
             currentSort = sort;
+            if (sort === 'shuffle') resetVirtualShuffleOrder();
             document.querySelectorAll('.sort-btn:not(.batch-sort-btn)').forEach(b => b.classList.toggle('active', b.dataset.sort === sort));
             document.getElementById('sort-dir-btn').classList.toggle('is-placeholder', sort === 'shuffle' || sort === 'score-desc');
             if (isVirtualCollectionView() || isPublicView()) { updateGrid(); return; }
@@ -519,6 +523,35 @@ function _captureGridAnchor(columns = null, density = gridDensity) {
             const {track, gap} = getGridDensityConfig(density);
             const visibleTop = Math.max(0, content.scrollTop - getGridScrollOrigin(grid));
             return Math.min(currentDisplayImages.length - 1, Math.floor(visibleTop / (track + gap)) * usedColumns);
+        }
+
+function _captureGridIdentityAnchor() {
+            const content = document.querySelector('.content');
+            const grid = document.getElementById('grid');
+            const index = _captureGridAnchor();
+            const image = index === null ? null : currentDisplayImages[index];
+            if (!content || !grid || !image) return null;
+            const columns = Math.max(1, Number(grid.style.getPropertyValue('--grid-columns')) || 1);
+            const {track, gap} = getGridDensityConfig();
+            const rowTop = getGridScrollOrigin(grid) + Math.floor(index / columns) * (track + gap);
+            return {
+                key: getImageRenderKey(image),
+                offset: content.scrollTop - rowTop,
+            };
+        }
+
+function _restoreGridIdentityAnchor(anchor) {
+            if (!anchor?.key) return false;
+            const content = document.querySelector('.content');
+            const grid = document.getElementById('grid');
+            if (!content || !grid) return false;
+            const index = currentDisplayImages.findIndex(image => getImageRenderKey(image) === anchor.key);
+            if (index < 0) return false;
+            const columns = Math.max(1, Number(grid.style.getPropertyValue('--grid-columns')) || 1);
+            const {track, gap} = getGridDensityConfig();
+            const rowTop = getGridScrollOrigin(grid) + Math.floor(index / columns) * (track + gap);
+            content.scrollTop = Math.max(0, rowTop + anchor.offset);
+            return true;
         }
 
 function _restoreGridAnchor(index) {
@@ -604,10 +637,27 @@ function initializeGridDensity() {
             setGridDensity(gridDensity);
         }
 
+function resetVirtualShuffleOrder() {
+            virtualShuffleRanks.clear();
+        }
+
+function getVirtualShuffleRank(img) {
+            const key = getImageRenderKey(img);
+            if (!virtualShuffleRanks.has(key)) virtualShuffleRanks.set(key, Math.random());
+            return virtualShuffleRanks.get(key);
+        }
+
 function sortImagesForDisplay(imgList) {
             if (aiActiveRun && currentSort === 'score-desc') return aiSortImages(imgList);
             if (!isVirtualCollectionView() && !isPublicView()) return imgList;
-            if (currentSort === 'shuffle') return [...imgList].sort(() => Math.random() - 0.5);
+            if (currentSort === 'shuffle') {
+                imgList.forEach(img => getVirtualShuffleRank(img));
+                return [...imgList].sort((a, b) => {
+                    const rankDifference = getVirtualShuffleRank(a) - getVirtualShuffleRank(b);
+                    if (rankDifference !== 0) return rankDifference;
+                    return getImageRenderKey(a).localeCompare(getImageRenderKey(b));
+                });
+            }
             const direction = currentOrder === 'asc' ? 1 : -1;
             if (currentSort === 'date') {
                 return [...imgList].sort((a, b) => {
@@ -629,6 +679,13 @@ function getDisplayImages() {
             return sortImagesForDisplay(filtered);
         }
 
+function getImageRenderKey(img) {
+            if (!img) return '';
+            if (!isVirtualCollectionView()) return String(img.name || '');
+            const source = getImageBatchAndFolder(img);
+            return `${source.batch || ''}\u001f${source.folder || ''}\u001f${img.name || ''}`;
+        }
+
 function getCurrentDisplayImages() {
             return currentDisplayImages.length > 0 ? currentDisplayImages : getDisplayImages();
         }
@@ -638,7 +695,21 @@ function getImageDisplayIndexByName(name) {
             return getCurrentDisplayImages().findIndex(img => img && img.name === name);
         }
 
+function getImageDisplayIndex(img) {
+            if (!img) return -1;
+            if (!isVirtualCollectionView()) return getImageDisplayIndexByName(img.name);
+            const key = getImageRenderKey(img);
+            if (displayIndexByKey.has(key)) return displayIndexByKey.get(key);
+            return getCurrentDisplayImages().findIndex(candidate => getImageRenderKey(candidate) === key);
+        }
+
 function getGridEmptyStateMessage() {
+            if (isWorkspaceSearchView()) {
+                return {
+                    title: 'No media match this workspace filter',
+                    detail: 'Edit the search terms or clear the filter to return to the previous review view.',
+                };
+            }
             if (favoritesFilterOn && images.length > 0) {
                 return {
                     title: 'No favorite images in this view',
@@ -863,6 +934,7 @@ function updateThumbElement(thumb, img, index) {
             const thumbnailCacheKey = getThumbnailCacheKey(imageSrc, img);
 
             thumb.dataset.name = img.name;
+            thumb.dataset.imageKey = getImageRenderKey(img);
             thumb.dataset.index = String(index);
             const selected = typeof serverSelection !== 'undefined' && serverSelection
                 ? !serverSelection.excluded.has(img.name)
@@ -972,6 +1044,9 @@ function updateGrid() {
                 displayIndexByName = new Map(
                     displayImages.filter(Boolean).map((img, index) => [img.name, index])
                 );
+                displayIndexByKey = new Map(
+                    displayImages.filter(Boolean).map((img, index) => [getImageRenderKey(img), index])
+                );
             }
             const nextContextKey = _getProgressiveGridContextKey();
             const contextChanged = nextContextKey !== _progressiveGridContextKey;
@@ -1011,6 +1086,9 @@ function updateGrid() {
             const endRow = Math.min(totalRows, startRow + desiredRows);
             const startIndex = startRow * columns;
             const endIndex = Math.min(displayImages.length, endRow * columns);
+            if (typeof maybeLoadMoreWorkspaceSearchResults === 'function') {
+                maybeLoadMoreWorkspaceSearchResults(endIndex);
+            }
             _virtualGridWindowStart = startIndex;
             _virtualGridWindowEnd = endIndex;
             grid.style.paddingTop = '';
@@ -1027,12 +1105,12 @@ function updateGrid() {
             for (let index = startIndex; index < endIndex; index++) {
                 renderedEntries.push({img: displayImages[index], index});
             }
-            const activeNames = new Set(renderedEntries.filter(entry => entry.img).map(entry => entry.img.name));
-            for (const [name, element] of gridThumbMap.entries()) {
-                if (!activeNames.has(name)) {
+            const activeKeys = new Set(renderedEntries.filter(entry => entry.img).map(entry => getImageRenderKey(entry.img)));
+            for (const [key, element] of gridThumbMap.entries()) {
+                if (!activeKeys.has(key)) {
                     if (activeHoverPreview === element) stopActiveHoverPreview();
                     unscheduleThumbnailLoad(element);
-                    gridThumbMap.delete(name);
+                    gridThumbMap.delete(key);
                     if (gridThumbPool.length < VIRTUAL_GRID_MAX_THUMBNAILS) {
                         gridThumbPool.push(element);
                     }
@@ -1047,10 +1125,11 @@ function updateGrid() {
                     renderedNodes.push(placeholder);
                     return;
                 }
-                let thumb = gridThumbMap.get(img.name);
+                const imageKey = getImageRenderKey(img);
+                let thumb = gridThumbMap.get(imageKey);
                 if (!thumb) {
                     thumb = gridThumbPool.pop() || createThumbElement();
-                    gridThumbMap.set(img.name, thumb);
+                    gridThumbMap.set(imageKey, thumb);
                 }
                 const renderSignature = getThumbRenderSignature(img, index);
                 if (thumb.dataset.renderSignature !== renderSignature) {
@@ -1079,7 +1158,7 @@ function _gridChildrenMatchDesiredOrder(grid, displayImages) {
             const live = grid.children;
             if (live.length !== displayImages.length) return false;
             for (let i = 0; i < displayImages.length; i++) {
-                if (live[i] !== gridThumbMap.get(displayImages[i].name)) return false;
+                if (live[i] !== gridThumbMap.get(getImageRenderKey(displayImages[i]))) return false;
             }
             return true;
         }

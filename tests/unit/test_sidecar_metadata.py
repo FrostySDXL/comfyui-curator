@@ -24,11 +24,11 @@ def test_filename_preserving_sidecar_wins_and_is_pretty_printed(tmp_path):
     assert '\n  "nested"' in sidecar["text"]
 
 
-def test_rule34_sidecar_exposes_original_flat_object_without_type_coercion(tmp_path):
-    media = tmp_path / "rule34_17590127_hash.jpg"
+def test_external_favorite_sidecar_preserves_original_types(tmp_path):
+    media = tmp_path / "external_favorite_17590127_hash.jpg"
     media.write_bytes(b"jpg")
     expected = {
-        "category": "rule34",
+        "category": "external_favorites",
         "subcategory": "favorite",
         "favorite_id": 42,
         "id": "17590127",

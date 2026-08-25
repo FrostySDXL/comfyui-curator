@@ -12,6 +12,7 @@
 - **Favorites persistence** (`favorites.py`): Stores batch-scoped and universal favorite image records with atomic JSON writes.
 - **Public derivative workflow** (`publish.py`): Creates metadata-stripped optional-watermark copies under `<batch>/public/`, lists public images, and copy/move/delete generated public copies under a configured export root.
 - **Prompt history indexing** (`prompt_history.py`): Builds manual prompt indexes from PNG metadata, deduplicated by normalized prompt/negative prompt. Safety: rejects symlinked review stages and resolves-containment escapes during build/count; rejects symlinked and non-regular cache entries during load; aggregate loading silently omits batches with unsafe caches.
+- **Media metadata search** (`search_index.py`): Builds atomic per-batch indexes for every reviewable media type from filenames, PNG generation fields, and bounded adjacent JSON keys/values. Folder-mtime state prevents stale move/import results from being returned; in-place sidecar edits require an explicit rebuild.
 - **Web validation** (`web_validation.py`): Path traversal guard and existing-batch validation helpers used by Flask route wrappers.
 - **Typed media cache helpers** (`media.py`): Extension-safe WebP posters,
   quality-first GIF/MP4 hover proxies, atomic cache writes, and stable decoder
@@ -33,6 +34,7 @@ app.py ──> batch_store (nearly all functions: create, list, move, counts, im
        ──> favorites (favorite toggles, batch filter data, universal favorites)
        ──> publish (public derivative export/list/copy/move/delete routes)
        ──> prompt_history (manual prompt index build/load routes)
+       ──> search_index (manual typed-media metadata index + scoped query routes)
        ──> web_validation (safe path and existing-batch route wrappers)
        ──> media (typed poster/preview cache helpers)
        ──> folder_index (immutable revisioned folder transport)
@@ -56,6 +58,7 @@ Additional runtime directories (NOT managed by batch_store):
 - `ai-curate/` -- AI run history (managed by `ai_curate/storage.py`)
 - `.favorites.json` -- batch favorites; root-level `.favorites.json` stores universal favorites
 - `prompt-history.json` -- manual PNG prompt-history cache per batch
+- `search-index.json` -- manual typed-media filename/metadata search cache per batch
 - `public/` -- generated posting derivatives; originals remain in review folders
 
 ### Supported Media Extensions
@@ -84,6 +87,7 @@ Written atomically via `.tmp` + `os.replace()`.
 - **Always:** Use `move_image()` for file moves -- it creates destination directories and never raises OSError to callers.
 - **Favorites:** Tracking is filename-based within each batch; duplicate filenames across folders are resolved by scanning the standard folders.
 - **Prompt history:** Cache builds are manual and synchronous; moving files between folders does not by itself make count-based staleness detection fire.
+- **Media search:** Cache builds are manual and synchronous. Folder mutations are detected from stage-directory mtimes and stale indexes are excluded. Existing sidecar content edits do not change directory mtimes on every filesystem, so rebuild after editing sidecars in place.
 - **Verification:** After changes in this directory, run:
   ```bash
   python -m pytest tests/unit/test_batch_store.py tests/unit/test_png_metadata.py -v
@@ -100,11 +104,12 @@ Written atomically via `.tmp` + `os.replace()`.
 | `favorites.py` | `load_favorites`, `save_favorites`, `toggle_favorite`, `get_batch_favorite_filenames`, `resolve_universal_favorites`; uses `_validate_name`, `RLock`, and atomic `.tmp` replacement. |
 | `publish.py` | `create_public_copies`, `list_batch_public`, `list_all_public`, `copy_public_items`, `move_public_items`, `delete_public_items`; strips metadata by re-saving with Pillow, applies text watermarks, and confines external destinations to `IMAGE_CURATOR_PUBLIC_EXPORTS`. |
 | `prompt_history.py` | `build_prompt_index`, `load_prompt_index`, `load_all_prompt_indices`; scans PNG metadata, strips LoRA tags with `png_metadata.LORA_RE`, hashes normalized prompt pairs, and writes `prompt-history.json` atomically. |
+| `search_index.py` | `build_search_index`, `query_search_indices`; safely scans review folders, flattens bounded sidecar scalar keys/values without mutating their source types, stores a rebuildable atomic cache, applies normalized AND-token matching, and omits stale batch indexes. |
 | `web_validation.py` | `safe_path(base, *parts)` blocks traversal/absolute path escape; `require_existing_batch()` validates app-provided batch lists while preserving Flask route response shape. |
 | `media.py` | Extension-safe poster/preview cache paths, freshness checks, atomic WebP poster generation, FFmpeg-backed hover proxies, stable fallbacks, and safe derivative cleanup. |
 | `folder_index.py` | Immutable `FolderSnapshot` objects, revision metadata/polls, bounded pages, O(1) name lookup, mutation-triggered refresh, periodic reconciliation, and bulk-operation undo tokens. |
 | `native_settings.py` | Persists schema-versioned native operation settings beside `state.json`; rejects symlinked, escaping, and non-regular config/temp targets and unsafe editable directory paths; resolves environment fallbacks; and exposes API-key status without the secret. |
-| `native_routes.py` | Registers native settings, batch/state/import, legacy and v2 revisioned media lists, typed posters/previews/originals, moves and revision selections, reject deletion, favorites, public, and prompt-history contracts. Filesystem scans and derivative work are dispatched off the aiohttp event loop. |
+| `native_routes.py` | Registers native settings, batch/state/import, legacy and v2 revisioned media lists plus O(1) filename lookup, typed posters/previews/originals, moves and revision selections, reject deletion, favorites, public, prompt-history, and media-search contracts. Filesystem scans and derivative work are dispatched off the aiohttp event loop. |
 | `native_ai_routes.py` | Registers namespaced native AI preview, submit, status, cancellation, run-history, latest-run, and element-history aiohttp contracts using `ai_curate.native_lifecycle.NativeAiLifecycle`. |
 
 ## Agent Instructions
@@ -131,9 +136,10 @@ Written atomically via `.tmp` + `os.replace()`.
 - **Sidecars are auxiliary:** JSON never appears in folder listings, favorites,
   AI scoring, Prompt History, or public derivatives. Only the preferred adjacent
   sidecar follows its media.
-- **Rule34 values preserve extraction types:** Fields such as `id`, dimensions,
-  and `score` normally remain strings; `favorite_id` and `total` remain integers
-  when supplied. The frontend splits `tags` on whitespace for display only.
+- **External-favorites values preserve extraction types:** Fields such as `id`,
+  dimensions, and `score` normally remain strings; `favorite_id` and `total`
+  remain integers when supplied. The frontend splits `tags` on whitespace for
+  display only.
 - **`get_batch_metadata` includes `ai-curate/` mtime:** The AI run-history directory's mtime contributes to batch `modified_at` for recent-first sorting, even though AI-curate is not a workflow folder.
 
 **Completion Standard:** For any task in this directory, include files changed, commands run (unit tests for the touched module), and verification that callers in `app.py` or `curate.py` are not broken.

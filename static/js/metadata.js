@@ -123,21 +123,34 @@ function addMetadataTextSection(panel, title, value, copyLabel) {
             return { section, actions };
         }
 
-function isRule34Sidecar(data) {
-            return Boolean(data)
-                && !Array.isArray(data)
-                && typeof data === 'object'
-                && data.category === 'rule34';
+function isExternalFavoriteSidecar(data) {
+            if (!data || Array.isArray(data) || typeof data !== 'object') return false;
+            const category = String(data.category || '')
+                .trim()
+                .toLowerCase()
+                .replace(/[_-]+/g, ' ');
+            if (['external favorites', 'favorites'].includes(category)) return true;
+            const subcategory = String(data.subcategory || '').trim().toLowerCase();
+            const hasExternalRecordField = [
+                'id',
+                'favorite_id',
+                'file_url',
+                'sample_url',
+                'preview_url',
+            ].some(field => data[field] !== undefined && data[field] !== null);
+            return ['post', 'favorite'].includes(subcategory)
+                && typeof data.tags === 'string'
+                && hasExternalRecordField;
         }
 
-function renderRule34Sidecar(panel, sidecar) {
+function renderExternalFavoriteSidecar(panel, sidecar) {
             const data = sidecar.data;
             const overview = document.createElement('section');
             overview.className = 'metadata-section';
             overview.appendChild(createTextElement(
                 'div',
                 'metadata-section-title',
-                `Rule34 ${data.subcategory || 'post'} · ${sidecar.name}`
+                `External favorite ${data.subcategory || 'item'} · ${sidecar.name}`
             ));
             const overviewGrid = document.createElement('div');
             overviewGrid.className = 'metadata-grid';
@@ -225,7 +238,7 @@ function renderRule34Sidecar(panel, sidecar) {
                 panel.appendChild(linkSection);
             }
 
-            const raw = addMetadataTextSection(panel, 'Raw JSON', sidecar.text, 'Rule34 JSON');
+            const raw = addMetadataTextSection(panel, 'Raw JSON', sidecar.text, 'external favorites JSON');
             const rawText = raw?.section.querySelector('.metadata-text');
             if (rawText) rawText.classList.add('metadata-sidecar-text');
         }
@@ -353,8 +366,8 @@ function renderLightboxMetadataPanel() {
                     section.appendChild(createTextElement('div', 'metadata-section-title', `JSON sidecar · ${sidecar.name}`));
                     section.appendChild(createTextElement('div', 'metadata-error', sidecar.error));
                     panel.appendChild(section);
-                } else if (isRule34Sidecar(sidecar.data)) {
-                    renderRule34Sidecar(panel, sidecar);
+                } else if (isExternalFavoriteSidecar(sidecar.data)) {
+                    renderExternalFavoriteSidecar(panel, sidecar);
                 } else {
                     const rendered = addMetadataTextSection(
                         panel,

@@ -488,6 +488,10 @@ function updateFolderTabs() {
         }
 
 function selectBatch(batch) {
+            if (isWorkspaceSearchView()) {
+                deactivateWorkspaceSearchFilter();
+                workspaceSearchReturnContext = null;
+            }
             if (batch === '__favorites__') {
                 loadUniversalFavorites();
                 return;
@@ -527,6 +531,10 @@ function selectBatch(batch) {
         }
 
 async function selectFolder(batch, folder) {
+            if (isWorkspaceSearchView()) {
+                deactivateWorkspaceSearchFilter();
+                workspaceSearchReturnContext = null;
+            }
             currentBatch = batch;
             currentFolder = folder;
             saveBatchState();

@@ -140,6 +140,13 @@ def test_native_v2_folder_snapshot_pages_poll_and_stale_revision(tmp_path, monke
             match_info=match,
             query={**query, "revision": "stale", "offset": "0", "limit": "2"},
         )
+        lookup_status, lookup = await _invoke(
+            router,
+            "GET",
+            "/api/curator/v2/folders/{batch}/{folder}/lookup",
+            match_info=match,
+            query={**query, "revision": revision, "name": "c.mp4"},
+        )
 
         assert status == status_poll == 200
         assert [item["name"] for item in page["items"]] == ["b.gif", "c.mp4"]
@@ -151,6 +158,8 @@ def test_native_v2_folder_snapshot_pages_poll_and_stale_revision(tmp_path, monke
         }
         assert "items" not in poll
         assert stale_status == 409
+        assert lookup_status == 200
+        assert lookup == {"revision": revision, "index": 2}
         service.close()
 
     asyncio.run(scenario())
@@ -3539,6 +3548,80 @@ def test_native_prompt_history_virtual_sentinels_rejected(tmp_path, monkeypatch)
                 match_info={"batch": sentinel},
             )
             assert status == 404, f"sentinel {sentinel} GET should be 404, got {status}"
+
+    asyncio.run(scenario())
+
+
+def test_native_search_build_and_query_include_sidecar_metadata(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "external")
+        media = settings.batch_root / "external" / "shortlisted" / "favorite.mp4"
+        media.write_bytes(b"video")
+        media.with_name("favorite.mp4.json").write_text(
+            json.dumps({"category": "external_favorites", "tags": "silver_hair night sky"}),
+            encoding="utf-8",
+        )
+        second_media = settings.batch_root / "external" / "shortlisted" / "second.mp4"
+        second_media.write_bytes(b"video")
+        second_media.with_name("second.mp4.json").write_text(
+            json.dumps({"category": "external_favorites", "tags": "silver_hair daylight"}),
+            encoding="utf-8",
+        )
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        build_status, built = await _invoke(
+            router,
+            "POST",
+            "/api/curator/search-index/{batch}/build",
+            match_info={"batch": "external"},
+        )
+        search_status, result = await _invoke(
+            router,
+            "GET",
+            "/api/curator/search",
+            query={
+                "q": "silver hair",
+                "batch": "external",
+                "folder": "shortlisted",
+                "limit": "1",
+            },
+        )
+        second_status, second_page = await _invoke(
+            router,
+            "GET",
+            "/api/curator/search",
+            query={
+                "q": "silver hair",
+                "batch": "external",
+                "folder": "shortlisted",
+                "limit": "1",
+                "offset": str(result["next_offset"]),
+                "snapshot": result["snapshot"],
+            },
+        )
+
+        assert build_status == 200
+        assert built["item_count"] == 2
+        assert search_status == 200
+        assert result["total"] == 2
+        assert result["has_more"] is True
+        assert result["items"][0]["media_kind"] == "video"
+        assert result["items"][0]["metadata_sources"] == ["sidecar"]
+        assert second_status == 200
+        assert second_page["offset"] == 1
+        assert second_page["has_more"] is False
+        assert second_page["items"][0]["name"] != result["items"][0]["name"]
 
     asyncio.run(scenario())
 

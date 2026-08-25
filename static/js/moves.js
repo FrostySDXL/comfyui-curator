@@ -6,12 +6,14 @@ function onThumbClick(index, event) {
             if (!displayImages[index]) return;
             if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(displayImages[index]);
             const modifierSelect = event.ctrlKey || event.metaKey;
-            if (selectionMode || modifierSelect || event.shiftKey) {
-                setSelectionMode(true);
-                toggleSelect(index, event);
-            } else {
-                openLightbox(index);
+            if (!isWorkspaceSearchView()) {
+                if (selectionMode || modifierSelect || event.shiftKey) {
+                    setSelectionMode(true);
+                    toggleSelect(index, event);
+                    return;
+                }
             }
+            openLightbox(index);
         }
 
 function toggleSelect(index, event) {
@@ -52,7 +54,7 @@ function clearSelection() {
         }
 
 function setSelectionMode(active) {
-            selectionMode = active === true;
+            selectionMode = active === true && !isWorkspaceSearchView();
             const browseBtn = document.getElementById('browse-mode-btn');
             const selectBtn = document.getElementById('select-mode-btn');
             if (browseBtn) browseBtn.setAttribute('aria-pressed', selectionMode ? 'false' : 'true');
@@ -73,6 +75,10 @@ function resetSelectionState() {
 
 function selectAllDisplayedImages() {
             if (!currentBatch || images.length === 0) return;
+            if (isWorkspaceSearchView()) {
+                showToast('Bulk selection is unavailable in mixed-source search results');
+                return;
+            }
             setSelectionMode(true);
             if (pagedFolderMode && folderSnapshot) {
                 serverSelection = serverSelection ? null : {
@@ -236,12 +242,25 @@ function getThumbByName(name) {
             return gridThumbMap.get(name) || document.querySelector(`#grid .thumb[data-name="${CSS.escape(name)}"]`);
         }
 
+function getThumbForImage(img) {
+            if (!img) return null;
+            return gridThumbMap.get(getImageRenderKey(img))
+                || document.querySelector(`#grid .thumb[data-image-key="${CSS.escape(getImageRenderKey(img))}"]`);
+        }
+
 async function animateThumbRemoval(names) {
             const targets = names
                 .map(getThumbByName)
                 .filter(Boolean);
             if (targets.length === 0) return;
             targets.forEach(target => target.classList.add('removing'));
+            await new Promise(resolve => setTimeout(resolve, 180));
+        }
+
+async function animateImageRemoval(img) {
+            const target = getThumbForImage(img);
+            if (!target) return;
+            target.classList.add('removing');
             await new Promise(resolve => setTimeout(resolve, 180));
         }
 
@@ -346,7 +365,25 @@ async function moveImage(destination) {
                 })
             });
             if (resp.ok) {
-                await animateThumbRemoval([img.name]);
+                if (!isWorkspaceSearchView() || workspaceSearchFilter?.scope === 'folder') {
+                    await animateImageRemoval(img);
+                }
+                if (isWorkspaceSearchView()) {
+                    const moveState = updateWorkspaceSearchAfterMove(img, destination);
+                    recordLastAction([img.name], source.folder, destination, source.batch);
+                    if (lastAction) lastAction.workspaceSearch = moveState;
+                    showToast(`Moved to ${destination}`, true);
+                    resetSelectionState();
+                    loadBatches();
+                    const remaining = getDisplayImages();
+                    if (remaining.length === 0) {
+                        closeLightbox();
+                    } else {
+                        currentIndex = Math.min(currentIndex, remaining.length - 1);
+                        showCurrentImage();
+                    }
+                    return;
+                }
                 if (currentBatch === '__favorites__') {
                     await loadUniversalFavorites();
                     recordLastAction([img.name], source.folder, destination, source.batch);
@@ -406,7 +443,8 @@ async function undoLastMove() {
                 loadBatches();
                 return;
             }
-            const {batch, filenames, source, destination} = lastAction;
+            const action = lastAction;
+            const {batch, filenames, source, destination} = action;
             const resp = await fetch(ccApiPath('/api/move-batch'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -432,7 +470,9 @@ async function undoLastMove() {
                 }
                 showToast(`Restored ${filenames.length} image${filenames.length!==1?'s':''}`);
                 loadBatches();
-                if (currentBatch === '__favorites__') {
+                if (currentBatch === '__search__') {
+                    restoreWorkspaceSearchAfterUndo(action.workspaceSearch);
+                } else if (currentBatch === '__favorites__') {
                     loadUniversalFavorites();
                 } else if (currentBatch === '__public__') {
                     loadAllPublic();

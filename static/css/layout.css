@@ -88,6 +88,63 @@
             flex-shrink: 0;
         }
 
+        .workspace-search-filter-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            min-height: 38px;
+            padding: 6px 18px;
+            border-bottom: 1px solid rgba(91, 163, 245, 0.28);
+            background: rgba(35, 52, 70, 0.72);
+            color: var(--text-secondary);
+        }
+        .workspace-search-filter-bar[hidden] { display: none; }
+        .workspace-search-filter-copy,
+        .workspace-search-filter-actions {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            min-width: 0;
+        }
+        .workspace-search-filter-label {
+            flex: 0 0 auto;
+            color: var(--accent-primary);
+            font-size: var(--type-label);
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        #workspace-search-filter-summary {
+            overflow: hidden;
+            color: var(--text-primary);
+            font-size: var(--type-secondary);
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .workspace-search-filter-count {
+            flex: 0 0 auto;
+            color: var(--text-muted);
+            font-size: var(--type-label);
+        }
+        .workspace-search-filter-actions button {
+            padding: 5px 9px;
+            border: 1px solid var(--border-strong);
+            border-radius: var(--toolbar-control-radius);
+            background: var(--surface-2);
+            color: var(--text-secondary);
+            cursor: pointer;
+            font: inherit;
+            font-size: var(--type-label);
+            white-space: nowrap;
+        }
+        .workspace-search-filter-actions button:hover {
+            border-color: var(--accent-primary);
+            color: var(--text-primary);
+        }
+        .workspace-search-active .workspace-primary-actions { display: none; }
+        .workspace-search-active .thumb-select { display: none; }
+
         /* Folder tabs */
         .folder-tabs {
             display: none;

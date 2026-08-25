@@ -30,13 +30,15 @@ def test_typed_video_and_audio_lightbox_load_metadata_too() -> None:
     assert "loadLightboxMetadata(img, metadataToken)" in typed
 
 
-def test_rule34_sidecars_render_structured_fields_tags_links_and_raw_json() -> None:
+def test_external_favorite_sidecars_render_structured_fields_tags_links_and_raw_json() -> None:
     js = read_frontend_js()
     render = extract_function_body(js, "function renderLightboxMetadataPanel()")
-    rule34 = extract_function_body(js, "function renderRule34Sidecar(panel, sidecar)")
+    external_favorite = extract_function_body(
+        js, "function renderExternalFavoriteSidecar(panel, sidecar)"
+    )
 
-    assert "isRule34Sidecar(sidecar.data)" in render
-    assert "renderRule34Sidecar(panel, sidecar)" in render
+    assert "isExternalFavoriteSidecar(sidecar.data)" in render
+    assert "renderExternalFavoriteSidecar(panel, sidecar)" in render
     for field in (
         "subcategory",
         "favorite_id",
@@ -49,15 +51,16 @@ def test_rule34_sidecars_render_structured_fields_tags_links_and_raw_json() -> N
         "rating",
         "md5",
     ):
-        assert field in rule34
-    assert "data.tags.split(/\\s+/)" in rule34
-    assert "metadata-tag-chip" in rule34
-    assert "file_url" in rule34
-    assert "preview_url" in rule34
-    assert "Raw JSON" in rule34
+        assert field in external_favorite
+    assert "data.tags.split(/\\s+/)" in external_favorite
+    assert "metadata-tag-chip" in external_favorite
+    assert "file_url" in external_favorite
+    assert "preview_url" in external_favorite
+    assert "External favorite" in external_favorite
+    assert "Raw JSON" in external_favorite
 
 
-def test_rule34_tags_and_links_use_compact_metadata_styles() -> None:
+def test_external_favorite_tags_and_links_use_compact_metadata_styles() -> None:
     css = read_frontend_css()
 
     assert ".metadata-tags" in css

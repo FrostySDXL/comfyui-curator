@@ -45,6 +45,11 @@ from image_curator.prompt_history import (
     load_all_prompt_indices,
     load_prompt_index,
 )
+from image_curator.search_index import (
+    build_search_index,
+    query_search_indices,
+    summarize_search_index,
+)
 from image_curator.web_validation import require_existing_batch, safe_path
 
 logger = logging.getLogger(__name__)
@@ -671,6 +676,48 @@ def api_get_all_prompt_history():
     return jsonify(load_all_prompt_indices(BATCHES_DIR))
 
 
+@app.route("/api/search-index/<batch>/build", methods=["POST"])
+def api_build_search_index(batch):
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
+    try:
+        return jsonify(summarize_search_index(build_search_index(BATCHES_DIR, batch_name)))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception:
+        logger.exception("Search index build failed for %s", batch_name)
+        return jsonify({"error": "Search index build failed"}), 500
+
+
+@app.route("/api/search", methods=["GET"])
+def api_search():
+    query = request.args.get("q", "")
+    batch = request.args.get("batch") or None
+    folder = request.args.get("folder") or None
+    if batch:
+        batch, err = _require_batch(batch)
+        if err:
+            return jsonify(err[0]), err[1]
+    if folder and folder not in batch_store.BATCH_FOLDERS:
+        return jsonify({"error": "Invalid folder"}), 400
+    try:
+        limit = int(request.args.get("limit", "200"))
+        offset = int(request.args.get("offset", "0"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid pagination"}), 400
+    result = query_search_indices(
+        BATCHES_DIR,
+        query,
+        batch=batch,
+        folder=folder,
+        limit=limit,
+        offset=offset,
+        snapshot=request.args.get("snapshot") or None,
+    )
+    return jsonify(result), (409 if result.get("snapshot_expired") else 200)
+
+
 @app.route("/thumb/<batch>/<folder>/<filename>")
 def serve_thumbnail(batch, folder, filename):
     batch_name, err = _require_batch(batch)
@@ -773,6 +820,26 @@ def api_v2_folder_items(batch, folder):
     if payload is None:
         return jsonify({"error": "Snapshot revision is stale"}), 409
     return jsonify(payload)
+
+
+@app.route("/api/v2/folders/<batch>/<folder>/lookup")
+def api_v2_folder_lookup(batch, folder):
+    batch_name, _directory, sort_by, order, error = _folder_snapshot_request(batch, folder)
+    if error:
+        return error
+    revision = request.args.get("revision", "")
+    name = request.args.get("name", "")
+    try:
+        batch_store._validate_name(name, "file name")
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid file name"}), 400
+    index = _folder_index.index_of(batch_name, folder, sort_by, order, revision, name)
+    if index is not None:
+        return jsonify({"revision": revision, "index": index})
+    current = _folder_index.page(batch_name, folder, sort_by, order, revision, 0, 1)
+    if current is None:
+        return jsonify({"error": "Snapshot revision is stale"}), 409
+    return jsonify({"error": "File not found"}), 404
 
 
 @app.route("/image/<batch>/<folder>/<filename>")

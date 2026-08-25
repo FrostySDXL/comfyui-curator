@@ -9,6 +9,7 @@
 - **Single-page review UI:** Asset-manager style batch sidebar, compact workspace toolbar, center thumbnail grid (CSS Grid), right AI Curate sidebar.
 - **Dual-mode serving:** The same `static/js/*.js` and `static/css/*.css` files serve both the standalone Flask page (`templates/index.html`, `/static/` paths) and the native ComfyUI extension page (`templates/curator.html`, `/curator_static/` paths). Mode detection uses `window.CURATOR_NATIVE` in `state.js`.
 - **Keyboard-first navigation:** 15+ shortcuts for search, selection, AI toggles, lightbox, undo.
+- **Library search:** One modal keeps general filename/PNG/JSON sidecar media search and normalized Prompt History groups in separate remembered tabs; Images results can be applied as a persistent workspace review filter.
 - **Drag/drop curation:** HTML5 drag from grid to folder tabs for single or multi-select moves.
 - **Lightbox viewer:** Full-media review with zoom, scored-image navigation, PNG generation metadata plus adjacent JSON sidecars, and two-image compare mode.
 - **AI score integration:** Overlay badges, score gradient coloring, filter/sort by score, accessible Inspect / Score / Runs tabs, contextual image and batch inspection, guided scoring with a visible 12-check cap, and truthful job/history states.
@@ -43,7 +44,7 @@
 | `grid.css` | Workspace/grid/thumb styling, density modes, inspected/selected states, favorite stars, thumb metadata, multi-select action bar |
 | `lightbox.css` | Lightbox viewer, metadata panel, lightbox controls and key hints |
 | `modals.css` | Base modal styles, Help modal, new-batch/delete modal buttons |
-| `prompts.css` | Prompt History split workbench, control rail, result rows, footer, stale warning |
+| `prompts.css` | Library Search tabs, media result rows, Prompt History split workbench, control rail, footer, stale warning |
 | `toast.css` | Undo toast styling |
 | `ai.css` | AI sidebar, image inspector, AI form/history/run comparison, AI thumb badges and filtering |
 | `responsive.css` | `900px` responsive breakpoint rules; loads last |
@@ -63,8 +64,8 @@
 | `publish.js` | Public export modal, batch Public view, All Public view/count, public copy/move/delete actions |
 | `moves.js` | Multi-select, drag/drop, move, undo, Empty Rejects modal |
 | `lightbox.js` | Still/GIF image review, MP4/MP3 playback and cleanup, navigation, zoom, scored navigation, and favorite UI |
-| `metadata.js` | PNG + adjacent JSON sidecar metadata loading/rendering, structured Rule34 post/favorite fields and tag chips, and prompt/JSON copy helpers |
-| `prompts.js` | Prompt History modal state, scope selector, selected-row detail modes, labeled row rendering, build/rebuild controls |
+| `metadata.js` | PNG + adjacent JSON sidecar metadata loading/rendering, structured external-favorites post/favorite fields and tag chips, and prompt/JSON copy helpers |
+| `prompts.js` | Library Search tab state, scoped/debounced media queries and results, stable paged workspace loading, source-qualified filter apply/edit/clear/move reconciliation, Prompt History scope/selection/rendering, build/rebuild controls |
 | `ai-state.js` | Shared AI globals, storage keys, and sidebar constants |
 | `ai-sidebar.js` | AI sidebar open/width state and resize behavior |
 | `ai-panel.js` | AI sidebar tabs, optional elements, quality flags, element history |
@@ -193,6 +194,9 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 | `GET /api/prompt-history` | `loadPromptsData()` | Prompt modal all-batches view |
 | `GET /api/prompt-history/<batch>?check_stale=true` | `loadPromptsData()` | Prompt modal batch view |
 | `POST /api/prompt-history/<batch>/build` | `buildPromptIndex()` | Prompt index build/rebuild |
+| `GET /api/search?q=...&batch=...&folder=...` | `runMediaSearch()` | Scoped filename, PNG generation metadata, and adjacent JSON sidecar search |
+| `POST /api/search-index/<batch>/build` | `_buildMediaSearchIndexes()` | Build/rebuild one typed-media metadata search cache |
+| `GET /api/v2/folders/<batch>/<folder>/lookup` | `openMediaSearchResult()` | Resolve an indexed filename to its O(1) revision position before opening a large native folder item |
 | `GET /thumb/<batch>/<folder>/<name>` | `resolveThumbnailBlobUrl()` | Thumb render (lazy, via blob cache) |
 | `GET /image/<batch>/<folder>/<name>` | `showCurrentImage()` | Lightbox image src |
 | `GET /preview/<batch>/<folder>/<name>` | `scheduleHoverPreview()` | Delayed one-at-a-time GIF/MP4 hover proxy |
@@ -219,6 +223,9 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 | `imageCurator.aiSidebarOpen` | AI sidebar visibility ('true'/'false') |
 | `imageCurator.promptsCollapseAll` | Prompt History collapse-all preference |
 | `imageCurator.promptsSort` | Prompt History sort mode (`count`, `alpha`, `length`) |
+| `imageCurator.librarySearchTab` | Last-used Images or Prompt groups tab |
+| `imageCurator.mediaSearchQuery` | Sticky general media query |
+| `imageCurator.mediaSearchScope` | Sticky folder, batch, or all-batches media scope |
 | `imageCurator.publicDestinationHistory` | Recent public copy/move destinations under the configured export root |
 
 ### Operator-Facing UI Behavior
@@ -322,8 +329,9 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **Lightbox arrows sit low:** `.lightbox-nav` is positioned near the lower left/right so the metadata and AI panels do not cover navigation controls.
 - **Lightbox zoom is image-anchored:** `Ctrl+wheel` zooms around the cursor on `#lightbox-image-wrap`; zoomed images use layout-sized dimensions plus pointer-drag panning instead of transform-only scaling.
 - **Compare mode is active-pane based:** `Compare in Lightbox` is enabled for exactly two selected review-folder images. Click a pane to make it active; zoom, metadata, AI, favorite, public prep, and move actions apply to the active pane, with independent zoom/pan state per side. Metadata and AI overlays are positioned over the inactive pane. `C` pins the active image; Left/Right replace the other pane.
-- **Rule34 sidecars are flat and type-preserving:** `metadata.js` recognizes
-  `category: "rule34"`, renders optional post/favorite fields, splits the string
+- **External-favorites sidecars are flat and type-preserving:** `metadata.js`
+  recognizes neutral favorites categories and post/favorite record shapes,
+  renders optional structured fields, splits the string
   `tags` field on whitespace, permits only HTTP(S) outbound links, and retains
   raw JSON. Other categories use the generic JSON block.
 - **CSS variables for layout only, not theming:** `--sidebar-width`, `--sidebar-effective-width`, `--ai-sidebar-width`. All colors are hardcoded.
@@ -333,8 +341,8 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **`getDisplayImages()` centralizes filtering:** Favorites filtering and AI score sorting compose there; update image counts through `updateImageCountLabel()`.
 - **Prompt history cache is manual:** The modal loads cached JSON until the operator clicks Build/Rebuild; staleness is count-based only.
 - **Prompt History request token (`promptsRequestToken`):** Mirrors the `folderRequestToken` pattern. `loadPromptsData` and `buildPromptIndex` increment it before each fetch and check it before assigning the response, so superseded requests (e.g. rapid batch switches) cannot overwrite newer state.
-- **Prompt History is keyboard-first:** `P` opens the modal and focuses the search field outside the lightbox. A persistent desktop control rail holds the batch scope combobox, sort, global positive-length control, and contextual selected-prompt views while the dominant results pane holds search and prompt rows; the layout collapses to one column below 760px. All Batches is the first combobox option and automatically groups results by batch. Single-batch scope renders a flat sorted list. Search input is debounced (~180ms) and capped at 200 rendered rows to keep large aggregate views responsive. Matches in prompt, negative prompt, and batch label are highlighted with `mark.prompts-match`.
-- **Prompt History has one selected row:** Rows expose a compact native selection button and support mouse selection outside direct actions. Button activation restores focus to the newly rendered selected-row button; ordinary row clicks remain focus-neutral. Full positive, negative, and image-name rail modes are independent and transfer to the next selected row. Global positive expansion owns the effective Full positive state while preserving its selected-only override for a later global collapse. Filtering or scope changes clear selection when its stable batch-plus-hash identity is no longer visible; sorting and positive-length rerenders preserve it. Batch names appear in modal scope or aggregate group headers rather than every row. Prompt details own the variable row height, followed by a fixed-width horizontal copy group containing copy positive, copy negative when available, and copy pair. Unbuilt, empty-index, and no-match states stay compact and cardless. Image chips are display-only -- grid-jump click wiring is intentionally deferred so it can land with the lightbox/grid state work.
+- **Library Search is keyboard-first:** `P` opens the modal on its remembered Images or Prompt groups tab outside the lightbox. Images uses a ~240ms server-query debounce, folder/batch/all scope, lazy thumbnails, bounded modal results, source/match chips, revision-safe Open navigation, and Filter Workspace. The filtered workspace is a temporary mixed-source virtual collection with a persistent scope/count bar; stable 500-item transport pages load near the grid or lightbox boundary until every match is available, while grid virtualization retains its separate 500-live-element cap. Edit search reopens the query, Clear filter restores the originating view, and source-qualified single-image moves reconcile move/undo locally. Mixed-source bulk selection is intentionally disabled. Prompt groups retains its persistent desktop control rail, batch combobox, sorting, contextual selected-prompt views, ~180ms local debounce, and 200-row cap. The layout collapses to one column below 760px.
+- **Prompt History has one selected row:** Rows expose compact Select and Find images actions and support mouse selection outside direct actions. Find images transfers the positive prompt into the general Images tab. Button activation restores focus to the newly rendered selected-row button; ordinary row clicks remain focus-neutral. Full positive, negative, and image-name rail modes are independent and transfer to the next selected row. Global positive expansion owns the effective Full positive state while preserving its selected-only override for a later global collapse. Filtering or scope changes clear selection when its stable batch-plus-hash identity is no longer visible; sorting and positive-length rerenders preserve it. Batch names appear in modal scope or aggregate group headers rather than every row. Prompt details own the variable row height, followed by a fixed-width horizontal copy group containing copy positive, copy negative when available, and copy pair. Unbuilt, empty-index, and no-match states stay compact and cardless. Image reference chips remain display-only.
 - **Prompt History scope chip:** The `Scope:` chip at the top of the modal reflects the current `promptsCurrentBatch` and updates on every batch change. The batch filter input is normally tabbable; the listbox uses `aria-selected` and `aria-activedescendant` for active-option state.
 
 **Completion Standard:** For any task in this directory, include files changed, manual browser verification performed (state the browser and interactions tested), and any updates to the Help modal, README keyboard shortcuts, or `test_frontend_*.py` invariants.

@@ -8,7 +8,7 @@ from typing import Any
 
 from aiohttp import web
 
-from . import batch_store, prompt_history, publish
+from . import batch_store, prompt_history, publish, search_index
 from .favorites import (
     get_batch_favorite_filenames,
     resolve_universal_favorites,
@@ -530,6 +530,25 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             return web.json_response({"error": "Snapshot revision is stale"}, status=409)
         return web.json_response(payload)
 
+    async def get_folder_item_index(request):
+        batch, folder, _directory, sorting, error_response = snapshot_request(request)
+        if error_response is not None:
+            return error_response
+        sort_by, order = sorting
+        revision = request.query.get("revision", "")
+        name = request.query.get("name", "")
+        try:
+            batch_store._validate_name(name, "file name")
+        except (TypeError, ValueError):
+            return web.json_response({"error": "Invalid file name"}, status=400)
+        index = service.folder_index.index_of(batch, folder, sort_by, order, revision, name)
+        if index is not None:
+            return web.json_response({"revision": revision, "index": index})
+        current = service.folder_index.page(batch, folder, sort_by, order, revision, 0, 1)
+        if current is None:
+            return web.json_response({"error": "Snapshot revision is stale"}, status=409)
+        return web.json_response({"error": "File not found"}, status=404)
+
     app.router.add_get("/api/curator/settings", get_settings)
     app.router.add_post("/api/curator/settings", post_settings)
     app.router.add_get("/api/curator/batches", get_batches)
@@ -725,6 +744,7 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
     app.router.add_get("/api/curator/v2/folders/{batch}/{folder}/snapshot", get_folder_snapshot)
     app.router.add_get("/api/curator/v2/folders/{batch}/{folder}/poll", poll_folder_snapshot)
     app.router.add_get("/api/curator/v2/folders/{batch}/{folder}/items", get_folder_items)
+    app.router.add_get("/api/curator/v2/folders/{batch}/{folder}/lookup", get_folder_item_index)
     app.router.add_get("/api/curator/image-metadata/{batch}/{folder}/{name}", get_metadata)
     app.router.add_get("/curator/thumb/{batch}/{folder}/{name}", serve_thumbnail)
     app.router.add_get("/curator/image/{batch}/{folder}/{name}", serve_image)
@@ -988,3 +1008,49 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
     app.router.add_post("/api/curator/prompt-history/{batch}/build", build_prompt_index)
     app.router.add_get("/api/curator/prompt-history/{batch}", get_prompt_index)
     app.router.add_get("/api/curator/prompt-history", get_all_prompt_indices)
+
+    # -----------------------------------------------------------------------
+    # Media metadata search routes
+    # -----------------------------------------------------------------------
+
+    async def build_media_search_index(request):
+        batch = request.match_info["batch"]
+        if not service.batch_exists(batch):
+            return web.json_response({"error": "Batch does not exist"}, status=404)
+        try:
+            result = await asyncio.to_thread(
+                search_index.build_search_index, service.settings.batch_root, batch
+            )
+            return web.json_response(search_index.summarize_search_index(result))
+        except ValueError:
+            return web.json_response({"error": "Unsafe search index path"}, status=400)
+        except Exception:
+            return web.json_response({"error": "Search index build failed"}, status=500)
+
+    async def search_media(request):
+        query = request.query.get("q", "")
+        batch = request.query.get("batch") or None
+        folder = request.query.get("folder") or None
+        if batch and not service.batch_exists(batch):
+            return web.json_response({"error": "Batch does not exist"}, status=404)
+        if folder and folder not in batch_store.BATCH_FOLDERS:
+            return web.json_response({"error": "Invalid folder"}, status=400)
+        try:
+            limit = int(request.query.get("limit", "200"))
+            offset = int(request.query.get("offset", "0"))
+        except (TypeError, ValueError):
+            return web.json_response({"error": "Invalid pagination"}, status=400)
+        result = await asyncio.to_thread(
+            search_index.query_search_indices,
+            service.settings.batch_root,
+            query,
+            batch=batch,
+            folder=folder,
+            limit=limit,
+            offset=offset,
+            snapshot=request.query.get("snapshot") or None,
+        )
+        return web.json_response(result, status=409 if result.get("snapshot_expired") else 200)
+
+    app.router.add_post("/api/curator/search-index/{batch}/build", build_media_search_index)
+    app.router.add_get("/api/curator/search", search_media)

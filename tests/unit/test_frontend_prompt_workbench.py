@@ -28,7 +28,7 @@ def test_prompt_history_has_split_workbench_structure() -> None:
     markup = _prompt_markup()
 
     assert 'class="prompts-workbench-header"' in markup
-    assert '<h3 id="prompts-modal-title">Prompt History</h3>' in markup
+    assert '<h3 id="prompts-modal-title">Library Search</h3>' in markup
     assert 'class="prompts-workbench-body"' in markup
     assert '<aside class="prompts-control-rail" aria-label="Prompt history controls">' in markup
     assert '<section class="prompts-results-pane"' in markup
@@ -338,7 +338,8 @@ def test_prompt_modal_initial_focus_is_stable_non_input_without_autofocus_flash(
     trap = extract_function_body(dom_utils, "function _trapFocus(")
 
     assert '<button class="cancel" type="button">Close</button>' in markup
-    assert "const closeButton = modal.querySelector('.prompts-workbench-footer .cancel');" in show
+    assert "const activePanel = document.getElementById(" in show
+    assert "activePanel?.querySelector('.prompts-workbench-footer .cancel')" in show
     assert "_trapFocus(modal, closeButton);" in show
     assert "search.focus()" not in show
     assert "document.getElementById('prompts-search')" not in show

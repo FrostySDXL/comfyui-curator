@@ -1,6 +1,6 @@
 # AGENTS.md
 
-**Purpose:** Operator-focused web application for reviewing generated images with optional AI-assisted scoring. **Status:** Actively maintained. **Audience:** AI agents and single-operator maintainers. **Last Updated:** 2026-07-12
+**Purpose:** Operator-focused web application for reviewing generated images with optional AI-assisted scoring. **Status:** Actively maintained. **Audience:** AI agents and single-operator maintainers. **Last Updated:** 2026-08-24
 
 ## Quickstart
 
@@ -20,6 +20,9 @@
 - **Favorites workflow:** One-click favorites update batch and universal scope, with a favorites-only filter and virtual All Favorites sidebar view.
 - **Public posting prep:** Selected originals export to metadata-stripped, optionally watermarked generated copies in `<batch>/public/`, with batch Public and virtual All Public views plus derivative-only copy/move/delete actions and export-root destination browsing/history.
 - **Prompt history:** Manual PNG metadata prompt indexes with searchable/copyable Prompt History modal and staleness warning.
+- **Library search:** Shared Images / Prompt groups modal. Images searches filenames,
+  PNG generation metadata, and bounded adjacent JSON sidecar keys/values across a
+  folder, batch, or all batches using rebuildable per-batch caches.
 - **AI-assisted scoring:** Vision-LLM evaluation against element checklists via OpenAI-compatible `/v1/chat/completions`. Optional auto-move of top-N images. The AI sidebar has Inspect / Score / Runs tabs, run comparison, and contextual image inspection.
 - **CLI headless scoring:** Same pipeline available via `curate.py` (dry-run, score-only, or score-and-move).
 - **Core philosophy:** Manual curation is authoritative. AI is advisory. Filesystem is the operational truth.
@@ -34,6 +37,7 @@ app.py (Flask routes) ← standalone, fully supported
   ├── image_curator/favorites.py    ← batch + universal favorites JSON storage
   ├── image_curator/publish.py      ← public derivative creation/list/copy/move/delete
   ├── image_curator/prompt_history.py ← manual PNG prompt index cache
+  ├── image_curator/search_index.py ← rebuildable typed-media + sidecar search cache/query
   ├── image_curator/web_validation.py ← route path/batch validation helpers
   ├── image_curator/media.py        ← typed poster/hover-preview cache and fallback helpers
   ├── image_curator/folder_index.py ← immutable background revisions, pages, O(1) lookup, bulk undo records
@@ -83,6 +87,7 @@ Frontend (shared static/js/*.js + static/css/*.css)
 | | `image_curator/favorites.py` | Batch/universal favorites storage, toggle helper, universal favorite resolution |
 | | `image_curator/publish.py` | Metadata-stripped optional-watermark public copy creation, public listing, external copy/move/delete under configured export root |
 | | `image_curator/prompt_history.py` | Manual prompt-history cache builder from PNG metadata |
+| | `image_curator/search_index.py` | Per-batch typed-media search index, bounded JSON sidecar flattening, AND-token query, stale-folder detection |
 | | `image_curator/web_validation.py` | Path traversal and existing-batch validation helpers used by app route wrappers |
 | | `image_curator/media.py` | Thumbnail cache key/freshness helpers and WebP generation |
 | | `image_curator/README.md` | Module-scoped agent startup guide (layout, contracts, gotchas) |
@@ -121,7 +126,7 @@ Frontend (shared static/js/*.js + static/css/*.css)
 | | `.env.example` | Documented environment variable reference (never read `.env` directly) |
 | **Deployment** | `image-curator.service.example` | Templated systemd unit (use this, not the production service file) |
 | **Guidance** | `README.md`, `CONTRIBUTING.md`, `AGENTS.md` | Operator docs, contributor workflow, agent startup |
-| **Generated** | `.thumbs/`, `.previews/`, `<batch>/ai-curate/runs/`, `<batch>/ai-curate/latest.json`, `__pycache__/`, `*.egg-info/` | **Do not edit.** Created at runtime. |
+| **Generated** | `.thumbs/`, `.previews/`, `<batch>/search-index.json`, `<batch>/ai-curate/runs/`, `<batch>/ai-curate/latest.json`, `__pycache__/`, `*.egg-info/` | **Do not edit.** Created at runtime. |
 
 ## Decision Tree
 
@@ -132,6 +137,7 @@ Frontend (shared static/js/*.js + static/css/*.css)
 | AI scoring, queueing, run history | `ai_curate/README.md` then `ai_curate/`, `curate.py`, unit tests | `python -m pytest tests/unit/test_client.py tests/unit/test_scoring.py tests/unit/test_queue.py tests/unit/test_storage.py tests/unit/test_elements.py tests/unit/test_models.py tests/unit/test_config.py -v` |
 | PNG metadata extraction | `image_curator/README.md` then `image_curator/png_metadata.py`, unit test | `python -m pytest tests/unit/test_png_metadata.py -v` |
 | Favorites or prompt history | `image_curator/README.md` then `image_curator/favorites.py`, `image_curator/prompt_history.py`, app routes, frontend calls | `python -m pytest tests/unit/test_favorites.py tests/unit/test_prompt_history.py tests/integration/test_favorites_api.py tests/integration/test_prompt_history_api.py -v` |
+| Library/media metadata search | `image_curator/README.md`, `image_curator/search_index.py`, `sidecar_metadata.py`, `static/js/prompts.js`, both route adapters | `python -m pytest tests/unit/test_search_index.py tests/integration/test_search_api.py tests/component/test_native_curator_api.py -v` |
 | Public posting prep | `image_curator/README.md` then `image_curator/publish.py`, app routes, `static/js/publish.js`, public-view frontend paths | `python -m pytest tests/unit/test_publish.py tests/integration/test_publish_api.py tests/unit -k frontend -v` |
 | Docs or repo organization | `README.md`, `CONTRIBUTING.md`, this file | `python scripts/run_all.py --skip-js` |
 | Deployment assumptions | `image-curator.service.example`, `app.py` constants, `ai_curate/config.py` | Review env vars in `.env.example` |
@@ -167,7 +173,7 @@ Treat these as stability-sensitive:
 - AI run history labels, compare controls, and image inspector as operator-facing compatibility surfaces
 - Favorites API shapes, favorites filter button, All Favorites sidebar entry, and lightbox/thumb star behavior
 - Public API shapes, batch `public/` generated-output view, All Public sidebar entry, public action labels, public export-root destination browser/history, and derivative-only safety copy
-- Prompt History modal controls, prompt-history API shapes, and manual cache file semantics
+- Library Search Images / Prompt groups tabs, Images-to-workspace filter bar/actions, Prompt History controls, search and prompt-history API shapes, and manual cache file semantics
 - Native extension entrypoint (`__init__.py` exports), `WEB_DIRECTORY`, `/curator` page route, `/curator_static` static mount, and `/api/curator/health` route
 - `templates/curator.html` two-transform parity with `index.html` (`/static/` → `/curator_static/` plus `window.CURATOR_NATIVE = true` before ordered scripts)
 - Shared frontend `ccApiPath`/`ccThumbUrl`/`ccImageUrl` URL helper behavior and mode-detection through `window.CURATOR_NATIVE`
@@ -215,8 +221,9 @@ Treat these as stability-sensitive:
 - Lightbox supports zoom and scored-image navigation shortcuts
 - Lightbox supports a separate AI review panel toggled with `I`
 - Lightbox metadata supports the `M` toggle and should keep full prompt/negative prompt inspection available without disrupting image review
-- Prompt History modal stays keyboard-first: `P` opens the modal and focuses the search field; the batch filter input is normally tabbable; the custom combobox supports Arrow/Home/End/PageUp/PageDown/Enter/Escape
+- Library Search stays keyboard-first: `P` opens the last-used Images or Prompt groups tab; the Prompt groups batch filter remains normally tabbable and its custom combobox supports Arrow/Home/End/PageUp/PageDown/Enter/Escape
 - Prompt History "Copy pair" copies `prompt\n\nNegative: <negative>` (prompt only when no negative exists); the existing single-prompt copy is preserved as `copy negative` when a negative prompt is present
+- Library Search Images can apply folder/batch/all-batches results to a source-qualified workspace filter; stable 500-item API pages load automatically at grid/lightbox boundaries until every match is available, lightbox navigation stays inside it, Clear restores the originating view, and mixed-source bulk selection remains disabled
 - Prompt History image references render as folder-grouped chips and are display-only; "Show in grid" / "Open first image" actions are deferred so they can land with the grid/lightbox state work in a separate phase
 
 ### API or backend change
@@ -246,21 +253,22 @@ Treat these as stability-sensitive:
 - **`--panel` flag is deprecated (curate.py):** Use `--prompt`. `--panel` still works but prints a warning. `--prompt` takes precedence if both are provided.
 - **AI worker threads are daemons:** They die with the process. Shutdown tries to join for 5 seconds, then exits.
 - **Frontend tests are Python source-scraping:** The `test_frontend_*.py` files regex-scan ordered split JS/CSS sources through `tests/unit/frontend_source.py` for function names and invariants. No headless browser or JS test framework. Browser-only changes need manual verification.
-- **Generated files (never edit):** `.thumbs/` (poster cache), `.previews/` (hover proxies), `.favorites.json`, `<batch>/prompt-history.json`, `<batch>/ai-curate/runs/` (run history), `<batch>/ai-curate/latest.json`, `__pycache__/`, `*.egg-info/`.
+- **Generated files (never edit):** `.thumbs/` (poster cache), `.previews/` (hover proxies), `.favorites.json`, `<batch>/prompt-history.json`, `<batch>/search-index.json`, `<batch>/ai-curate/runs/` (run history), `<batch>/ai-curate/latest.json`, `__pycache__/`, `*.egg-info/`.
 - **Favorites one click updates both scopes:** `toggle_favorite()` writes batch and universal stores; universal view uses `__favorites__` as a frontend sentinel, never as a real batch.
 - **Public copies are generated derivatives:** `public/` is not a normal curation stage. Do not move originals when preparing, copying, moving, or deleting public copies. External copy/move requires `IMAGE_CURATOR_PUBLIC_EXPORTS`; the destination browser lists directories only under that configured export root.
 - **Prompt history is manual:** Build/rebuild is synchronous and operator-triggered. Staleness checks compare total image count only.
 - **Score < 0 means failed:** `ImageResult.score` defaults to -1 for unscored/failed images. `normalized_score` also returns -1. Frontend checks `score >= 0` to distinguish scored from failed.
 - **No CORS headers:** The app binds to `127.0.0.1` by default. For remote access, use a reverse proxy with auth (nginx, Caddy).
 - **Media cache keys include folder and source extension:** `<folder>__<stem>--<ext>.webp|.mp4` prevents folder and same-stem cross-format collisions.
-- **Typed-media boundaries:** Review/favorites/moves/reject deletion accept PNG/JPG/JPEG/WebP/GIF/MP4/MP3. AI scoring and public derivatives remain still-only; Prompt History remains PNG-only. Adjacent JSON sidecars are auxiliary (never listed independently) and follow imports, review moves/undo, and reject cleanup.
-- **Rule34 sidecar schema:** Flat objects use `category: "rule34"`; `subcategory`
-  is `post` or `favorite`; `tags` is whitespace-delimited; numeric-looking API
+- **Typed-media boundaries:** Review/favorites/moves/reject deletion and general media search accept PNG/JPG/JPEG/WebP/GIF/MP4/MP3. AI scoring and public derivatives remain still-only; Prompt History remains PNG-only. Adjacent JSON sidecars are auxiliary (never listed independently), searchable through the media index, and follow imports, review moves/undo, and reject cleanup.
+- **External-favorites sidecar schema:** Flat objects may use
+  `category: "external_favorites"`; `subcategory` is `post` or `favorite`;
+  `tags` is whitespace-delimited; numeric-looking API
   values generally remain strings while `favorite_id`/`total` may be integers.
   Preserve those source types in backend responses.
 - **Large native folders:** Native real-folder views use immutable background revisions, 256-item pages, lightweight polls, and <=500 live thumbnails. Snapshot Select All is revision plus exclusions and undo is tokenized server-side.
 - **`ELEMENT_CAP` (12) truncation is silent:** `scoring.py` caps elements without logging a warning.
-- **Native extension scope:** Native settings, batch/image/thumbnail foundation routes, curation mutations, favorites, public workflow, prompt history, and AI scoring lifecycle are namespaced under `/api/curator/*` and `/curator/{thumb,image}/*`. Native AI uses a lifecycle-owned queue with bounded shutdown.
+- **Native extension scope:** Native settings, batch/image/thumbnail foundation routes, curation mutations, favorites, public workflow, prompt history, media search, and AI scoring lifecycle are namespaced under `/api/curator/*` and `/curator/{thumb,image}/*`. Native AI uses a lifecycle-owned queue with bounded shutdown.
 - **Native public export root default:** `NativeCuratorSettings.from_host_paths()` resolves a ComfyUI-owned `public-exports` directory under the curator system user directory (`<system_dir>/public-exports`). The editable path appears only in the dedicated local-operator settings response, not general page or batch payloads.
 - **Native settings:** `<system_dir>/config.json` is the normal native source. Persisted values precede environment fallbacks and ComfyUI-owned defaults. The dedicated settings endpoint returns editable paths and API-key set status, never the key; saves support explicit replacement and clearing and are rejected while AI work is active.
 - **curator.html must stay synchronized with index.html:** The native template is derived from `index.html` by two transforms: `/static/` → `/curator_static/` and inserting `window.CURATOR_NATIVE = true` before the first `<script src="...">`. Any change to `index.html` must be mirrored in `curator.html`.

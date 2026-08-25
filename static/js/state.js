@@ -48,11 +48,15 @@
         const LIGHTBOX_VIDEO_AUTOPLAY_LOOP_KEY = 'imageCurator.lightboxVideoAutoplayLoop';
         const PROMPTS_COLLAPSE_KEY = 'imageCurator.promptsCollapseAll';
         const PROMPTS_SORT_KEY = 'imageCurator.promptsSort';
+        const LIBRARY_SEARCH_TAB_KEY = 'imageCurator.librarySearchTab';
+        const MEDIA_SEARCH_QUERY_KEY = 'imageCurator.mediaSearchQuery';
+        const MEDIA_SEARCH_SCOPE_KEY = 'imageCurator.mediaSearchScope';
         let currentBatch = null;
         let currentFolder = null;
         let images = [];
         let currentDisplayImages = [];
         let displayIndexByName = new Map();
+        let displayIndexByKey = new Map();
         let folderSnapshot = null;
         let folderPageInflight = new Map();
         let pagedFolderMode = false;
@@ -76,6 +80,8 @@
         let hoverPreviewTimer = null;
         let batchFilterQuery = '';
         let batchFilterTimer = null;
+        let workspaceSearchFilter = null;
+        let workspaceSearchReturnContext = null;
         let favoritesFilterOn = false;
         let universalFavoritesCount = 0;
         let universalPublicCount = 0;
@@ -96,7 +102,11 @@
         let _sidebarResizeLastEvent = null;
 
 function isVirtualCollectionView() {
-            return currentBatch === '__favorites__' || currentBatch === '__public__';
+            return currentBatch === '__favorites__' || currentBatch === '__public__' || currentBatch === '__search__';
+        }
+
+function isWorkspaceSearchView() {
+            return currentBatch === '__search__';
         }
 
 function isPublicView() {

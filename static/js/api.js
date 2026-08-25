@@ -35,6 +35,11 @@ async function apiGetFolderPage(batch, folder, sort, order, revision, offset, li
     return fetch(ccApiPath(`/api/v2/folders/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}/items?sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&revision=${encodeURIComponent(revision)}&offset=${encodeURIComponent(offset)}&limit=${encodeURIComponent(limit)}`));
 }
 
+async function apiGetFolderItemIndex(batch, folder, sort, order, revision, name) {
+    const params = new URLSearchParams({sort, order, revision, name});
+    return fetch(ccApiPath(`/api/v2/folders/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}/lookup?${params.toString()}`));
+}
+
 async function apiPollFolderSnapshot(batch, folder, sort, order, revision) {
     return fetch(ccApiPath(`/api/v2/folders/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}/poll?sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&revision=${encodeURIComponent(revision || '')}`));
 }
@@ -128,6 +133,20 @@ async function apiGetPromptHistory(batch) {
 
 async function apiBuildPromptIndex(batch) {
     return fetch(ccApiPath(`/api/prompt-history/${encodeURIComponent(batch)}/build`), {method: 'POST'});
+}
+
+async function apiSearchMedia(query, options) {
+    options = options || {};
+    const params = new URLSearchParams({q: query || '', limit: String(options.limit || 200)});
+    if (options.offset) params.set('offset', String(options.offset));
+    if (options.snapshot) params.set('snapshot', options.snapshot);
+    if (options.batch) params.set('batch', options.batch);
+    if (options.folder) params.set('folder', options.folder);
+    return fetch(ccApiPath('/api/search?' + params.toString()));
+}
+
+async function apiBuildMediaSearchIndex(batch) {
+    return fetch(ccApiPath(`/api/search-index/${encodeURIComponent(batch)}/build`), {method: 'POST'});
 }
 
 async function apiGetImageMetadata(batch, folder, name) {

@@ -278,6 +278,9 @@ def test_v2_folder_snapshot_is_paged_revision_bound_and_poll_is_lightweight(
     stale = client.get(
         "/api/v2/folders/paged/inbox/items?sort=name&order=asc&revision=stale&offset=0&limit=2"
     )
+    lookup = client.get(
+        f"/api/v2/folders/paged/inbox/lookup?sort=name&order=asc&revision={revision}&name=item-3.png"
+    )
 
     assert metadata == {"status": "ready", "revision": revision, "count": 5}
     assert [item["name"] for item in page.get_json()["items"]] == [
@@ -291,6 +294,8 @@ def test_v2_folder_snapshot_is_paged_revision_bound_and_poll_is_lightweight(
         "count": 5,
     }
     assert stale.status_code == 409
+    assert lookup.status_code == 200
+    assert lookup.get_json() == {"revision": revision, "index": 3}
     assert "items" not in poll.get_json()
 
 

@@ -259,6 +259,36 @@ function _bindDelegatedEvents() {
             });
             const promptsModal = document.getElementById('prompts-modal');
             if (promptsModal) promptsModal.addEventListener('click', function(event) { closeModalOnBackdropClick(event, hidePromptsModal); });
+            [['media-search-tab', 'images'], ['prompt-groups-tab', 'prompts']].forEach(([id, tab]) => {
+                const button = document.getElementById(id);
+                if (!button) return;
+                button.addEventListener('click', () => setLibrarySearchTab(tab, {load: true}));
+                button.addEventListener('keydown', event => {
+                    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                    event.preventDefault();
+                    const next = event.key === 'ArrowLeft' || event.key === 'Home' ? 'images' : 'prompts';
+                    setLibrarySearchTab(next, {load: true});
+                    document.getElementById(next === 'images' ? 'media-search-tab' : 'prompt-groups-tab')?.focus();
+                });
+            });
+            const mediaSearchInput = document.getElementById('media-search-input');
+            if (mediaSearchInput) mediaSearchInput.addEventListener('input', scheduleMediaSearch);
+            const mediaSearchScope = document.getElementById('media-search-scope');
+            if (mediaSearchScope) mediaSearchScope.addEventListener('change', runMediaSearch);
+            const mediaSearchBuild = document.getElementById('media-search-build-btn');
+            if (mediaSearchBuild) mediaSearchBuild.addEventListener('click', buildCurrentMediaSearchIndex);
+            const mediaSearchBuildAll = document.getElementById('media-search-build-all-btn');
+            if (mediaSearchBuildAll) mediaSearchBuildAll.addEventListener('click', buildMissingMediaSearchIndexes);
+            const mediaSearchBuildConfirm = document.getElementById('media-search-build-confirm-btn');
+            if (mediaSearchBuildConfirm) mediaSearchBuildConfirm.addEventListener('click', confirmMissingMediaSearchIndexes);
+            const mediaSearchBuildCancel = document.getElementById('media-search-build-cancel-btn');
+            if (mediaSearchBuildCancel) mediaSearchBuildCancel.addEventListener('click', hideMediaSearchBuildConfirm);
+            const mediaSearchApply = document.getElementById('media-search-apply-btn');
+            if (mediaSearchApply) mediaSearchApply.addEventListener('click', applyMediaSearchToWorkspace);
+            const workspaceSearchClear = document.getElementById('workspace-search-filter-clear');
+            if (workspaceSearchClear) workspaceSearchClear.addEventListener('click', clearWorkspaceSearchFilter);
+            const workspaceSearchEdit = document.getElementById('workspace-search-filter-edit');
+            if (workspaceSearchEdit) workspaceSearchEdit.addEventListener('click', editWorkspaceSearchFilter);
             const promptsBuildBtn = document.getElementById('prompts-build-btn');
             if (promptsBuildBtn) promptsBuildBtn.addEventListener('click', buildPromptIndex);
             const promptsBuildAllConfirmBtn = document.getElementById('prompts-build-all-confirm-btn');

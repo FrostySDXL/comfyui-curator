@@ -28,6 +28,15 @@
         let _promptPrevValue = '';
         let _promptBlurTimer = null;
         let _promptsRenderTimer = null;
+        let mediaSearchRequestToken = 0;
+        let mediaSearchTimer = null;
+        let mediaSearchResults = null;
+        let mediaSearchBuilding = false;
+        let pendingMediaSearchBuildBatches = [];
+        let librarySearchTab = (function() {
+            const stored = localStorage.getItem(LIBRARY_SEARCH_TAB_KEY);
+            return stored === 'images' ? 'images' : 'prompts';
+        })();
 
         // --- Local storage helpers (scoped to prompts UI) ---
 
@@ -51,7 +60,11 @@
         async function showPromptsModal() {
             const modal = document.getElementById('prompts-modal');
             modal.classList.add('active');
-            const closeButton = modal.querySelector('.prompts-workbench-footer .cancel');
+            setLibrarySearchTab(librarySearchTab);
+            const activePanel = document.getElementById(
+                librarySearchTab === 'images' ? 'media-search-panel' : 'prompt-groups-panel'
+            );
+            const closeButton = activePanel?.querySelector('.prompts-workbench-footer .cancel');
             _trapFocus(modal, closeButton);
             // Always refetch the batch list on open so newly created batches appear.
             try {
@@ -69,9 +82,17 @@
                 promptsCurrentBatch = '';
             }
             _syncPromptDisplay();
-            updateScopeChip();
             updateBuildBtn();
-            loadPromptsData();
+            const mediaInput = document.getElementById('media-search-input');
+            const mediaScope = document.getElementById('media-search-scope');
+            if (mediaInput && !mediaInput.value) {
+                mediaInput.value = localStorage.getItem(MEDIA_SEARCH_QUERY_KEY) || '';
+            }
+            if (mediaScope) {
+                const storedScope = localStorage.getItem(MEDIA_SEARCH_SCOPE_KEY);
+                mediaScope.value = ['folder', 'batch', 'all'].includes(storedScope) ? storedScope : 'folder';
+            }
+            setLibrarySearchTab(librarySearchTab, {load: true});
         }
 
         function hidePromptsModal() {
@@ -81,7 +102,13 @@
                 clearTimeout(_promptsRenderTimer);
                 _promptsRenderTimer = null;
             }
+            if (mediaSearchTimer) {
+                clearTimeout(mediaSearchTimer);
+                mediaSearchTimer = null;
+            }
+            mediaSearchRequestToken += 1;
             _promptCloseDropdown();
+            hideMediaSearchBuildConfirm();
             hideBuildAllConfirm();
             document.getElementById('prompts-modal').classList.remove('active');
             _releaseFocusTrap();
@@ -105,6 +132,18 @@
         function updateScopeChip() {
             const chip = document.getElementById('prompts-scope-chip');
             if (!chip) return;
+            if (librarySearchTab === 'images') {
+                const options = _mediaSearchOptions();
+                let label = 'Scope: All Batches';
+                if (options.scope === 'batch') {
+                    label = `Scope: ${options.batch}`;
+                } else if (options.scope === 'folder') {
+                    label = `Scope: ${options.batch} / ${options.folder}`;
+                }
+                chip.textContent = label;
+                chip.classList.toggle('is-all', label === 'Scope: All Batches');
+                return;
+            }
             const label = promptsCurrentBatch ? `Scope: ${promptsCurrentBatch}` : 'Scope: All Batches';
             chip.textContent = label;
             chip.classList.toggle('is-all', promptsCurrentBatch === '');
@@ -243,6 +282,514 @@
             const visible = _promptVisibleOptions();
             if (visible.length === 0) return;
             _promptSetActive(visible, target);
+        }
+
+        // --- Library search tabs and media metadata search ---
+
+        function setLibrarySearchTab(tab, options = {}) {
+            librarySearchTab = tab === 'images' ? 'images' : 'prompts';
+            _promptsLocalSet(LIBRARY_SEARCH_TAB_KEY, librarySearchTab);
+            const mediaTab = document.getElementById('media-search-tab');
+            const promptTab = document.getElementById('prompt-groups-tab');
+            const mediaPanel = document.getElementById('media-search-panel');
+            const promptPanel = document.getElementById('prompt-groups-panel');
+            const mediaActive = librarySearchTab === 'images';
+            if (mediaTab) {
+                mediaTab.setAttribute('aria-selected', mediaActive ? 'true' : 'false');
+                mediaTab.tabIndex = mediaActive ? 0 : -1;
+            }
+            if (promptTab) {
+                promptTab.setAttribute('aria-selected', mediaActive ? 'false' : 'true');
+                promptTab.tabIndex = mediaActive ? -1 : 0;
+            }
+            if (mediaPanel) mediaPanel.hidden = !mediaActive;
+            if (promptPanel) promptPanel.hidden = mediaActive;
+            updateScopeChip();
+            if (!options.load) return;
+            if (mediaActive) runMediaSearch();
+            else loadPromptsData();
+        }
+
+        function _mediaSearchContext() {
+            if (!isWorkspaceSearchView()) return {batch: currentBatch, folder: currentFolder};
+            const returnBatch = workspaceSearchReturnContext?.batch;
+            if (returnBatch && !String(returnBatch).startsWith('__')) {
+                return {
+                    batch: returnBatch,
+                    folder: workspaceSearchReturnContext?.folder || null,
+                };
+            }
+            return {
+                batch: workspaceSearchFilter?.batch || null,
+                folder: workspaceSearchFilter?.folder || null,
+            };
+        }
+
+        function _mediaSearchOptions() {
+            const scope = document.getElementById('media-search-scope')?.value || 'folder';
+            const context = _mediaSearchContext();
+            const contextBatch = context.batch;
+            const contextFolder = context.folder;
+            if (scope === 'all' || !contextBatch || (isVirtualCollectionView() && !isWorkspaceSearchView())) return {scope: 'all'};
+            if (scope === 'batch' || !contextFolder || contextFolder === 'public') {
+                return {scope: 'batch', batch: contextBatch};
+            }
+            return {scope: 'folder', batch: contextBatch, folder: contextFolder};
+        }
+
+        function scheduleMediaSearch() {
+            if (mediaSearchTimer) clearTimeout(mediaSearchTimer);
+            mediaSearchTimer = setTimeout(() => {
+                mediaSearchTimer = null;
+                runMediaSearch();
+            }, 240);
+        }
+
+        async function runMediaSearch() {
+            const input = document.getElementById('media-search-input');
+            const list = document.getElementById('media-search-results');
+            const total = document.getElementById('media-search-total');
+            if (!input || !list || librarySearchTab !== 'images') return;
+            const query = input.value.trim();
+            const options = _mediaSearchOptions();
+            _promptsLocalSet(MEDIA_SEARCH_QUERY_KEY, query);
+            _promptsLocalSet(MEDIA_SEARCH_SCOPE_KEY, options.scope);
+            updateScopeChip();
+            const token = ++mediaSearchRequestToken;
+            if (total) total.textContent = 'Searching...';
+            list.replaceChildren(createTextElement('div', 'prompts-building-status', 'Searching indexes...'));
+            try {
+                const resp = await apiSearchMedia(query, options);
+                if (token !== mediaSearchRequestToken) return;
+                if (!resp.ok) throw new Error('media search failed');
+                mediaSearchResults = await resp.json();
+                renderMediaSearchResults(mediaSearchResults);
+            } catch {
+                if (token !== mediaSearchRequestToken) return;
+                mediaSearchResults = null;
+                if (total) total.textContent = 'Search failed';
+                list.replaceChildren(createTextElement('div', 'prompts-empty-state', 'Media search failed. Try rebuilding the current index.'));
+            }
+        }
+
+        function _mediaSearchSnippet(result) {
+            if (result.prompt) return result.prompt;
+            const sidecar = result.sidecar_summary || {};
+            if (sidecar.tags) return String(sidecar.tags);
+            const values = Object.values(sidecar).filter(value => value !== null && typeof value !== 'object');
+            return values.length ? values.join(' · ') : 'Filename match';
+        }
+
+        function renderMediaSearchResults(data) {
+            const list = document.getElementById('media-search-results');
+            const total = document.getElementById('media-search-total');
+            const indexStatus = document.getElementById('media-search-index-status');
+            if (!list) return;
+            list.replaceChildren();
+            const items = data?.items || [];
+            const missing = data?.missing_batches || [];
+            const stale = data?.stale_batches || [];
+            const unavailable = [...new Set([...missing, ...stale])];
+            if (total) {
+                total.textContent = `${data?.total || 0} result${data?.total === 1 ? '' : 's'}${data?.truncated ? ` · first ${data.limit}` : ''}`;
+            }
+            if (indexStatus) {
+                indexStatus.textContent = unavailable.length
+                    ? `${missing.length} missing and ${stale.length} stale batch index${unavailable.length === 1 ? '' : 'es'}. Results may be incomplete.`
+                    : `${(data?.indexed_batches || []).length} batch index${(data?.indexed_batches || []).length === 1 ? '' : 'es'} searched.`;
+            }
+            if (items.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'prompts-empty-state';
+                empty.appendChild(createTextElement('div', 'prompts-empty-title', unavailable.length ? 'No current indexed matches yet' : 'No media match this search'));
+                empty.appendChild(createTextElement('p', 'prompts-empty-body', unavailable.length
+                    ? 'Build missing or stale search indexes, or change scope to a batch that is already indexed.'
+                    : 'Try fewer words, a filename fragment, seed, model, LoRA, tag, or sidecar value.'));
+                list.appendChild(empty);
+                return;
+            }
+            items.forEach(result => {
+                const row = document.createElement('article');
+                row.className = 'media-search-result';
+                const thumb = document.createElement('img');
+                thumb.className = 'media-search-thumb';
+                thumb.loading = 'lazy';
+                thumb.alt = '';
+                thumb.src = ccThumbUrl(result.batch, result.folder, result.name);
+                const main = document.createElement('div');
+                main.className = 'media-search-result-main';
+                main.appendChild(createTextElement('div', 'media-search-result-name', result.name));
+                main.appendChild(createTextElement('div', 'media-search-result-location', `${result.batch} / ${result.folder}`));
+                main.appendChild(createTextElement('p', 'media-search-result-snippet', _mediaSearchSnippet(result)));
+                const chips = document.createElement('div');
+                chips.className = 'media-search-result-chips';
+                (result.metadata_sources || []).forEach(source => chips.appendChild(createTextElement('span', 'media-search-chip', source === 'sidecar' ? 'JSON sidecar' : 'PNG metadata')));
+                (result.matched_fields || []).forEach(field => chips.appendChild(createTextElement('span', 'media-search-chip is-match', field.replace('_', ' '))));
+                main.appendChild(chips);
+                const open = document.createElement('button');
+                open.type = 'button';
+                open.className = 'prompts-primary-action media-search-open';
+                open.textContent = 'Open';
+                open.addEventListener('click', () => openMediaSearchResult(result));
+                row.append(thumb, main, open);
+                list.appendChild(row);
+            });
+        }
+
+        async function openMediaSearchResult(result) {
+            hidePromptsModal();
+            await selectFolder(result.batch, result.folder);
+            let index = getImageDisplayIndexByName(result.name);
+            if (index < 0 && pagedFolderMode && folderSnapshot) {
+                const resp = await apiGetFolderItemIndex(
+                    result.batch,
+                    result.folder,
+                    _folderTransportSort(),
+                    currentOrder,
+                    folderSnapshot.revision,
+                    result.name,
+                );
+                if (resp.ok) {
+                    const payload = await resp.json();
+                    index = payload.index;
+                    await ensureFolderPageForIndex(index);
+                }
+            }
+            if (index < 0) {
+                showToast('The search result moved or the index is stale');
+                return;
+            }
+            const content = document.querySelector('.content');
+            const grid = document.getElementById('grid');
+            if (content && grid) {
+                const {track, gap} = getGridDensityConfig();
+                const columns = _calculateFittedGridColumns(getCurrentDisplayImages().length);
+                content.scrollTop = Math.max(0, getGridScrollOrigin(grid) + Math.floor(index / columns) * (track + gap));
+                updateGrid();
+            }
+            openLightbox(index);
+        }
+
+        async function buildCurrentMediaSearchIndex() {
+            const options = _mediaSearchOptions();
+            const batch = options.batch || (isWorkspaceSearchView() ? workspaceSearchReturnContext?.batch : currentBatch);
+            if (!batch || batch.startsWith('__')) {
+                showToast('Select a real batch before building its search index');
+                return;
+            }
+            await _buildMediaSearchIndexes([batch]);
+        }
+
+        function buildMissingMediaSearchIndexes() {
+            const missing = [...new Set([
+                ...(mediaSearchResults?.missing_batches || []),
+                ...(mediaSearchResults?.stale_batches || []),
+            ])];
+            if (!mediaSearchResults && missing.length === 0) missing.push(...promptsBatchList);
+            if (missing.length === 0) {
+                showToast('All batches in this scope are indexed');
+                return;
+            }
+            pendingMediaSearchBuildBatches = missing;
+            const confirm = document.getElementById('media-search-build-confirm');
+            const copy = document.getElementById('media-search-build-confirm-copy');
+            const footerCopy = document.getElementById('media-search-footer-copy');
+            if (copy) copy.textContent = `Build search indexes for ${missing.length} batch${missing.length === 1 ? '' : 'es'}?`;
+            if (footerCopy) footerCopy.classList.add('hidden');
+            if (confirm) {
+                confirm.classList.remove('hidden');
+                confirm.hidden = false;
+                document.getElementById('media-search-build-confirm-btn')?.focus();
+            }
+        }
+
+        function hideMediaSearchBuildConfirm() {
+            pendingMediaSearchBuildBatches = [];
+            const confirm = document.getElementById('media-search-build-confirm');
+            const footerCopy = document.getElementById('media-search-footer-copy');
+            if (footerCopy) footerCopy.classList.remove('hidden');
+            if (confirm) {
+                confirm.classList.add('hidden');
+                confirm.hidden = true;
+            }
+        }
+
+        async function confirmMissingMediaSearchIndexes() {
+            const batches = pendingMediaSearchBuildBatches.slice();
+            hideMediaSearchBuildConfirm();
+            await _buildMediaSearchIndexes(batches);
+        }
+
+        async function _buildMediaSearchIndexes(batches) {
+            if (mediaSearchBuilding || batches.length === 0) return;
+            mediaSearchBuilding = true;
+            const buttons = ['media-search-build-btn', 'media-search-build-all-btn']
+                .map(id => document.getElementById(id)).filter(Boolean);
+            buttons.forEach(button => { button.disabled = true; });
+            try {
+                for (let index = 0; index < batches.length; index++) {
+                    const status = document.getElementById('media-search-index-status');
+                    if (status) status.textContent = `Building ${batches[index]} (${index + 1} of ${batches.length})...`;
+                    const resp = await apiBuildMediaSearchIndex(batches[index]);
+                    if (!resp.ok) throw new Error('search index build failed');
+                }
+                showToast(`Built ${batches.length} media search index${batches.length === 1 ? '' : 'es'}`);
+                await runMediaSearch();
+            } catch {
+                showToast('Media search index build failed');
+            } finally {
+                mediaSearchBuilding = false;
+                buttons.forEach(button => { button.disabled = false; });
+            }
+        }
+
+        function _workspaceSearchScopeText(filter) {
+            if (filter.scope === 'folder') return `Current folder · ${filter.batch} / ${filter.folder}`;
+            if (filter.scope === 'batch') return `Batch · ${filter.batch}`;
+            return 'All batches';
+        }
+
+        function syncWorkspaceSearchFilterBar() {
+            const bar = document.getElementById('workspace-search-filter-bar');
+            const summary = document.getElementById('workspace-search-filter-summary');
+            const count = document.getElementById('workspace-search-filter-count');
+            const active = isWorkspaceSearchView() && !!workspaceSearchFilter;
+            if (bar) bar.hidden = !active;
+            document.body.classList.toggle('workspace-search-active', active);
+            if (!active) return;
+            if (summary) summary.textContent = `“${workspaceSearchFilter.query}” · ${_workspaceSearchScopeText(workspaceSearchFilter)}`;
+            if (count) {
+                count.textContent = workspaceSearchFilter.hasMore
+                    ? `${workspaceSearchFilter.shown} of ${workspaceSearchFilter.total} loaded${workspaceSearchFilter.loading ? '…' : ''}`
+                    : `${workspaceSearchFilter.total} match${workspaceSearchFilter.total === 1 ? '' : 'es'}`;
+            }
+        }
+
+        function deactivateWorkspaceSearchFilter() {
+            workspaceSearchFilter = null;
+            syncWorkspaceSearchFilterBar();
+        }
+
+        async function applyMediaSearchToWorkspace() {
+            const input = document.getElementById('media-search-input');
+            const query = input?.value.trim() || '';
+            if (!query) {
+                showToast('Enter search terms before filtering the workspace');
+                input?.focus();
+                return;
+            }
+            const options = {..._mediaSearchOptions(), limit: 500, offset: 0};
+            const applyButton = document.getElementById('media-search-apply-btn');
+            if (applyButton) applyButton.disabled = true;
+            try {
+                const resp = await apiSearchMedia(query, options);
+                if (!resp.ok) throw new Error('workspace search failed');
+                const data = await resp.json();
+                mediaSearchResults = data;
+                renderMediaSearchResults(data);
+                const unavailable = [...(data.missing_batches || []), ...(data.stale_batches || [])];
+                if (unavailable.length > 0) {
+                    showToast('Build missing or stale indexes before filtering the workspace');
+                    return;
+                }
+                let favoriteKeys = new Set();
+                try {
+                    const favoriteResp = await fetch(ccApiPath('/api/favorites'));
+                    if (favoriteResp.ok) {
+                        const favoriteData = await favoriteResp.json();
+                        favoriteKeys = new Set((favoriteData.favorites || []).map(item => `${item.batch}\u001f${item.folder}\u001f${item.filename}`));
+                    }
+                } catch { console.warn('workspace search favorite status load failed'); }
+
+                if (!isWorkspaceSearchView()) {
+                    workspaceSearchReturnContext = {batch: currentBatch, folder: currentFolder};
+                }
+                workspaceSearchFilter = {
+                    key: `${Date.now()}-${query}`,
+                    query,
+                    scope: options.scope,
+                    batch: options.batch || null,
+                    folder: options.folder || null,
+                    total: data.total || 0,
+                    shown: (data.items || []).length,
+                    hasMore: data.has_more === true,
+                    nextOffset: data.next_offset,
+                    snapshot: data.snapshot || null,
+                    pageSize: data.limit || 500,
+                    loading: false,
+                    favoriteKeys,
+                };
+                folderRequestToken += 1;
+                resetPagedFolderState();
+                currentBatch = '__search__';
+                currentFolder = null;
+                images = (data.items || []).map(item => ({
+                    ...item,
+                    modified_at: item.mtime || 0,
+                    favorite: favoriteKeys.has(`${item.batch}\u001f${item.folder}\u001f${item.name}`),
+                }));
+                resetSelectionState();
+                lastAction = null;
+                resetAiBatchState(false);
+                closeLightbox();
+                document.querySelectorAll('.batch-name').forEach(el => el.classList.remove('selected'));
+                document.getElementById('folder-tabs')?.classList.remove('visible');
+                const sortControls = document.getElementById('sort-controls');
+                if (sortControls) sortControls.style.display = 'flex';
+                const pathEl = document.getElementById('current-path');
+                if (pathEl) pathEl.replaceChildren(createTextElement('span', 'path', 'Filtered workspace'));
+                const content = document.querySelector('.content');
+                if (content) content.scrollTop = 0;
+                syncWorkspaceSearchFilterBar();
+                updateImageCountLabel();
+                updateGrid();
+                hidePromptsModal();
+                showToast(workspaceSearchFilter.hasMore
+                    ? `Loaded ${images.length} of ${workspaceSearchFilter.total} matching media items`
+                    : `Workspace filtered to ${images.length} matching item${images.length === 1 ? '' : 's'}`);
+            } catch {
+                showToast('Could not filter the workspace');
+            } finally {
+                if (applyButton) applyButton.disabled = false;
+            }
+        }
+
+        async function loadMoreWorkspaceSearchResults() {
+            const filter = workspaceSearchFilter;
+            if (!isWorkspaceSearchView() || !filter?.hasMore || filter.loading) return false;
+            filter.loading = true;
+            syncWorkspaceSearchFilterBar();
+            try {
+                const options = {
+                    scope: filter.scope,
+                    batch: filter.batch,
+                    folder: filter.folder,
+                    limit: filter.pageSize,
+                    offset: filter.nextOffset,
+                    snapshot: filter.snapshot,
+                };
+                const resp = await apiSearchMedia(filter.query, options);
+                if (resp.status === 409) {
+                    filter.hasMore = false;
+                    showToast('This search index changed. Edit and reapply the filter to refresh it.');
+                    return false;
+                }
+                if (!resp.ok) throw new Error('workspace search page failed');
+                const data = await resp.json();
+                if (!isWorkspaceSearchView() || workspaceSearchFilter !== filter) return false;
+                const existing = new Set(images.map(item => getImageRenderKey(item)));
+                const nextImages = (data.items || []).map(item => ({
+                    ...item,
+                    modified_at: item.mtime || 0,
+                    favorite: filter.favoriteKeys.has(`${item.batch}\u001f${item.folder}\u001f${item.name}`),
+                })).filter(item => !existing.has(getImageRenderKey(item)));
+                const gridAnchor = typeof _captureGridIdentityAnchor === 'function'
+                    ? _captureGridIdentityAnchor()
+                    : null;
+                images.push(...nextImages);
+                filter.shown = images.length;
+                filter.hasMore = data.has_more === true;
+                filter.nextOffset = data.next_offset;
+                filter.snapshot = data.snapshot || filter.snapshot;
+                updateImageCountLabel();
+                updateGrid();
+                if (typeof _restoreGridIdentityAnchor === 'function' && _restoreGridIdentityAnchor(gridAnchor)) {
+                    updateGrid();
+                }
+                return nextImages.length > 0;
+            } catch {
+                showToast('Could not load more filtered results');
+                return false;
+            } finally {
+                if (workspaceSearchFilter === filter) {
+                    filter.loading = false;
+                    syncWorkspaceSearchFilterBar();
+                }
+            }
+        }
+
+        function maybeLoadMoreWorkspaceSearchResults(visibleEndIndex) {
+            if (!isWorkspaceSearchView() || !workspaceSearchFilter?.hasMore) return;
+            if (visibleEndIndex < images.length - 64) return;
+            void loadMoreWorkspaceSearchResults();
+        }
+
+        async function clearWorkspaceSearchFilter() {
+            const context = workspaceSearchReturnContext;
+            deactivateWorkspaceSearchFilter();
+            workspaceSearchReturnContext = null;
+            if (!context?.batch) {
+                currentBatch = null;
+                currentFolder = null;
+                images = [];
+                updateImageCountLabel();
+                updateGrid();
+                return;
+            }
+            if (context.batch === '__favorites__') {
+                await loadUniversalFavorites();
+            } else if (context.batch === '__public__') {
+                await loadAllPublic();
+            } else {
+                await selectFolder(context.batch, context.folder || 'inbox');
+                document.querySelectorAll('.batch-name').forEach(el =>
+                    el.classList.toggle('selected', el.dataset.batch === context.batch));
+            }
+        }
+
+        async function editWorkspaceSearchFilter() {
+            if (!workspaceSearchFilter) return;
+            const input = document.getElementById('media-search-input');
+            const scope = document.getElementById('media-search-scope');
+            if (input) input.value = workspaceSearchFilter.query;
+            if (scope) scope.value = workspaceSearchFilter.scope;
+            setLibrarySearchTab('images');
+            await showPromptsModal();
+            input?.focus();
+            input?.select();
+        }
+
+        function updateWorkspaceSearchAfterMove(img, destination) {
+            if (!isWorkspaceSearchView() || !workspaceSearchFilter || !img) return null;
+            const priorIndex = images.indexOf(img);
+            const snapshot = {...img};
+            const oldKey = getImageRenderKey(img);
+            if (workspaceSearchFilter.scope === 'folder') {
+                images = images.filter(candidate => candidate !== img);
+            } else {
+                img.folder = destination;
+            }
+            gridThumbMap.delete(oldKey);
+            workspaceSearchFilter.shown = images.length;
+            workspaceSearchFilter.total = Math.max(0, workspaceSearchFilter.total - (workspaceSearchFilter.scope === 'folder' ? 1 : 0));
+            syncWorkspaceSearchFilterBar();
+            updateImageCountLabel();
+            updateGrid();
+            return {
+                item: snapshot,
+                index: priorIndex,
+                destination,
+                removed: workspaceSearchFilter.scope === 'folder',
+            };
+        }
+
+        function restoreWorkspaceSearchAfterUndo(moveState) {
+            if (!isWorkspaceSearchView() || !workspaceSearchFilter || !moveState?.item) return;
+            if (moveState.removed) {
+                const index = Math.max(0, Math.min(moveState.index, images.length));
+                images.splice(index, 0, moveState.item);
+                workspaceSearchFilter.total += 1;
+            } else {
+                const current = images.find(item =>
+                    item.batch === moveState.item.batch
+                    && item.name === moveState.item.name
+                    && item.folder === moveState.destination);
+                if (current) current.folder = moveState.item.folder;
+            }
+            workspaceSearchFilter.shown = images.length;
+            syncWorkspaceSearchFilterBar();
+            updateImageCountLabel();
+            updateGrid();
         }
 
         // --- Data loading (with request-token stale-response guard) ---
@@ -438,6 +985,19 @@
             return btn;
         }
 
+        function searchImagesForPrompt(entry) {
+            const input = document.getElementById('media-search-input');
+            const scope = document.getElementById('media-search-scope');
+            if (input) input.value = String(entry.prompt || entry.normalized || '').trim();
+            if (scope) {
+                scope.value = entry.batch && entry.batch === currentBatch && !isVirtualCollectionView()
+                    ? 'batch'
+                    : 'all';
+            }
+            setLibrarySearchTab('images');
+            runMediaSearch();
+        }
+
         function _buildImageChipList(images) {
             if (!images || images.length === 0) return null;
             const wrap = document.createElement('div');
@@ -530,6 +1090,12 @@
             selectButton.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
             selectButton.setAttribute('aria-label', `${isSelected ? 'Selected' : 'Select'} prompt from ${entry.batch || 'current batch'}`);
             header.appendChild(selectButton);
+            const findButton = _buildActionChip('Find images', 'prompts-find-images', event => {
+                event.stopPropagation();
+                searchImagesForPrompt(entry);
+            });
+            findButton.setAttribute('aria-label', `Find images using this prompt from ${entry.batch || 'current batch'}`);
+            header.appendChild(findButton);
 
             const textWrap = document.createElement('div');
             textWrap.className = 'prompts-entry-main';

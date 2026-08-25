@@ -65,10 +65,12 @@ The `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tes
 | `tests/unit/test_elements.py` | `ai_curate.elements` -- `extract_elements`, `build_element_list`, `get_quality_elements` | Pure functions, no mocking |
 | `tests/unit/test_models.py` | `ai_curate.models` -- `JobState`, `ImageResult`, `RunTotals`, `CurationRun` round-trips | Pure unittests, no fixtures |
 | `tests/unit/test_png_metadata.py` | `image_curator.png_metadata` -- parsing, missing metadata, malformed input | `PIL.Image.new` + `PngInfo` for test PNGs |
-| `tests/unit/test_sidecar_metadata.py` | Adjacent JSON preference, bounded parsing, malformed/symlink safety, type-preserving Rule34 data, combined metadata | `tmp_path`, real JSON files |
+| `tests/unit/test_sidecar_metadata.py` | Adjacent JSON preference, bounded parsing, malformed/symlink safety, type-preserving external-favorites data, combined metadata | `tmp_path`, real JSON files |
 | `tests/unit/test_favorites.py` | `image_curator.favorites` -- batch/universal favorite load/save/toggle/resolve | `tmp_path`, real files, JSON shape checks |
 | `tests/unit/test_publish.py` | `image_curator.publish` -- public derivative creation, metadata stripping, watermark, public listing, export-root-gated copy/move/delete, symlink-safe file operations | `tmp_path`, Pillow PNG fixtures, real file copies/moves/deletes |
 | `tests/unit/test_prompt_history.py` | `image_curator.prompt_history` -- normalization, hash, PNG prompt index build/cache, plus symlink/escape safety rejection | `tmp_path`, `PIL.Image.new` + `PngInfo`, `monkeypatch` for resolve-escape tests |
+| `tests/unit/test_search_index.py` | `image_curator.search_index` -- PNG generation fields, generic/external-favorites JSON sidecars, normalized AND-token matching, and folder-mutation staleness | `tmp_path`, real JSON sidecars, `PngInfo` PNGs |
+| `tests/unit/test_frontend_media_search.py` | Library Search tab structure, dual-mode paged query/build wrappers, debouncing, sidecar result rendering, prompt-to-images handoff, Open navigation, incremental workspace loading, filter apply/edit/clear, and source-safe move controls | Source-scraping ordered vanilla JS and template controls |
 | `tests/unit/test_web_validation.py` | `image_curator.web_validation` -- path traversal blocking and existing-batch validation | `tmp_path`, pure helper assertions |
 | `tests/unit/test_media.py` | `image_curator.media` -- extension-safe poster/preview cache names, freshness, WebP generation, decoder fallback | `tmp_path`, `PIL.Image.new` |
 | `tests/unit/test_folder_index.py` | Immutable background folder snapshots, non-blocking initial build, mutation refresh and revision publication | `tmp_path`, real worker threads, bounded waits |
@@ -85,7 +87,7 @@ The `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tes
 | `tests/unit/test_native_curator_settings.py` | Native config persistence, precedence, malformed/schema handling, target containment, secret-safe payload, and host defaults | Injected host callables, `tmp_path`, symlink and resolve monkeypatches |
 | `tests/unit/test_frontend_native_settings.py` | Native Settings modal fields, secret controls, API wiring, and focus integration | Ordered frontend source invariants |
 | `tests/unit/test_frontend_view_menu.py` | Workspace toolbar grouping, View menu semantics, keyboard/focus handling, responsive rules, and script ordering | Ordered frontend source and template invariants |
-| `tests/component/test_native_curator_api.py` | Native settings plus legacy/v2 media listings, lightweight polls/pages, typed posters/originals, snapshot bulk move/undo, deletion, favorites, public and prompt-history contracts | Precise aiohttp web mocks, async handler execution, real `tmp_path` files |
+| `tests/component/test_native_curator_api.py` | Native settings plus legacy/v2 media listings and filename lookup, lightweight polls/pages, typed posters/originals, snapshot bulk move/undo, deletion, favorites, public, prompt-history, and media-search contracts | Precise aiohttp web mocks, async handler execution, real `tmp_path` files |
 | `tests/unit/test_frontend_*.py` | Ordered `static/js/*.js` and `static/css/*.css` sources -- source scanning for function names, invariants, undefined references | `tests/unit/frontend_source.py` helpers + regex assertions |
 | `tests/component/test_batch_api.py` | Flask route contracts: batches, images, move, delete-rejects, thumbnails | `client` fixture, PIL image generation |
 | `tests/component/test_ai_curate_worker.py` | `app._run_scoring_worker_inner` -- cancel timing (scoring vs move vs race) | Real `QueueManager` + `RunStorage`, patched `score_images` |
@@ -96,6 +98,7 @@ The `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tes
 | `tests/integration/test_favorites_api.py` | Favorites API -- batch/universal toggles and image response favorite flag | `client` fixture, real temp files |
 | `tests/integration/test_publish_api.py` | Public publish API -- export, list, serve/thumbnail public images, copy/move/delete route contracts | `client` fixture, `PIL.Image` PNGs, monkeypatched export root |
 | `tests/integration/test_prompt_history_api.py` | Prompt-history API -- build/load/rebuild/staleness/missing cache | `client` fixture, `PngInfo`-rich PNGs |
+| `tests/integration/test_search_api.py` | Search-index build and scoped query APIs, sidecar matching, and parameter validation | Flask test client, temp typed media and JSON sidecars |
 
 ## Known Coverage Gaps
 

@@ -1,4 +1,6 @@
         @media (max-width: 900px) {
+            .workspace-search-filter-bar { align-items: flex-start; }
+            .workspace-search-filter-copy { flex-wrap: wrap; }
             :root {
                 --sidebar-width: 220px;
                 --ai-sidebar-width: 300px;

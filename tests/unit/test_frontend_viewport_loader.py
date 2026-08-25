@@ -296,7 +296,8 @@ def test_grid_thumb_map_preserved():
     source = read_frontend_js()
     assert "gridThumbMap = new Map();" in source
     update_grid_body = extract_function_body(source, "function updateGrid()")
-    assert "gridThumbMap.get(img.name)" in update_grid_body
+    assert "gridThumbMap.get(imageKey)" in update_grid_body
+    assert "getImageRenderKey(img)" in update_grid_body
 
 
 def test_thumb_source_key_change_keeps_loaded_image_visible():

@@ -25,6 +25,12 @@ before manual selection. Single-user, local-first, filesystem-backed.
   folder, with batch Public and virtual All Public views for generated copies.
 - **Prompt history** -- manually build per-batch prompt indexes from PNG
   metadata, then search, copy, and inspect prompt groups from a header modal.
+- **Library search** -- a shared Images / Prompt groups modal searches filenames,
+  PNG generation fields, and bounded adjacent JSON sidecar keys and values in the
+  current folder, current batch, or all batches. Per-batch search indexes are
+  local rebuildable snapshots; the filesystem remains authoritative. Images
+  queries can become persistent workspace filters so grid and lightbox review
+  remain inside the matching set until the operator clears the filter.
 - **Import from ComfyUI** -- one-click **Import All** moves available outputs
   and adjacent JSON sidecars into the selected batch inbox. A lightweight
   one-second status check enables the always-visible control when media arrives.
@@ -187,8 +193,8 @@ See `.env.example` for the full commented reference.
    `IMAGE_CURATOR_COMFYUI`.
 3. Review images in the grid or lightbox, then move keepers to `shortlisted` or
    `finals` and rejects to `rejects`.
-4. Mark favorites and build Prompt History when you want searchable prompt
-   groups.
+4. Use Library Search for filename and media-metadata lookup; build Prompt groups
+   when you want reusable normalized prompt pairs.
 5. Prepare public copies when you need metadata-stripped, optionally watermarked
    posting files. Originals remain in the review folders.
 6. Optionally run AI scoring against a local OpenAI-compatible vision model;
@@ -206,7 +212,7 @@ See `.env.example` for the full commented reference.
 | `Select All` button | Toggle selection for the current folder; large native folders use a revision-bound server selection |
 | `U` | Toggle batch sidebar |
 | `F` | Toggle favorites-only filter |
-| `P` | Open Prompt History |
+| `P` | Open Library Search on its last-used tab |
 | `B` | Toggle AI score badges when an AI run is available |
 | `V` | Toggle score-based sort when an AI run is available |
 | `I` | Toggle AI sidebar |
@@ -246,8 +252,9 @@ to pin the active image and compare it against other images with Left/Right.
   native batch summaries refresh every ten seconds.
 - JSON sidecars named `asset.ext.json` (preferred) or `asset.json` follow media
   through import, review-folder moves, undo, and reject cleanup. The lightbox
-  shows Rule34 post/favorite sidecars as structured fields, space-delimited tag
-  chips, safe links, and raw JSON. Unknown structures remain one formatted block.
+  shows recognized external-favorites sidecars as structured fields,
+  space-delimited tag chips, safe links, and raw JSON. Unknown structures remain
+  one formatted block.
 - Native real-folder views use immutable revisioned snapshots, 256-item pages,
   and row virtualization. At most 500 thumbnail elements are live even for a
   30,000-item folder; unchanged polls return only revision/count metadata.
@@ -255,6 +262,17 @@ to pin the active image and compare it against other images with Left/Right.
   folders.
 - Prompt history indexes are manual caches. Rebuild after significant curation
   sessions or when the modal reports a stale image count.
+- Media search indexes cover every reviewable media type and both PNG chunks and
+  adjacent JSON sidecars. Folder mutations mark an index stale; rebuild manually
+  after editing an existing sidecar's contents in place.
+- **Filter Workspace** turns the active Library Search query into a temporary
+  source-qualified review collection. A compact bar keeps the query, scope,
+  count, Edit search, and Clear filter visible; lightbox navigation remains
+  inside the filtered set. Large result sets load in stable 500-item pages as
+  the grid or lightbox reaches the loaded boundary, so every indexed match
+  remains reviewable without increasing the 500-element live-thumbnail cap.
+  Single-image lightbox moves remain available, while ambiguous mixed-source
+  bulk selection is disabled.
 - The header Help button shows keybindings and workflow notes.
 
 ## Security
@@ -299,7 +317,8 @@ transport uses `/api/curator/v2/folders/*` snapshot, poll, and item pages.
 Single-image moves, multi-image
 moves (undo-compatible reverse calls), reject deletion, favorites
 (batch/universal toggles, All Favorites), and public publish/export, listing,
-destination browsing, copy/move/delete, prompt history, and AI scoring lifecycle
+destination browsing, copy/move/delete, prompt history, media search index/query,
+and AI scoring lifecycle
 are now native. Import All provides the explicit output-import workflow in both
 native and standalone modes.
 

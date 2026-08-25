@@ -135,8 +135,9 @@ def test_prompt_history_keyboard_shortcut_and_aria_wiring():
 
 def test_prompt_history_help_section_documented():
     html = INDEX_HTML.read_text(encoding="utf-8")
-    # Help modal covers the new Prompt History section.
-    assert ">Prompt History</h4>" in html
+    # Help modal covers unified library search and its prompt-group view.
+    assert ">Library Search</h4>" in html
+    assert "<strong>Prompt groups</strong>" in html
     # Shortcut entry for opening the modal is documented in Help.
     assert "<strong>P</strong>" in html
     assert "<strong>copy positive</strong>" in html

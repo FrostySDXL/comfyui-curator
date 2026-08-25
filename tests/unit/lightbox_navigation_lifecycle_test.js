@@ -470,6 +470,25 @@ function testPendingOpenCancelViaEscapePreservesNormalGridState() {
         "lightbox stays inactive after pending cancellation");
 }
 
+async function testWorkspaceSearchNavigationReanchorsAfterPageReorder() {
+    const {context, items} = createRuntime();
+    items.splice(0, items.length, {name: "a.png"}, {name: "b.png"});
+    context.currentIndex = 1;
+    context.workspaceSearchFilter = {hasMore: true};
+    context.isWorkspaceSearchView = () => true;
+    context.getImageRenderKey = item => item.name;
+    context.loadMoreWorkspaceSearchResults = async () => {
+        items.splice(0, items.length,
+            {name: "c.png"}, {name: "a.png"}, {name: "b.png"}, {name: "d.png"});
+        return true;
+    };
+
+    await context.navigate(1);
+
+    check(context.currentIndex === 3,
+        "workspace search navigation reanchors the active image before advancing after page reorder");
+}
+
 function testTypedVideoNavigationReleasesPlayerResource() {
     const {context, elements, items} = createRuntime();
     items[1].media_kind = "video";
@@ -519,6 +538,7 @@ function testTypedAudioCloseReleasesPlayerAndArtwork() {
     await testNewSessionFailureLeavesGridVisible();
     await testCurrentImageRemainsVisibleUntilDecode();
     await testStaleNavigationCannotOverwriteNewerTarget();
+    await testWorkspaceSearchNavigationReanchorsAfterPageReorder();
     await testCompletedNeighborPreloadsStayBoundedAndRetained();
     await testCompletedPreloadIsConsumedByNavigation();
     await testDecodeRejectionCommitsLoadedTarget();

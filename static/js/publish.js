@@ -1051,7 +1051,9 @@ async function confirmPublicDelete() {
         }
 
 function syncLightboxPublicActions() {
-            const activePublicView = isVirtualCollectionView() || isPublicView();
+            const hideReviewMoves = isPublicView() || (isVirtualCollectionView() && !isWorkspaceSearchView());
+            const hidePublish = isVirtualCollectionView() || isPublicView();
+            const activePublicView = hidePublish;
             const compareActive = typeof isLightboxCompareMode === 'function' && isLightboxCompareMode();
             const activeImage = typeof getActiveLightboxImage === 'function'
                 ? getActiveLightboxImage()
@@ -1062,7 +1064,8 @@ function syncLightboxPublicActions() {
                 publishBtn.title = publishBtn.disabled ? 'Prepare Public supports still images only' : '';
             }
             document.querySelectorAll('#lightbox-actions .btn-shortlist, #lightbox-actions .btn-finals, #lightbox-actions .btn-reject, #lightbox-publish-btn').forEach(btn => {
-                btn.closest('div').style.display = activePublicView ? 'none' : '';
+                const hidden = btn.id === 'lightbox-publish-btn' ? hidePublish : hideReviewMoves;
+                btn.closest('div').style.display = hidden ? 'none' : '';
             });
             document.querySelectorAll('#lightbox-actions .btn-secondary').forEach(btn => {
                 const label = btn.textContent.trim();

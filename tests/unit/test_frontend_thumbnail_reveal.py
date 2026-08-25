@@ -45,6 +45,7 @@ def test_retained_thumbnail_lifecycle_never_resets_loaded_state() -> None:
 
     assert "classList.remove('loaded')" not in js
     assert "imageEl.dataset.thumbnailCacheKey !== thumbnailCacheKey" in update_thumb
-    assert "gridThumbMap.get(img.name)" in update_grid
+    assert "gridThumbMap.get(imageKey)" in update_grid
+    assert "getImageRenderKey(img)" in update_grid
     assert "createThumbElement()" in update_grid
     assert "loaded" not in set_density

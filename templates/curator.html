@@ -72,7 +72,7 @@
                 <button id="batch-sidebar-toggle-btn" class="batch-sidebar-toggle-btn" type="button">Hide Batches</button>
                 <button id="ai-sidebar-toggle-btn" class="ai-sidebar-toggle-btn hidden" type="button">Hide AI</button>
                 <button id="help-btn" class="help-btn" type="button">Help</button>
-                <button id="prompts-btn" class="help-btn" type="button">Prompts</button>
+                <button id="prompts-btn" class="help-btn" type="button">Search</button>
                 <button id="settings-btn" class="help-btn hidden" type="button">Settings</button>
                 <button id="set-auto-import-btn" class="set-auto-import-btn hidden" type="button">Set as Auto-import</button>
             </div>
@@ -161,6 +161,18 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <div id="workspace-search-filter-bar" class="workspace-search-filter-bar" hidden aria-live="polite">
+            <div class="workspace-search-filter-copy">
+                <span class="workspace-search-filter-label">Filtered workspace</span>
+                <span id="workspace-search-filter-summary"></span>
+                <span id="workspace-search-filter-count" class="workspace-search-filter-count"></span>
+            </div>
+            <div class="workspace-search-filter-actions">
+                <button id="workspace-search-filter-edit" type="button">Edit search</button>
+                <button id="workspace-search-filter-clear" type="button">Clear filter</button>
             </div>
         </div>
 
@@ -612,7 +624,7 @@
                     <li><strong>View</strong> contains density, favorites-only, and available AI display filters.</li>
                     <li><strong>Inbox</strong> holds new images for review.</li>
                     <li>Move keepers to <strong>Shortlisted</strong> or <strong>Finals</strong>; move rejects to <strong>Rejects</strong>.</li>
-                    <li>Use favorites, Prompt History, and metadata as review aids. The lightbox detects adjacent <code>asset.ext.json</code> or <code>asset.json</code> sidecars and structures Rule34 post/favorite fields and tags.</li>
+                    <li>Use favorites, Prompt History, and metadata as review aids. The lightbox detects adjacent <code>asset.ext.json</code> or <code>asset.json</code> sidecars and structures recognized external-favorites fields and tags.</li>
                     <li>Public posting creates generated derivatives; originals stay in review folders.</li>
                     <li>AI scores are advisory evidence. Manual moves remain authoritative.</li>
                 </ul>
@@ -638,9 +650,13 @@
                 </ul>
             </div>
             <div class="help-section">
-                <h4>Prompt History</h4>
+                <h4>Library Search</h4>
                 <ul class="help-list">
-                    <li><strong>P</strong> opens Prompt History and focuses search.</li>
+                    <li><strong>P</strong> opens Library Search on the last-used Images or Prompt groups tab.</li>
+                    <li><strong>Images</strong> searches filenames, PNG generation metadata, and bounded adjacent JSON keys and values across the current folder, batch, or all batches.</li>
+                    <li><strong>Filter Workspace</strong> sends the current Images query into the review grid. Large result sets load automatically as you scroll or navigate, and Lightbox Previous/Next stays inside the full result set until you edit or clear the filter.</li>
+                    <li>Media search indexes are rebuildable snapshots; the files and their sidecars remain authoritative. Rebuild after editing sidecar contents in place.</li>
+                    <li><strong>Prompt groups</strong> preserves the specialized Prompt History view for normalized positive/negative prompt pairs.</li>
                     <li><strong>Build Index</strong> scans PNG metadata for the selected batch. <strong>Build All Indexes</strong> asks for confirmation.</li>
                     <li><strong>Stale badge</strong> means the cached image count changed; click <strong>Rebuild Index</strong>.</li>
                     <li>Search prompts, negative prompts, and batch labels; refine the search to narrow large result sets.</li>
@@ -660,12 +676,69 @@
         <div class="modal-content prompts-modal-content">
             <header class="prompts-workbench-header">
                 <div class="prompts-heading-group">
-                    <div class="prompts-kicker">Prompt library</div>
-                    <h3 id="prompts-modal-title">Prompt History</h3>
-                    <p>Search and reuse prompt text from manually built batch indexes.</p>
+                    <div class="prompts-kicker">Media library</div>
+                    <h3 id="prompts-modal-title">Library Search</h3>
+                    <p>Find media by filename or metadata, or browse reusable prompt groups.</p>
                 </div>
                 <span id="prompts-scope-chip" class="prompts-scope-chip is-all" aria-live="polite">Scope: All Batches</span>
             </header>
+            <div class="library-search-tabs" role="tablist" aria-label="Library search views">
+                <button id="media-search-tab" type="button" role="tab" aria-selected="false" aria-controls="media-search-panel" tabindex="-1">Images</button>
+                <button id="prompt-groups-tab" type="button" role="tab" aria-selected="true" aria-controls="prompt-groups-panel">Prompt groups</button>
+            </div>
+            <section id="media-search-panel" class="library-tab-panel" role="tabpanel" aria-labelledby="media-search-tab" hidden>
+                <div class="prompts-workbench-body media-search-body">
+                    <aside class="prompts-control-rail" aria-label="Media search controls">
+                        <div class="prompts-controls">
+                            <section class="prompts-rail-section" aria-labelledby="media-search-scope-label">
+                                <div id="media-search-scope-label" class="prompts-control-label">Scope</div>
+                                <label class="prompts-control-field" for="media-search-scope">Search within
+                                    <select id="media-search-scope" aria-label="Media search scope">
+                                        <option value="folder">Current folder</option>
+                                        <option value="batch">This batch</option>
+                                        <option value="all">All batches</option>
+                                    </select>
+                                </label>
+                            </section>
+                            <section class="prompts-rail-section" aria-labelledby="media-search-fields-label">
+                                <div id="media-search-fields-label" class="prompts-control-label">Indexed fields</div>
+                                <p class="media-search-help">Filename, positive and negative prompts, seed, model, sampler, LoRAs, and bounded adjacent JSON keys and values.</p>
+                            </section>
+                            <section class="prompts-rail-section" aria-labelledby="media-search-index-label">
+                                <div id="media-search-index-label" class="prompts-control-label">Index</div>
+                                <p id="media-search-index-status" class="media-search-help" aria-live="polite">Indexes are rebuildable snapshots; media files remain authoritative.</p>
+                                <button id="media-search-build-btn" type="button">Build Current Index</button>
+                                <button id="media-search-build-all-btn" type="button">Build Missing Indexes</button>
+                            </section>
+                        </div>
+                    </aside>
+                    <section class="prompts-results-pane" aria-label="Media search results">
+                        <div class="prompts-results-toolbar">
+                            <label class="prompts-search-field" for="media-search-input">
+                                <span>Search media</span>
+                                <input id="media-search-input" type="search" placeholder="Filename, prompt, seed, tags, source metadata..." autocomplete="off" aria-label="Search media metadata">
+                            </label>
+                            <span id="media-search-total" class="prompts-results-status" aria-live="polite"></span>
+                        </div>
+                        <div id="media-search-results" class="prompts-list media-search-results">Build a search index to find media metadata.</div>
+                    </section>
+                </div>
+                <footer class="prompts-workbench-footer">
+                    <div class="prompts-footer">
+                        <span id="media-search-footer-copy">Search uses AND matching across normalized words. Underscores, hyphens, and camel-case names are word boundaries.</span>
+                        <div id="media-search-build-confirm" class="prompts-build-all-confirm hidden" hidden>
+                            <span id="media-search-build-confirm-copy">Build missing or stale search indexes?</span>
+                            <button id="media-search-build-confirm-btn" class="prompts-primary-action" type="button">Build Indexes</button>
+                            <button id="media-search-build-cancel-btn" type="button">Cancel</button>
+                        </div>
+                    </div>
+                    <div class="modal-buttons">
+                        <button id="media-search-apply-btn" class="create" type="button">Filter Workspace</button>
+                        <button class="cancel" type="button">Close</button>
+                    </div>
+                </footer>
+            </section>
+            <section id="prompt-groups-panel" class="library-tab-panel" role="tabpanel" aria-labelledby="prompt-groups-tab">
             <div class="prompts-workbench-body">
                 <aside class="prompts-control-rail" aria-label="Prompt history controls">
                     <div class="prompts-controls">
@@ -726,6 +799,7 @@
                     <button class="cancel" type="button">Close</button>
                 </div>
             </footer>
+            </section>
         </div>
     </div>
 

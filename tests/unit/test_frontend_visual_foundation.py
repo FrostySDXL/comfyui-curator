@@ -146,6 +146,7 @@ def test_only_nonessential_badges_use_compact_10px_text() -> None:
         ".thumb .ai-score-badge",
         ".prompts-count-label",
         ".prompts-image-chip",
+        ".media-search-chip",
     }
     assert "font-size: 9px;" not in css
 

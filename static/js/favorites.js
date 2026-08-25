@@ -23,9 +23,9 @@ function toggleFavoritesFilter() {
 
 async function postFavoriteToggle(img) {
             if (!img) return null;
-            const isUniversal = currentBatch === '__favorites__';
-            const url = isUniversal ? ccApiPath('/api/favorites') : ccApiPath(`/api/favorites/${encodeURIComponent(currentBatch)}`);
-            const body = isUniversal ? {batch: img.batch, filename: img.name} : {filename: img.name};
+            const usesSourceIdentity = currentBatch === '__favorites__' || currentBatch === '__search__';
+            const url = usesSourceIdentity ? ccApiPath('/api/favorites') : ccApiPath(`/api/favorites/${encodeURIComponent(currentBatch)}`);
+            const body = usesSourceIdentity ? {batch: img.batch, filename: img.name} : {filename: img.name};
             const resp = await fetch(url, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -41,7 +41,7 @@ async function toggleFavorite(index) {
             try {
                 const result = await postFavoriteToggle(img);
                 img.favorite = result.batch;
-                const thumb = gridThumbMap.get(img.name);
+                const thumb = gridThumbMap.get(getImageRenderKey(img));
                 const favStar = thumb ? thumb.querySelector('.favorite-star') : null;
                 if (favStar) {
                     favStar.classList.toggle('active', img.favorite === true);
