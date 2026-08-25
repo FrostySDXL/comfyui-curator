@@ -102,7 +102,7 @@ function _startViewportLoad(info) {
     var imgEl = el.querySelector('img');
     if (!imgEl) return;
 
-    if (imgEl.classList.contains('loaded') && imgEl.dataset.thumbnailCacheKey === info.cacheKey) {
+    if (imgEl.classList.contains('loaded') && imgEl.dataset.loadedThumbnailCacheKey === info.cacheKey) {
         return;
     }
 
@@ -240,21 +240,40 @@ function _cancelBackgroundDrain() {
 function scheduleThumbnailLoad(element, imageSrc, cacheKey, priority, scopeBatch) {
     _ensureViewportObservers();
 
+    var imageEl = element && element.querySelector ? element.querySelector('img') : null;
+    var replacesDisplayedSource = !!(
+        element && element.isConnected && imageEl &&
+        imageEl.dataset.loadedThumbnailCacheKey &&
+        imageEl.dataset.loadedThumbnailCacheKey !== cacheKey
+    );
+
     var info = {
         element: element,
         imageSrc: imageSrc,
         cacheKey: cacheKey,
         generation: _viewportGeneration,
-        priority: typeof priority === 'number' ? priority : VIEWPORT_PRIORITY_DEFERRED,
+        priority: replacesDisplayedSource
+            ? VIEWPORT_PRIORITY_NEAR
+            : (typeof priority === 'number' ? priority : VIEWPORT_PRIORITY_DEFERRED),
         scopeBatch: scopeBatch || null
     };
 
     _viewportInfoMap.set(element, info);
-    _viewportDeferredQueue.push(info);
+    if (replacesDisplayedSource) {
+        /* Chromium may not emit a fresh intersection edge when a still-visible
+           tile is unobserved and immediately recycled. Admit its replacement
+           through the bounded near queue so the old bitmap cannot persist. */
+        _viewportNearQueue.push(info);
+    } else {
+        _viewportDeferredQueue.push(info);
+    }
 
     if (_viewportVisibleObserver) {
         _viewportVisibleObserver.observe(element);
         _viewportNearObserver.observe(element);
+    }
+    if (replacesDisplayedSource) {
+        _requestPriorityPump();
     }
     /* Only arm background drain in the no-observer fallback.
        With IntersectionObserver, deferred items load on approach only. */

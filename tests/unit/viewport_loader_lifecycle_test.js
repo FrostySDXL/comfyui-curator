@@ -544,6 +544,24 @@ function test8_no_immediate_drain_in_schedule() {
     assert(loadCalls.length >= 1, 'T8f: loaded after pump');
 }
 
+function test8b_connected_recycled_source_does_not_wait_for_new_observer_edge() {
+    resetState();
+    var el = makeElement(true);
+    el.dataset.thumbnailCacheKey = 'key-new';
+    el.dataset.loadedThumbnailCacheKey = 'key-old';
+    el.classList.add('loaded');
+
+    scheduleThumbnailLoad(el, '/thumb/new.png', 'key-new');
+
+    /* A still-visible recycled tile may not receive another IntersectionObserver
+       callback after an immediate unobserve/observe cycle. Its replacement must
+       therefore already be eligible for the next bounded priority pump. */
+    flushRaf();
+
+    assert(loadCalls.length === 1, 'T8b1: connected recycled source loads without a fresh observer edge');
+    assert(loadCalls[0].cacheKey === 'key-new', 'T8b2: recycled tile loads the replacement cache key');
+}
+
 function test9_background_drain_noop_with_observers() {
     /* With IntersectionObserver available, background drain must
        NOT drain deferred items. They stay pending until observer promotion. */
@@ -1376,6 +1394,7 @@ function test20_cancellation_with_inflight_work_no_stranding() {
 try {
     test9_background_drain_noop_with_observers();
     test8_no_immediate_drain_in_schedule();
+    test8b_connected_recycled_source_does_not_wait_for_new_observer_edge();
     test1_disconnected_elements_not_immediately_drained();
     test2_admission_cleanup();
     test3_concurrency_cap();
