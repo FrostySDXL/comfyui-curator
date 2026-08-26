@@ -6,11 +6,11 @@
 
 ## What This Module Does
 
-- **Single-page review UI:** Asset-manager style batch sidebar, compact workspace toolbar, center thumbnail grid (CSS Grid), right AI Curate sidebar.
+- **Single-page review UI:** Asset-manager style batch sidebar, local folder-stage rail, compact workspace toolbar, center thumbnail grid (CSS Grid), right AI Curate sidebar.
 - **Dual-mode serving:** The same `static/js/*.js` and `static/css/*.css` files serve both the standalone Flask page (`templates/index.html`, `/static/` paths) and the native ComfyUI extension page (`templates/curator.html`, `/curator_static/` paths). Mode detection uses `window.CURATOR_NATIVE` in `state.js`.
 - **Keyboard-first navigation:** 15+ shortcuts for search, selection, AI toggles, lightbox, undo.
 - **Library search:** One modal keeps general filename/PNG/JSON sidecar media search and normalized Prompt History groups in separate remembered tabs; Images results can be applied as a persistent workspace review filter.
-- **Drag/drop curation:** HTML5 drag from grid to folder tabs for single or multi-select moves.
+- **Drag/drop curation:** HTML5 drag from the grid to local folder-stage targets for single or multi-select moves.
 - **Lightbox viewer:** Full-media review with zoom, scored-image navigation, PNG generation metadata plus adjacent JSON sidecars, and two-image compare mode.
 - **AI score integration:** Overlay badges, score gradient coloring, filter/sort by score, accessible Inspect / Score / Runs tabs, contextual image and batch inspection, guided scoring with a visible 12-check cap, and truthful job/history states.
 - **Public output workflow:** selected-image export modal, batch Public folder view, virtual All Public view, and derivative-only public copy/move/delete actions.
@@ -40,8 +40,8 @@
 |------|----------------|
 | `base.css` | Root CSS variables, reset, body, focus-visible, reduced-motion rules |
 | `sidebar.css` | Left batch sidebar, auto-import dropdown, batch list/search controls |
-| `layout.css` | Main content shell, workspace toolbar, header buttons, folder tabs, sort/density controls, count pulse animation |
-| `grid.css` | Workspace/grid/thumb styling, density modes, inspected/selected states, favorite stars, thumb metadata, multi-select action bar |
+| `layout.css` | Main content shell, local folder-stage rail, workspace toolbar, header buttons, sort/density controls, count pulse animation |
+| `grid.css` | Workspace/grid/thumb styling, density modes, loading/error states, inspected/selected states, favorite stars, thumb metadata, multi-select action bar |
 | `lightbox.css` | Lightbox viewer, metadata panel, lightbox controls and key hints |
 | `modals.css` | Base modal styles, Help modal, new-batch/delete modal buttons |
 | `prompts.css` | Library Search tabs, media result rows, Prompt History split workbench, control rail, footer, stale warning |
@@ -58,7 +58,7 @@
 | `api.js` | API wrapper helpers for route calls |
 | `sidebar.js` | Left sidebar width/open state and resize behavior |
 | `batches.js` | Batch list/search/sort, active-batch combobox, batch/folder selection, import/create batch |
-| `grid.js` | Thumbnail cache, paged folder loading, typed posters/hover previews, sort/filter controls, and bounded row virtualization |
+| `grid.js` | Thumbnail cache, loading/error/retry state, paged folder loading, typed posters/hover previews, sort/filter controls, and bounded row virtualization |
 | `viewport-loader.js` | Viewport-aware thumbnail load-start scheduling: visible/near approach triggers, concurrency 16, single rAF pump, no-unload invariants, and background draining only when `IntersectionObserver` is unavailable |
 | `favorites.js` | Favorites filter/toggle and All Favorites view/count |
 | `publish.js` | Public export modal, batch Public view, All Public view/count, public copy/move/delete actions |
@@ -232,8 +232,9 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 
 - AI sidebar width and open state, batch sidebar open state, thumbnail density,
   last batch/folder, and batch sort persist across sessions.
-- The workspace toolbar keeps folder stages, Browse/Select, Select All, and
-  sorting directly accessible. The compact View menu contains density,
+- The local folder-stage rail keeps review destinations and drag targets directly
+  accessible; it reflows to a horizontal strip below 900 px. The workspace toolbar
+  keeps Browse/Select, Select All, and sorting directly accessible. The compact View menu contains density,
   favorites-only, and available AI display/filter controls.
 - The batch sidebar shows folder count breakdowns, AI-run indicators, a pinned
   All Favorites collection, and an All Public generated-output collection.
@@ -260,6 +261,9 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
   sessions or when the modal reports a stale image count.
 - Background polling pauses during lightbox, drag, or resize so review is not
   interrupted.
+- Single-image lightbox moves in native paged folders refresh the folder revision
+  and continue at the same display position; they close only when no review items
+  remain. Closing after a move targets the replacement thumbnail for focus return.
 - Native real folders use immutable revision metadata and 256-item pages.
   `images` stays sparse until a row window or lightbox navigation needs a page;
   unchanged five-second polls return revision/count only. Favorites/AI filters
@@ -274,6 +278,10 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
   viewport loads through the normal priority scheduler.
   Modern browsers use native `scrollend`; the 80 ms debounce is the fallback
   for engines without that event.
+- Thumbnail cache hits display immediately; uncached images use a short
+  opacity-only reveal. Folder/page loads expose a polite grid status and
+  `aria-busy`, while failed posters keep their tile size and offer a filename-
+  and media-aware keyboard Retry through the bounded viewport scheduler.
 - Select All in a paged folder stores revision plus exclusions instead of
   materializing thousands of names. Move and short-lived undo are server-side;
   stale revisions return 409 and trigger safe reconciliation.

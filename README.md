@@ -6,9 +6,9 @@ before manual selection. Single-user, local-first, filesystem-backed.
 
 ## What it does
 
-- **Batch review UI** -- asset-manager style batch sidebar, compact workspace
-  toolbar, center thumbnail grid, folder tabs (inbox / shortlisted / finals /
-  rejects), sort/favorites/AI controls, and persistent thumbnail density modes.
+- **Batch review UI** -- asset-manager style batch sidebar, stable local folder
+  stage rail (inbox / shortlisted / finals / rejects), compact workspace toolbar,
+  center thumbnail grid, sort/favorites/AI controls, and persistent thumbnail density modes.
   Drag images between folders, multi-select or Select All for bulk moves, undo
   toast for the last operation.
 - **Lightbox viewer** -- full-size image review with zoom, keyboard
@@ -250,6 +250,9 @@ to pin the active image and compare it against other images with Left/Right.
 - Background polling avoids interrupting lightbox review, drag/drop, and resize
   interactions. Import readiness uses a separate lightweight one-second poll;
   native batch summaries refresh every ten seconds.
+- Native paged-folder lightbox moves advance to the next remaining image at the
+  same review position instead of closing; the lightbox closes only when the
+  folder has no remaining items.
 - JSON sidecars named `asset.ext.json` (preferred) or `asset.json` follow media
   through import, review-folder moves, undo, and reject cleanup. The lightbox
   shows recognized external-favorites sidecars as structured fields,
