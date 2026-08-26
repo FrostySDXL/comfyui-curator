@@ -41,6 +41,14 @@ def test_search_index_matches_nested_sidecar_keys_and_values(tmp_path):
     assert item["sidecar_summary"]["tags"] == "frosty_sky blue_hair"
     assert item["sidecar_summary"]["favorite_id"] == 81
     assert isinstance(item["sidecar_summary"]["favorite_id"], int)
+    assert result["index_statuses"] == [
+        {
+            "batch": "external-favorites",
+            "status": "ready",
+            "built_at": built["built_at"],
+            "item_count": 1,
+        }
+    ]
 
 
 def test_search_index_matches_png_generation_fields_and_loras(tmp_path):
@@ -89,6 +97,24 @@ def test_search_index_marks_batch_stale_after_media_move(tmp_path):
     assert result["items"] == []
     assert result["stale_batches"] == ["moving"]
     assert result["missing_batches"] == []
+    assert result["index_statuses"][0]["status"] == "stale"
+    assert result["index_statuses"][0]["item_count"] == 1
+
+
+def test_search_index_reports_not_built_batches(tmp_path):
+    batches_dir = tmp_path / "batches"
+    batch_store.create_batch(batches_dir, "unbuilt")
+
+    result = query_search_indices(batches_dir, "anything", batch="unbuilt")
+
+    assert result["index_statuses"] == [
+        {
+            "batch": "unbuilt",
+            "status": "not_built",
+            "built_at": None,
+            "item_count": 0,
+        }
+    ]
 
 
 def test_search_index_rejects_symlinked_review_stage_without_writing_cache(tmp_path):

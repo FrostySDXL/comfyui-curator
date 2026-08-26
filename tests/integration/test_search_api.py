@@ -28,6 +28,10 @@ def test_search_api_builds_sidecar_index_and_filters_folder_scope(client, app_mo
     assert payload["items"][0]["name"] == "blue.jpg"
     assert payload["indexed_batches"] == ["external"]
     assert payload["missing_batches"] == []
+    assert payload["index_statuses"][0]["batch"] == "external"
+    assert payload["index_statuses"][0]["status"] == "ready"
+    assert payload["index_statuses"][0]["item_count"] == 2
+    assert payload["index_statuses"][0]["built_at"]
 
 
 def test_search_api_validates_scope_and_limit(client, app_module):

@@ -1,6 +1,18 @@
         @media (max-width: 900px) {
-            .workspace-search-filter-bar { align-items: flex-start; }
-            .workspace-search-filter-copy { flex-wrap: wrap; }
+            .workspace-search-filter-bar {
+                align-items: flex-start;
+                flex-wrap: wrap;
+            }
+            .workspace-search-filter-copy {
+                flex: 1 1 100%;
+                flex-wrap: wrap;
+            }
+            .workspace-search-filter-actions {
+                flex: 0 0 auto;
+                margin-left: auto;
+            }
+            .workspace-search-filter-chips { flex-basis: 100%; }
+            .workspace-search-filter-chip { max-width: min(72vw, 280px); }
             :root {
                 --sidebar-width: 220px;
                 --ai-sidebar-width: 300px;

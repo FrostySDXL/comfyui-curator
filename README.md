@@ -28,9 +28,11 @@ before manual selection. Single-user, local-first, filesystem-backed.
 - **Library search** -- a shared Images / Prompt groups modal searches filenames,
   PNG generation fields, and bounded adjacent JSON sidecar keys and values in the
   current folder, current batch, or all batches. Per-batch search indexes are
-  local rebuildable snapshots; the filesystem remains authoritative. Images
-  queries can become persistent workspace filters so grid and lightbox review
-  remain inside the matching set until the operator clears the filter.
+  local rebuildable snapshots with explicit readiness, age, and item-count
+  status; the filesystem remains authoritative. Images queries can become
+  persistent workspace filters with visible query, scope, and source chips so
+  grid and lightbox review remain inside the matching set until the operator
+  edits or clears the filter.
 - **Import from ComfyUI** -- one-click **Import All** moves available outputs
   and adjacent JSON sidecars into the selected batch inbox. A lightweight
   one-second status check enables the always-visible control when media arrives.

@@ -199,12 +199,16 @@ def _build_item(batch: str, folder: str, path: Path) -> dict[str, Any]:
     }
 
 
-def _source_state(batches_dir: Path, batch: str) -> dict[str, int]:
+def _source_state(batches_dir: Path, batch: str) -> dict[str, dict[str, int]]:
     root, batch_dir, resolved_batch = _resolved_batch(batches_dir, batch)
-    return {
-        folder: _safe_stage(root, batch_dir, resolved_batch, folder).stat().st_mtime_ns
-        for folder in batch_store.BATCH_FOLDERS
-    }
+    state: dict[str, dict[str, int]] = {}
+    for folder in batch_store.BATCH_FOLDERS:
+        stage = _safe_stage(root, batch_dir, resolved_batch, folder)
+        state[folder] = {
+            "mtime_ns": stage.stat().st_mtime_ns,
+            "item_count": len(batch_store.get_images(stage, sort_by="name", order="asc")),
+        }
+    return state
 
 
 def _save_index(batches_dir: Path, batch: str, index: dict[str, Any]) -> None:
@@ -335,6 +339,33 @@ def query_search_indices(
     loaded_indexes: list[tuple[str, dict[str, Any] | None]] = [
         (batch_name, load_search_index(batches_dir, batch_name)) for batch_name in batches
     ]
+    index_statuses: list[dict[str, Any]] = []
+    stale_by_batch: dict[str, bool] = {}
+    for batch_name, index in loaded_indexes:
+        if index is None:
+            stale_by_batch[batch_name] = False
+            index_statuses.append(
+                {
+                    "batch": batch_name,
+                    "status": "not_built",
+                    "built_at": None,
+                    "item_count": 0,
+                }
+            )
+            continue
+        try:
+            stale = index.get("source_state") != _source_state(batches_dir, batch_name)
+        except (OSError, ValueError):
+            stale = True
+        stale_by_batch[batch_name] = stale
+        index_statuses.append(
+            {
+                "batch": batch_name,
+                "status": "stale" if stale else "ready",
+                "built_at": index.get("built_at"),
+                "item_count": index.get("item_count", len(index.get("items", []))),
+            }
+        )
     snapshot_value = _query_snapshot(
         query,
         batch,
@@ -363,6 +394,7 @@ def query_search_indices(
             "indexed_batches": [],
             "missing_batches": [],
             "stale_batches": [],
+            "index_statuses": index_statuses,
         }
 
     matches: list[dict[str, Any]] = []
@@ -373,10 +405,7 @@ def query_search_indices(
         if index is None:
             missing_batches.append(batch_name)
             continue
-        try:
-            stale = index.get("source_state") != _source_state(batches_dir, batch_name)
-        except (OSError, ValueError):
-            stale = True
+        stale = stale_by_batch[batch_name]
         if stale:
             stale_batches.append(batch_name)
             if snapshot is None:
@@ -411,4 +440,5 @@ def query_search_indices(
         "indexed_batches": indexed_batches,
         "missing_batches": missing_batches,
         "stale_batches": stale_batches,
+        "index_statuses": index_statuses,
     }

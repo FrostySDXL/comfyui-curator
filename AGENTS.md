@@ -22,7 +22,9 @@
 - **Prompt history:** Manual PNG metadata prompt indexes with searchable/copyable Prompt History modal and staleness warning.
 - **Library search:** Shared Images / Prompt groups modal. Images searches filenames,
   PNG generation metadata, and bounded adjacent JSON sidecar keys/values across a
-  folder, batch, or all batches using rebuildable per-batch caches.
+  folder, batch, or all batches using rebuildable per-batch caches. Applied searches
+  expose query/scope/source chips, and index status reports readiness, age, and count
+  while preserving the filesystem as authoritative.
 - **AI-assisted scoring:** Vision-LLM evaluation against element checklists via OpenAI-compatible `/v1/chat/completions`. Optional auto-move of top-N images. The AI sidebar has Inspect / Score / Runs tabs, run comparison, contextual image inspection, an explicit score-cutoff preview/apply flow, and bounded partial-failure evidence.
 - **CLI headless scoring:** Same pipeline available via `curate.py` (dry-run, score-only, or score-and-move).
 - **Core philosophy:** Manual curation is authoritative. AI is advisory. Filesystem is the operational truth.
@@ -176,7 +178,7 @@ Treat these as stability-sensitive:
 - AI score-cutoff preview/apply/clear semantics and partial-failure labels/details
 - Favorites API shapes, favorites filter button, All Favorites sidebar entry, and lightbox/thumb star behavior
 - Public API shapes, batch `public/` generated-output view, All Public sidebar entry, public action labels, public export-root destination browser/history, and derivative-only safety copy
-- Library Search Images / Prompt groups tabs, Images-to-workspace filter bar/actions, Prompt History controls, search and prompt-history API shapes, and manual cache file semantics
+- Library Search Images / Prompt groups tabs, Images-to-workspace query/scope/source chips and Edit/Clear actions, per-batch index status/age/count labels, Prompt History controls, search and prompt-history API shapes, and manual cache file semantics
 - Native extension entrypoint (`__init__.py` exports), `WEB_DIRECTORY`, `/curator` page route, `/curator_static` static mount, and `/api/curator/health` route
 - `templates/curator.html` two-transform parity with `index.html` (`/static/` → `/curator_static/` plus `window.CURATOR_NATIVE = true` before ordered scripts)
 - Shared frontend `ccApiPath`/`ccThumbUrl`/`ccImageUrl` URL helper behavior and mode-detection through `window.CURATOR_NATIVE`

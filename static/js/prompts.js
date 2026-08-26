@@ -32,6 +32,7 @@
         let mediaSearchTimer = null;
         let mediaSearchResults = null;
         let mediaSearchBuilding = false;
+        const mediaSearchIndexStates = new Map();
         let pendingMediaSearchBuildBatches = [];
         let librarySearchTab = (function() {
             const stored = localStorage.getItem(LIBRARY_SEARCH_TAB_KEY);
@@ -383,21 +384,22 @@
         function renderMediaSearchResults(data) {
             const list = document.getElementById('media-search-results');
             const total = document.getElementById('media-search-total');
-            const indexStatus = document.getElementById('media-search-index-status');
             if (!list) return;
             list.replaceChildren();
             const items = data?.items || [];
             const missing = data?.missing_batches || [];
             const stale = data?.stale_batches || [];
             const unavailable = [...new Set([...missing, ...stale])];
+            (data?.index_statuses || []).forEach(detail => {
+                const transient = mediaSearchIndexStates.get(detail.batch);
+                if (!mediaSearchBuilding || transient?.status !== 'building') {
+                    mediaSearchIndexStates.set(detail.batch, {...detail});
+                }
+            });
             if (total) {
                 total.textContent = `${data?.total || 0} result${data?.total === 1 ? '' : 's'}${data?.truncated ? ` · first ${data.limit}` : ''}`;
             }
-            if (indexStatus) {
-                indexStatus.textContent = unavailable.length
-                    ? `${missing.length} missing and ${stale.length} stale batch index${unavailable.length === 1 ? '' : 'es'}. Results may be incomplete.`
-                    : `${(data?.indexed_batches || []).length} batch index${(data?.indexed_batches || []).length === 1 ? '' : 'es'} searched.`;
-            }
+            renderMediaSearchIndexStatus(data, unavailable);
             if (items.length === 0) {
                 const empty = document.createElement('div');
                 empty.className = 'prompts-empty-state';
@@ -434,6 +436,63 @@
                 row.append(thumb, main, open);
                 list.appendChild(row);
             });
+        }
+
+        function _mediaSearchIndexStatus(batch, data = mediaSearchResults) {
+            const persisted = (data?.index_statuses || []).find(item => item.batch === batch)
+                || mediaSearchIndexStates.get(batch)
+                || {batch, status: 'not_built', built_at: null, item_count: 0};
+            const transient = mediaSearchIndexStates.get(batch);
+            const status = transient && !['ready', 'stale', 'not_built'].includes(transient.status)
+                ? transient.status
+                : persisted.status;
+            const labels = {
+                not_built: 'Not built',
+                building: 'Building',
+                ready: 'Ready',
+                stale: 'Stale',
+                partially_failed: 'Partially failed',
+                failed: 'Failed',
+                cancelled: 'Cancelled',
+            };
+            const active = status === transient?.status ? transient : persisted;
+            const builtAt = active.built_at || persisted.built_at;
+            const age = builtAt ? _formatMediaSearchIndexAge(builtAt) : '';
+            const count = Number.isFinite(Number(active.item_count)) ? Number(active.item_count) : 0;
+            const details = status === 'not_built' ? 'No snapshot yet' : `${count} items${age ? ` · ${age}` : ''}`;
+            return {batch, status, label: labels[status] || 'Not built', details};
+        }
+
+        function _formatMediaSearchIndexAge(builtAt) {
+            const timestamp = Date.parse(builtAt);
+            if (!Number.isFinite(timestamp)) return '';
+            const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+            if (seconds < 60) return 'built just now';
+            if (seconds < 3600) return `built ${Math.floor(seconds / 60)}m ago`;
+            if (seconds < 86400) return `built ${Math.floor(seconds / 3600)}h ago`;
+            return `built ${Math.floor(seconds / 86400)}d ago`;
+        }
+
+        function renderMediaSearchIndexStatus(data = mediaSearchResults, unavailable = []) {
+            const container = document.getElementById('media-search-index-status');
+            if (!container) return;
+            container.replaceChildren();
+            let statuses = Array.isArray(data?.index_statuses) ? data.index_statuses : [];
+            if (statuses.length === 0) statuses = Array.from(mediaSearchIndexStates.values());
+            if (statuses.length === 0) statuses = unavailable.map(batch => ({batch}));
+            if (statuses.length === 0) {
+                container.appendChild(createTextElement('span', 'media-search-index-note', 'Search index status unavailable.'));
+            }
+            statuses.forEach(detail => {
+                const status = _mediaSearchIndexStatus(detail.batch, data);
+                const row = document.createElement('span');
+                row.className = `media-search-index-row is-${status.status.replace('_', '-')}`;
+                row.appendChild(createTextElement('strong', 'media-search-index-badge', status.label));
+                row.appendChild(createTextElement('span', 'media-search-index-batch', detail.batch));
+                row.appendChild(createTextElement('span', 'media-search-index-detail', status.details));
+                container.appendChild(row);
+            });
+            container.appendChild(createTextElement('span', 'media-search-index-note', 'Filesystem remains authoritative; indexes are rebuildable snapshots.'));
         }
 
         async function openMediaSearchResult(result) {
@@ -539,10 +598,17 @@
             const buttons = ['media-search-build-btn', 'media-search-build-all-btn']
                 .map(id => document.getElementById(id)).filter(Boolean);
             buttons.forEach(button => { button.disabled = true; });
+            let activeBatch = null;
             try {
                 for (let index = 0; index < batches.length; index++) {
-                    const status = document.getElementById('media-search-index-status');
-                    if (status) status.textContent = `Building ${batches[index]} (${index + 1} of ${batches.length})...`;
+                    activeBatch = batches[index];
+                    mediaSearchIndexStates.set(activeBatch, {
+                        batch: activeBatch,
+                        status: 'building',
+                        built_at: null,
+                        item_count: 0,
+                    });
+                    renderMediaSearchIndexStatus(mediaSearchResults);
                     activityUpdate(activityId, {
                         status: 'running',
                         completed: index,
@@ -551,6 +617,13 @@
                     });
                     const resp = await apiBuildMediaSearchIndex(batches[index]);
                     if (!resp.ok) throw new Error('search index build failed');
+                    const summary = await resp.json();
+                    mediaSearchIndexStates.set(activeBatch, {
+                        batch: activeBatch,
+                        status: 'ready',
+                        built_at: summary.built_at || null,
+                        item_count: summary.item_count || 0,
+                    });
                     activityUpdate(activityId, {completed: index + 1, total: batches.length});
                 }
                 activityComplete(activityId, 'completed', {
@@ -563,6 +636,16 @@
                 await runMediaSearch();
             } catch {
                 const completed = Number(activityGet(activityId)?.completed) || 0;
+                if (activeBatch) {
+                    const activityStatus = activityGet(activityId)?.status;
+                    mediaSearchIndexStates.set(activeBatch, {
+                        batch: activeBatch,
+                        status: activityStatus === 'cancelled' ? 'cancelled' : 'failed',
+                        built_at: mediaSearchIndexStates.get(activeBatch)?.built_at || null,
+                        item_count: mediaSearchIndexStates.get(activeBatch)?.item_count || 0,
+                    });
+                    renderMediaSearchIndexStatus(mediaSearchResults);
+                }
                 activityComplete(activityId, completed > 0 ? 'partial' : 'failed', {
                     completed,
                     total: batches.length,
@@ -582,6 +665,44 @@
             return 'All batches';
         }
 
+        function _workspaceSearchSourceText(filter) {
+            if (filter.scope === 'folder') return `${filter.batch} / ${filter.folder}`;
+            if (filter.scope === 'batch') return filter.batch || 'Current batch';
+            return 'All batches';
+        }
+
+        function _workspaceSearchChip(label, value, key) {
+            const chip = document.createElement('span');
+            chip.className = 'workspace-search-filter-chip';
+            chip.setAttribute('role', 'listitem');
+            chip.appendChild(createTextElement('span', 'workspace-search-filter-chip-label', `${label}:`));
+            chip.appendChild(createTextElement('span', 'workspace-search-filter-chip-value', value));
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'workspace-search-filter-chip-remove';
+            remove.textContent = '×';
+            remove.setAttribute('aria-label', 'Clear active workspace search');
+            remove.title = 'Clear active workspace search';
+            remove.addEventListener('click', () => removeWorkspaceSearchChip(key));
+            chip.appendChild(remove);
+            return chip;
+        }
+
+        function renderWorkspaceSearchFilterChips(filter) {
+            const chips = document.getElementById('workspace-search-filter-chips');
+            if (!chips) return;
+            chips.replaceChildren(
+                _workspaceSearchChip('Query', `“${filter.query}”`, 'query'),
+                _workspaceSearchChip('Scope', filter.scope === 'folder' ? 'Current folder' : filter.scope === 'batch' ? 'This batch' : 'All batches', 'scope'),
+                _workspaceSearchChip('Source', _workspaceSearchSourceText(filter), 'source'),
+            );
+        }
+
+        function removeWorkspaceSearchChip(key) {
+            if (!workspaceSearchFilter || !['query', 'scope', 'source'].includes(key)) return;
+            void clearWorkspaceSearchFilter();
+        }
+
         function syncWorkspaceSearchFilterBar() {
             const bar = document.getElementById('workspace-search-filter-bar');
             const summary = document.getElementById('workspace-search-filter-summary');
@@ -591,6 +712,7 @@
             document.body.classList.toggle('workspace-search-active', active);
             if (!active) return;
             if (summary) summary.textContent = `“${workspaceSearchFilter.query}” · ${_workspaceSearchScopeText(workspaceSearchFilter)}`;
+            renderWorkspaceSearchFilterChips(workspaceSearchFilter);
             if (count) {
                 count.textContent = workspaceSearchFilter.hasMore
                     ? `${workspaceSearchFilter.shown} of ${workspaceSearchFilter.total} loaded${workspaceSearchFilter.loading ? '…' : ''}`

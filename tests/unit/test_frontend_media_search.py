@@ -172,3 +172,49 @@ def test_editing_workspace_search_can_narrow_from_original_review_context():
     assert "workspaceSearchFilter" in context
     assert "startsWith('__')" in context
     assert "_mediaSearchContext()" in options
+
+
+def test_workspace_filter_bar_exposes_query_scope_and_source_chips():
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    prompts = PROMPTS_JS.read_text(encoding="utf-8")
+
+    sync_bar = extract_function_body(prompts, "function syncWorkspaceSearchFilterBar()")
+    render_chips = extract_function_body(prompts, "function renderWorkspaceSearchFilterChips(")
+    source_text = extract_function_body(prompts, "function _workspaceSearchSourceText(")
+
+    assert 'id="workspace-search-filter-chips"' in html
+    assert 'id="workspace-search-filter-edit"' in html
+    assert 'id="workspace-search-filter-clear"' in html
+    assert "workspaceSearchFilter.query" in sync_bar
+    assert "renderWorkspaceSearchFilterChips" in sync_bar
+    assert "filter.scope" in render_chips
+    assert "filter.batch" in source_text
+    assert "filter.folder" in source_text
+    assert "removeWorkspaceSearchChip" in prompts
+    assert "Clear active workspace search" in prompts
+
+
+def test_media_search_surfaces_index_lifecycle_states_age_and_item_count():
+    prompts = PROMPTS_JS.read_text(encoding="utf-8")
+    api = API_JS.read_text(encoding="utf-8")
+
+    render = extract_function_body(prompts, "function renderMediaSearchResults(")
+    index_status = extract_function_body(prompts, "function _mediaSearchIndexStatus(")
+    render_index = extract_function_body(prompts, "function renderMediaSearchIndexStatus(")
+    build = extract_function_body(prompts, "async function _buildMediaSearchIndexes(")
+
+    assert "index_statuses" in render
+    assert "renderMediaSearchIndexStatus" in render
+    assert "built_at" in index_status and "item_count" in index_status
+    assert "Not built" in index_status
+    assert "Building" in index_status
+    assert "Ready" in index_status
+    assert "Stale" in index_status
+    assert "Partially failed" in index_status
+    assert "Failed" in index_status
+    assert "Cancelled" in index_status
+    assert "filesystem remains authoritative" in render_index.lower()
+    assert "mediaSearchIndexStates.values()" in render_index
+    assert "activityStatus === 'cancelled'" in build and "'failed'" in build
+    assert "partial" in build and "cancelled" in build
+    assert "index_statuses" in api or "index_statuses" in prompts

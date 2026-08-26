@@ -9,7 +9,7 @@
 - **Single-page review UI:** Asset-manager style batch sidebar, local folder-stage rail, compact workspace toolbar, center thumbnail grid (CSS Grid), right AI Curate sidebar.
 - **Dual-mode serving:** The same `static/js/*.js` and `static/css/*.css` files serve both the standalone Flask page (`templates/index.html`, `/static/` paths) and the native ComfyUI extension page (`templates/curator.html`, `/curator_static/` paths). Mode detection uses `window.CURATOR_NATIVE` in `state.js`.
 - **Keyboard-first navigation:** 15+ shortcuts for search, selection, AI toggles, lightbox, undo.
-- **Library search:** One modal keeps general filename/PNG/JSON sidecar media search and normalized Prompt History groups in separate remembered tabs; Images results can be applied as a persistent workspace review filter.
+- **Library search:** One modal keeps general filename/PNG/JSON sidecar media search and normalized Prompt History groups in separate remembered tabs; Images results can be applied as a persistent workspace review filter with query/scope/source chips, while index rows distinguish durable and transient states with age and item count.
 - **Drag/drop curation:** HTML5 drag from the grid to local folder-stage targets for single or multi-select moves.
 - **Lightbox viewer:** Full-media review with zoom, scored-image navigation, PNG generation metadata plus adjacent JSON sidecars, and two-image compare mode.
 - **AI score integration:** Overlay badges, score gradient coloring, explicit score-cutoff preview/apply/clear, filter/sort by score, accessible Inspect / Score / Runs tabs, contextual image and batch inspection, bounded partial-failure evidence, guided scoring with a visible 12-check cap, and truthful job/history states.
@@ -68,7 +68,7 @@
 | `moves.js` | Multi-select, drag/drop, move, undo, Empty Rejects modal |
 | `lightbox.js` | Still/GIF image review, MP4/MP3 playback and cleanup, navigation, zoom, scored navigation, and favorite UI |
 | `metadata.js` | PNG + adjacent JSON sidecar metadata loading/rendering, structured external-favorites post/favorite fields and tag chips, and prompt/JSON copy helpers |
-| `prompts.js` | Library Search tab state, scoped/debounced media queries and results, stable paged workspace loading, source-qualified filter apply/edit/clear/move reconciliation, Prompt History scope/selection/rendering, build/rebuild controls |
+| `prompts.js` | Library Search tab state, scoped/debounced media queries and results, search-index lifecycle/status rendering, stable paged workspace loading, source-qualified chip filter apply/edit/clear/move reconciliation, Prompt History scope/selection/rendering, build/rebuild controls |
 | `ai-state.js` | Shared AI globals, storage keys, and sidebar constants |
 | `ai-sidebar.js` | AI sidebar open/width state and resize behavior |
 | `ai-panel.js` | AI sidebar tabs, optional elements, quality flags, element history |
