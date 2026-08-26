@@ -24,6 +24,10 @@ function aiSetInspectedImage(img) {
 function aiRenderImageInspector(img = null) {
             const inspector = document.getElementById('ai-image-inspector');
             if (!inspector) return;
+            if (typeof renderInspectorOverview === 'function') renderInspectorOverview();
+            if (typeof inspectorActiveTab !== 'undefined' && inspectorActiveTab === 'metadata' && typeof loadInspectorMetadata === 'function') {
+                loadInspectorMetadata(typeof getInspectorTargetImage === 'function' ? getInspectorTargetImage() : img);
+            }
             if (selectedImages.size === 0) {
                 const target = img || aiGetInspectedImage();
                 inspector.replaceChildren();

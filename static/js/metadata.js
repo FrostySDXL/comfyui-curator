@@ -11,6 +11,110 @@ let currentLightboxDimensions = {w: null, h: null};
 const lightboxMetadataCache = new Map();
 const LIGHTBOX_METADATA_CACHE_MAX = 200;
 
+function getInspectorMetadataKey(img) {
+            if (!img) return '';
+            const source = getImageBatchAndFolder(img);
+            return `${source.batch}/${source.folder}/${img.name}`;
+        }
+
+async function loadInspectorMetadata(target) {
+            const panel = document.getElementById('inspector-metadata-content');
+            const key = getInspectorMetadataKey(target);
+            if (target && key === inspectorMetadataKey && (inspectorMetadata || inspectorMetadataError || inspectorMetadataLoading)) {
+                renderInspectorMetadata();
+                return;
+            }
+            const token = ++inspectorMetadataRequestToken;
+            if (!target) {
+                inspectorMetadataKey = '';
+                inspectorMetadata = null;
+                inspectorMetadataError = null;
+                inspectorMetadataLoading = false;
+                renderInspectorMetadata();
+                return;
+            }
+            inspectorMetadataKey = key;
+            inspectorMetadata = null;
+            inspectorMetadataError = null;
+            inspectorMetadataLoading = true;
+            renderInspectorMetadata();
+            try {
+                const source = getImageBatchAndFolder(target);
+                const resp = await fetch(
+                    ccApiPath(`/api/image-metadata/${encodeURIComponent(source.batch)}/${encodeURIComponent(source.folder)}/${encodeURIComponent(target.name)}`),
+                    {cache: 'no-store'}
+                );
+                if (!resp.ok) throw new Error(`metadata request failed (${resp.status})`);
+                const data = await resp.json();
+                if (token !== inspectorMetadataRequestToken) return;
+                inspectorMetadata = data;
+            } catch (error) {
+                if (token !== inspectorMetadataRequestToken) return;
+                inspectorMetadataError = error.message || 'metadata request failed';
+            } finally {
+                if (token !== inspectorMetadataRequestToken) return;
+                inspectorMetadataLoading = false;
+                renderInspectorMetadata();
+            }
+        }
+
+function renderInspectorMetadata() {
+            const panel = document.getElementById('inspector-metadata-content');
+            if (!panel) return;
+            panel.replaceChildren();
+            const target = typeof getInspectorTargetImage === 'function' ? getInspectorTargetImage() : null;
+            if (!currentBatch) {
+                panel.append(createTextElement('div', 'inspector-empty-title', 'Select a batch'));
+                panel.append(createTextElement('div', 'inspector-empty-detail', 'Metadata appears after a batch is open.'));
+                return;
+            }
+            if (!target) {
+                panel.append(createTextElement('div', 'inspector-empty-title', 'Select an image'));
+                panel.append(createTextElement('div', 'inspector-empty-detail', 'Choose one image to load its PNG and adjacent sidecar metadata.'));
+                return;
+            }
+            if (inspectorMetadataLoading) {
+                panel.append(createTextElement('div', 'metadata-loading', 'Loading media metadata...'));
+                return;
+            }
+            if (inspectorMetadataError) {
+                panel.append(createTextElement('div', 'inspector-empty-title', 'Metadata unavailable'));
+                panel.append(createTextElement('div', 'metadata-error', inspectorMetadataError));
+                const retry = document.createElement('button');
+                retry.type = 'button';
+                retry.id = 'retry-inspector-metadata';
+                retry.className = 'metadata-copy-btn';
+                retry.textContent = 'Retry metadata';
+                retry.addEventListener('click', () => {
+                    inspectorMetadataKey = '';
+                    loadInspectorMetadata(target);
+                });
+                panel.append(retry);
+                return;
+            }
+            if (!inspectorMetadata || !inspectorMetadata.has_metadata) {
+                panel.append(createTextElement('div', 'metadata-empty', 'No media metadata found.'));
+                return;
+            }
+            const metadata = inspectorMetadata;
+            const params = metadata.parameters || {};
+            panel.append(createTextElement('div', 'metadata-header', 'Media metadata'));
+            if (metadata.has_png_metadata) {
+                const grid = document.createElement('dl');
+                grid.className = 'metadata-grid inspector-metadata-grid';
+                [['Prompt', params.prompt], ['Negative prompt', params.negative_prompt], ['Seed', params.seed], ['Sampler', params.sampler], ['Steps', params.steps], ['CFG', params.cfg_scale], ['Model', params.model], ['Workflow', metadata.workflow_available ? `${metadata.workflow_size} bytes` : 'Not present']].forEach(([label, value]) => {
+                    if (value === null || value === undefined || value === '') return;
+                    grid.append(createTextElement('dt', 'metadata-label', label), createTextElement('dd', 'metadata-value', String(value)));
+                });
+                panel.append(grid);
+            }
+            if (metadata.has_sidecar && metadata.sidecar) {
+                panel.append(createTextElement('div', 'metadata-section-title', `JSON sidecar · ${metadata.sidecar.name || 'sidecar'}`));
+                if (metadata.sidecar.error) panel.append(createTextElement('div', 'metadata-error', metadata.sidecar.error));
+                else if (metadata.sidecar.text) panel.append(createTextElement('pre', 'metadata-text metadata-sidecar-text', metadata.sidecar.text));
+            }
+        }
+
 function getLightboxMetadataCacheKey(img) {
             const source = getImageBatchAndFolder(img);
             return `${source.batch}/${source.folder}/${img.name}`;

@@ -70,7 +70,7 @@
             </div>
             <div class="header-actions">
                 <button id="batch-sidebar-toggle-btn" class="batch-sidebar-toggle-btn" type="button">Hide Batches</button>
-                <button id="ai-sidebar-toggle-btn" class="ai-sidebar-toggle-btn hidden" type="button">Hide AI</button>
+                <button id="ai-sidebar-toggle-btn" class="ai-sidebar-toggle-btn hidden" type="button">Hide Inspector</button>
                 <button id="help-btn" class="help-btn" type="button">Help</button>
                 <button id="prompts-btn" class="help-btn" type="button">Search</button>
                 <button id="settings-btn" class="help-btn hidden" type="button">Settings</button>
@@ -197,13 +197,25 @@
 
             <div class="ai-sidebar-shell hidden" id="ai-sidebar-shell">
                 <div class="ai-sidebar-resizer" id="ai-sidebar-resizer"></div>
-                <aside class="ai-curate-panel" id="ai-curate-panel">
+                <aside class="ai-curate-panel unified-inspector" id="unified-inspector">
                     <div class="ai-curate-header">
                         <div>
-                            <h3>AI Curate</h3>
+                            <h3>Inspector</h3>
                             <div class="ai-curate-advisory">Scores are advisory</div>
                         </div>
                     </div>
+                    <div class="inspector-tabs" role="tablist" aria-label="Inspector sections">
+                        <button class="inspector-tab active" id="inspector-tab-overview" data-inspector-tab="overview" type="button" role="tab" aria-controls="inspector-overview-section" aria-selected="true" tabindex="0">Overview</button>
+                        <button class="inspector-tab" id="inspector-tab-metadata" data-inspector-tab="metadata" type="button" role="tab" aria-controls="inspector-metadata-section" aria-selected="false">Metadata</button>
+                        <button class="inspector-tab" id="inspector-tab-ai" data-inspector-tab="ai" type="button" role="tab" aria-controls="inspector-ai-section" aria-selected="false">AI Evidence</button>
+                    </div>
+                    <section class="inspector-section" id="inspector-overview-section" role="tabpanel" aria-labelledby="inspector-tab-overview">
+                        <div id="inspector-overview-content" class="inspector-content" aria-live="polite"></div>
+                    </section>
+                    <section class="inspector-section" id="inspector-metadata-section" role="tabpanel" aria-labelledby="inspector-tab-metadata" hidden>
+                        <div id="inspector-metadata-content" class="inspector-content" aria-live="polite"></div>
+                    </section>
+                    <section class="inspector-section inspector-ai-section" id="inspector-ai-section" role="tabpanel" aria-labelledby="inspector-tab-ai" hidden>
                     <div class="ai-curate-body" id="ai-curate-body">
                         <div class="ai-panel-tabs" role="tablist" aria-label="AI Curate sections">
                             <button class="ai-panel-tab active" id="ai-panel-tab-inspect" data-ai-tab="inspect" type="button" role="tab" aria-controls="ai-review-section" aria-selected="true" tabindex="0">Inspect</button>
@@ -352,6 +364,7 @@
                             <div id="ai-run-diff" class="ai-run-diff hidden"></div>
                         </div>
                     </div>
+                    </section>
                 </aside>
             </div>
         </div>

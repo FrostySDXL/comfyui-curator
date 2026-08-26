@@ -35,9 +35,10 @@ before manual selection. Single-user, local-first, filesystem-backed.
   and adjacent JSON sidecars into the selected batch inbox. A lightweight
   one-second status check enables the always-visible control when media arrives.
 - **AI-assisted scoring (optional)** -- sends images to a local vision LLM
-  to check for prompt elements and quality baselines. The AI sidebar includes a
-  contextual image inspector plus Inspect / Score / Runs tabs. Scores are
-  advisory; manual curation is authoritative.
+  to check for prompt elements and quality baselines. The unified right
+  inspector layers Overview, Metadata, and AI Evidence; its AI Evidence view
+  retains the Inspect / Score / Runs workflows. Scores are advisory; manual
+  curation is authoritative.
 - **Run history and comparison** -- scored runs are saved per-batch.
   Compare two runs to see which images gained or lost points.
 - **CLI scoring** -- `python curate.py --batch my-batch --prompt "a cat"`

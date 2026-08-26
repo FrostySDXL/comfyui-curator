@@ -34,7 +34,7 @@ function syncAiSidebarUi(persist = true) {
             if (headerBtn) {
                 if (currentBatch) {
                     headerBtn.classList.remove('hidden');
-                    headerBtn.textContent = aiSidebarOpen ? 'Hide AI' : 'Show AI';
+                    headerBtn.textContent = aiSidebarOpen ? 'Hide Inspector' : 'Show Inspector';
                 } else {
                     headerBtn.classList.add('hidden');
                 }

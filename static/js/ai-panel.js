@@ -1,9 +1,103 @@
 /* Ordered classic script.
  * Defines: AI panel tabs, optional elements, and element history helpers.
  */
+function setInspectorTab(tabName) {
+            inspectorActiveTab = ['overview', 'metadata', 'ai'].includes(tabName) ? tabName : 'overview';
+            document.querySelectorAll('.inspector-tab').forEach(tab => {
+                const isActive = tab.dataset.inspectorTab === inspectorActiveTab;
+                tab.classList.toggle('active', isActive);
+                tab.setAttribute('aria-selected', String(isActive));
+                tab.tabIndex = isActive ? 0 : -1;
+            });
+            document.querySelectorAll('.inspector-section').forEach(section => {
+                const isActive = section.id === `inspector-${inspectorActiveTab}-section`;
+                section.hidden = !isActive;
+            });
+            if (inspectorActiveTab === 'ai') aiSetPanelTab(aiActivePanelTab);
+            renderInspectorOverview();
+            if (inspectorActiveTab === 'metadata' && typeof loadInspectorMetadata === 'function') {
+                loadInspectorMetadata(getInspectorTargetImage());
+            }
+        }
+
+function getInspectorTargetImage() {
+            if (typeof serverSelection !== 'undefined' && serverSelection && getInspectorSelectionCount() > 0) return null;
+            if (typeof selectedImages !== 'undefined' && selectedImages.size === 1 && typeof aiGetSingleSelectedImage === 'function') {
+                return aiGetSingleSelectedImage();
+            }
+            if (typeof selectedImages !== 'undefined' && selectedImages.size > 1) return null;
+            return typeof aiGetInspectedImage === 'function' ? aiGetInspectedImage() : null;
+        }
+
+function getInspectorSelectionCount() {
+            if (typeof serverSelection !== 'undefined' && serverSelection) {
+                const snapshotCount = Number(serverSelection.count) || 0;
+                const excludedCount = serverSelection.excluded instanceof Set
+                    ? serverSelection.excluded.size : 0;
+                return Math.max(0, snapshotCount - excludedCount);
+            }
+            return typeof selectedImages !== 'undefined' ? selectedImages.size : 0;
+        }
+
+function renderInspectorOverview() {
+            const content = document.getElementById('inspector-overview-content');
+            if (!content) return;
+            content.replaceChildren();
+            if (!currentBatch) {
+                content.append(createTextElement('div', 'inspector-empty-title', 'Select a batch'));
+                content.append(createTextElement('div', 'inspector-empty-detail', 'Choose a batch to inspect its review context.'));
+                return;
+            }
+            const effectiveSnapshotCount = getInspectorSelectionCount();
+            if (serverSelection && effectiveSnapshotCount > 0) {
+                content.append(createTextElement('div', 'inspector-title', `${effectiveSnapshotCount} images selected`));
+                content.append(createTextElement('div', 'inspector-subtitle', `${currentBatch} / ${currentFolder || 'all folders'} · effective snapshot selection`));
+                content.append(createTextElement('div', 'inspector-empty-detail', 'Overview summarizes the selected set. Open AI Evidence for advisory score details.'));
+                return;
+            }
+            const selected = typeof getSelectedImagesInDisplayOrder === 'function'
+                ? getSelectedImagesInDisplayOrder() : [];
+            const target = selected.length === 1
+                ? selected[0]
+                : (typeof aiGetInspectedImage === 'function' ? aiGetInspectedImage() : null);
+            if (selected.length > 1) {
+                content.append(createTextElement('div', 'inspector-title', `${selected.length} images selected`));
+                content.append(createTextElement('div', 'inspector-subtitle', `${currentBatch} / ${currentFolder || 'all folders'}`));
+                content.append(createTextElement('div', 'inspector-empty-detail', 'Overview summarizes the selected set. Open AI Evidence for advisory score details.'));
+                return;
+            }
+            if (!target) {
+                content.append(createTextElement('div', 'inspector-title', currentBatch));
+                content.append(createTextElement('div', 'inspector-subtitle', currentFolder || 'Choose a folder'));
+                content.append(createTextElement('div', 'inspector-empty-detail', 'Click a thumbnail to inspect its filename, source, media facts, metadata, and advisory evidence.'));
+                return;
+            }
+            const source = typeof getImageBatchAndFolder === 'function' ? getImageBatchAndFolder(target) : {batch: currentBatch, folder: currentFolder};
+            content.append(createTextElement('div', 'inspector-title', target.name));
+            content.append(createTextElement('div', 'inspector-subtitle', `${source.batch} / ${source.folder}`));
+            const facts = document.createElement('dl');
+            facts.className = 'inspector-facts';
+            [['Media', target.media_kind || 'image'], ['Dimensions', target.width && target.height ? `${target.width} × ${target.height}` : 'Available in lightbox'], ['Favorite', target.favorite ? 'Yes' : 'No']].forEach(([label, value]) => {
+                facts.append(createTextElement('dt', 'inspector-fact-label', label), createTextElement('dd', 'inspector-fact-value', value));
+            });
+            content.append(facts);
+        }
+
+function inspectorHandleTabKeydown(event) {
+            const tabs = [...document.querySelectorAll('.inspector-tab')];
+            const current = tabs.indexOf(event.currentTarget);
+            if (current < 0 || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+                : (current + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length;
+            setInspectorTab(tabs[next].dataset.inspectorTab);
+            tabs[next].focus();
+        }
+
 function showAiCuratePanel() {
             syncAiSidebarUi(false);
             if (!currentBatch) return;
+            setInspectorTab(inspectorActiveTab);
             aiRefreshRunData().catch(() => {});
             aiLoadElementHistory();
             aiPopulateOptionalElements();

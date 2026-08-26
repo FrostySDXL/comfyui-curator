@@ -103,6 +103,12 @@
         let isSidebarResizing = false;
         let _sidebarResizePending = false;
         let _sidebarResizeLastEvent = null;
+        let inspectorActiveTab = 'overview';
+        let inspectorMetadataRequestToken = 0;
+        let inspectorMetadataKey = '';
+        let inspectorMetadata = null;
+        let inspectorMetadataLoading = false;
+        let inspectorMetadataError = null;
 
 function isVirtualCollectionView() {
             return currentBatch === '__favorites__' || currentBatch === '__public__' || currentBatch === '__search__';

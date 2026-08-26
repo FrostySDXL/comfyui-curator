@@ -411,6 +411,10 @@ function _bindDelegatedEvents() {
                 tab.addEventListener('click', function() { aiSetPanelTab(this.dataset.aiTab); });
                 tab.addEventListener('keydown', aiHandlePanelTabKeydown);
             });
+            document.querySelectorAll('.inspector-tab').forEach(tab => {
+                tab.addEventListener('click', function() { setInspectorTab(this.dataset.inspectorTab); });
+                tab.addEventListener('keydown', inspectorHandleTabKeydown);
+            });
 
             // AI overlay toggle
             const aiOverlayToggle = document.getElementById('ai-overlay-toggle');

@@ -15,7 +15,7 @@
 ## What This Repo Provides
 
 - **Batch filesystem workflow:** inbox/shortlisted/finals/rejects folders under `IMAGE_CURATOR_BATCHES/<batch>/`. Counts, metadata, operator-triggered Import All from ComfyUI outputs.
-- **Web review UI:** Asset-manager style batch sidebar, compact workspace toolbar, center thumbnail grid, right AI sidebar. Drag/drop moves, multi-select/Select All, undo toast, keyboard shortcuts, background polling.
+- **Web review UI:** Asset-manager style batch sidebar, compact workspace toolbar, center thumbnail grid, unified right inspector. Drag/drop moves, multi-select/Select All, undo toast, keyboard shortcuts, background polling.
 - **Lightbox viewer:** Full-media review with zoom, PNG generation metadata plus adjacent JSON sidecars (`M` toggle), scored-image navigation (`[`/`]`), keyboard folder moves (`S`/`F`/`R`).
 - **Favorites workflow:** One-click favorites update batch and universal scope, with a favorites-only filter and virtual All Favorites sidebar view.
 - **Public posting prep:** Selected originals export to metadata-stripped, optionally watermarked generated copies in `<batch>/public/`, with batch Public and virtual All Public views plus derivative-only copy/move/delete actions and export-root destination browsing/history.
@@ -196,7 +196,7 @@ Treat these as stability-sensitive:
 - Read `templates/index.html`, the relevant ordered `static/js/*.js` files, and the relevant `static/css/*.css` files
 - Preserve the center grid as the primary review surface
 - Preserve the compact workspace toolbar grouping unless the task explicitly changes it
-- Preserve the right-sidebar AI Curate layout and image inspector unless the task explicitly changes them
+- Preserve the unified right inspector and its Overview / Metadata / AI Evidence hierarchy unless the task explicitly changes them
 - Preserve the header control cluster order and semantics unless the task explicitly changes them
 - Preserve the expected sidebar-toggle label behavior (`Show` / `Hide`) unless the task explicitly changes it
 - Preserve keyboard-first flow for search, selection, AI toggles, sorting, and lightbox review
@@ -213,7 +213,7 @@ Treat these as stability-sensitive:
 - Undo must work for both drag moves and lightbox keyboard moves while the undo toast is active
 - Thumbnail updates should prefer incremental DOM updates over full grid rebuilds when possible
 - Density classes (`density-compact`, `density-comfortable`, `density-large`) should keep thumbnail sizing stable when sidebars open/close
-- The AI sidebar open state and width persist in local storage
+- The inspector open state and width persist in local storage
 - The batch sidebar open state persists in local storage
 - Batch-search shortcuts should reopen the batch sidebar before focusing the search input
 - The Help modal should reflect current shortcuts and major workflow notes
