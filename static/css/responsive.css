@@ -1,4 +1,15 @@
         @media (max-width: 900px) {
+            .shortcut-learning-strip {
+                align-items: flex-start;
+                flex-wrap: wrap;
+                gap: 4px 8px;
+                padding: 6px 12px;
+            }
+            .shortcut-learning-text {
+                flex: 1 1 calc(100% - 100px);
+                white-space: normal;
+            }
+            .shortcut-learning-dismiss { margin-left: auto; }
             .workspace-search-filter-bar {
                 align-items: flex-start;
                 flex-wrap: wrap;

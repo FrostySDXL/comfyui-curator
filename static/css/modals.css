@@ -46,6 +46,12 @@
             text-transform: uppercase;
             letter-spacing: 1px;
         }
+        .help-context-note {
+            color: var(--text-muted);
+            font-size: 12px;
+            line-height: 1.5;
+            margin-bottom: 8px;
+        }
         .help-list {
             margin: 0;
             padding-left: 18px;

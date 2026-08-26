@@ -15,7 +15,7 @@
 ## What This Repo Provides
 
 - **Batch filesystem workflow:** inbox/shortlisted/finals/rejects folders under `IMAGE_CURATOR_BATCHES/<batch>/`. Counts, metadata, operator-triggered Import All from ComfyUI outputs.
-- **Web review UI:** Asset-manager style batch sidebar, compact workspace toolbar, center thumbnail grid, unified right inspector. Drag/drop moves, multi-select/Select All, undo toast, keyboard shortcuts, background polling.
+- **Web review UI:** Asset-manager style batch sidebar, compact workspace toolbar, center thumbnail grid, unified right inspector. Drag/drop moves, multi-select/Select All, undo toast, progressive contextual shortcut hints, keyboard shortcuts, background polling.
 - **Lightbox viewer:** Full-media review with zoom, PNG generation metadata plus adjacent JSON sidecars (`M` toggle), scored-image navigation (`[`/`]`), keyboard folder moves (`S`/`F`/`R`), linked/unlinked side-by-side comparison, a bounded selection-derived candidate tray, Pin A candidate walking, pair advancement, and A/B split.
 - **Favorites workflow:** One-click favorites update batch and universal scope, with a favorites-only filter and virtual All Favorites sidebar view.
 - **Public posting prep:** Selected originals export to metadata-stripped, optionally watermarked generated copies in `<batch>/public/`, with batch Public and virtual All Public views plus derivative-only copy/move/delete actions and export-root destination browsing/history.
@@ -169,7 +169,7 @@ Treat these as stability-sensitive:
 - `curate.py` CLI flags and default behaviors while the CLI remains active
 - Runtime state file location (configured by `IMAGE_CURATOR_STATE`)
 - `image-curator.service.example` template expectations
-- Header Help modal content, keyboard shortcuts, and sidebar toggle labels
+- Header Help modal content, contextual shortcut-learning copy/dismissal semantics, keyboard shortcuts, and sidebar toggle labels
 - Header Activity indicator/panel lifecycle labels and supported Retry/Cancel actions
 - Lightbox PNG metadata route shape, toggle shortcut (`M`), and displayed field set
 - Batch and AI sidebar button labels as stateful operator-facing cues, not static text

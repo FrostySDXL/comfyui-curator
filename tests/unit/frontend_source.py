@@ -30,6 +30,7 @@ JS_FILES = [
     Path("static/js/modals.js"),
     Path("static/js/settings.js"),
     Path("static/js/combobox.js"),
+    Path("static/js/shortcut-learning.js"),
     Path("static/js/keyboard.js"),
     Path("static/js/events.js"),
     Path("static/js/bootstrap.js"),

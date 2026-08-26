@@ -63,6 +63,7 @@ JS_FILES = [
     "modals.js",
     "settings.js",
     "combobox.js",
+    "shortcut-learning.js",
     "keyboard.js",
     "events.js",
     "bootstrap.js",

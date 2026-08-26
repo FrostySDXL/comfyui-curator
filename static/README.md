@@ -8,7 +8,7 @@
 
 - **Single-page review UI:** Asset-manager style batch sidebar, local folder-stage rail, compact workspace toolbar, center thumbnail grid (CSS Grid), right AI Curate sidebar.
 - **Dual-mode serving:** The same `static/js/*.js` and `static/css/*.css` files serve both the standalone Flask page (`templates/index.html`, `/static/` paths) and the native ComfyUI extension page (`templates/curator.html`, `/curator_static/` paths). Mode detection uses `window.CURATOR_NATIVE` in `state.js`.
-- **Keyboard-first navigation:** 15+ shortcuts for search, selection, AI toggles, lightbox, undo.
+- **Keyboard-first navigation:** 15+ shortcuts for search, selection, AI toggles, lightbox, undo, plus dismissible per-context learning hints backed by the complete Help reference.
 - **Library search:** One modal keeps general filename/PNG/JSON sidecar media search and normalized Prompt History groups in separate remembered tabs; Images results can be applied as a persistent workspace review filter with query/scope/source chips, while index rows distinguish durable and transient states with age and item count.
 - **Drag/drop curation:** HTML5 drag from the grid to local folder-stage targets for single or multi-select moves.
 - **Lightbox viewer:** Full-media review with zoom, scored-image navigation, PNG generation metadata plus adjacent JSON sidecars, a bounded selection-derived compare candidate tray, and two-image compare mode.
@@ -82,6 +82,7 @@
 | `modals.js` | Generic modal helpers plus new-batch and Help modal controls |
 | `settings.js` | Native Settings modal loading, validation feedback, secret-safe save, and UI refresh |
 | `combobox.js` | Active-batch custom combobox keyboard and outside-click binding |
+| `shortcut-learning.js` | Progressive grid/selection/lightbox/compare shortcut hints, per-context dismissal persistence, and measured lightbox-control clearance |
 | `keyboard.js` | Document keyboard shortcuts and lightbox wheel zoom binding |
 | `events.js` | Delegated browser event binding |
 | `bootstrap.js` | Startup initialization and poll interval registration |

@@ -18,6 +18,9 @@ before manual selection. Single-user, local-first, filesystem-backed.
 - **Compare candidates** -- a compact selection tray keeps up to six still-image
   candidates visible, supports ordering/removal, skips non-still media, and
   compares the first two without discarding the wider selection.
+- **Shortcut learning** -- small per-context hints teach grid, selection,
+  lightbox, and compare keys progressively; each context can be dismissed and
+  the complete reference remains in Help.
 - **Typed media review** -- PNG/JPG/JPEG/WebP stills, animated GIFs, MP4 video,
   and MP3 audio share the filesystem workflow. The grid uses WebP posters;
   GIF/video hover previews are optional, and video/audio play in the lightbox.
