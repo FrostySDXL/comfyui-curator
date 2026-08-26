@@ -67,6 +67,7 @@ ComfyUI native extension
 
 Frontend (shared static/js/*.js + static/css/*.css)
   ├── templates/index.html  ← standalone page (Flask, /static/ paths)
+  ├── static/js/activity-center.js ← shared background-work state, rendering, retry/cancel hooks, and operation adapters
   └── templates/curator.html ← native page (ComfyUI, /curator_static/ paths, CURATOR_NATIVE flag)
 ```
 
@@ -167,6 +168,7 @@ Treat these as stability-sensitive:
 - Runtime state file location (configured by `IMAGE_CURATOR_STATE`)
 - `image-curator.service.example` template expectations
 - Header Help modal content, keyboard shortcuts, and sidebar toggle labels
+- Header Activity indicator/panel lifecycle labels and supported Retry/Cancel actions
 - Lightbox PNG metadata route shape, toggle shortcut (`M`), and displayed field set
 - Batch and AI sidebar button labels as stateful operator-facing cues, not static text
 - Workspace toolbar control IDs/order, density controls, Select All behavior, and thumbnail state classes

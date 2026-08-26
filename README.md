@@ -254,6 +254,10 @@ linked/unlinked Sync Pan/Zoom and an optional A/B Split for still images.
 - Background polling avoids interrupting lightbox review, drag/drop, and resize
   interactions. Import readiness uses a separate lightweight one-second poll;
   native batch summaries refresh every ten seconds.
+- The header Activity center consolidates import, folder snapshot/thumbnail,
+  prompt and media index, public export, and AI scoring status without blocking
+  the grid. Failed or partial work retains supported Retry actions, and AI runs
+  retain their existing cancellation path.
 - Native paged-folder lightbox moves advance to the next remaining image at the
   same review position instead of closing; the lightbox closes only when the
   folder has no remaining items.

@@ -168,7 +168,14 @@ def test_public_views_sort_without_review_folder_api_reload() -> None:
     assert "function isPublicView()" in js
     assert "currentBatch === '__public__'" in js
     assert "if (isVirtualCollectionView() || isPublicView()) { updateGrid(); return; }" in js
-    assert "if (currentFolder === 'public') { await loadBatchPublic(batch); return; }" in js
+    loader_start = js.index("async function loadCurrentFolderImages(options = {})")
+    folder_loader = js[loader_start : loader_start + 7000]
+    assert "if (currentFolder === 'public')" in folder_loader
+    assert "await loadBatchPublic(batch);" in folder_loader
+    assert (
+        "activityComplete(activityId, 'completed', {detail: 'Public folder ready'})"
+        in folder_loader
+    )
 
 
 def test_public_actions_replace_review_moves_in_public_views() -> None:

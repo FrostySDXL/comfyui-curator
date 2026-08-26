@@ -141,6 +141,17 @@ async function aiSubmitJob() {
             }
 
             aiCurrentJobId = data.run_id;
+            const submittedJobId = data.run_id;
+            activityRegister({
+                id: `ai:${submittedJobId}`,
+                kind: 'ai-score',
+                title: 'AI scoring',
+                scope: currentBatch,
+                status: data.status || 'queued',
+                detail: 'Waiting for the active run',
+                cancel: () => aiCancelJob(submittedJobId),
+                retry: () => aiSubmitJob(),
+            });
             showToast(`AI curate job ${data.status}: ${data.run_id}`);
             aiShowJobStatus(data);
             aiStartPolling();
@@ -172,6 +183,26 @@ function aiShowJobStatus(job) {
             stateEl.textContent = stateLabel;
             progressEl.textContent = detail;
             statusRegion.setAttribute('aria-busy', String(isActive));
+            const totals = job.totals || {};
+            const scored = Number(totals.scored) || 0;
+            const failed = Number(totals.failed) || 0;
+            const totalImages = Number(totals.images || job.total || 0) || null;
+            const activityId = `ai:${job.run_id || aiCurrentJobId}`;
+            activityUpdate(activityId, {
+                status: job.status,
+                scope: job.batch || currentBatch,
+                completed: totalImages ? Math.min(totalImages, scored + failed) : null,
+                total: totalImages,
+                detail,
+                error: job.error || job.error_message || '',
+                cancel: () => aiCancelJob(job.run_id || aiCurrentJobId),
+                retry: () => aiSubmitJob(),
+            });
+            if (job.status === 'completed' && failed > 0 && scored === 0) {
+                activityComplete(activityId, 'failed', {error: 'AI scoring failed', detail: 'No images were scored'});
+            } else if (job.status === 'completed' && failed > 0) {
+                activityComplete(activityId, 'partial', {result: `${scored} scored · ${failed} failed`, detail: 'Run completed with failures'});
+            }
 
             // Show cancel button for queued or running jobs
             cancelBtn.style.display = (job.status === 'queued' || job.status === 'running') ? 'inline-block' : 'none';
@@ -206,6 +237,7 @@ function aiShowJobStatusError(message) {
             stateEl.className = 'ai-job-state queued';
             progressEl.textContent = message;
             if (statusDot) statusDot.className = 'ai-status-dot queued';
+            activityUpdate(`ai:${aiCurrentJobId}`, {status: 'running', detail: message});
             aiSetPanelTab(aiActivePanelTab);
         }
 
@@ -237,13 +269,22 @@ async function aiPollJobStatus() {
             }
         }
 
-async function aiCancelJob() {
-            if (!aiCurrentJobId) return;
-            const resp = await fetch(ccApiPath(`/api/ai-curate/jobs/${aiCurrentJobId}/cancel`), {method: 'POST'});
-            const data = await resp.json();
-            if (data.success) {
-                showToast('Cancellation requested');
-            } else {
-                showToast(data.error || 'Cannot cancel this job');
+async function aiCancelJob(jobId = aiCurrentJobId) {
+            if (!jobId) return false;
+            try {
+                const resp = await fetch(ccApiPath(`/api/ai-curate/jobs/${jobId}/cancel`), {method: 'POST'});
+                const data = await resp.json();
+                if (data.success) {
+                    showToast('Cancellation requested');
+                    return true;
+                }
+                const message = data.error || 'Cannot cancel this job';
+                activityUpdate(`ai:${jobId}`, {status: 'running', detail: `${message}; try again`});
+                showToast(message);
+                return false;
+            } catch {
+                activityUpdate(`ai:${jobId}`, {status: 'running', detail: 'Cancellation failed; try again'});
+                showToast('Cancellation failed; try again');
+                return false;
             }
         }

@@ -523,6 +523,18 @@
 
         async function _buildMediaSearchIndexes(batches) {
             if (mediaSearchBuilding || batches.length === 0) return;
+            const activityId = `media-index:${batches.join('|')}`;
+            activityRegister({
+                id: activityId,
+                kind: 'search-index',
+                title: 'Build media search indexes',
+                scope: batches.length === 1 ? batches[0] : `${batches.length} batches`,
+                status: 'running',
+                completed: 0,
+                total: batches.length,
+                detail: `Building ${batches[0]}…`,
+                retry: () => _buildMediaSearchIndexes(batches),
+            });
             mediaSearchBuilding = true;
             const buttons = ['media-search-build-btn', 'media-search-build-all-btn']
                 .map(id => document.getElementById(id)).filter(Boolean);
@@ -531,12 +543,32 @@
                 for (let index = 0; index < batches.length; index++) {
                     const status = document.getElementById('media-search-index-status');
                     if (status) status.textContent = `Building ${batches[index]} (${index + 1} of ${batches.length})...`;
+                    activityUpdate(activityId, {
+                        status: 'running',
+                        completed: index,
+                        total: batches.length,
+                        detail: `Building ${batches[index]} (${index + 1} of ${batches.length})…`,
+                    });
                     const resp = await apiBuildMediaSearchIndex(batches[index]);
                     if (!resp.ok) throw new Error('search index build failed');
+                    activityUpdate(activityId, {completed: index + 1, total: batches.length});
                 }
+                activityComplete(activityId, 'completed', {
+                    completed: batches.length,
+                    total: batches.length,
+                    result: `Built ${batches.length} media search index${batches.length === 1 ? '' : 'es'}`,
+                    detail: 'Search indexes ready',
+                });
                 showToast(`Built ${batches.length} media search index${batches.length === 1 ? '' : 'es'}`);
                 await runMediaSearch();
             } catch {
+                const completed = Number(activityGet(activityId)?.completed) || 0;
+                activityComplete(activityId, completed > 0 ? 'partial' : 'failed', {
+                    completed,
+                    total: batches.length,
+                    error: 'Media search index build failed',
+                    detail: completed > 0 ? `${completed} of ${batches.length} indexes ready` : 'Try rebuilding the indexes',
+                });
                 showToast('Media search index build failed');
             } finally {
                 mediaSearchBuilding = false;
@@ -1371,15 +1403,38 @@
             const rebuildBtn = document.getElementById('prompts-rebuild-btn');
             const buildLabel = buildBtn ? buildBtn.textContent : '';
             const rebuildLabel = rebuildBtn ? rebuildBtn.textContent : '';
+            const token = ++promptsRequestToken;
+            const activityGroup = `prompt-index:${batch}`;
+            const activityId = activityAttemptId(activityGroup, token);
+            activityRegister({
+                id: activityId,
+                group: activityGroup,
+                kind: 'prompt-index',
+                title: 'Build prompt index',
+                scope: batch,
+                status: 'running',
+                total: 1,
+                detail: 'Reading PNG prompts…',
+                retry: () => buildSinglePromptIndex(batch, options),
+            });
             promptsBuilding = true;
             renderPromptsList();
             if (buildBtn) { buildBtn.disabled = true; buildBtn.textContent = 'Building...'; }
             if (rebuildBtn) { rebuildBtn.disabled = true; rebuildBtn.textContent = 'Building...'; }
-            const token = ++promptsRequestToken;
+            activityUpdate(activityId, {status: 'running', detail: 'Reading PNG prompts…'});
             try {
                 const resp = await fetch(ccApiPath(`/api/prompt-history/${encodeURIComponent(batch)}/build`), {method: 'POST'});
-                if (token !== promptsRequestToken) return;
+                if (token !== promptsRequestToken) {
+                    activityCancel(activityId);
+                    return;
+                }
                 if (!resp.ok) throw new Error('build failed');
+                activityComplete(activityId, 'completed', {
+                    completed: 1,
+                    total: 1,
+                    result: 'Prompt index ready',
+                    detail: 'Prompt history refreshed',
+                });
                 if (!options.quietSuccess) showToast('Prompt index built');
                 // Clean up build state before reloading data so loadPromptsData's
                 // token increment does not invalidate the token guarding this block.
@@ -1390,13 +1445,23 @@
                 renderPromptsList();
                 if (!options.quietSuccess) await loadPromptsData();
             } catch {
-                if (token !== promptsRequestToken) return;
+                if (token !== promptsRequestToken) {
+                    activityCancel(activityId);
+                    return;
+                }
+                activityComplete(activityId, 'failed', {
+                    error: 'Prompt index build failed',
+                    detail: 'Try rebuilding the prompt index',
+                });
                 showToast('Prompt index build failed');
             } finally {
                 // Only clear the building flag if this build is still the active one.
                 // Otherwise a superseded build would clear the spinner while the
                 // newer build is still in flight.
-                if (token !== promptsRequestToken) return;
+                if (token !== promptsRequestToken) {
+                    activityCancel(activityId);
+                    return;
+                }
                 promptsBuilding = false;
                 if (buildBtn) {
                     buildBtn.disabled = false;

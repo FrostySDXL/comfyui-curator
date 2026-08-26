@@ -594,6 +594,19 @@ async function importAll() {
             if (importInFlight) return;
             const batch = document.getElementById('active-batch-select').value;
             if (!batch) { showToast('Select a batch first'); return; }
+            const activityId = `import:${batch}`;
+            const pendingTotal = Math.max(0, Number(document.getElementById('pending-count')?.textContent) || 0);
+            activityRegister({
+                id: activityId,
+                kind: 'import',
+                title: 'Import media',
+                scope: batch,
+                status: 'running',
+                total: pendingTotal,
+                detail: 'Importing ComfyUI output…',
+                retry: () => importAll(),
+            });
+            activityUpdate(activityId, {detail: 'Import request submitted…'});
             importInFlight = true;
             updatePendingImportUi(document.getElementById('pending-count')?.textContent, batch);
             try {
@@ -604,14 +617,24 @@ async function importAll() {
                 });
                 if (resp.ok) {
                     const data = await resp.json();
+                    activityComplete(activityId, 'completed', {
+                        completed: data.count || 0,
+                        total: pendingTotal || data.count || 0,
+                        result: `Imported ${data.count || 0} media files`,
+                        detail: 'Import finished',
+                    });
                     showToast(`Imported ${data.count} media files`);
                     updatePendingImportUi(0, batch);
                     await loadBatches();
                     if (currentBatch === batch && currentFolder === 'inbox')
                         await selectFolder(batch, 'inbox');
                 } else {
+                    activityComplete(activityId, 'failed', {error: 'Import failed', detail: 'The import request was rejected'});
                     showToast('Import failed');
                 }
+            } catch (error) {
+                activityComplete(activityId, 'failed', {error: 'Import failed', detail: 'Status could not be confirmed'});
+                throw error;
             } finally {
                 importInFlight = false;
                 await pollImportAvailability();

@@ -6,6 +6,7 @@ JS_FILES = [
     Path("static/js/state.js"),
     Path("static/js/dom-utils.js"),
     Path("static/js/api.js"),
+    Path("static/js/activity-center.js"),
     Path("static/js/sidebar.js"),
     Path("static/js/batches.js"),
     Path("static/js/grid.js"),
@@ -45,6 +46,7 @@ CSS_FILES = [
     Path("static/css/prompts.css"),
     Path("static/css/toast.css"),
     Path("static/css/ai.css"),
+    Path("static/css/activity-center.css"),
     Path("static/css/responsive.css"),
 ]
 

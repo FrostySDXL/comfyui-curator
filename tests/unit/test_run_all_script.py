@@ -74,6 +74,7 @@ def test_css_asset_check_validates_expected_files_and_template_order():
         "prompts.css",
         "toast.css",
         "ai.css",
+        "activity-center.css",
         "responsive.css",
     ]
     assert run_all.validate_css_assets() == 0
@@ -86,6 +87,7 @@ def test_javascript_checks_use_ordered_split_file_list():
         "state.js",
         "dom-utils.js",
         "api.js",
+        "activity-center.js",
         "sidebar.js",
         "batches.js",
         "grid.js",

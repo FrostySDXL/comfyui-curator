@@ -238,9 +238,17 @@ function _cancelBackgroundDrain() {
 }
 
 function scheduleThumbnailLoad(element, imageSrc, cacheKey, priority, scopeBatch, options) {
-    _ensureViewportObservers();
+            _ensureViewportObservers();
 
-    var immediateVisible = options && options.immediate === true;
+            if (typeof activityGet === 'function' && typeof currentBatch !== 'undefined' &&
+                typeof currentFolder !== 'undefined' && (priority === VIEWPORT_PRIORITY_VISIBLE || priority === VIEWPORT_PRIORITY_NEAR)) {
+                const folderActivity = activityGetLatest(`folder-view:${currentBatch}:${currentFolder}`);
+                if (folderActivity && folderActivity.detail !== 'Loading visible thumbnails…') {
+                    activityUpdate(folderActivity.id, {detail: 'Loading visible thumbnails…'});
+                }
+            }
+
+            var immediateVisible = options && options.immediate === true;
     var imageEl = element && element.querySelector ? element.querySelector('img') : null;
     var replacesDisplayedSource = !!(
         element && element.isConnected && imageEl &&

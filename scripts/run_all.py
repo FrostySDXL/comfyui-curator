@@ -32,12 +32,14 @@ CSS_FILES = [
     "prompts.css",
     "toast.css",
     "ai.css",
+    "activity-center.css",
     "responsive.css",
 ]
 JS_FILES = [
     "state.js",
     "dom-utils.js",
     "api.js",
+    "activity-center.js",
     "sidebar.js",
     "batches.js",
     "grid.js",

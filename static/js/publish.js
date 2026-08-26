@@ -648,6 +648,18 @@ async function submitPublicExport() {
                 showToast('Select images first');
                 return;
             }
+            const activityId = `public-export:${currentBatch}:${Date.now()}`;
+            activityRegister({
+                id: activityId,
+                kind: 'public-export',
+                title: 'Create public copies',
+                scope: `${currentBatch} / ${currentFolder}`,
+                status: 'running',
+                completed: 0,
+                total: filenames.length,
+                detail: `Creating ${filenames.length} public cop${filenames.length === 1 ? 'y' : 'ies'}…`,
+                retry: () => submitPublicExport(),
+            });
             publishSubmitInflight = true;
             const submitBtn = document.getElementById('publish-submit-btn');
             if (submitBtn) submitBtn.disabled = true;
@@ -662,14 +674,28 @@ async function submitPublicExport() {
                 });
                 const data = await resp.json().catch(() => ({}));
                 if (!resp.ok && !data.exported) {
+                    activityComplete(activityId, 'failed', {
+                        error: data.error || 'Public export failed',
+                        detail: 'No public copies were created',
+                    });
                     showToast(data.error || 'Public export failed');
                     return;
                 }
+                const exported = Number(data.exported) || 0;
+                const failed = Number(data.failed) || 0;
+                activityComplete(activityId, failed > 0 ? 'partial' : 'completed', {
+                    completed: exported + failed,
+                    total: filenames.length,
+                    result: failed > 0 ? `${exported} created · ${failed} failed` : `${exported} created`,
+                    detail: failed > 0 ? 'Some public copies need attention' : 'Public copies ready',
+                    error: failed > 0 ? `${failed} copy${failed === 1 ? '' : 'ies'} failed` : '',
+                });
                 lastPublishedPublicBatch = currentBatch;
                 showToast(`Created ${data.exported || 0} public cop${data.exported === 1 ? 'y' : 'ies'}`);
                 showPublishResult(data);
                 await loadBatches();
             } catch {
+                activityComplete(activityId, 'failed', {error: 'Public export failed', detail: 'The export request could not be completed'});
                 showToast('Public export failed');
             } finally {
                 publishSubmitInflight = false;
@@ -729,6 +755,7 @@ async function loadBatchPublic(batch) {
             updateImageCountLabel();
             updateGrid();
             updateFolderTabs();
+            activityComplete(`folder-view:${batch}:public`, 'completed', {detail: 'Public folder ready'});
         }
 
 async function loadAllPublic() {

@@ -14,6 +14,7 @@
 - **Lightbox viewer:** Full-media review with zoom, scored-image navigation, PNG generation metadata plus adjacent JSON sidecars, and two-image compare mode.
 - **AI score integration:** Overlay badges, score gradient coloring, filter/sort by score, accessible Inspect / Score / Runs tabs, contextual image and batch inspection, guided scoring with a visible 12-check cap, and truthful job/history states.
 - **Public output workflow:** selected-image export modal, batch Public folder view, virtual All Public view, and derivative-only public copy/move/delete actions.
+- **Activity Center:** One header disclosure aggregates import, folder snapshot/thumbnail, prompt and media index, public export, and AI scoring work with truthful lifecycle states plus supported retry/cancel actions.
 - **Background polling:** interaction-aware 5-second content polling, a lightweight 1-second import-readiness poll, and 10-second native batch-summary refreshes.
 - **Local storage persistence:** Sidebar widths, open states, last batch/folder, grid density, and batch sort.
 - **Native settings modal:** Native-only editable paths, public-export enablement,
@@ -47,6 +48,7 @@
 | `prompts.css` | Library Search tabs, media result rows, Prompt History split workbench, control rail, footer, stale warning |
 | `toast.css` | Undo toast styling |
 | `ai.css` | AI sidebar, image inspector, AI form/history/run comparison, AI thumb badges and filtering |
+| `activity-center.css` | Header activity indicator, non-blocking activity panel, lifecycle states, progress, and actions |
 | `responsive.css` | `900px` responsive breakpoint rules; loads last |
 
 ### JavaScript File Map
@@ -56,6 +58,7 @@
 | `state.js` | Shared localStorage keys and cross-feature mutable state |
 | `dom-utils.js` | Text/format helpers, modal focus trap, clipboard helpers, toast helpers |
 | `api.js` | API wrapper helpers for route calls |
+| `activity-center.js` | Shared background-work records, aggregate indicator, lifecycle rendering, aging, and supported retry/cancel hooks |
 | `sidebar.js` | Left sidebar width/open state and resize behavior |
 | `batches.js` | Batch list/search/sort, active-batch combobox, batch/folder selection, import/create batch |
 | `grid.js` | Thumbnail cache, loading/error/retry state, paged folder loading, typed posters/hover previews, sort/filter controls, and bounded row virtualization |

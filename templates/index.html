@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="/static/css/prompts.css">
     <link rel="stylesheet" href="/static/css/toast.css">
     <link rel="stylesheet" href="/static/css/ai.css">
+    <link rel="stylesheet" href="/static/css/activity-center.css">
     <link rel="stylesheet" href="/static/css/responsive.css">
 </head>
 <body>
@@ -71,12 +72,27 @@
             <div class="header-actions">
                 <button id="batch-sidebar-toggle-btn" class="batch-sidebar-toggle-btn" type="button">Hide Batches</button>
                 <button id="ai-sidebar-toggle-btn" class="ai-sidebar-toggle-btn hidden" type="button">Hide Inspector</button>
+                <button id="activity-center-toggle" class="help-btn activity-center-toggle" type="button" aria-expanded="false" aria-controls="activity-center-panel">Activity <span id="activity-center-badge" class="activity-center-badge" aria-label="0 active activities">0</span></button>
                 <button id="help-btn" class="help-btn" type="button">Help</button>
                 <button id="prompts-btn" class="help-btn" type="button">Search</button>
                 <button id="settings-btn" class="help-btn hidden" type="button">Settings</button>
                 <button id="set-auto-import-btn" class="set-auto-import-btn hidden" type="button">Set as Auto-import</button>
             </div>
         </div>
+
+        <section id="activity-center-panel" class="activity-center-panel" role="dialog" aria-modal="false" aria-labelledby="activity-center-title" hidden>
+            <div class="activity-center-header">
+                <div>
+                    <div class="activity-center-kicker">Background work</div>
+                    <h2 id="activity-center-title">Activity</h2>
+                </div>
+                <button id="activity-center-close" class="activity-center-close" type="button" aria-label="Close activity">×</button>
+            </div>
+            <div id="activity-center-summary" class="activity-center-summary" role="status" aria-live="polite">No background activity</div>
+            <div id="activity-center-list" class="activity-center-list" role="log" aria-live="polite" aria-relevant="additions text">
+                <div class="activity-center-empty">No recent background work.</div>
+            </div>
+        </section>
 
         <div class="workspace-frame">
             <nav class="workspace-stage-rail" aria-label="Batch folders">
@@ -884,6 +900,7 @@
     <script src="/static/js/state.js"></script>
     <script src="/static/js/dom-utils.js"></script>
     <script src="/static/js/api.js"></script>
+    <script src="/static/js/activity-center.js"></script>
     <script src="/static/js/sidebar.js"></script>
     <script src="/static/js/batches.js"></script>
     <script src="/static/js/grid.js"></script>
