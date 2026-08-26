@@ -371,6 +371,23 @@ async function moveSelected(destination) {
             await moveBatch([...selectedImages], destination);
         }
 
+async function continuePagedLightboxAfterMove(movedIndex) {
+            resetSelectionState();
+            await loadCurrentFolderImages({preserveScroll: true});
+            loadBatches();
+            const remaining = getDisplayImages();
+            if (remaining.length === 0) {
+                closeLightbox();
+                return;
+            }
+            currentIndex = Math.min(movedIndex, remaining.length - 1);
+            await ensureFolderPageForIndex(currentIndex);
+            const nextImage = remaining[currentIndex];
+            const nextThumb = nextImage ? getThumbForImage(nextImage) : null;
+            if (nextThumb) rememberLightboxReturnFocus(nextThumb);
+            showCurrentImage();
+        }
+
 async function moveImage(destination) {
             if (isPublicView()) {
                 showToast('Public copies cannot be moved to review folders');
@@ -381,6 +398,7 @@ async function moveImage(destination) {
                 ? getActiveLightboxImage()
                 : getLightboxImages()[currentIndex];
             if (!img) return;
+            const movedIndex = getImageDisplayIndexByName(img.name);
             const source = getImageBatchAndFolder(img);
             const resp = await fetch(ccApiPath('/api/move'), {
                 method: 'POST',
@@ -420,10 +438,14 @@ async function moveImage(destination) {
                 recordLastAction([img.name], source.folder, destination, source.batch);
                 showToast(`Moved to ${destination}`, true);
                 if (pagedFolderMode) {
-                    closeLightbox();
-                    resetSelectionState();
-                    await loadCurrentFolderImages({preserveScroll: true});
-                    loadBatches();
+                    if (compareWasActive) {
+                        closeLightbox();
+                        resetSelectionState();
+                        await loadCurrentFolderImages({preserveScroll: true});
+                        loadBatches();
+                        return;
+                    }
+                    await continuePagedLightboxAfterMove(movedIndex);
                     return;
                 }
                 removeImagesFromCurrentView([img.name]);

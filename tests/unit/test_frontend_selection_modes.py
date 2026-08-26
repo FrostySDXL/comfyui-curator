@@ -63,6 +63,30 @@ def test_selection_mode_resets_on_context_change_move_and_escape() -> None:
     assert "resetSelectionState();" in js
 
 
+def test_paged_lightbox_move_refreshes_revision_and_continues_at_same_position() -> None:
+    js = read_frontend_js()
+    move = extract_function_body(js, "async function moveImage(destination)")
+    continuation = extract_function_body(
+        js, "async function continuePagedLightboxAfterMove(movedIndex)"
+    )
+
+    assert "const movedIndex = getImageDisplayIndexByName(img.name);" in move
+    assert "await continuePagedLightboxAfterMove(movedIndex);" in move
+    assert move.index("if (compareWasActive)") < move.index(
+        "await continuePagedLightboxAfterMove(movedIndex);"
+    )
+    assert "await loadCurrentFolderImages({preserveScroll: true});" in continuation
+    assert "currentIndex = Math.min(movedIndex, remaining.length - 1);" in continuation
+    assert "await ensureFolderPageForIndex(currentIndex);" in continuation
+    assert "const nextImage = remaining[currentIndex];" in continuation
+    assert "const nextThumb = nextImage ? getThumbForImage(nextImage) : null;" in continuation
+    assert "rememberLightboxReturnFocus(nextThumb);" in continuation
+    assert "showCurrentImage();" in continuation
+    assert continuation.index("if (remaining.length === 0)") < continuation.index(
+        "closeLightbox();"
+    )
+
+
 def test_select_mode_keeps_zero_selection_action_bar_and_accessible_thumbnails() -> None:
     js = read_frontend_js()
     action_bar = extract_function_body(js, "function updateActionBar()")
