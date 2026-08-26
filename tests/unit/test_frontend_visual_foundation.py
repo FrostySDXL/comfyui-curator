@@ -79,6 +79,44 @@ def test_keyboard_focus_uses_a_shared_focus_visible_ring() -> None:
     assert not re.search(r"(?<!-):focus\s*\{[^}]*outline:\s*none", css, re.DOTALL)
 
 
+def test_operational_states_have_distinct_non_color_visual_grammar() -> None:
+    """Keep location, selection, inspection, focus, and compare states legible together."""
+    base = read_base_css()
+    grid = Path("static/css/grid.css").read_text(encoding="utf-8")
+    layout = Path("static/css/layout.css").read_text(encoding="utf-8")
+    lightbox = Path("static/css/lightbox.css").read_text(encoding="utf-8")
+    lightbox_js = Path("static/js/lightbox.js").read_text(encoding="utf-8")
+
+    assert "--inspection-ring:" in base
+    focus = rule_body(base, ":where(button, input, select, textarea, [tabindex]):focus-visible")
+    assert "outline: var(--focus-ring-width) solid var(--focus-ring);" in focus
+    assert "outline-offset: var(--focus-ring-offset);" in focus
+    assert "z-index:" in focus
+
+    location = rule_body(layout, ".folder-tab.active::before")
+    assert "content:" in location
+    assert "box-shadow: inset" in location
+
+    selected = rule_body(grid, ".thumb.selected::before")
+    assert "border:" in selected
+    select_control = rule_body(grid, ".thumb-select.selected")
+    assert "background: var(--accent-primary);" in select_control
+    assert ".thumb-select.selected svg" in grid
+
+    inspected = rule_body(grid, ".thumb.inspected")
+    assert "outline: 2px dashed var(--inspection-ring);" in inspected
+    focused_thumb = rule_body(grid, ".thumb:focus-visible")
+    assert "outline: var(--focus-ring-width) solid var(--focus-ring);" in focused_thumb
+    assert "outline-offset: var(--focus-ring-offset);" in focused_thumb
+
+    compare = rule_body(lightbox, ".lightbox-compare-pane.active::before")
+    assert "content: 'ACTIVE';" in compare
+    assert "border:" in compare
+    active_label = rule_body(lightbox, ".lightbox-compare-pane.active .lightbox-compare-label")
+    assert "padding-left: 72px;" in active_label
+    assert "aria-selected" in lightbox_js
+
+
 def test_core_operational_labels_keep_a_readable_type_floor() -> None:
     css = read_frontend_css()
 

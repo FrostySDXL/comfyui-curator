@@ -78,8 +78,10 @@
             </div>
         </div>
 
-        <div class="workspace-toolbar" id="workspace-toolbar">
-            <div class="folder-tabs" id="folder-tabs">
+        <div class="workspace-frame">
+            <nav class="workspace-stage-rail" aria-label="Batch folders">
+                <div class="stage-rail-title">Folders</div>
+                <div class="folder-tabs" id="folder-tabs">
                 <span class="folder-tab-label">Review</span>
                 <div class="folder-tab" data-folder="inbox" role="button" tabindex="0">
                     inbox <span class="tab-count" id="tc-inbox">0</span>
@@ -99,8 +101,12 @@
                 </div>
                 <div class="folder-tabs-spacer"></div>
                 <button class="delete-rejects-btn" id="delete-rejects-btn">Empty Rejects</button>
-            </div>
-            <div class="workspace-toolbar-primary">
+                </div>
+                <div class="stage-rail-empty">Choose a batch</div>
+            </nav>
+            <div class="workspace-column">
+                <div class="workspace-toolbar" id="workspace-toolbar">
+                    <div class="workspace-toolbar-primary">
                 <div class="sort-controls hidden" id="sort-controls">
                     <div class="workspace-primary-actions">
                         <div class="selection-mode-control" role="group" aria-label="Thumbnail click behavior">
@@ -173,13 +179,14 @@
             <div class="workspace-search-filter-actions">
                 <button id="workspace-search-filter-edit" type="button">Edit search</button>
                 <button id="workspace-search-filter-clear" type="button">Clear filter</button>
-            </div>
-        </div>
+                    </div>
+                </div>
 
         <div class="workspace">
             <div class="content">
                 <div class="grid-shell" id="grid-shell">
-                    <div id="grid" class="grid is-empty">
+                    <div id="grid-status" class="grid-status" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+                    <div id="grid" class="grid is-empty" aria-busy="false">
                         <div class="empty">
                             <div class="empty-title">Select a batch</div>
                             <div class="empty-detail">Choose a batch from the sidebar to begin reviewing images.</div>
@@ -348,6 +355,8 @@
                 </aside>
             </div>
         </div>
+            </div>
+        </div>
     </main>
 
     <!-- Action bar for multi-select -->
@@ -387,15 +396,15 @@
                 <audio id="lightbox-audio-player" controls preload="metadata"></audio>
             </div>
         </div>
-        <div class="lightbox-compare" id="lightbox-compare" hidden>
-            <div class="lightbox-compare-pane active" data-compare-pane="0" tabindex="0">
+        <div class="lightbox-compare" id="lightbox-compare" role="listbox" aria-label="Compare images" hidden>
+            <div class="lightbox-compare-pane active" data-compare-pane="0" role="option" aria-selected="true" tabindex="0">
                 <div class="lightbox-compare-label" id="lightbox-compare-label-0"></div>
                 <div class="lightbox-image-wrap lightbox-compare-wrap" id="lightbox-compare-wrap-0">
                     <img id="lightbox-compare-img-0" src="">
                 </div>
                 <div class="lightbox-zoom-indicator lightbox-compare-zoom" id="lightbox-compare-zoom-0" aria-live="polite">100%</div>
             </div>
-            <div class="lightbox-compare-pane" data-compare-pane="1" tabindex="0">
+            <div class="lightbox-compare-pane" data-compare-pane="1" role="option" aria-selected="false" tabindex="0">
                 <div class="lightbox-compare-label" id="lightbox-compare-label-1"></div>
                 <div class="lightbox-image-wrap lightbox-compare-wrap" id="lightbox-compare-wrap-1">
                     <img id="lightbox-compare-img-1" src="">

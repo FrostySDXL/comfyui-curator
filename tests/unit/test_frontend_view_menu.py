@@ -38,24 +38,62 @@ def test_desktop_toolbar_is_one_compact_row_with_controls_pushed_right() -> None
 
     assert "flex-direction: row;" in toolbar
     assert "align-items: center;" in toolbar
-    assert "flex-wrap: wrap;" in toolbar
+    assert "flex-wrap: nowrap;" in toolbar
     assert "min-height: 48px;" in toolbar
-    assert "flex: 1 1 560px;" in tabs
-    assert "min-width: min(560px, 100%);" in tabs
-    assert "width: 100%;" not in tabs
-    assert "margin-left: auto;" in primary
-    assert "flex-shrink: 0;" in primary
+    assert "flex-direction: column;" in tabs
+    assert "flex: 1;" in tabs
+    assert "min-width: 0;" in tabs
+    assert "width: 100%;" in primary
+    assert "justify-content: flex-end;" in primary
 
 
-def test_toolbar_wraps_from_available_width_without_waiting_for_viewport_breakpoint() -> None:
+def test_toolbar_reflows_controls_at_established_narrow_breakpoints() -> None:
     layout = Path("static/css/layout.css").read_text(encoding="utf-8")
     responsive = Path("static/css/responsive.css").read_text(encoding="utf-8")
 
-    assert "flex-wrap: wrap;" in rule_body(layout, ".workspace-toolbar")
-    assert ".workspace-toolbar { flex-wrap: wrap; }" not in responsive
+    assert "flex-wrap: nowrap;" in rule_body(layout, ".workspace-toolbar")
     assert "@media (max-width: 900px)" in responsive
     narrow_toolbar = responsive.split("@media (max-width: 900px)", 1)[1]
     assert "flex-direction: column;" in narrow_toolbar
+    narrow_controls = responsive.split("@media (max-width: 700px)", 1)[1]
+    assert ".workspace-primary-actions" in narrow_controls
+    assert "flex-wrap: wrap;" in narrow_controls
+
+
+def test_zoom_width_toolbar_wraps_without_clipping_the_first_action() -> None:
+    responsive = Path("static/css/responsive.css").read_text(encoding="utf-8")
+    zoom_width = responsive.split("@media (max-width: 700px)", 1)[1]
+
+    primary = rule_body(zoom_width, ".workspace-toolbar-primary")
+
+    assert "flex-wrap: wrap;" in primary
+    assert "justify-content: flex-start;" in primary
+
+
+def test_narrow_toolbar_resets_desktop_folder_tabs_flex_basis() -> None:
+    responsive = Path("static/css/responsive.css").read_text(encoding="utf-8")
+    narrow = responsive.split("@media (max-width: 900px)", 1)[1].split(
+        "@media (max-width: 760px)", 1
+    )[0]
+    tabs = rule_body(narrow, ".folder-tabs.visible")
+
+    assert "flex: 0 0 auto;" in tabs
+    assert "min-width: 0;" in tabs
+
+
+def test_narrow_ai_sidebar_overlays_instead_of_displacing_review_grid() -> None:
+    responsive = Path("static/css/responsive.css").read_text(encoding="utf-8")
+    narrow = responsive.split("@media (max-width: 900px)", 1)[1].split(
+        "@media (max-width: 760px)", 1
+    )[0]
+    workspace = rule_body(narrow, ".workspace")
+    ai_sidebar = rule_body(narrow, ".ai-sidebar-shell")
+
+    assert "position: relative;" in workspace
+    assert "flex-direction: row;" in workspace
+    assert "position: absolute;" in ai_sidebar
+    assert "inset: 0 0 0 auto;" in ai_sidebar
+    assert "max-width: 100%;" in ai_sidebar
 
 
 def test_view_disclosure_has_native_trigger_and_options_panel() -> None:

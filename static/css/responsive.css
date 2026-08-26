@@ -27,18 +27,58 @@
                 gap: 8px;
             }
             .workspace-toolbar-primary { align-items: center; }
-            .folder-tabs.visible,
             .sort-controls {
                 justify-content: flex-start;
                 margin-left: 0;
             }
-            .workspace {
+            .workspace-frame {
                 flex-direction: column;
             }
-            .ai-sidebar-shell {
+            .workspace-stage-rail {
                 width: 100%;
-                border-left: none;
-                border-top: 1px solid var(--border-subtle);
+                flex: 0 0 auto;
+                padding: 7px 12px;
+                border-right: none;
+                border-bottom: 1px solid var(--border-subtle);
+            }
+            .stage-rail-title { display: none; }
+            .folder-tabs.visible {
+                flex: 0 0 auto;
+                flex-direction: row;
+                align-items: center;
+                gap: 5px;
+                min-width: 0;
+                overflow-x: auto;
+                scrollbar-width: thin;
+            }
+            .folder-tab {
+                width: auto;
+                flex: 0 0 auto;
+            }
+            .folder-tab-label {
+                flex: 0 0 auto;
+                margin: 0 3px 0 0;
+            }
+            .folder-tab-label-output {
+                margin: 0 3px 0 8px;
+                padding: 0 0 0 10px;
+                border-top: 0;
+                border-left: 1px solid var(--border-subtle);
+            }
+            .folder-tabs-spacer { display: none; }
+            .workspace {
+                position: relative;
+                flex-direction: row;
+            }
+            .ai-sidebar-shell {
+                position: absolute;
+                inset: 0 0 0 auto;
+                z-index: 20;
+                width: min(100%, var(--ai-sidebar-width));
+                max-width: 100%;
+                border-left: 1px solid var(--border-subtle);
+                border-top: none;
+                box-shadow: -12px 0 32px rgba(0, 0, 0, 0.34);
             }
             .ai-history-controls,
             .ai-form-row {
@@ -103,6 +143,10 @@
         }
 
         @media (max-width: 700px) {
+            .workspace-toolbar-primary {
+                flex-wrap: wrap;
+                justify-content: flex-start;
+            }
             .workspace-primary-actions,
             .workspace-sort-group { flex-wrap: wrap; }
             .workspace-primary-actions {
@@ -118,7 +162,7 @@
                 left: 0;
                 min-width: 0;
             }
-            .folder-tabs.visible { overflow-x: auto; padding-bottom: 3px; }
+            .folder-tabs.visible { padding-bottom: 3px; }
             .folder-tab,
             .folder-tab-label { flex-shrink: 0; }
         }

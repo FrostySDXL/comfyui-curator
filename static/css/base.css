@@ -21,6 +21,7 @@
             --focus-ring: #7cb8ff;
             --focus-ring-width: 2px;
             --focus-ring-offset: 2px;
+            --inspection-ring: #e9b56f;
             --success: #45bd68;
             --warning: #e9a94b;
             --danger: #ed5b69;
@@ -54,6 +55,8 @@
         :where(button, input, select, textarea, [tabindex]):focus-visible {
             outline: var(--focus-ring-width) solid var(--focus-ring);
             outline-offset: var(--focus-ring-offset);
+            position: relative;
+            z-index: 10;
         }
 
         /* Respect user motion preferences */

@@ -123,6 +123,23 @@ def test_action_bar_uses_semantic_surfaces_and_public_action_tokens() -> None:
     assert ".action-btn:focus-visible" in css
 
 
+def test_visible_action_bar_reserves_matching_grid_scroll_space() -> None:
+    js = read_frontend_js()
+    css = Path("static/css/grid.css").read_text(encoding="utf-8")
+    sync = extract_function_body(js, "function syncActionBarSafeArea()")
+    update = extract_function_body(js, "function updateActionBar()")
+
+    assert "bar.classList.contains('visible')" in sync
+    assert "bar.getBoundingClientRect().height" in sync
+    assert "--action-bar-safe-area" in sync
+    assert "requestAnimationFrame(syncActionBarSafeArea);" in update
+    assert "initializeActionBarSafeArea();" in Path("static/js/bootstrap.js").read_text(
+        encoding="utf-8"
+    )
+    assert "body.has-active-selection .content" in css
+    assert "var(--action-bar-safe-area, 0px)" in css
+
+
 def test_typed_selections_disable_incompatible_compare_and_publish_actions() -> None:
     js = read_frontend_js()
     action_bar = extract_function_body(js, "function updateActionBar()")

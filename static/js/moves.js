@@ -13,6 +13,7 @@ function onThumbClick(index, event) {
                     return;
                 }
             }
+            rememberLightboxReturnFocus(event.currentTarget);
             openLightbox(index);
         }
 
@@ -124,6 +125,28 @@ function isStillReviewMedia(img) {
             return Boolean(img) && (!img.media_kind || img.media_kind === 'image');
         }
 
+let actionBarResizeObserver = null;
+
+function syncActionBarSafeArea() {
+            const bar = document.getElementById('action-bar');
+            if (!bar) return;
+            const height = bar.classList.contains('visible')
+                ? Math.ceil(bar.getBoundingClientRect().height)
+                : 0;
+            document.documentElement.style.setProperty('--action-bar-safe-area', `${height}px`);
+        }
+
+function initializeActionBarSafeArea() {
+            const bar = document.getElementById('action-bar');
+            if (!bar) return;
+            if (typeof ResizeObserver === 'function') {
+                actionBarResizeObserver = new ResizeObserver(syncActionBarSafeArea);
+                actionBarResizeObserver.observe(bar);
+            }
+            window.addEventListener('resize', syncActionBarSafeArea);
+            syncActionBarSafeArea();
+        }
+
 function updateActionBar() {
             const bar = document.getElementById('action-bar');
             const grid = document.getElementById('grid');
@@ -179,6 +202,7 @@ function updateActionBar() {
                 grid.classList.remove('selecting');
                 document.body.classList.remove('has-active-selection');
             }
+            requestAnimationFrame(syncActionBarSafeArea);
         }
 
 function onDragStart(event, index) {
@@ -205,19 +229,19 @@ function onDragStart(event, index) {
             }, {once: true});
         }
 
-function onDragOver(event) {
+function onDragOver(event, target) {
             event.preventDefault();
             event.dataTransfer.dropEffect = 'move';
-            event.currentTarget.classList.add('drag-over');
+            target.classList.add('drag-over');
         }
 
-function onDragLeave(event) {
-            event.currentTarget.classList.remove('drag-over');
+function onDragLeave(event, target) {
+            target.classList.remove('drag-over');
         }
 
-function onDrop(event, folder) {
+function onDrop(event, folder, target) {
             event.preventDefault();
-            event.currentTarget.classList.remove('drag-over');
+            target.classList.remove('drag-over');
             if (isVirtualCollectionView() || isPublicView()) {
                 showToast('Drag/drop moves are not supported in virtual or public views.');
                 draggedFiles = [];

@@ -112,6 +112,22 @@
             border-color: rgba(91, 163, 245, 0.85);
             box-shadow: 0 0 0 2px rgba(91, 163, 245, 0.22), 0 18px 48px rgba(0,0,0,0.38);
         }
+        .lightbox-compare-pane.active::before {
+            content: 'ACTIVE';
+            position: absolute;
+            top: 9px;
+            left: 9px;
+            z-index: 3;
+            padding: 2px 6px;
+            border: 1px solid var(--focus-ring);
+            border-radius: 3px;
+            background: rgba(17,19,21,0.86);
+            color: var(--text-primary);
+            font-size: var(--type-label);
+            font-weight: 800;
+            letter-spacing: 0.8px;
+            pointer-events: none;
+        }
         .lightbox-compare-label {
             min-height: 18px;
             color: var(--text-secondary);
@@ -120,6 +136,9 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+        }
+        .lightbox-compare-pane.active .lightbox-compare-label {
+            padding-left: 72px;
         }
         .lightbox-compare-wrap {
             flex: 1;

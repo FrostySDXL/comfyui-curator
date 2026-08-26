@@ -23,6 +23,7 @@ let lightboxCompareItems = [];
 let lightboxCompareActivePane = 0;
 let lightboxCompareImageToken = 0;
 let lightboxComparePanState = null;
+let lightboxReturnFocusElement = null;
 let lightboxCompareViewState = [
     {zoom: 1, baseWidth: 0, baseHeight: 0},
     {zoom: 1, baseWidth: 0, baseHeight: 0},
@@ -30,6 +31,10 @@ let lightboxCompareViewState = [
 
 function isLightboxOpenPending() {
     return _pendingLightboxOpen !== null;
+}
+
+function rememberLightboxReturnFocus(element) {
+    lightboxReturnFocusElement = element && typeof element.focus === 'function' ? element : null;
 }
 
 function stopLightboxMediaResources() {
@@ -126,6 +131,7 @@ function _showTypedLightboxMedia(img) {
         }
 
 function openLightbox(index) {
+            if (!lightboxReturnFocusElement) rememberLightboxReturnFocus(document.activeElement);
             lightboxCompareMode = false;
             lightboxStickyCompareMode = false;
             lightboxComparePinnedIndex = -1;
@@ -251,6 +257,7 @@ function openCompareLightbox() {
                 showToast('Select exactly two review images to compare');
                 return;
             }
+            rememberLightboxReturnFocus(document.activeElement);
             ++lightboxOpenToken;
             _cancelPendingLightboxOpen();
             _cancelSingleImageLoader();
@@ -312,6 +319,8 @@ function getLightboxImages() {
         }
 
 function closeLightbox() {
+            const returnFocus = lightboxReturnFocusElement;
+            lightboxReturnFocusElement = null;
             ++lightboxOpenToken;
             ++lightboxImageToken;
             ++lightboxMetadataRequestToken;
@@ -346,6 +355,11 @@ function closeLightbox() {
             syncLightboxModeUi();
             renderLightboxMetadataPanel();
             renderLightboxAiPanel();
+            requestAnimationFrame(() => {
+                if (returnFocus && returnFocus.isConnected) {
+                    returnFocus.focus({preventScroll: true});
+                }
+            });
         }
 
 function syncLightboxModeUi() {
@@ -481,7 +495,9 @@ function setLightboxCompareActivePane(paneIndex) {
             if (paneIndex < 0 || paneIndex > 1) return;
             lightboxCompareActivePane = paneIndex;
             document.querySelectorAll('.lightbox-compare-pane').forEach(pane => {
-                pane.classList.toggle('active', Number(pane.dataset.comparePane) === paneIndex);
+                const isActive = Number(pane.dataset.comparePane) === paneIndex;
+                pane.classList.toggle('active', isActive);
+                pane.setAttribute('aria-selected', String(isActive));
             });
             const img = getActiveLightboxImage();
             if (img && typeof aiSetInspectedImage === 'function') aiSetInspectedImage(img);

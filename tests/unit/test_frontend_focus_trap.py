@@ -45,3 +45,16 @@ def test_focus_trap_releases_named_handler():
         "to unregister the handler that _trapFocus added. Without this, "
         "every modal open cycle leaks a listener."
     )
+
+
+def test_lightbox_close_restores_focus_to_its_trigger():
+    source = read_frontend_js()
+    thumb_click = extract_function_body(source, "function onThumbClick(index, event)")
+    compare_open = extract_function_body(source, "function openCompareLightbox()")
+    close = extract_function_body(source, "function closeLightbox()")
+
+    assert "thumb.tabIndex = -1;" in source
+    assert "rememberLightboxReturnFocus(event.currentTarget);" in thumb_click
+    assert "rememberLightboxReturnFocus(document.activeElement);" in compare_open
+    assert "returnFocus.isConnected" in close
+    assert "returnFocus.focus({preventScroll: true});" in close

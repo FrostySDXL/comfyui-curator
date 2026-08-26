@@ -119,16 +119,19 @@ function _bindDelegatedEvents() {
                         }
                     }
                 });
-                folderTabs.addEventListener('dragover', onDragOver);
+                folderTabs.addEventListener('dragover', function(e) {
+                    const tab = e.target.closest('.folder-tab');
+                    if (tab) onDragOver(e, tab);
+                });
                 folderTabs.addEventListener('dragleave', function(e) {
                     const tab = e.target.closest('.folder-tab');
-                    if (tab) onDragLeave(e);
+                    if (tab) onDragLeave(e, tab);
                 });
                 folderTabs.addEventListener('drop', function(e) {
                     const tab = e.target.closest('.folder-tab');
                     if (tab && tab.dataset.folder) {
                         e.preventDefault();
-                        onDrop(e, tab.dataset.folder);
+                        onDrop(e, tab.dataset.folder, tab);
                     }
                 });
             }

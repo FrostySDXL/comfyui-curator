@@ -6,6 +6,9 @@
             overflow: hidden;
         }
         .content { flex: 1; padding: 14px 18px 18px; overflow-y: auto; scrollbar-gutter: stable; min-width: 0; background: var(--surface-canvas); }
+        body.has-active-selection .content {
+            padding-bottom: calc(18px + var(--action-bar-safe-area, 0px));
+        }
         .grid-shell {
             display: flex;
             justify-content: center;
@@ -90,7 +93,18 @@
             z-index: 4;
         }
         .thumb.inspected {
-            box-shadow: 0 0 0 1px rgba(91,163,245,0.32), 0 5px 16px rgba(0,0,0,0.32);
+            outline: 2px dashed var(--inspection-ring);
+            outline-offset: -4px;
+            box-shadow: 0 5px 16px rgba(0,0,0,0.32);
+        }
+        .thumb.selected.inspected {
+            box-shadow: inset 0 0 0 1px rgba(77,156,245,0.6), 0 5px 16px rgba(0,0,0,0.32);
+        }
+        .thumb:focus-visible {
+            position: relative;
+            z-index: 10;
+            outline: var(--focus-ring-width) solid var(--focus-ring);
+            outline-offset: var(--focus-ring-offset);
         }
         .thumb.loading-placeholder {
             cursor: default;

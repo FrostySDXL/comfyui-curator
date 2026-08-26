@@ -8,6 +8,47 @@ def read_index_html() -> str:
     return Path("templates/index.html").read_text(encoding="utf-8")
 
 
+def read_curator_html() -> str:
+    return Path("templates/curator.html").read_text(encoding="utf-8")
+
+
+def test_workspace_shell_places_physical_stages_in_local_navigation_rail() -> None:
+    html = read_index_html()
+    native = read_curator_html()
+    css = read_frontend_css()
+
+    for markup in (html, native):
+        assert 'class="workspace-frame"' in markup
+        assert '<nav class="workspace-stage-rail" aria-label="Batch folders">' in markup
+        assert 'class="workspace-column"' in markup
+        rail_start = markup.index('class="workspace-stage-rail"')
+        tabs_start = markup.index('id="folder-tabs"')
+        column_start = markup.index('class="workspace-column"')
+        toolbar_start = markup.index('id="workspace-toolbar"')
+        workspace_start = markup.index('class="workspace"')
+        assert rail_start < tabs_start < column_start < toolbar_start < workspace_start
+
+    assert ".workspace-frame" in css
+    assert ".workspace-stage-rail" in css
+    assert ".workspace-column" in css
+    assert "width: 140px;" in css
+
+
+def test_stage_rail_drag_feedback_targets_the_destination_not_the_container() -> None:
+    js = read_frontend_js()
+    events = extract_function_body(js, "function _bindDelegatedEvents()")
+    drag_over = extract_function_body(js, "function onDragOver(event, target)")
+    drag_leave = extract_function_body(js, "function onDragLeave(event, target)")
+    drop = extract_function_body(js, "function onDrop(event, folder, target)")
+
+    assert "if (tab) onDragOver(e, tab);" in events
+    assert "if (tab) onDragLeave(e, tab);" in events
+    assert "onDrop(e, tab.dataset.folder, tab);" in events
+    assert "target.classList.add('drag-over');" in drag_over
+    assert "target.classList.remove('drag-over');" in drag_leave
+    assert "target.classList.remove('drag-over');" in drop
+
+
 def test_workspace_toolbar_groups_review_controls() -> None:
     html = read_index_html()
 
