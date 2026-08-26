@@ -346,6 +346,12 @@
                 }
                 if (meta) _updateCacheMetadata(cacheKey, meta);
                 _touchCacheEntry(cacheKey);
+                imageEl.dataset.loadedThumbnailCacheKey = cacheKey;
+                imageEl.classList.add('loaded');
+                const thumb = typeof imageEl.closest === 'function'
+                    ? imageEl.closest('.thumb')
+                    : null;
+                clearThumbnailError(thumb, imageEl);
                 return true;
             }
             return false;
@@ -394,8 +400,11 @@ async function ensureFolderPageForIndex(index) {
             if (images[index]) return images[index];
             const offset = Math.floor(index / FOLDER_PAGE_SIZE) * FOLDER_PAGE_SIZE;
             if (!folderPageInflight.has(offset)) {
+                setGridLoadingStatus(true, 'Loading visible images…');
                 const snapshot = folderSnapshot;
-                const promise = apiGetFolderPage(
+                const pageRequestToken = folderRequestToken;
+                let promise;
+                promise = apiGetFolderPage(
                     currentBatch, currentFolder, _folderTransportSort(), currentOrder,
                     snapshot.revision, offset, FOLDER_PAGE_SIZE, folderShuffleSeed,
                 ).then(async resp => {
@@ -413,7 +422,13 @@ async function ensureFolderPageForIndex(index) {
                     });
                     updateGrid();
                     return images[index] || null;
-                }).finally(() => folderPageInflight.delete(offset));
+                }).finally(() => {
+                    if (folderPageInflight.get(offset) !== promise) return;
+                    folderPageInflight.delete(offset);
+                    if (folderPageInflight.size === 0 && pageRequestToken === folderRequestToken) {
+                        setGridLoadingStatus(false);
+                    }
+                });
                 folderPageInflight.set(offset, promise);
             }
             await folderPageInflight.get(offset);
@@ -437,17 +452,24 @@ async function loadCurrentFolderImages(options = {}) {
             const requestToken = ++folderRequestToken;
             const batch = currentBatch;
             const folder = currentFolder;
+            setGridLoadingStatus(true, 'Loading images…');
             if (currentFolder === 'public') { await loadBatchPublic(batch); return; }
             if (CURATOR_NATIVE) {
                 const content = document.querySelector('.content');
                 const priorScrollTop = content ? content.scrollTop : 0;
                 const snapshot = await _waitForFolderSnapshot(batch, folder, requestToken);
-                if (!snapshot || requestToken !== folderRequestToken) return;
+                if (!snapshot || requestToken !== folderRequestToken) {
+                    if (requestToken === folderRequestToken) setGridLoadingStatus(false);
+                    return;
+                }
                 if (requiresMaterializedNativeFolder()) {
                     resetPagedFolderState();
                     folderSnapshot = snapshot;
                     const resp = await fetch(ccApiPath(`/api/images/${batch}/${folder}?sort=${_folderTransportSort()}&order=${currentOrder}`));
-                    if (!resp.ok) return;
+                    if (!resp.ok) {
+                        if (requestToken === folderRequestToken) setGridLoadingStatus(false);
+                        return;
+                    }
                     const nextImages = await resp.json();
                     if (requestToken !== folderRequestToken) return;
                     images = nextImages;
@@ -471,7 +493,10 @@ async function loadCurrentFolderImages(options = {}) {
             }
             resetPagedFolderState();
             const resp = await fetch(ccApiPath(`/api/images/${batch}/${folder}?sort=${currentSort}&order=${currentOrder}`));
-            if (!resp.ok) return;
+            if (!resp.ok) {
+                if (requestToken === folderRequestToken) setGridLoadingStatus(false);
+                return;
+            }
             const nextImages = await resp.json();
             if (requestToken !== folderRequestToken) return;
             images = nextImages;
@@ -773,6 +798,16 @@ function updateImageCountLabel() {
             else countEl.textContent = ` (${images.length})`;
         }
 
+function setGridLoadingStatus(loading, message = '') {
+            const grid = document.getElementById('grid');
+            const status = document.getElementById('grid-status');
+            if (grid) grid.setAttribute('aria-busy', loading ? 'true' : 'false');
+            if (!status) return;
+            status.setAttribute('aria-live', 'polite');
+            status.hidden = !loading;
+            status.textContent = loading ? message : '';
+        }
+
 function getImageBatchAndFolder(img) {
             return isVirtualCollectionView()
                 ? {batch: img.batch, folder: img.folder}
@@ -829,21 +864,81 @@ function toggleHoverPreviews() {
             showToast(`Hover previews ${hoverPreviewsEnabled ? 'on' : 'off'}`);
         }
 
+function markThumbnailLoaded(img) {
+            img.dataset.loadedThumbnailCacheKey = img.dataset.thumbnailCacheKey || '';
+            img.classList.add('loaded');
+            clearThumbnailError(img.closest('.thumb'), img);
+        }
+
+function markThumbnailError(img) {
+            const thumb = img.closest('.thumb');
+            if (!thumb || !img.dataset.thumbnailCacheKey) return;
+            img.classList.remove('loaded');
+            delete img.dataset.loadedThumbnailCacheKey;
+            thumb.dataset.thumbnailErrorCacheKey = img.dataset.thumbnailCacheKey;
+            thumb.classList.add('thumbnail-failed');
+            const errorPanel = thumb.querySelector('.thumbnail-error');
+            if (!errorPanel) return;
+            errorPanel.replaceChildren();
+            const copy = document.createElement('span');
+            copy.className = 'thumbnail-error-copy';
+            const mediaType = thumb.dataset.mediaKind || 'media';
+            copy.textContent = `${thumb.dataset.name || 'Thumbnail'} (${mediaType}) unavailable`;
+            const retry = document.createElement('button');
+            retry.type = 'button';
+            retry.className = 'thumbnail-retry';
+            retry.textContent = 'Retry';
+            retry.setAttribute('aria-label', `Retry loading ${thumb.dataset.name || 'thumbnail'}`);
+            retry.addEventListener('click', (event) => {
+                event.stopPropagation();
+                retryThumbnailLoad(thumb);
+            });
+            errorPanel.append(copy, retry);
+            errorPanel.hidden = false;
+        }
+
+function clearThumbnailError(thumb, imageEl) {
+            if (!thumb) return;
+            if (imageEl && thumb.dataset.thumbnailErrorCacheKey &&
+                thumb.dataset.thumbnailErrorCacheKey !== imageEl.dataset.thumbnailCacheKey) return;
+            thumb.classList.remove('thumbnail-failed');
+            delete thumb.dataset.thumbnailErrorCacheKey;
+            const errorPanel = thumb.querySelector('.thumbnail-error');
+            if (errorPanel) {
+                errorPanel.hidden = true;
+                errorPanel.replaceChildren();
+            }
+        }
+
+function retryThumbnailLoad(thumb) {
+            if (!thumb || !thumb.isConnected) return;
+            const imageEl = thumb.querySelector('img');
+            const cacheKey = thumb.dataset.thumbnailErrorCacheKey || imageEl?.dataset.thumbnailCacheKey;
+            const imageSrc = imageEl?.dataset.thumbnailSource;
+            if (!imageEl || !cacheKey || !imageSrc) return;
+            unscheduleThumbnailLoad(thumb);
+            clearThumbnailError(thumb, imageEl);
+            imageEl.classList.remove('loaded');
+            delete imageEl.dataset.loadedThumbnailCacheKey;
+            imageEl.removeAttribute('src');
+            scheduleThumbnailLoad(
+                thumb, imageSrc, cacheKey, VIEWPORT_PRIORITY_VISIBLE,
+                thumb.dataset.sourceBatch || null, {immediate: true},
+            );
+        }
+
 function createThumbImageElement() {
             const img = document.createElement('img');
             img.draggable = false;
-            const markLoaded = () => {
-                img.dataset.loadedThumbnailCacheKey = img.dataset.thumbnailCacheKey || '';
-                img.classList.add('loaded');
-            };
-            img.addEventListener('load', markLoaded);
-            img.addEventListener('error', markLoaded);
+            img.addEventListener('load', () => markThumbnailLoaded(img));
+            img.addEventListener('error', () => markThumbnailError(img));
             return img;
         }
 
 function createThumbElement() {
             const thumb = document.createElement('div');
             thumb.className = 'thumb';
+            thumb.tabIndex = -1;
             thumb.draggable = true;
             thumb.addEventListener('dragstart', (event) => onDragStart(event, Number(thumb.dataset.index)));
             thumb.addEventListener('click', (event) => onThumbClick(Number(thumb.dataset.index), event));
@@ -896,7 +991,12 @@ function createThumbElement() {
             meta.className = 'thumb-meta';
             meta.innerHTML = '<span class="meta-name"></span><span class="meta-detail"></span>';
 
-            thumb.append(badge, select, favStar, img, preview, metaBatch, meta);
+            const errorPanel = document.createElement('div');
+            errorPanel.className = 'thumbnail-error';
+            errorPanel.hidden = true;
+            errorPanel.setAttribute('role', 'alert');
+
+            thumb.append(badge, select, favStar, img, preview, metaBatch, meta, errorPanel);
             return thumb;
         }
 
@@ -947,6 +1047,8 @@ function updateThumbElement(thumb, img, index) {
             thumb.dataset.name = img.name;
             thumb.dataset.imageKey = getImageRenderKey(img);
             thumb.dataset.index = String(index);
+            thumb.dataset.mediaKind = img.media_kind || 'media';
+            thumb.dataset.sourceBatch = source.batch || '';
             const selected = typeof serverSelection !== 'undefined' && serverSelection
                 ? !serverSelection.excluded.has(img.name)
                 : selectedImages.has(img.name);
@@ -988,16 +1090,20 @@ function updateThumbElement(thumb, img, index) {
             }
 
             if (imageEl && imageEl.dataset.thumbnailCacheKey !== thumbnailCacheKey) {
+                clearThumbnailError(thumb, imageEl);
                 if (imageEl.dataset.thumbnailCacheKey) unscheduleThumbnailLoad(thumb);
                 if (_virtualGridFastScrolling) {
                     thumb.dataset.pendingThumbnailCacheKey = thumbnailCacheKey;
                 } else {
                     delete thumb.dataset.pendingThumbnailCacheKey;
                     imageEl.dataset.thumbnailCacheKey = thumbnailCacheKey;
+                    imageEl.dataset.thumbnailSource = imageSrc;
                     /* Stage 2: pass resolved source batch for scope-aware eviction.
                        Priority starts deferred; observers promote it in the viewport loader. */
                     scheduleThumbnailLoad(thumb, imageSrc, thumbnailCacheKey, 2 /* DEFERRED */, _resolveSourceBatch(img));
                 }
+            } else if (imageEl) {
+                imageEl.dataset.thumbnailSource = imageSrc;
             }
             if (metaName) metaName.textContent = img.name;
             if (metaSize) metaSize.textContent = isVirtualCollectionView()
@@ -1017,6 +1123,7 @@ function updateThumbElement(thumb, img, index) {
 function showGridLoadingPlaceholders(batch, folder) {
             _resetProgressiveGridLifecycle();
             const grid = document.getElementById('grid');
+            setGridLoadingStatus(true, 'Loading images…');
             const expectedCount = allCounts[batch]?.[folder] || 0;
             gridThumbMap.clear();
             if (expectedCount <= 0) {
@@ -1045,7 +1152,7 @@ function showGridLoadingPlaceholders(batch, folder) {
             grid.style.transform = 'translateX(-50%)';
         }
 
-function updateGrid() {
+        function updateGrid() {
             const grid = document.getElementById('grid');
             const shell = document.getElementById('grid-shell');
             const displayImages = getDisplayImages();
@@ -1064,6 +1171,7 @@ function updateGrid() {
             if (contextChanged) _resetProgressiveGridContext(nextContextKey);
 
             if (images.length === 0 || displayImages.length === 0) {
+                setGridLoadingStatus(false);
                 _resetProgressiveGridLifecycle();
                 grid.classList.add('is-empty');
                 if (shell) shell.style.height = '';
@@ -1076,6 +1184,10 @@ function updateGrid() {
                 return;
             }
             grid.classList.remove('is-empty');
+            setGridLoadingStatus(false);
+            if (typeof pagedFolderMode !== 'undefined' && pagedFolderMode && folderPageInflight.size > 0) {
+                setGridLoadingStatus(true, 'Loading visible images…');
+            }
             const content = document.querySelector('.content');
             const {track, gap} = getGridDensityConfig();
             const columns = _calculateFittedGridColumns(displayImages.length);

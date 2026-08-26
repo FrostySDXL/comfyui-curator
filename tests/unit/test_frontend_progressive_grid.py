@@ -117,13 +117,16 @@ def test_reused_thumb_unschedules_stale_key_before_replacement_schedule() -> Non
 def test_pooled_thumb_tracks_desired_and_decoded_keys_without_blanking() -> None:
     source = read_frontend_js()
     create_image = extract_function_body(source, "function createThumbImageElement()")
+    mark_loaded = extract_function_body(source, "function markThumbnailLoaded(img)")
     update_thumb = extract_function_body(source, "function updateThumbElement(thumb, img, index)")
 
+    assert "img.addEventListener('load', () => markThumbnailLoaded(img));" in create_image
     assert (
-        "img.dataset.loadedThumbnailCacheKey = img.dataset.thumbnailCacheKey || '';" in create_image
+        "img.dataset.loadedThumbnailCacheKey = img.dataset.thumbnailCacheKey || '';" in mark_loaded
     )
+    assert "img.classList.add('loaded');" in mark_loaded
     assert "imageEl.dataset.thumbnailCacheKey = thumbnailCacheKey;" in update_thumb
-    assert "classList.remove('loaded')" not in source
+    assert "classList.remove('loaded')" not in update_thumb
 
 
 def test_virtual_window_reconciliation_moves_only_changed_edge_nodes() -> None:

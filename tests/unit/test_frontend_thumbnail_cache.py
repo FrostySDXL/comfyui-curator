@@ -189,13 +189,14 @@ def test_stage2_start_viewport_load_passes_meta():
 
 
 def test_stage2_schedule_accepts_priority_and_scope():
-    """scheduleThumbnailLoad signature accepts priority and scopeBatch."""
+    """scheduleThumbnailLoad accepts priority, scope, and optional retry options."""
 
     source = read_frontend_js()
-    assert (
-        "function scheduleThumbnailLoad(element, imageSrc, cacheKey, priority, scopeBatch)"
-        in source
-    ), "scheduleThumbnailLoad must accept priority and scopeBatch parameters"
+    signature = (
+        "function scheduleThumbnailLoad(element, imageSrc, cacheKey, priority, scopeBatch, options)"
+    )
+    assert signature in source, "scheduleThumbnailLoad must accept optional retry options"
+    assert "priority" in signature and "scopeBatch" in signature
 
 
 def test_thumbnail_cache_policy_node():

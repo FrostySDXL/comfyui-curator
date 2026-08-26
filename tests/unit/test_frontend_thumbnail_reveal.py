@@ -10,18 +10,22 @@ def _rule_body(css: str, selector: str) -> str:
     return match.group("body")
 
 
-def test_thumbnail_reveal_separates_opacity_and_transform_timing() -> None:
+def test_thumbnail_reveal_is_a_short_opacity_only_transition() -> None:
     css = Path("static/css/grid.css").read_text(encoding="utf-8")
     image_rule = _rule_body(css, ".thumb img")
 
-    assert (
-        "transition: opacity 1.2s cubic-bezier(0.65, 0, 0.35, 1), transform 0.4s ease-out;"
-    ) in image_rule
+    assert "transition: opacity 160ms ease-out;" in image_rule
     assert "opacity: 0;" in image_rule
-    assert "transform: scale(0.97);" in image_rule
     assert "opacity: 1;" in _rule_body(css, ".thumb img.loaded")
-    assert "transform: scale(1);" in _rule_body(css, ".thumb img.loaded")
     assert "transform: scale(1.04);" in _rule_body(css, ".thumb:hover img")
+
+
+def test_thumbnail_cache_hits_mark_the_tile_loaded_without_waiting_for_reveal() -> None:
+    js = read_frontend_js()
+    cache_hit_body = extract_function_body(js, "function assignThumbnailSrcIfCached")
+
+    assert "imageEl.classList.add('loaded');" in cache_hit_body
+    assert "imageEl.dataset.loadedThumbnailCacheKey = cacheKey;" in cache_hit_body
 
 
 def test_reduced_motion_still_minimizes_thumbnail_transitions() -> None:
@@ -43,7 +47,9 @@ def test_retained_thumbnail_lifecycle_never_resets_loaded_state() -> None:
     update_grid = extract_function_body(js, "function updateGrid()")
     set_density = extract_function_body(js, "function setGridDensity(density)")
 
-    assert "classList.remove('loaded')" not in js
+    assert "classList.remove('loaded')" not in update_thumb
+    assert "classList.remove('loaded')" not in update_grid
+    assert "classList.remove('loaded')" not in set_density
     assert "imageEl.dataset.thumbnailCacheKey !== thumbnailCacheKey" in update_thumb
     assert "gridThumbMap.get(imageKey)" in update_grid
     assert "getImageRenderKey(img)" in update_grid

@@ -237,9 +237,10 @@ function _cancelBackgroundDrain() {
     _viewportDrainTimerId = null;
 }
 
-function scheduleThumbnailLoad(element, imageSrc, cacheKey, priority, scopeBatch) {
+function scheduleThumbnailLoad(element, imageSrc, cacheKey, priority, scopeBatch, options) {
     _ensureViewportObservers();
 
+    var immediateVisible = options && options.immediate === true;
     var imageEl = element && element.querySelector ? element.querySelector('img') : null;
     var replacesDisplayedSource = !!(
         element && element.isConnected && imageEl &&
@@ -252,14 +253,18 @@ function scheduleThumbnailLoad(element, imageSrc, cacheKey, priority, scopeBatch
         imageSrc: imageSrc,
         cacheKey: cacheKey,
         generation: _viewportGeneration,
-        priority: replacesDisplayedSource
+        priority: immediateVisible
+            ? VIEWPORT_PRIORITY_VISIBLE
+            : (replacesDisplayedSource
             ? VIEWPORT_PRIORITY_NEAR
-            : (typeof priority === 'number' ? priority : VIEWPORT_PRIORITY_DEFERRED),
+            : (typeof priority === 'number' ? priority : VIEWPORT_PRIORITY_DEFERRED)),
         scopeBatch: scopeBatch || null
     };
 
     _viewportInfoMap.set(element, info);
-    if (replacesDisplayedSource) {
+    if (immediateVisible) {
+        _viewportVisibleQueue.push(info);
+    } else if (replacesDisplayedSource) {
         /* Chromium may not emit a fresh intersection edge when a still-visible
            tile is unobserved and immediately recycled. Admit its replacement
            through the bounded near queue so the old bitmap cannot persist. */
@@ -272,7 +277,7 @@ function scheduleThumbnailLoad(element, imageSrc, cacheKey, priority, scopeBatch
         _viewportVisibleObserver.observe(element);
         _viewportNearObserver.observe(element);
     }
-    if (replacesDisplayedSource) {
+    if (immediateVisible || replacesDisplayedSource) {
         _requestPriorityPump();
     }
     /* Only arm background drain in the no-observer fallback.
@@ -284,12 +289,12 @@ function scheduleThumbnailLoad(element, imageSrc, cacheKey, priority, scopeBatch
 
 function unscheduleThumbnailLoad(element) {
     var info = _viewportInfoMap.get(element);
-    if (!info) return;
-
     if (_viewportVisibleObserver) {
         _viewportVisibleObserver.unobserve(element);
         _viewportNearObserver.unobserve(element);
     }
+    if (!info) return;
+
     _removeInfoFromQueues(info);
     _viewportInfoMap.delete(element);
 }
