@@ -12,7 +12,7 @@
 - **Library search:** One modal keeps general filename/PNG/JSON sidecar media search and normalized Prompt History groups in separate remembered tabs; Images results can be applied as a persistent workspace review filter.
 - **Drag/drop curation:** HTML5 drag from the grid to local folder-stage targets for single or multi-select moves.
 - **Lightbox viewer:** Full-media review with zoom, scored-image navigation, PNG generation metadata plus adjacent JSON sidecars, and two-image compare mode.
-- **AI score integration:** Overlay badges, score gradient coloring, filter/sort by score, accessible Inspect / Score / Runs tabs, contextual image and batch inspection, guided scoring with a visible 12-check cap, and truthful job/history states.
+- **AI score integration:** Overlay badges, score gradient coloring, explicit score-cutoff preview/apply/clear, filter/sort by score, accessible Inspect / Score / Runs tabs, contextual image and batch inspection, bounded partial-failure evidence, guided scoring with a visible 12-check cap, and truthful job/history states.
 - **Public output workflow:** selected-image export modal, batch Public folder view, virtual All Public view, and derivative-only public copy/move/delete actions.
 - **Activity Center:** One header disclosure aggregates import, folder snapshot/thumbnail, prompt and media index, public export, and AI scoring work with truthful lifecycle states plus supported retry/cancel actions.
 - **Background polling:** interaction-aware 5-second content polling, a lightweight 1-second import-readiness poll, and 10-second native batch-summary refreshes.
@@ -72,10 +72,10 @@
 | `ai-state.js` | Shared AI globals, storage keys, and sidebar constants |
 | `ai-sidebar.js` | AI sidebar open/width state and resize behavior |
 | `ai-panel.js` | AI sidebar tabs, optional elements, quality flags, element history |
-| `ai-history.js` | AI run history loading, run labels/selectors, summaries, diff comparison, batch reset |
+| `ai-history.js` | AI run history loading, stale-response guards, run labels/selectors, partial-failure summaries, diff comparison, and batch reset |
 | `ai-job.js` | AI element preview, job submission, status polling, cancellation, move mode |
 | `ai-inspector.js` | AI image inspector and multi-selection score breakdowns |
-| `ai-overlays.js` | AI score badges, score filtering/sorting, score color helpers, batch run counts |
+| `ai-overlays.js` | AI score badges, cutoff preview/apply/clear, score filtering/sorting, score color helpers, and batch run counts |
 | `ai.js` | Compatibility stub for the split AI files |
 | `view-menu.js` | Workspace View disclosure, native-control focus flow, and dismissal behavior |
 | `polling.js` | Interaction-aware background polling helpers |

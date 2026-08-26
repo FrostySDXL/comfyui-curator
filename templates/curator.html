@@ -178,6 +178,7 @@
                                     <option value="scored">Scored</option>
                                     <option value="failed">Failed</option>
                                     <option value="top-n">Top-N</option>
+                                    <option value="threshold">Score cutoff</option>
                                 </select>
                             </label>
                         </div>
@@ -248,6 +249,19 @@
                             <div id="ai-image-inspector" class="ai-image-inspector ai-image-inspector-empty">
                                 Select an image to inspect AI score details.
                             </div>
+                            <section class="ai-threshold-preview" id="ai-threshold-preview" aria-labelledby="ai-threshold-heading" hidden>
+                                <div class="ai-section-heading" id="ai-threshold-heading">Score cutoff preview</div>
+                                <p class="ai-threshold-copy">Preview the loaded run before changing the grid. Failed and unscored images stay outside a score cutoff.</p>
+                                <div class="ai-threshold-field">
+                                    <label class="ai-label" for="ai-score-threshold">Minimum score (%)</label>
+                                    <input id="ai-score-threshold" class="ai-input" type="number" value="70" min="0" max="100" step="1" inputmode="numeric" aria-describedby="ai-threshold-preview-status">
+                                </div>
+                                <div id="ai-threshold-preview-status" class="ai-threshold-preview-status" role="status" aria-live="polite"></div>
+                                <div class="ai-threshold-actions">
+                                    <button id="ai-threshold-apply" class="ai-btn ai-btn-primary" type="button">Apply filter</button>
+                                    <button id="ai-threshold-clear" class="ai-btn ai-btn-secondary" type="button">Clear</button>
+                                </div>
+                            </section>
                         </div>
 
                         <div class="ai-curate-form ai-panel-section" id="ai-score-section" data-ai-panel-section="score" role="tabpanel" aria-labelledby="ai-panel-tab-score">

@@ -258,6 +258,9 @@ linked/unlinked Sync Pan/Zoom and an optional A/B Split for still images.
   prompt and media index, public export, and AI scoring status without blocking
   the grid. Failed or partial work retains supported Retry actions, and AI runs
   retain their existing cancellation path.
+- AI Evidence previews how a score cutoff divides the loaded run before the
+  operator applies it to the grid. Partial runs retain scored/failed totals and
+  a bounded list of failed filenames and reasons.
 - Native paged-folder lightbox moves advance to the next remaining image at the
   same review position instead of closing; the lightbox closes only when the
   folder has no remaining items.

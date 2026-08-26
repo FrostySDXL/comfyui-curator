@@ -25,12 +25,13 @@ function formatAiRunLabel(run, includeStatus = false) {
             return pieces.join(' · ');
         }
 
-async function aiFetchRun(runId) {
+async function aiFetchRun(runId, batch = currentBatch) {
             if (!runId) return null;
             if (aiRunDetails[runId]) return aiRunDetails[runId];
-            const resp = await fetch(ccApiPath(`/api/ai-curate/batches/${currentBatch}/runs/${runId}`));
+            const resp = await fetch(ccApiPath(`/api/ai-curate/batches/${batch}/runs/${runId}`));
             if (!resp.ok) return null;
             const run = await resp.json();
+            if (currentBatch !== batch) return null;
             aiRunDetails[runId] = run;
             return run;
         }
@@ -135,10 +136,29 @@ function aiUpdateRunHistoryUi() {
             aiSetPanelTab(aiActivePanelTab);
         }
 
-async function aiRenderCurrentRunUi() {
+async function aiRenderCurrentRunUi(requestToken = null, requestedBatch = currentBatch, requestedRunId = aiActiveRun?.run_id || null) {
+            const isCurrent = () =>
+                (requestToken === null || typeof aiRunDataRequestToken === 'undefined' || requestToken === aiRunDataRequestToken)
+                && currentBatch === requestedBatch
+                && (!requestedRunId || aiActiveRun?.run_id === requestedRunId);
+            if (!isCurrent()) return false;
+            const scopeKey = `${currentBatch || ''}:${aiActiveRun?.run_id || ''}`;
+            if (aiThresholdScopeKey !== scopeKey) {
+                aiThresholdScopeKey = scopeKey;
+                aiThresholdValue = 70;
+                aiAppliedThreshold = null;
+                const thresholdInput = document.getElementById('ai-score-threshold');
+                if (thresholdInput) thresholdInput.value = String(aiThresholdValue);
+                if (aiFilterMode === 'threshold') {
+                    aiFilterMode = 'all';
+                    const filter = document.getElementById('ai-filter-mode');
+                    if (filter) filter.value = 'all';
+                }
+            }
             if (aiActiveRun) {
+                await aiShowRunDiff(aiActiveRun, isCurrent);
+                if (!isCurrent()) return false;
                 aiShowRunSummary(aiActiveRun);
-                await aiShowRunDiff(aiActiveRun);
                 aiShowHeaderControls(true);
                 aiUpdateRunHistoryUi();
             } else {
@@ -146,11 +166,18 @@ async function aiRenderCurrentRunUi() {
                 document.getElementById('ai-run-diff').classList.add('hidden');
                 aiShowHeaderControls(false);
             }
+            aiRenderThresholdPreview(aiActiveRun);
             aiRenderImageInspector();
+            return true;
         }
 
 async function aiRefreshRunData(existingRuns = null) {
             if (!currentBatch) return;
+            const requestedBatch = currentBatch;
+            const requestToken = typeof aiRunDataRequestToken === 'undefined'
+                ? 1 : ++aiRunDataRequestToken;
+            const requestStillCurrent = () => typeof aiRunDataRequestToken === 'undefined'
+                || requestToken === aiRunDataRequestToken;
             aiSetRunsState('Loading runs...');
             try {
                 let runs = existingRuns;
@@ -160,8 +187,10 @@ async function aiRefreshRunData(existingRuns = null) {
                     const data = await resp.json();
                     runs = data.runs || [];
                 }
+                if (!requestStillCurrent() || currentBatch !== requestedBatch) return;
                 if (runs.length > 0) {
-                    const runDetails = await Promise.all(runs.map(aiFetchRun));
+                    const runDetails = await Promise.all(runs.map(id => aiFetchRun(id, requestedBatch)));
+                    if (!requestStillCurrent() || currentBatch !== requestedBatch) return;
                     if (runDetails.some(run => !run)) throw new Error('One or more run details could not be loaded');
                     aiRunIds = runs;
                     const latestId = runs[runs.length - 1];
@@ -169,7 +198,7 @@ async function aiRefreshRunData(existingRuns = null) {
                     if (!aiActiveRun || !runs.includes(aiActiveRun.run_id) || aiActiveRun.run_id === latestId) {
                         aiActiveRun = aiLatestRun;
                     }
-                    await aiRenderCurrentRunUi();
+                    if (!await aiRenderCurrentRunUi(requestToken, requestedBatch, aiActiveRun?.run_id || null)) return;
                 } else {
                     const historySection = document.getElementById('ai-history-section');
                     if (historySection) historySection.classList.remove('hidden');
@@ -178,10 +207,11 @@ async function aiRefreshRunData(existingRuns = null) {
                     aiLatestRun = null;
                     aiActiveRun = null;
                     aiCompareRunId = 'previous';
-                    await aiRenderCurrentRunUi();
+                    if (!await aiRenderCurrentRunUi(requestToken, requestedBatch, null)) return;
                     aiUpdateRunHistoryUi();
                 }
             } catch {
+                if (!requestStillCurrent() || currentBatch !== requestedBatch) return;
                 console.warn('aiRefreshRunData failed');
                 if (aiActiveRun) {
                     aiSetRunsState('Run history refresh failed. The last loaded run remains available.', 'error');
@@ -194,6 +224,8 @@ async function aiRefreshRunData(existingRuns = null) {
         }
 
 function resetAiBatchState(refreshGrid = true) {
+            aiRunDataRequestToken += 1;
+            aiCompareRequestToken += 1;
             aiCurrentJobId = null;
             aiStopPolling();
             aiActiveRun = null;
@@ -202,6 +234,9 @@ function resetAiBatchState(refreshGrid = true) {
             aiRunDetails = {};
             aiCompareRunId = 'previous';
             aiInspectedImageName = null;
+            aiThresholdScopeKey = null;
+            aiThresholdValue = 70;
+            aiAppliedThreshold = null;
             aiShowHeaderControls(false);
             document.getElementById('ai-run-summary').classList.add('hidden');
             document.getElementById('ai-run-diff').classList.add('hidden');
@@ -214,13 +249,40 @@ function resetAiBatchState(refreshGrid = true) {
             if (inspectControls) inspectControls.classList.add('hidden');
             const compareSelect = document.getElementById('ai-compare-run-select');
             if (compareSelect) compareSelect.value = 'previous';
+            const thresholdInput = document.getElementById('ai-score-threshold');
+            if (thresholdInput) thresholdInput.value = String(aiThresholdValue);
+            const thresholdPreview = document.getElementById('ai-threshold-preview');
+            if (thresholdPreview) thresholdPreview.hidden = true;
             aiSetRunsState('Loading runs...');
             if (refreshGrid) updateGrid();
+        }
+
+function aiGetFailureDisplayData(results, limit = AI_FAILURE_DETAIL_LIMIT) {
+            const failures = Array.isArray(results) ? results.filter(result => result && result.failed) : [];
+            const max = Math.max(0, Number(limit) || 0);
+            return {
+                visible: failures.slice(0, max),
+                hiddenCount: Math.max(0, failures.length - max),
+            };
+        }
+
+function aiGetRunDisplayStatus(run, scored, failed) {
+            if (run?.status === 'completed' && failed > 0) {
+                return scored > 0 ? 'completed with failures' : 'failed';
+            }
+            return run?.status || 'completed';
         }
 
 function aiShowRunSummary(run) {
             const summary = document.getElementById('ai-run-summary');
             const t = run.totals || {};
+            const results = Array.isArray(run.results) ? run.results : [];
+            const failureDisplay = aiGetFailureDisplayData(results);
+            const failedResults = failureDisplay.visible;
+            const hiddenFailures = failureDisplay.hiddenCount;
+            const scoredFromResults = results.filter(result => result && !result.failed && aiGetNormalizedScore(result) !== null).length;
+            const scored = Number.isFinite(Number(t.scored)) ? Number(t.scored) : scoredFromResults;
+            const failed = Number.isFinite(Number(t.failed)) ? Number(t.failed) : failedResults.length;
             const modeLabel = run.move_enabled ? `Move top-${run.top_n} to ${run.destination_folder}` : 'Score only';
 
             const brief = document.createElement('div');
@@ -235,7 +297,7 @@ function aiShowRunSummary(run) {
             headerLeft.append(titleEl, subtitleEl);
             const statusBadge = document.createElement('span');
             statusBadge.className = 'ai-run-badge';
-            statusBadge.textContent = run.status || 'completed';
+            statusBadge.textContent = aiGetRunDisplayStatus(run, scored, failed);
             brief.append(headerLeft, statusBadge);
 
             const stats = document.createElement('div');
@@ -252,21 +314,58 @@ function aiShowRunSummary(run) {
                 card.append(lbl, val);
                 stats.appendChild(card);
             }
-            addStatCard('Images', t.images || 0);
-            addStatCard('Scored', t.scored || 0);
-            addStatCard('Failed', t.failed || 0);
+            addStatCard('Images', Number.isFinite(Number(t.images)) ? Number(t.images) : results.length);
+            addStatCard('Scored', scored);
+            addStatCard('Failed', failed);
             addStatCard('Moved', t.moved || 0);
 
-            summary.replaceChildren(brief, stats);
+            const failureDetails = document.createElement('div');
+            failureDetails.id = 'ai-run-failure-details';
+            failureDetails.className = 'ai-run-failure-details';
+            if (failed > 0) {
+                const failureHeading = document.createElement('div');
+                failureHeading.className = 'ai-run-failure-heading';
+                failureHeading.textContent = `${scored} scored/succeeded · ${failed} failed`;
+                failureDetails.appendChild(failureHeading);
+                if (failedResults.length > 0) {
+                    const failureList = document.createElement('ul');
+                    failureList.className = 'ai-run-failure-list';
+                    failedResults.forEach(result => {
+                        const item = document.createElement('li');
+                        item.className = 'ai-run-failure-item';
+                        const name = document.createElement('strong');
+                        name.textContent = result.filename || 'Unknown image';
+                        const reason = document.createElement('span');
+                        reason.textContent = result.error_message || result.error || 'No failure reason recorded';
+                        item.append(name, reason);
+                        failureList.appendChild(item);
+                    });
+                    failureDetails.appendChild(failureList);
+                    if (hiddenFailures > 0) {
+                        failureDetails.appendChild(createTextElement('div', 'ai-run-failure-more', `${hiddenFailures} more failures not shown`));
+                    }
+                } else {
+                    failureDetails.appendChild(createTextElement('div', 'ai-inspector-empty-detail', 'Per-image failure details were not saved for this run.'));
+                }
+            } else {
+                failureDetails.hidden = true;
+            }
+
+            summary.replaceChildren(brief, stats, failureDetails);
             summary.classList.remove('hidden');
             summary.style.display = 'block';
         }
 
 async function aiLoadRun(runId) {
+            const requestedBatch = currentBatch;
+            const requestToken = typeof aiRunDataRequestToken === 'undefined'
+                ? 1 : ++aiRunDataRequestToken;
+            const requestStillCurrent = () => typeof aiRunDataRequestToken === 'undefined'
+                || requestToken === aiRunDataRequestToken;
             if (!runId) {
                 aiActiveRun = aiLatestRun;
                 if (aiActiveRun) {
-                    await aiRenderCurrentRunUi();
+                    if (!await aiRenderCurrentRunUi(requestToken, requestedBatch, aiActiveRun.run_id)) return;
                 } else {
                 document.getElementById('ai-run-summary').classList.add('hidden');
                 document.getElementById('ai-run-diff').classList.add('hidden');
@@ -276,29 +375,52 @@ async function aiLoadRun(runId) {
                 updateGrid();
                 return;
             }
-            const run = await aiFetchRun(runId);
+            let run;
+            try {
+                run = await aiFetchRun(runId, requestedBatch);
+            } catch {
+                if (!requestStillCurrent() || currentBatch !== requestedBatch) return;
+                showToast('Failed to load run');
+                aiSyncRunSelects();
+                return;
+            }
+            if (!requestStillCurrent() || currentBatch !== requestedBatch) return;
             if (!run) {
                 showToast('Failed to load run');
                 aiSyncRunSelects();
                 return;
             }
             aiActiveRun = run;
-            await aiRenderCurrentRunUi();
+            if (!await aiRenderCurrentRunUi(requestToken, requestedBatch, run.run_id)) return;
+            if (!requestStillCurrent() || currentBatch !== requestedBatch || aiActiveRun?.run_id !== run.run_id) return;
             aiSyncRunSelects();
             updateGrid();
         }
 
 async function aiSetCompareRun(runId) {
             aiCompareRunId = runId || 'previous';
+            const compareToken = ++aiCompareRequestToken;
+            const requestedBatch = currentBatch;
+            const requestedRunId = aiActiveRun?.run_id || null;
+            const isCurrent = () => compareToken === aiCompareRequestToken
+                && currentBatch === requestedBatch
+                && (!requestedRunId || aiActiveRun?.run_id === requestedRunId);
             if (aiCompareRunId !== 'previous' && !aiRunDetails[aiCompareRunId]) {
-                await aiFetchRun(aiCompareRunId);
+                try {
+                    await aiFetchRun(aiCompareRunId, requestedBatch);
+                } catch {
+                    if (isCurrent()) console.warn('aiSetCompareRun failed');
+                    return;
+                }
             }
-            await aiShowRunDiff(aiActiveRun);
+            if (!isCurrent()) return;
+            await aiShowRunDiff(aiActiveRun, isCurrent);
         }
 
-async function aiShowRunDiff(run) {
+async function aiShowRunDiff(run, isCurrent = () => true) {
             const diffEl = document.getElementById('ai-run-diff');
             if (!diffEl) return;
+            if (!isCurrent()) return;
             if (!run) {
                 diffEl.classList.add('hidden');
                 return;
@@ -307,6 +429,7 @@ async function aiShowRunDiff(run) {
             const compareRun = aiCompareRunId === 'previous'
                 ? (previousId ? aiRunDetails[previousId] || await aiFetchRun(previousId) : null)
                 : aiRunDetails[aiCompareRunId] || await aiFetchRun(aiCompareRunId);
+            if (!isCurrent()) return;
             if (!compareRun || run.run_id === compareRun.run_id) {
                 diffEl.innerHTML = `<div class="ai-diff-empty">Need another run to compare.</div>`;
                 diffEl.classList.remove('hidden');

@@ -424,6 +424,13 @@ function _bindDelegatedEvents() {
             const aiFilterMode = document.getElementById('ai-filter-mode');
             if (aiFilterMode) aiFilterMode.addEventListener('change', aiApplyFilter);
 
+            const aiThresholdInput = document.getElementById('ai-score-threshold');
+            if (aiThresholdInput) aiThresholdInput.addEventListener('input', () => aiRenderThresholdPreview(aiActiveRun));
+            const aiThresholdApply = document.getElementById('ai-threshold-apply');
+            if (aiThresholdApply) aiThresholdApply.addEventListener('click', aiApplyThresholdFilter);
+            const aiThresholdClear = document.getElementById('ai-threshold-clear');
+            if (aiThresholdClear) aiThresholdClear.addEventListener('click', aiClearThresholdFilter);
+
             // AI preview elements button
             const aiPreviewBtn = document.querySelector('.ai-btn-secondary');
             if (aiPreviewBtn) aiPreviewBtn.addEventListener('click', aiPreviewElements);

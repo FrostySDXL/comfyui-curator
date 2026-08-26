@@ -342,6 +342,42 @@
             flex-direction: column;
             gap: 5px;
         }
+        .ai-threshold-preview {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 14px;
+            padding: 11px 12px;
+            border: 1px solid var(--border-subtle);
+            border-radius: 7px;
+            background: var(--surface-2);
+        }
+        .ai-threshold-preview[hidden] { display: none; }
+        .ai-threshold-preview.is-applied {
+            border-color: rgba(91,163,245,0.45);
+        }
+        .ai-threshold-copy {
+            margin: -3px 0 0;
+            color: var(--text-muted);
+            font-size: var(--type-secondary);
+            line-height: 1.4;
+        }
+        .ai-threshold-field {
+            max-width: 150px;
+        }
+        .ai-threshold-preview-status {
+            color: var(--text-secondary);
+            font-size: var(--type-secondary);
+            line-height: 1.45;
+        }
+        .ai-threshold-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px;
+        }
+        .ai-threshold-actions .ai-btn {
+            flex: 1 1 110px;
+        }
         .ai-selection-summary {
             gap: 10px;
         }
@@ -751,6 +787,42 @@
             gap: 6px;
         }
         .ai-run-kpi { min-width: 0; }
+        .ai-run-failure-details {
+            margin-top: 10px;
+            padding: 10px 11px;
+            border: 1px solid rgba(220,53,69,0.25);
+            border-radius: 7px;
+            background: rgba(220,53,69,0.07);
+        }
+        .ai-run-failure-details[hidden] { display: none; }
+        .ai-run-failure-heading {
+            color: var(--text-primary);
+            font-size: var(--type-secondary);
+            font-weight: 700;
+        }
+        .ai-run-failure-list {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin: 8px 0 0;
+            padding-left: 18px;
+        }
+        .ai-run-failure-item {
+            color: var(--text-secondary);
+            font-size: var(--type-secondary);
+            line-height: 1.4;
+        }
+        .ai-run-failure-item strong {
+            display: block;
+            color: var(--text-primary);
+            overflow-wrap: anywhere;
+        }
+        .ai-run-failure-more {
+            margin-top: 7px;
+            color: var(--text-muted);
+            font-size: var(--type-label);
+            font-weight: 650;
+        }
         .ai-stat-label {
             font-size: var(--type-label);
             color: var(--text-muted);

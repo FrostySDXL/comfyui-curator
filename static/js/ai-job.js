@@ -157,6 +157,24 @@ async function aiSubmitJob() {
             aiStartPolling();
         }
 
+function aiGetJobStatusCopy(job) {
+            const statusCopy = {
+                queued: ['Queued', 'Waiting for the active run'],
+                running: ['Running', 'Scoring images'],
+                cancelling: ['Cancelling', 'Cancellation requested'],
+                completed: ['Completed', 'Run saved'],
+                cancelled: ['Cancelled', 'Run cancelled'],
+                failed: ['Error', job.error || job.error_message || 'Run failed'],
+            };
+            const totals = job.totals || {};
+            const scored = Number(totals.scored) || 0;
+            const failed = Number(totals.failed) || 0;
+            if (job.status === 'completed' && failed > 0) {
+                return [scored > 0 ? 'Completed with failures' : 'Failed', `${scored} scored/succeeded · ${failed} failed`];
+            }
+            return statusCopy[job.status] || [job.status, 'Status updated'];
+        }
+
 function aiShowJobStatus(job) {
             const section = document.getElementById('ai-job-section');
             const statusRegion = document.querySelector('#ai-job-section .ai-job-status');
@@ -171,15 +189,7 @@ function aiShowJobStatus(job) {
             if (statusDot) statusDot.className = `ai-status-dot ${job.status}`;
 
             const isActive = job.status === 'running' || job.status === 'queued' || job.status === 'cancelling';
-            const statusCopy = {
-                queued: ['Queued', 'Waiting for the active run'],
-                running: ['Running', 'Scoring images'],
-                cancelling: ['Cancelling', 'Cancellation requested'],
-                completed: ['Completed', 'Run saved'],
-                cancelled: ['Cancelled', 'Run cancelled'],
-                failed: ['Error', job.error || job.error_message || 'Run failed'],
-            };
-            const [stateLabel, detail] = statusCopy[job.status] || [job.status, 'Status updated'];
+            const [stateLabel, detail] = aiGetJobStatusCopy(job);
             stateEl.textContent = stateLabel;
             progressEl.textContent = detail;
             statusRegion.setAttribute('aria-busy', String(isActive));
@@ -258,12 +268,15 @@ async function aiPollJobStatus() {
                 aiStopPolling();
                 return;
             }
+            const requestedJobId = aiCurrentJobId;
             try {
-                const resp = await fetch(ccApiPath(`/api/ai-curate/jobs/${aiCurrentJobId}`));
+                const resp = await fetch(ccApiPath(`/api/ai-curate/jobs/${requestedJobId}`));
                 if (!resp.ok) throw new Error(`Job status request failed: ${resp.status}`);
                 const job = await resp.json();
+                if (requestedJobId !== aiCurrentJobId) return;
                 aiShowJobStatus(job);
             } catch (error) {
+                if (requestedJobId !== aiCurrentJobId) return;
                 console.warn('aiPollJobStatus failed', error);
                 aiShowJobStatusError('Status update failed. Retrying...');
             }

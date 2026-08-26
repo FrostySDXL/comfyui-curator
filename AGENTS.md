@@ -23,7 +23,7 @@
 - **Library search:** Shared Images / Prompt groups modal. Images searches filenames,
   PNG generation metadata, and bounded adjacent JSON sidecar keys/values across a
   folder, batch, or all batches using rebuildable per-batch caches.
-- **AI-assisted scoring:** Vision-LLM evaluation against element checklists via OpenAI-compatible `/v1/chat/completions`. Optional auto-move of top-N images. The AI sidebar has Inspect / Score / Runs tabs, run comparison, and contextual image inspection.
+- **AI-assisted scoring:** Vision-LLM evaluation against element checklists via OpenAI-compatible `/v1/chat/completions`. Optional auto-move of top-N images. The AI sidebar has Inspect / Score / Runs tabs, run comparison, contextual image inspection, an explicit score-cutoff preview/apply flow, and bounded partial-failure evidence.
 - **CLI headless scoring:** Same pipeline available via `curate.py` (dry-run, score-only, or score-and-move).
 - **Core philosophy:** Manual curation is authoritative. AI is advisory. Filesystem is the operational truth.
 
@@ -173,6 +173,7 @@ Treat these as stability-sensitive:
 - Batch and AI sidebar button labels as stateful operator-facing cues, not static text
 - Workspace toolbar control IDs/order, density controls, Select All behavior, and thumbnail state classes
 - AI run history labels, compare controls, and image inspector as operator-facing compatibility surfaces
+- AI score-cutoff preview/apply/clear semantics and partial-failure labels/details
 - Favorites API shapes, favorites filter button, All Favorites sidebar entry, and lightbox/thumb star behavior
 - Public API shapes, batch `public/` generated-output view, All Public sidebar entry, public action labels, public export-root destination browser/history, and derivative-only safety copy
 - Library Search Images / Prompt groups tabs, Images-to-workspace filter bar/actions, Prompt History controls, search and prompt-history API shapes, and manual cache file semantics

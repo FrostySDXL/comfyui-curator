@@ -26,6 +26,145 @@ def test_ai_sidebar_contains_contextual_image_inspector() -> None:
     assert ".ai-image-inspector-empty" in css
 
 
+def test_ai_inspector_exposes_threshold_preview_apply_and_clear_controls() -> None:
+    html = read_index_html()
+    js = read_frontend_js()
+    css = read_frontend_css()
+
+    inspect_markup = html.split('id="ai-review-section"', 1)[1].split('id="ai-score-section"', 1)[0]
+    for element_id in (
+        "ai-threshold-preview",
+        "ai-score-threshold",
+        "ai-threshold-preview-status",
+        "ai-threshold-apply",
+        "ai-threshold-clear",
+    ):
+        assert f'id="{element_id}"' in inspect_markup
+    assert 'type="number"' in inspect_markup
+    assert 'aria-live="polite"' in inspect_markup
+    assert "function aiRenderThresholdPreview(" in js
+    assert "function aiApplyThresholdFilter()" in js
+    assert "function aiClearThresholdFilter()" in js
+    assert "function aiBuildThresholdPreview(" in js
+    assert ".ai-threshold-preview" in css
+    assert ".ai-threshold-actions" in css
+
+
+def test_ai_threshold_preview_does_not_mutate_grid_until_explicit_apply() -> None:
+    js = read_frontend_js()
+    render = extract_function_body(js, "function aiRenderThresholdPreview(")
+    apply_filter = extract_function_body(js, "function aiApplyThresholdFilter()")
+
+    assert "updateGrid()" not in render
+    assert "loadCurrentFolderImages" not in render
+    assert "aiFilterMode = 'threshold'" in apply_filter
+    assert "aiRefreshFilteredGrid()" in apply_filter
+    assert "aiShowOverlays = true" in apply_filter
+    assert "updateGrid()" not in apply_filter
+
+
+def test_ai_threshold_preview_disables_apply_when_no_scored_results_exist() -> None:
+    js = read_frontend_js()
+    render = extract_function_body(js, "function aiRenderThresholdPreview(")
+    apply_filter = extract_function_body(js, "function aiApplyThresholdFilter()")
+
+    assert "No scored images" in render
+    assert "applyButton.disabled" in render
+    assert "preview.scored === 0" in apply_filter
+    assert "return;" in apply_filter
+
+
+def test_ai_run_failure_details_are_bounded_and_report_hidden_remainder() -> None:
+    js = read_frontend_js()
+    summary = extract_function_body(js, "function aiShowRunSummary(run)")
+
+    assert "AI_FAILURE_DETAIL_LIMIT" in js
+    assert "aiGetFailureDisplayData" in summary
+    assert "more failures not shown" in summary
+
+
+def test_ai_job_status_copy_distinguishes_partial_and_wholly_failed_runs() -> None:
+    js = read_frontend_js()
+    status = extract_function_body(js, "function aiGetJobStatusCopy(job)")
+
+    assert "Completed with failures" in status
+    assert "Failed" in status
+    assert "scored/succeeded" in status
+    show_status = extract_function_body(js, "function aiShowJobStatus(job)")
+    assert "aiGetJobStatusCopy(job)" in show_status
+    assert "stateEl.className = 'ai-job-state ' + job.status;" in show_status
+
+
+def test_ai_render_and_diff_guard_after_await() -> None:
+    js = read_frontend_js()
+    render = extract_function_body(js, "async function aiRenderCurrentRunUi(")
+    diff = extract_function_body(js, "async function aiShowRunDiff(")
+
+    assert "await aiShowRunDiff(aiActiveRun, isCurrent)" in render
+    assert "if (!isCurrent()) return false;" in render
+    assert "isCurrent = () => true" in diff
+    assert "if (!isCurrent()) return;" in diff
+
+
+def test_ai_stale_run_lifecycle_node_harness_passes() -> None:
+    result = subprocess.run(
+        ["node", "tests/unit/ai_stale_run_lifecycle_test.js"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    assert json.loads(result.stdout) == {"passed": 1, "failed": 0}
+
+
+def test_ai_threshold_preview_counts_failed_and_unknown_results() -> None:
+    js = read_frontend_js()
+    assert "atOrAbove" in js
+    assert "below" in js
+    assert "failed" in js
+    assert "unscored" in js
+    assert "normalized_score" in js
+    assert "aiThresholdScopeKey" in js
+    assert "aiRunDataRequestToken" in js
+
+
+def test_ai_threshold_preview_node_behavior_harness_passes() -> None:
+    result = subprocess.run(
+        ["node", "tests/unit/ai_threshold_preview_test.js"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    assert json.loads(result.stdout) == {"passed": 23, "failed": 0}
+
+
+def test_ai_run_summary_surfaces_partial_failure_names_and_reasons() -> None:
+    js = read_frontend_js()
+    css = read_frontend_css()
+
+    summary = extract_function_body(js, "function aiShowRunSummary(run)")
+    assert "error_message" in summary
+    assert "failedResults" in summary
+    assert "Scored" in summary and "Failed" in summary
+    assert "ai-run-failure-details" in summary
+    assert ".ai-run-failure-details" in css
+    assert ".ai-run-failure-item" in css
+
+
+def test_ai_run_loading_discards_stale_batch_or_run_responses() -> None:
+    js = read_frontend_js()
+    load_body = extract_function_body(js, "async function aiLoadRun(runId)")
+    refresh_body = extract_function_body(js, "async function aiRefreshRunData(existingRuns = null)")
+
+    assert "const requestToken = typeof aiRunDataRequestToken === 'undefined'" in load_body
+    assert "requestStillCurrent()" in load_body
+    assert "currentBatch !== requestedBatch" in load_body
+    assert "const requestToken = typeof aiRunDataRequestToken === 'undefined'" in refresh_body
+    assert "requestStillCurrent()" in refresh_body
+    assert "currentBatch !== requestedBatch" in refresh_body
+
+
 def test_ai_sidebar_tabs_expose_complete_semantics_and_keyboard_navigation() -> None:
     html = read_index_html()
     js = read_frontend_js()
@@ -304,7 +443,9 @@ def test_ai_run_refresh_rejects_failed_lists_and_missing_run_details() -> None:
 
     list_status_check = refresh_body.index("if (!resp.ok)")
     list_empty_fallback = refresh_body.index("data.runs || []")
-    detail_fetch = refresh_body.index("await Promise.all(runs.map(aiFetchRun))")
+    detail_fetch = refresh_body.index(
+        "await Promise.all(runs.map(id => aiFetchRun(id, requestedBatch)))"
+    )
     detail_check = refresh_body.index("runDetails.some(run => !run)")
     latest_selection = refresh_body.index("const latestId")
 
