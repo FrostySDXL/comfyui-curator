@@ -412,3 +412,109 @@
             opacity: 1;
         }
         .action-btn:focus-visible { position: relative; z-index: 1; }
+
+        .compare-candidate-tray {
+            position: fixed;
+            left: calc(var(--sidebar-effective-width) + 8px);
+            right: 0;
+            bottom: var(--action-bar-height, 0px);
+            z-index: 490;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 20px;
+            background: var(--surface-overlay);
+            border-top: 1px solid var(--border-subtle);
+            box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
+        }
+        .compare-candidate-tray[hidden] { display: none; }
+        .compare-candidate-heading {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 210px;
+        }
+        .compare-candidate-heading > div {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+        .compare-candidate-heading strong { font-size: 12px; white-space: nowrap; }
+        .compare-candidate-status { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+        .compare-candidate-dismiss {
+            padding: 4px 8px;
+            border: 1px solid var(--border-strong);
+            border-radius: 4px;
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 11px;
+        }
+        .compare-candidate-list {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            min-width: 0;
+            overflow-x: auto;
+            scrollbar-width: thin;
+        }
+        .compare-candidate-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            min-width: 0;
+            max-width: 280px;
+            padding: 3px 5px 3px 3px;
+            border: 1px solid var(--border-subtle);
+            border-radius: 5px;
+            background: var(--surface-raised);
+        }
+        .compare-candidate-thumb {
+            width: 30px;
+            height: 30px;
+            flex: 0 0 30px;
+            border-radius: 3px;
+            object-fit: cover;
+            background: var(--surface-1);
+        }
+        .compare-candidate-name {
+            min-width: 56px;
+            max-width: 132px;
+            overflow: hidden;
+            color: var(--text-secondary);
+            font-size: 11px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .compare-candidate-item button {
+            width: 22px;
+            height: 22px;
+            flex: 0 0 22px;
+            padding: 0;
+            border: 1px solid transparent;
+            border-radius: 3px;
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+        }
+        .compare-candidate-item button:hover:not(:disabled) { background: var(--accent-surface); color: var(--text-primary); }
+        .compare-candidate-item button:disabled { color: var(--text-disabled); cursor: not-allowed; }
+        .compare-candidate-remove { color: var(--text-muted) !important; font-size: 17px !important; }
+        .compare-candidate-dismiss:focus-visible,
+        .compare-candidate-item button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+        .compare-candidate-tray > #compare-candidate-launch { margin-left: auto; flex: 0 0 auto; }
+        @media (max-width: 900px) {
+            .compare-candidate-tray {
+                left: var(--sidebar-effective-width);
+                align-items: stretch;
+                flex-wrap: wrap;
+                gap: 7px;
+                padding: 7px 12px;
+            }
+            .compare-candidate-heading { min-width: 0; flex: 1 1 auto; }
+            .compare-candidate-list { flex: 1 1 100%; order: 3; }
+            .compare-candidate-tray > #compare-candidate-launch { margin-left: 0; }
+        }

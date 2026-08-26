@@ -69,6 +69,8 @@
         let folderShuffleGeneration = 0;
         const folderShuffleSession = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
         let selectedImages = new Set();
+        let compareCandidateOrder = [];
+        let compareCandidateTrayDismissed = false;
         let serverSelection = null;
         let selectionMode = false;
         let lastSelectIndex = -1;

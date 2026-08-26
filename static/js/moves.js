@@ -49,6 +49,8 @@ function clearSelection() {
             selectedImages.clear();
             serverSelection = null;
             lastSelectIndex = -1;
+            compareCandidateOrder = [];
+            compareCandidateTrayDismissed = false;
             updateSelectionVisuals();
             updateActionBar();
             if (typeof aiRenderImageInspector === 'function') aiRenderImageInspector();
@@ -69,9 +71,136 @@ function resetSelectionState() {
             serverSelection = null;
             lastSelectIndex = -1;
             selectionMode = false;
+            compareCandidateOrder = [];
+            compareCandidateTrayDismissed = false;
             updateSelectionVisuals();
             setSelectionMode(false);
             if (typeof aiRenderImageInspector === 'function') aiRenderImageInspector();
+        }
+
+const COMPARE_CANDIDATE_VISIBLE_LIMIT = 6;
+
+function getVisibleCompareCandidates(candidates) {
+            return candidates.slice(0, COMPARE_CANDIDATE_VISIBLE_LIMIT);
+        }
+
+function syncCompareCandidateOrder() {
+            const selectedStills = getCurrentDisplayImages().filter(img =>
+                img && selectedImages.has(img.name) && isStillReviewMedia(img)
+            );
+            const selectedNames = new Set(selectedStills.map(img => img.name));
+            const orderedNames = compareCandidateOrder.filter(name => selectedNames.has(name));
+            selectedStills.forEach(img => {
+                if (!orderedNames.includes(img.name)) orderedNames.push(img.name);
+            });
+            compareCandidateOrder = orderedNames;
+            return orderedNames
+                .map(name => selectedStills.find(img => img.name === name))
+                .filter(Boolean);
+        }
+
+function removeCompareCandidate(name) {
+            if (!name || !selectedImages.has(name)) return;
+            selectedImages.delete(name);
+            compareCandidateOrder = compareCandidateOrder.filter(candidate => candidate !== name);
+            lastSelectIndex = typeof getImageDisplayIndexByName === 'function'
+                ? getImageDisplayIndexByName(name)
+                : -1;
+            updateSelectionVisuals();
+            updateActionBar();
+            if (typeof aiRenderImageInspector === 'function') aiRenderImageInspector();
+        }
+
+function moveCompareCandidate(name, delta) {
+            syncCompareCandidateOrder();
+            const index = compareCandidateOrder.indexOf(name);
+            const nextIndex = index + Number(delta || 0);
+            if (index < 0 || nextIndex < 0 || nextIndex >= compareCandidateOrder.length) return;
+            const next = compareCandidateOrder[nextIndex];
+            compareCandidateOrder[nextIndex] = name;
+            compareCandidateOrder[index] = next;
+            updateActionBar();
+        }
+
+function dismissCompareCandidateTray() {
+            compareCandidateTrayDismissed = true;
+            renderCompareCandidateTray();
+            syncActionBarSafeArea();
+        }
+
+function renderCompareCandidateTray() {
+            const tray = document.getElementById('compare-candidate-tray');
+            if (!tray) return;
+            const selectedCount = serverSelection ? 0 : selectedImages.size;
+            if (!selectedCount || compareCandidateTrayDismissed) {
+                tray.hidden = true;
+                return;
+            }
+            const stillCandidates = syncCompareCandidateOrder();
+            const visibleCandidates = getVisibleCompareCandidates(stillCandidates);
+            const hiddenCandidateCount = stillCandidates.length - visibleCandidates.length;
+            const skippedCount = Math.max(0, selectedCount - stillCandidates.length);
+            const list = document.getElementById('compare-candidate-list');
+            const status = document.getElementById('compare-candidate-status');
+            const launch = document.getElementById('compare-candidate-launch');
+            tray.hidden = false;
+            if (status) {
+                status.textContent = stillCandidates.length < 2
+                    ? `${stillCandidates.length} still candidates${skippedCount ? ` · ${skippedCount} non-still skipped` : ''} · select at least two still images`
+                    : `${stillCandidates.length} still candidates · first two will be compared${hiddenCandidateCount ? ` · + ${hiddenCandidateCount} more not shown` : ''}${skippedCount ? ` · ${skippedCount} non-still skipped` : ''}`;
+            }
+            if (launch) {
+                launch.disabled = stillCandidates.length < 2;
+                launch.textContent = stillCandidates.length >= 2 ? 'Compare first two' : 'Compare (needs 2)';
+            }
+            if (!list) return;
+            list.replaceChildren(...visibleCandidates.map((img, index) => {
+                const item = document.createElement('div');
+                item.className = 'compare-candidate-item';
+                item.dataset.name = img.name;
+                const thumb = document.createElement('img');
+                const source = getImageBatchAndFolder(img);
+                thumb.src = ccThumbUrl(source.batch, source.folder, img.name);
+                thumb.alt = '';
+                thumb.className = 'compare-candidate-thumb';
+                const label = document.createElement('span');
+                label.className = 'compare-candidate-name';
+                label.textContent = img.name;
+                const up = document.createElement('button');
+                up.type = 'button';
+                up.className = 'compare-candidate-move';
+                up.dataset.candidateMove = '-1';
+                up.dataset.candidateName = img.name;
+                up.disabled = index === 0;
+                up.setAttribute('aria-label', `Move ${img.name} earlier`);
+                up.textContent = '←';
+                const down = document.createElement('button');
+                down.type = 'button';
+                down.className = 'compare-candidate-move';
+                down.dataset.candidateMove = '1';
+                down.dataset.candidateName = img.name;
+                down.disabled = index === visibleCandidates.length - 1 && hiddenCandidateCount === 0;
+                down.setAttribute('aria-label', `Move ${img.name} later`);
+                down.textContent = '→';
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'compare-candidate-remove';
+                remove.dataset.candidateRemove = img.name;
+                remove.setAttribute('aria-label', `Remove ${img.name} from compare candidates`);
+                remove.textContent = '×';
+                item.append(thumb, label, up, down, remove);
+                return item;
+            }));
+        }
+
+function launchCompareCandidateTray() {
+            const stillCandidates = syncCompareCandidateOrder();
+            if (stillCandidates.length < 2) {
+                showToast('Select at least two still images to compare');
+                return;
+            }
+            const launch = document.getElementById('compare-candidate-launch');
+            openCompareLightboxWithSelection(stillCandidates.slice(0, 2), launch);
         }
 
 function selectAllDisplayedImages() {
@@ -130,10 +259,13 @@ let actionBarResizeObserver = null;
 function syncActionBarSafeArea() {
             const bar = document.getElementById('action-bar');
             if (!bar) return;
-            const height = bar.classList.contains('visible')
+            const barHeight = bar.classList.contains('visible')
                 ? Math.ceil(bar.getBoundingClientRect().height)
                 : 0;
-            document.documentElement.style.setProperty('--action-bar-safe-area', `${height}px`);
+            const tray = document.getElementById('compare-candidate-tray');
+            const trayHeight = tray && !tray.hidden ? Math.ceil(tray.getBoundingClientRect().height) : 0;
+            document.documentElement.style.setProperty('--action-bar-height', `${barHeight}px`);
+            document.documentElement.style.setProperty('--action-bar-safe-area', `${barHeight + trayHeight}px`);
         }
 
 function initializeActionBarSafeArea() {
@@ -142,6 +274,8 @@ function initializeActionBarSafeArea() {
             if (typeof ResizeObserver === 'function') {
                 actionBarResizeObserver = new ResizeObserver(syncActionBarSafeArea);
                 actionBarResizeObserver.observe(bar);
+                const tray = document.getElementById('compare-candidate-tray');
+                if (tray) actionBarResizeObserver.observe(tray);
             }
             window.addEventListener('resize', syncActionBarSafeArea);
             syncActionBarSafeArea();
@@ -161,6 +295,7 @@ function updateActionBar() {
             const selectedMediaAreStill = selectedReviewMedia.length === selectedCount
                 && selectedReviewMedia.every(isStillReviewMedia);
             const hasSelection = selectedCount > 0;
+            renderCompareCandidateTray();
             if (hasSelection || selectionMode) {
                 bar.classList.add('visible');
                 grid.classList.add('selecting');

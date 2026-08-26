@@ -16,7 +16,7 @@
 
 - **Batch filesystem workflow:** inbox/shortlisted/finals/rejects folders under `IMAGE_CURATOR_BATCHES/<batch>/`. Counts, metadata, operator-triggered Import All from ComfyUI outputs.
 - **Web review UI:** Asset-manager style batch sidebar, compact workspace toolbar, center thumbnail grid, unified right inspector. Drag/drop moves, multi-select/Select All, undo toast, keyboard shortcuts, background polling.
-- **Lightbox viewer:** Full-media review with zoom, PNG generation metadata plus adjacent JSON sidecars (`M` toggle), scored-image navigation (`[`/`]`), keyboard folder moves (`S`/`F`/`R`), linked/unlinked side-by-side comparison, Pin A candidate walking, pair advancement, and A/B split.
+- **Lightbox viewer:** Full-media review with zoom, PNG generation metadata plus adjacent JSON sidecars (`M` toggle), scored-image navigation (`[`/`]`), keyboard folder moves (`S`/`F`/`R`), linked/unlinked side-by-side comparison, a bounded selection-derived candidate tray, Pin A candidate walking, pair advancement, and A/B split.
 - **Favorites workflow:** One-click favorites update batch and universal scope, with a favorites-only filter and virtual All Favorites sidebar view.
 - **Public posting prep:** Selected originals export to metadata-stripped, optionally watermarked generated copies in `<batch>/public/`, with batch Public and virtual All Public views plus derivative-only copy/move/delete actions and export-root destination browsing/history.
 - **Prompt history:** Manual PNG metadata prompt indexes with searchable/copyable Prompt History modal and staleness warning.
@@ -174,7 +174,7 @@ Treat these as stability-sensitive:
 - Lightbox PNG metadata route shape, toggle shortcut (`M`), and displayed field set
 - Batch and AI sidebar button labels as stateful operator-facing cues, not static text
 - Workspace toolbar control IDs/order, density controls, Select All behavior, and thumbnail state classes
-- AI run history labels, compare controls, and image inspector as operator-facing compatibility surfaces
+- AI run history labels, compare controls, bounded candidate-tray ordering/removal/launch behavior, and image inspector as operator-facing compatibility surfaces
 - AI score-cutoff preview/apply/clear semantics and partial-failure labels/details
 - Favorites API shapes, favorites filter button, All Favorites sidebar entry, and lightbox/thumb star behavior
 - Public API shapes, batch `public/` generated-output view, All Public sidebar entry, public action labels, public export-root destination browser/history, and derivative-only safety copy

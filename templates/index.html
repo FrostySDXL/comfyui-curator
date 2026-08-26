@@ -425,6 +425,18 @@
         <button class="action-btn action-clear" type="button">Clear selection</button>
     </div>
 
+    <section class="compare-candidate-tray" id="compare-candidate-tray" role="region" aria-label="Compare candidates" hidden>
+        <div class="compare-candidate-heading">
+            <div>
+                <strong>Compare candidates</strong>
+                <span id="compare-candidate-status" class="compare-candidate-status" role="status" aria-live="polite"></span>
+            </div>
+            <button class="compare-candidate-dismiss" id="compare-candidate-dismiss" type="button" aria-label="Hide compare candidates">Hide</button>
+        </div>
+        <div class="compare-candidate-list" id="compare-candidate-list" role="list"></div>
+        <button class="action-btn action-compare" id="compare-candidate-launch" type="button" disabled>Compare (needs 2)</button>
+    </section>
+
     <!-- Lightbox -->
     <div id="lightbox" class="lightbox">
         <span class="lightbox-close" role="button" aria-label="Close lightbox" tabindex="0">&times;</span>

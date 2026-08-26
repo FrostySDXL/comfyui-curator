@@ -522,6 +522,23 @@ function _bindDelegatedEvents() {
                 });
             }
 
+            const compareCandidateTray = document.getElementById('compare-candidate-tray');
+            if (compareCandidateTray) {
+                compareCandidateTray.addEventListener('click', function(e) {
+                    const button = e.target.closest('button');
+                    if (!button) return;
+                    if (button.id === 'compare-candidate-dismiss') {
+                        dismissCompareCandidateTray();
+                    } else if (button.id === 'compare-candidate-launch') {
+                        launchCompareCandidateTray();
+                    } else if (button.dataset.candidateMove) {
+                        moveCompareCandidate(button.dataset.candidateName, button.dataset.candidateMove);
+                    } else if (button.dataset.candidateRemove) {
+                        removeCompareCandidate(button.dataset.candidateRemove);
+                    }
+                });
+            }
+
             // Lightbox close button
             const lightboxClose = document.querySelector('.lightbox-close');
             if (lightboxClose) {

@@ -250,6 +250,9 @@ function isLightboxCompareMode() {
         }
 
 function getSelectedImagesInDisplayOrder() {
+            if (typeof syncCompareCandidateOrder === 'function') {
+                return syncCompareCandidateOrder();
+            }
             return getCurrentDisplayImages().filter(
                 img => img && (!img.media_kind || img.media_kind === 'image') && selectedImages.has(img.name)
             );
@@ -262,6 +265,18 @@ function openCompareLightbox() {
                 return;
             }
             rememberLightboxReturnFocus(document.activeElement);
+            openCompareLightboxWithSelection(selected, null, true);
+        }
+
+function openCompareLightboxWithSelection(explicitSelection = null, focusElement = null, focusRemembered = false) {
+            const selected = Array.isArray(explicitSelection)
+                ? explicitSelection
+                : getSelectedImagesInDisplayOrder();
+            if (selected.length !== 2 || !selected.every(isStillLightboxImage) || isVirtualCollectionView() || isPublicView()) {
+                showToast('Select exactly two review images to compare');
+                return;
+            }
+            if (!focusRemembered) rememberLightboxReturnFocus(focusElement || document.activeElement);
             ++lightboxOpenToken;
             _cancelPendingLightboxOpen();
             _cancelSingleImageLoader();

@@ -11,7 +11,7 @@
 - **Keyboard-first navigation:** 15+ shortcuts for search, selection, AI toggles, lightbox, undo.
 - **Library search:** One modal keeps general filename/PNG/JSON sidecar media search and normalized Prompt History groups in separate remembered tabs; Images results can be applied as a persistent workspace review filter with query/scope/source chips, while index rows distinguish durable and transient states with age and item count.
 - **Drag/drop curation:** HTML5 drag from the grid to local folder-stage targets for single or multi-select moves.
-- **Lightbox viewer:** Full-media review with zoom, scored-image navigation, PNG generation metadata plus adjacent JSON sidecars, and two-image compare mode.
+- **Lightbox viewer:** Full-media review with zoom, scored-image navigation, PNG generation metadata plus adjacent JSON sidecars, a bounded selection-derived compare candidate tray, and two-image compare mode.
 - **AI score integration:** Overlay badges, score gradient coloring, explicit score-cutoff preview/apply/clear, filter/sort by score, accessible Inspect / Score / Runs tabs, contextual image and batch inspection, bounded partial-failure evidence, guided scoring with a visible 12-check cap, and truthful job/history states.
 - **Public output workflow:** selected-image export modal, batch Public folder view, virtual All Public view, and derivative-only public copy/move/delete actions.
 - **Activity Center:** One header disclosure aggregates import, folder snapshot/thumbnail, prompt and media index, public export, and AI scoring work with truthful lifecycle states plus supported retry/cancel actions.
@@ -65,7 +65,7 @@
 | `viewport-loader.js` | Viewport-aware thumbnail load-start scheduling: visible/near approach triggers, concurrency 16, single rAF pump, no-unload invariants, and background draining only when `IntersectionObserver` is unavailable |
 | `favorites.js` | Favorites filter/toggle and All Favorites view/count |
 | `publish.js` | Public export modal, batch Public view, All Public view/count, public copy/move/delete actions |
-| `moves.js` | Multi-select, drag/drop, move, undo, Empty Rejects modal |
+| `moves.js` | Multi-select, bounded compare-candidate ordering/removal, drag/drop, move, undo, Empty Rejects modal |
 | `lightbox.js` | Still/GIF image review, MP4/MP3 playback and cleanup, navigation, zoom, scored navigation, and favorite UI |
 | `metadata.js` | PNG + adjacent JSON sidecar metadata loading/rendering, structured external-favorites post/favorite fields and tag chips, and prompt/JSON copy helpers |
 | `prompts.js` | Library Search tab state, scoped/debounced media queries and results, search-index lifecycle/status rendering, stable paged workspace loading, source-qualified chip filter apply/edit/clear/move reconciliation, Prompt History scope/selection/rendering, build/rebuild controls |
