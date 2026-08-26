@@ -16,7 +16,7 @@
 
 - **Batch filesystem workflow:** inbox/shortlisted/finals/rejects folders under `IMAGE_CURATOR_BATCHES/<batch>/`. Counts, metadata, operator-triggered Import All from ComfyUI outputs.
 - **Web review UI:** Asset-manager style batch sidebar, compact workspace toolbar, center thumbnail grid, unified right inspector. Drag/drop moves, multi-select/Select All, undo toast, keyboard shortcuts, background polling.
-- **Lightbox viewer:** Full-media review with zoom, PNG generation metadata plus adjacent JSON sidecars (`M` toggle), scored-image navigation (`[`/`]`), keyboard folder moves (`S`/`F`/`R`).
+- **Lightbox viewer:** Full-media review with zoom, PNG generation metadata plus adjacent JSON sidecars (`M` toggle), scored-image navigation (`[`/`]`), keyboard folder moves (`S`/`F`/`R`), linked/unlinked side-by-side comparison, Pin A candidate walking, pair advancement, and A/B split.
 - **Favorites workflow:** One-click favorites update batch and universal scope, with a favorites-only filter and virtual All Favorites sidebar view.
 - **Public posting prep:** Selected originals export to metadata-stripped, optionally watermarked generated copies in `<batch>/public/`, with batch Public and virtual All Public views plus derivative-only copy/move/delete actions and export-root destination browsing/history.
 - **Prompt history:** Manual PNG metadata prompt indexes with searchable/copyable Prompt History modal and staleness warning.
@@ -218,7 +218,7 @@ Treat these as stability-sensitive:
 - Batch-search shortcuts should reopen the batch sidebar before focusing the search input
 - The Help modal should reflect current shortcuts and major workflow notes
 - AI history should support comparing the selected run against another run from the same batch
-- Lightbox supports zoom and scored-image navigation shortcuts
+- Lightbox supports zoom and scored-image navigation shortcuts; compare supports Sync Pan/Zoom, Pin A candidate walking, pair advancement, and an alternate A/B Split for still images
 - Lightbox supports a separate AI review panel toggled with `I`
 - Lightbox metadata supports the `M` toggle and should keep full prompt/negative prompt inspection available without disrupting image review
 - Library Search stays keyboard-first: `P` opens the last-used Images or Prompt groups tab; the Prompt groups batch filter remains normally tabbable and its custom combobox supports Arrow/Home/End/PageUp/PageDown/Enter/Escape

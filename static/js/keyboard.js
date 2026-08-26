@@ -157,11 +157,11 @@ document.addEventListener('keydown', (e) => {
                     case '=': e.preventDefault(); zoomLightbox(0.2); break;
                     case '-': e.preventDefault(); zoomLightbox(-0.2); break;
                     case '0': e.preventDefault(); resetLightboxZoom(); break;
-                    case 'arrowleft': e.preventDefault(); navigateStickyCompare(-1); break;
-                    case 'arrowright': e.preventDefault(); navigateStickyCompare(1); break;
+                    case 'arrowleft': e.preventDefault(); if (e.altKey) advanceComparePair(-1); else navigateStickyCompare(-1); break;
+                    case 'arrowright': e.preventDefault(); if (e.altKey) advanceComparePair(1); else navigateStickyCompare(1); break;
                     case '[':
                     case ']': e.preventDefault(); break;
-                    case 'c': e.preventDefault(); enableStickyCompareFromCurrentPanes(); break;
+                    case 'c': e.preventDefault(); toggleStickyComparePin(); break;
                     case 'escape': e.preventDefault(); closeLightbox(); break;
                 }
                 return;

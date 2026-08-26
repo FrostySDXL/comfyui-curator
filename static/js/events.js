@@ -548,6 +548,10 @@ function _bindDelegatedEvents() {
 
             const lightboxCompare = document.getElementById('lightbox-compare');
             if (lightboxCompare) {
+                lightboxCompare.addEventListener('pointerdown', startLightboxCompareSplitDrag);
+                lightboxCompare.addEventListener('pointermove', moveLightboxCompareSplitDrag);
+                lightboxCompare.addEventListener('pointerup', endLightboxCompareSplitDrag);
+                lightboxCompare.addEventListener('pointercancel', endLightboxCompareSplitDrag);
                 lightboxCompare.addEventListener('pointerdown', startLightboxPan);
                 lightboxCompare.addEventListener('pointermove', moveLightboxPan);
                 lightboxCompare.addEventListener('pointerup', endLightboxPan);
@@ -559,6 +563,10 @@ function _bindDelegatedEvents() {
                     setLightboxCompareActivePane(getActiveComparePaneIndexFromEvent(event));
                 });
                 window.addEventListener('resize', positionCompareOverlayPanels);
+            }
+            const lightboxCompareDivider = document.getElementById('lightbox-compare-divider');
+            if (lightboxCompareDivider) {
+                lightboxCompareDivider.addEventListener('keydown', handleLightboxCompareSplitKeydown);
             }
 
             // Lightbox toolbar buttons - delegate on #lightbox-actions
@@ -573,7 +581,10 @@ function _bindDelegatedEvents() {
                     else if (btn.id === 'metadata-toggle-btn') toggleLightboxMetadata();
                     else if (btn.id === 'lightbox-ai-toggle-btn') toggleLightboxAiPanel();
                     else if (btn.id === 'lightbox-publish-btn') showLightboxPublishModal();
-                    else if (btn.id === 'lightbox-pin-compare-btn') openStickyCompareLightbox();
+                    else if (btn.id === 'lightbox-pin-compare-btn') toggleStickyComparePin();
+                    else if (btn.id === 'lightbox-compare-sync-btn') setLightboxCompareSync(!lightboxCompareSync);
+                    else if (btn.id === 'lightbox-compare-split-btn') toggleLightboxCompareSplit();
+                    else if (btn.id === 'lightbox-compare-pair-btn') advanceComparePair(1);
                 });
                 // Map button text to handlers for generic buttons
                 lightboxActions.querySelectorAll('button').forEach(btn => {

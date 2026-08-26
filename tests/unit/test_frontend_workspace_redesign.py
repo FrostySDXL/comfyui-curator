@@ -541,7 +541,7 @@ def test_lightbox_sticky_compare_pins_active_and_replaces_inactive() -> None:
     pin_body = extract_function_body(js, "function enableStickyCompareFromCurrentPanes()")
 
     assert 'id="lightbox-pin-compare-btn"' in html
-    assert "Pin active" in html
+    assert "Pin A" in html
     assert "let lightboxStickyCompareMode = false;" in js
     assert "let lightboxComparePinnedIndex = -1;" in js
     assert "let lightboxCompareCandidateIndex = -1;" in js
@@ -560,9 +560,15 @@ def test_lightbox_sticky_compare_pins_active_and_replaces_inactive() -> None:
     assert "setLightboxCompareActivePane(lightboxStickyPinnedPane);" in pin_body
     assert "setLightboxCompareActivePane(lightboxStickyCandidatePane);" not in pin_body
     assert "case '[':\n                    case ']': e.preventDefault(); break;" in js
-    assert "case 'c': e.preventDefault(); enableStickyCompareFromCurrentPanes(); break;" in js
-    assert "case 'arrowleft': e.preventDefault(); navigateStickyCompare(-1); break;" in js
-    assert "case 'arrowright': e.preventDefault(); navigateStickyCompare(1); break;" in js
+    assert "case 'c': e.preventDefault(); toggleStickyComparePin(); break;" in js
+    assert (
+        "case 'arrowleft': e.preventDefault(); if (e.altKey) advanceComparePair(-1); else navigateStickyCompare(-1); break;"
+        in js
+    )
+    assert (
+        "case 'arrowright': e.preventDefault(); if (e.altKey) advanceComparePair(1); else navigateStickyCompare(1); break;"
+        in js
+    )
     assert "btn.id === 'lightbox-pin-compare-btn'" in events_body
 
 

@@ -236,12 +236,15 @@ See `.env.example` for the full commented reference.
 | `+` `-` | Zoom in / out |
 | `0` | Reset zoom |
 | `Ctrl+wheel` | Zoom around cursor |
-| `C` | Pin active image for sticky compare |
+| `C` | Pin active image as A for sticky compare; press again to clear Pin A |
+| `Alt+Left/Right` | Advance both compare panes together |
 | `Esc` | Close lightbox |
 
 When exactly two review-folder images are selected, **Compare in Lightbox**
 opens a side-by-side comparison. Click a pane to make it active, or press `C`
-to pin the active image and compare it against other images with Left/Right.
+to pin the active image as A and walk candidate B with Left/Right. Use
+Alt+Left/Right to advance both panes together; compare controls also expose
+linked/unlinked Sync Pan/Zoom and an optional A/B Split for still images.
 
 ## UI behavior
 

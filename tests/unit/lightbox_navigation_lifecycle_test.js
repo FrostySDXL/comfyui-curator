@@ -30,6 +30,7 @@ function createClassList(initial = []) {
 }
 
 function createElement() {
+    const attributes = {};
     return {
         classList: createClassList(),
         style: {},
@@ -38,6 +39,8 @@ function createElement() {
         scrollTop: 0,
         clientWidth: 1000,
         clientHeight: 700,
+        scrollWidth: 1000,
+        scrollHeight: 700,
         offsetWidth: 800,
         offsetHeight: 600,
         naturalWidth: 0,
@@ -50,12 +53,18 @@ function createElement() {
         playCalls: 0,
         replaceChildrenCount: 0,
         addEventListener() {},
+        setAttribute(name, value) { attributes[name] = String(value); },
+        getAttribute(name) { return attributes[name] || null; },
+        setPointerCapture() {},
+        hasPointerCapture() { return false; },
+        releasePointerCapture() {},
         pause() { this.paused = true; },
         play() { this.playCalls++; this.paused = false; return Promise.resolve(); },
         load() {},
         removeAttribute(name) { if (name === "src") this.src = ""; },
         appendChild() {},
         replaceChildren() { this.replaceChildrenCount++; },
+        setProperty() {},
         querySelectorAll() { return []; },
         closest() { return {style: {}}; },
         getBoundingClientRect() { return {left: 0, top: 0, width: 800, height: 600}; },
@@ -93,6 +102,7 @@ function createRuntime() {
         "lightbox-compare-label-1": createElement(),
         "lightbox-compare-zoom-0": createElement(),
         "lightbox-compare-zoom-1": createElement(),
+        "lightbox-compare-divider": createElement(),
     };
     const comparePanes = [createElement(), createElement()];
     comparePanes.forEach((pane, index) => { pane.dataset.comparePane = String(index); });
@@ -489,6 +499,190 @@ async function testWorkspaceSearchNavigationReanchorsAfterPageReorder() {
         "workspace search navigation reanchors the active image before advancing after page reorder");
 }
 
+function testStickyCandidateWalkPreservesGridAnchorAndOrder() {
+    const {context, items} = createRuntime();
+    context.currentIndex = 1;
+    context.openStickyCompareLightbox();
+    const namesBefore = items.map(item => item.name);
+    context.navigateStickyCompare(1);
+
+    check(context.currentIndex === 1, "sticky candidate walk preserves the originating grid anchor");
+    check(context.getActiveLightboxImage().name === "a.png", "sticky candidate walk advances only the candidate pane");
+    check(items.map(item => item.name).join(",") === namesBefore.join(","), "sticky candidate walk preserves canonical display order");
+}
+
+function testCompareSyncCanLinkAndUnlinkPaneZoom() {
+    const {context} = createRuntime();
+    context.selectedImages.add("a.png");
+    context.selectedImages.add("b.png");
+    context.openCompareLightbox();
+    context.zoomComparePane(0, 0.2);
+    check(vm.runInContext("lightboxCompareViewState[0].zoom === 1.2 && lightboxCompareViewState[1].zoom === 1.2", context),
+        "compare zoom starts linked across panes");
+    context.setLightboxCompareSync(false);
+    context.zoomComparePane(0, 0.2);
+    check(vm.runInContext("lightboxCompareViewState[0].zoom === 1.4 && lightboxCompareViewState[1].zoom === 1.2", context),
+        "compare zoom can be unlinked per pane");
+}
+
+function testCompareSplitTogglesWithoutReloadingOriginals() {
+    const {context, elements} = createRuntime();
+    context.selectedImages.add("a.png");
+    context.selectedImages.add("b.png");
+    context.openCompareLightbox();
+    const firstSrc = elements["lightbox-compare-img-0"].src;
+    const secondSrc = elements["lightbox-compare-img-1"].src;
+    check(context.toggleLightboxCompareSplit() === true, "still-image compare accepts A/B split mode");
+    check(elements["lightbox-compare-img-0"].src === firstSrc && elements["lightbox-compare-img-1"].src === secondSrc,
+        "A/B split toggles in place without reloading original image sources");
+    check(context.toggleLightboxCompareSplit() === true, "A/B split toggles back to side-by-side");
+}
+
+function testAdvanceComparePairMovesBothPanesWithoutChangingGridAnchor() {
+    const {context, items} = createRuntime();
+    context.selectedImages.add("a.png");
+    context.selectedImages.add("b.png");
+    context.openCompareLightbox();
+    const namesBefore = items.map(item => item.name);
+    context.advanceComparePair(1);
+    check(context.currentIndex === 0, "advancing the pair preserves the originating grid anchor");
+    check(vm.runInContext("lightboxCompareItems[0].name === 'b.png' && lightboxCompareItems[1].name === 'c.png'", context),
+        "advance pair shifts both compare panes in display order");
+    check(items.map(item => item.name).join(",") === namesBefore.join(","), "advance pair does not reorder the display list");
+}
+
+function testSplitHitTestingSelectsVisiblePaneByDividerPosition() {
+    const {context} = createRuntime();
+    context.selectedImages.add("a.png");
+    context.selectedImages.add("b.png");
+    context.openCompareLightbox();
+    context.toggleLightboxCompareSplit();
+    const paneTarget = {closest() { return null; }};
+    check(context.getActiveComparePaneIndexFromEvent({target: paneTarget, clientX: 200}) === 0,
+        "split click on the left visible half activates pane A");
+    check(context.getActiveComparePaneIndexFromEvent({target: paneTarget, clientX: 700}) === 1,
+        "split click on the right visible half activates pane B");
+}
+
+function testSplitDividerDragDoesNotStartImagePan() {
+    const {context, elements} = createRuntime();
+    context.selectedImages.add("a.png");
+    context.selectedImages.add("b.png");
+    context.openCompareLightbox();
+    context.toggleLightboxCompareSplit();
+    const dividerTarget = {closest(selector) {
+        return selector === "#lightbox-compare-divider" ? elements["lightbox-compare-divider"] : null;
+    }};
+    const event = {
+        target: dividerTarget,
+        currentTarget: elements["lightbox-compare"],
+        pointerId: 1,
+        clientX: 400,
+        preventDefault() {},
+    };
+    context.startLightboxCompareSplitDrag(event);
+    context.startLightboxPan(event);
+    check(vm.runInContext("lightboxCompareSplitDragging === true && lightboxComparePanState === null", context),
+        "split divider drag does not start compare image pan");
+    context.endLightboxCompareSplitDrag(event);
+}
+
+function testSplitDividerKeyboardUpdatesPositionAndAria() {
+    const {context, elements} = createRuntime();
+    context.selectedImages.add("a.png");
+    context.selectedImages.add("b.png");
+    context.openCompareLightbox();
+    context.toggleLightboxCompareSplit();
+    const divider = elements["lightbox-compare-divider"];
+    const preventDefault = () => {};
+    context.handleLightboxCompareSplitKeydown({key: "ArrowRight", preventDefault});
+    check(vm.runInContext("lightboxCompareSplitPosition === 52", context), "split divider ArrowRight moves by a small step");
+    context.handleLightboxCompareSplitKeydown({key: "Home", preventDefault});
+    check(vm.runInContext("lightboxCompareSplitPosition === 8", context), "split divider Home reaches the lower bound");
+    context.handleLightboxCompareSplitKeydown({key: "End", preventDefault});
+    check(vm.runInContext("lightboxCompareSplitPosition === 92", context), "split divider End reaches the upper bound");
+    check(divider.getAttribute("aria-valuenow") === "92", "split divider keeps aria-valuenow synchronized");
+}
+
+function testLinkedResetAndReplacementKeepPaneZoomsEqual() {
+    const {context} = createRuntime();
+    context.selectedImages.add("a.png");
+    context.selectedImages.add("b.png");
+    context.openCompareLightbox();
+    context.zoomComparePane(0, 0.2);
+    context.resetLightboxZoom();
+    check(vm.runInContext("lightboxCompareViewState[0].zoom === 1 && lightboxCompareViewState[1].zoom === 1", context),
+        "linked reset returns both compare panes to 100 percent");
+    context.zoomComparePane(0, 0.2);
+    context.openStickyCompareLightbox();
+    context.navigateStickyCompare(1);
+    check(vm.runInContext("lightboxCompareViewState[0].zoom === lightboxCompareViewState[1].zoom", context),
+        "linked candidate replacement preserves equal pane zoom state");
+}
+
+function testUnlinkedResetKeepsOtherPaneZoom() {
+    const {context} = createRuntime();
+    context.selectedImages.add("a.png");
+    context.selectedImages.add("b.png");
+    context.openCompareLightbox();
+    context.setLightboxCompareSync(false);
+    context.zoomComparePane(0, 0.2);
+    context.zoomComparePane(1, 0.4);
+    context.resetLightboxZoom();
+    check(vm.runInContext("lightboxCompareViewState[0].zoom === 1.2 && lightboxCompareViewState[1].zoom === 1", context),
+        "unlinked reset changes only the active compare pane");
+}
+
+function testStickyCompareSkipsInterleavedNonStillMedia() {
+    const {context, items} = createRuntime();
+    items.splice(0, items.length,
+        {name: "a.png"},
+        {name: "video.mp4", media_kind: "video"},
+        {name: "b.png"},
+        {name: "audio.mp3", media_kind: "audio"},
+        {name: "c.png"});
+    context.currentIndex = 0;
+    context.openStickyCompareLightbox();
+    check(vm.runInContext("lightboxCompareItems[0].name === 'a.png' && lightboxCompareItems[1].name === 'b.png'", context),
+        "sticky compare chooses the next still candidate across mixed media");
+    context.navigateStickyCompare(1);
+    check(context.getActiveLightboxImage().name === "c.png", "sticky candidate walk skips interleaved video and audio");
+    context.navigateStickyCompare(1);
+    check(context.getActiveLightboxImage().name === "b.png", "sticky candidate walk wraps among still images only");
+    check(context.currentIndex === 0, "mixed-media candidate walk preserves the originating grid anchor");
+}
+
+function testPairAdvanceSkipsInterleavedNonStillMedia() {
+    const {context, items} = createRuntime();
+    items.splice(0, items.length,
+        {name: "a.png"},
+        {name: "video.mp4", media_kind: "video"},
+        {name: "b.png"},
+        {name: "audio.mp3", media_kind: "audio"},
+        {name: "c.png"});
+    context.selectedImages.add("a.png");
+    context.selectedImages.add("b.png");
+    context.openCompareLightbox();
+    context.advanceComparePair(1);
+    check(vm.runInContext("lightboxCompareItems[0].name === 'b.png' && lightboxCompareItems[1].name === 'c.png'", context),
+        "pair advance skips interleaved non-still media");
+    context.advanceComparePair(1);
+    check(vm.runInContext("lightboxCompareItems[0].name === 'c.png' && lightboxCompareItems[1].name === 'a.png'", context),
+        "pair advance wraps over the still-image sequence");
+    check(context.currentIndex === 0, "mixed-media pair advance preserves the originating grid anchor");
+}
+
+function testStickyCompareRefusesNonStillSingleLightbox() {
+    const {context, items} = createRuntime();
+    items[0].media_kind = "video";
+    context.currentIndex = 0;
+    const toasts = [];
+    context.showToast = message => toasts.push(message);
+    context.openStickyCompareLightbox();
+    check(vm.runInContext("lightboxCompareMode === false", context), "non-still single lightbox does not enter compare mode");
+    check(toasts.some(message => message.includes("Still images only")), "non-still compare refusal explains still-image requirement");
+}
+
 function testTypedVideoNavigationReleasesPlayerResource() {
     const {context, elements, items} = createRuntime();
     items[1].media_kind = "video";
@@ -539,6 +733,18 @@ function testTypedAudioCloseReleasesPlayerAndArtwork() {
     await testCurrentImageRemainsVisibleUntilDecode();
     await testStaleNavigationCannotOverwriteNewerTarget();
     await testWorkspaceSearchNavigationReanchorsAfterPageReorder();
+    testStickyCandidateWalkPreservesGridAnchorAndOrder();
+    testCompareSyncCanLinkAndUnlinkPaneZoom();
+    testCompareSplitTogglesWithoutReloadingOriginals();
+    testAdvanceComparePairMovesBothPanesWithoutChangingGridAnchor();
+    testSplitHitTestingSelectsVisiblePaneByDividerPosition();
+    testSplitDividerDragDoesNotStartImagePan();
+    testSplitDividerKeyboardUpdatesPositionAndAria();
+    testLinkedResetAndReplacementKeepPaneZoomsEqual();
+    testUnlinkedResetKeepsOtherPaneZoom();
+    testStickyCompareSkipsInterleavedNonStillMedia();
+    testPairAdvanceSkipsInterleavedNonStillMedia();
+    testStickyCompareRefusesNonStillSingleLightbox();
     await testCompletedNeighborPreloadsStayBoundedAndRetained();
     await testCompletedPreloadIsConsumedByNavigation();
     await testDecodeRejectionCommitsLoadedTarget();

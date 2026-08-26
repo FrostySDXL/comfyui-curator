@@ -23,6 +23,10 @@ let lightboxCompareItems = [];
 let lightboxCompareActivePane = 0;
 let lightboxCompareImageToken = 0;
 let lightboxComparePanState = null;
+let lightboxCompareSync = true;
+let lightboxCompareSplitMode = false;
+let lightboxCompareSplitPosition = 50;
+let lightboxCompareSplitDragging = false;
 let lightboxReturnFocusElement = null;
 let lightboxCompareViewState = [
     {zoom: 1, baseWidth: 0, baseHeight: 0},
@@ -270,6 +274,7 @@ function openCompareLightbox() {
             lightboxStickyCandidatePane = 1;
             lightboxCompareItems = selected;
             lightboxCompareActivePane = 0;
+            lightboxCompareSplitMode = false;
             lightboxCompareViewState = [
                 {zoom: 1, baseWidth: 0, baseHeight: 0},
                 {zoom: 1, baseWidth: 0, baseHeight: 0},
@@ -283,16 +288,22 @@ function openCompareLightbox() {
         }
 
 function openStickyCompareLightbox() {
-            const lightboxImages = getLightboxImages();
+            const displayImages = getLightboxImages();
+            const lightboxImages = getStillLightboxImages();
+            const currentImage = displayImages[currentIndex];
+            if (!isStillLightboxImage(currentImage)) {
+                showToast('Still images only can be compared');
+                return;
+            }
             if (isVirtualCollectionView() || isPublicView() || lightboxImages.length < 2) {
-                showToast('Open a review image with another image available to pin compare');
+                showToast('Open a review image with another still image available to pin compare');
                 return;
             }
             ++lightboxOpenToken;
             _cancelPendingLightboxOpen();
             _cancelSingleImageLoader();
             _cleanupPrefetch();
-            const pinnedIndex = currentIndex;
+            const pinnedIndex = getStillLightboxImageIndexByObject(currentImage);
             let candidateIndex = (pinnedIndex + 1) % lightboxImages.length;
             if (candidateIndex === pinnedIndex) candidateIndex = (candidateIndex + 1) % lightboxImages.length;
             lightboxCompareMode = true;
@@ -303,6 +314,7 @@ function openStickyCompareLightbox() {
             lightboxStickyCandidatePane = 1;
             lightboxCompareActivePane = 1;
             lightboxCompareItems = [lightboxImages[pinnedIndex], lightboxImages[candidateIndex]];
+            lightboxCompareSplitMode = false;
             lightboxCompareViewState = [
                 {zoom: 1, baseWidth: 0, baseHeight: 0},
                 {zoom: 1, baseWidth: 0, baseHeight: 0},
@@ -316,6 +328,19 @@ function openStickyCompareLightbox() {
 
 function getLightboxImages() {
             return getCurrentDisplayImages();
+        }
+
+function isStillLightboxImage(img) {
+            return Boolean(img) && (!img.media_kind || img.media_kind === 'image');
+        }
+
+function getStillLightboxImages() {
+            return getLightboxImages().filter(isStillLightboxImage);
+        }
+
+function getStillLightboxImageIndexByObject(target) {
+            if (!isStillLightboxImage(target)) return -1;
+            return getStillLightboxImages().findIndex(img => img.name === target.name);
         }
 
 function closeLightbox() {
@@ -350,6 +375,7 @@ function closeLightbox() {
             lightboxStickyPinnedPane = 0;
             lightboxStickyCandidatePane = 1;
             lightboxCompareItems = [];
+            lightboxCompareSplitMode = false;
             lightboxMetadataOpen = false;
             lightboxAiOpen = false;
             syncLightboxModeUi();
@@ -369,10 +395,22 @@ function syncLightboxModeUi() {
             const singleIndicator = document.getElementById('lightbox-zoom-indicator');
             const pinCompareBtn = document.getElementById('lightbox-pin-compare-btn');
             if (lightbox) lightbox.classList.toggle('compare-mode', lightboxCompareMode);
+            if (lightbox) lightbox.classList.toggle('compare-split-mode', lightboxCompareSplitMode);
             if (singleWrap) singleWrap.hidden = lightboxCompareMode;
             if (compare) compare.hidden = !lightboxCompareMode;
+            if (compare) {
+                compare.classList.toggle('split-mode', lightboxCompareSplitMode);
+                if (compare.style && typeof compare.style.setProperty === 'function') {
+                    compare.style.setProperty('--compare-split-position', `${lightboxCompareSplitPosition}%`);
+                }
+            }
+            updateLightboxCompareSplitAria();
             if (singleIndicator) singleIndicator.hidden = false;
             if (pinCompareBtn) pinCompareBtn.closest('div').style.display = lightboxCompareMode ? '' : 'none';
+            ['lightbox-compare-sync-btn', 'lightbox-compare-split-btn', 'lightbox-compare-pair-btn'].forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) btn.closest('div').style.display = lightboxCompareMode ? '' : 'none';
+            });
             document.querySelectorAll('.lightbox-nav').forEach(nav => { nav.hidden = lightboxCompareMode; });
             ['metadata-toggle-btn', 'lightbox-ai-toggle-btn'].forEach(id => {
                 const btn = document.getElementById(id);
@@ -392,6 +430,7 @@ function syncLightboxModeUi() {
             } else {
                 resetCompareOverlayPanelPosition();
             }
+            updateLightboxCompareControls();
         }
 
 function resetLightboxPanelScroll() {
@@ -506,6 +545,156 @@ function setLightboxCompareActivePane(paneIndex) {
             refreshCompareActiveImagePanels();
         }
 
+function updateLightboxCompareControls() {
+            const syncBtn = document.getElementById('lightbox-compare-sync-btn');
+            const splitBtn = document.getElementById('lightbox-compare-split-btn');
+            const pinBtn = document.getElementById('lightbox-pin-compare-btn');
+            if (syncBtn) {
+                syncBtn.textContent = lightboxCompareSync ? 'Sync Pan/Zoom: On' : 'Sync Pan/Zoom: Off';
+                if (typeof syncBtn.setAttribute === 'function') syncBtn.setAttribute('aria-pressed', String(lightboxCompareSync));
+            }
+            if (splitBtn) {
+                splitBtn.textContent = lightboxCompareSplitMode ? 'Side-by-side' : 'A/B Split';
+                if (typeof splitBtn.setAttribute === 'function') splitBtn.setAttribute('aria-pressed', String(lightboxCompareSplitMode));
+            }
+            if (pinBtn) {
+                pinBtn.textContent = lightboxStickyCompareMode ? 'Clear Pin A' : 'Pin A';
+                if (typeof pinBtn.setAttribute === 'function') pinBtn.setAttribute('aria-pressed', String(lightboxStickyCompareMode));
+            }
+        }
+
+function setLightboxCompareSync(enabled) {
+            lightboxCompareSync = Boolean(enabled);
+            if (lightboxCompareMode && lightboxCompareSync) {
+                const sourcePane = lightboxCompareActivePane;
+                const state = lightboxCompareViewState[sourcePane];
+                const otherPane = getInactiveComparePaneIndex();
+                const otherState = lightboxCompareViewState[otherPane];
+                if (state && otherState) {
+                    otherState.zoom = state.zoom;
+                    applyComparePaneZoom(otherPane);
+                    syncComparePaneScroll(sourcePane);
+                }
+            }
+            updateLightboxCompareControls();
+        }
+
+function canUseLightboxCompareSplit() {
+            return lightboxCompareItems.length === 2
+                && lightboxCompareItems.every(img => img && (!img.media_kind || img.media_kind === 'image'));
+        }
+
+function toggleLightboxCompareSplit() {
+            if (!lightboxCompareMode) return false;
+            if (!lightboxCompareSplitMode && !canUseLightboxCompareSplit()) {
+                showToast('A/B Split is available for still images only');
+                return false;
+            }
+            lightboxCompareSplitMode = !lightboxCompareSplitMode;
+            const compare = document.getElementById('lightbox-compare');
+            if (compare) {
+                compare.classList.toggle('split-mode', lightboxCompareSplitMode);
+                if (compare.style && typeof compare.style.setProperty === 'function') {
+                    compare.style.setProperty('--compare-split-position', `${lightboxCompareSplitPosition}%`);
+                }
+            }
+            updateLightboxCompareSplitAria();
+            updateLightboxCompareControls();
+            return true;
+        }
+
+function updateLightboxCompareSplitAria() {
+            const divider = document.getElementById('lightbox-compare-divider');
+            if (!divider || typeof divider.setAttribute !== 'function') return;
+            divider.setAttribute('aria-valuenow', String(Math.round(lightboxCompareSplitPosition)));
+        }
+
+function setLightboxCompareSplitPercent(position) {
+            lightboxCompareSplitPosition = Math.min(92, Math.max(8, Number(position) || 50));
+            const compare = document.getElementById('lightbox-compare');
+            if (compare && compare.style && typeof compare.style.setProperty === 'function') {
+                compare.style.setProperty('--compare-split-position', `${lightboxCompareSplitPosition}%`);
+            }
+            updateLightboxCompareSplitAria();
+        }
+
+function setLightboxCompareSplitPosition(clientX) {
+            const compare = document.getElementById('lightbox-compare');
+            if (!compare || !lightboxCompareSplitMode) return;
+            const rect = compare.getBoundingClientRect();
+            if (!rect.width) return;
+            setLightboxCompareSplitPercent(((clientX - rect.left) / rect.width) * 100);
+        }
+
+function handleLightboxCompareSplitKeydown(event) {
+            if (!lightboxCompareSplitMode) return;
+            let nextPosition = lightboxCompareSplitPosition;
+            if (event.key === 'ArrowLeft') nextPosition -= 2;
+            else if (event.key === 'ArrowRight') nextPosition += 2;
+            else if (event.key === 'Home') nextPosition = 8;
+            else if (event.key === 'End') nextPosition = 92;
+            else return;
+            event.preventDefault();
+            setLightboxCompareSplitPercent(nextPosition);
+        }
+
+function startLightboxCompareSplitDrag(event) {
+            const target = event.target;
+            if (!lightboxCompareSplitMode || !target || typeof target.closest !== 'function'
+                || !target.closest('#lightbox-compare-divider')) return;
+            lightboxCompareSplitDragging = true;
+            if (typeof event.currentTarget.setPointerCapture === 'function') {
+                event.currentTarget.setPointerCapture(event.pointerId);
+            }
+            setLightboxCompareSplitPosition(event.clientX);
+            event.preventDefault();
+        }
+
+function moveLightboxCompareSplitDrag(event) {
+            if (!lightboxCompareSplitDragging) return;
+            setLightboxCompareSplitPosition(event.clientX);
+            event.preventDefault();
+        }
+
+function endLightboxCompareSplitDrag(event) {
+            if (!lightboxCompareSplitDragging) return;
+            if (typeof event.currentTarget.hasPointerCapture === 'function'
+                && event.currentTarget.hasPointerCapture(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+            lightboxCompareSplitDragging = false;
+        }
+
+function clearStickyComparePin() {
+            if (!lightboxStickyCompareMode) return false;
+            lightboxStickyCompareMode = false;
+            lightboxComparePinnedIndex = -1;
+            lightboxCompareCandidateIndex = -1;
+            updateLightboxCompareControls();
+            updateCompareInfo();
+            return true;
+        }
+
+function toggleStickyComparePin() {
+            if (lightboxStickyCompareMode) return clearStickyComparePin();
+            enableStickyCompareFromCurrentPanes();
+            return true;
+        }
+
+function syncComparePaneScroll(sourcePane) {
+            if (!lightboxCompareSync) return;
+            const {wrap: sourceWrap} = getComparePaneElements(sourcePane);
+            const otherPane = sourcePane === 0 ? 1 : 0;
+            const {wrap: targetWrap} = getComparePaneElements(otherPane);
+            if (!sourceWrap || !targetWrap) return;
+            const sourceMaxX = Math.max(0, (sourceWrap.scrollWidth || sourceWrap.clientWidth) - sourceWrap.clientWidth);
+            const sourceMaxY = Math.max(0, (sourceWrap.scrollHeight || sourceWrap.clientHeight) - sourceWrap.clientHeight);
+            const targetMaxX = Math.max(0, (targetWrap.scrollWidth || targetWrap.clientWidth) - targetWrap.clientWidth);
+            const targetMaxY = Math.max(0, (targetWrap.scrollHeight || targetWrap.clientHeight) - targetWrap.clientHeight);
+            targetWrap.scrollLeft = sourceMaxX > 0 ? (sourceWrap.scrollLeft / sourceMaxX) * targetMaxX : 0;
+            targetWrap.scrollTop = sourceMaxY > 0 ? (sourceWrap.scrollTop / sourceMaxY) * targetMaxY : 0;
+        }
+
 function getInactiveComparePaneIndex() {
             return lightboxCompareActivePane === 0 ? 1 : 0;
         }
@@ -585,8 +774,27 @@ function getImageDisplayIndexByObject(target) {
             return getLightboxImages().findIndex(img => img.name === target.name);
         }
 
+function getCompareSplitPaneIndex(clientX) {
+            const compare = document.getElementById('lightbox-compare');
+            if (!compare || !lightboxCompareSplitMode || !Number.isFinite(clientX)) return -1;
+            const rect = compare.getBoundingClientRect();
+            if (!rect.width) return -1;
+            const splitX = rect.left + (rect.width * lightboxCompareSplitPosition / 100);
+            return clientX < splitX ? 0 : 1;
+        }
+
 function getActiveComparePaneIndexFromEvent(event) {
-            const pane = event.target.closest('.lightbox-compare-pane');
+            const target = event && event.target;
+            const divider = target && typeof target.closest === 'function'
+                ? target.closest('#lightbox-compare-divider')
+                : null;
+            if (lightboxCompareSplitMode && !divider) {
+                const splitPane = getCompareSplitPaneIndex(event && event.clientX);
+                if (splitPane >= 0) return splitPane;
+            }
+            const pane = target && typeof target.closest === 'function'
+                ? target.closest('.lightbox-compare-pane')
+                : null;
             if (!pane) return lightboxCompareActivePane;
             return Number(pane.dataset.comparePane || lightboxCompareActivePane);
         }
@@ -657,10 +865,19 @@ function zoomComparePane(paneIndex, delta, anchorEvent = null) {
             const zoomToken = lightboxCompareImageToken;
             state.zoom = nextScale;
             applyComparePaneZoom(paneIndex);
+            if (lightboxCompareSync) {
+                const otherPane = paneIndex === 0 ? 1 : 0;
+                const otherState = lightboxCompareViewState[otherPane];
+                if (otherState) {
+                    otherState.zoom = nextScale;
+                    applyComparePaneZoom(otherPane);
+                }
+            }
             requestAnimationFrame(() => {
                 if (zoomToken !== lightboxCompareImageToken || state.zoom !== nextScale) return;
                 wrap.scrollLeft = Math.max(0, (ratioX * img.offsetWidth) - viewportX);
                 wrap.scrollTop = Math.max(0, (ratioY * img.offsetHeight) - viewportY);
+                syncComparePaneScroll(paneIndex);
             });
         }
 
@@ -692,7 +909,12 @@ function updateComparePaneImage(paneIndex, img, preserveZoom = false) {
                 wrap.scrollTop = 0;
                 wrap.scrollLeft = 0;
             }
-            if (!preserveZoom) lightboxCompareViewState[paneIndex] = {zoom: 1, baseWidth: 0, baseHeight: 0};
+            if (!preserveZoom) {
+                const linkedZoom = lightboxCompareSync
+                    ? lightboxCompareViewState[paneIndex === 0 ? 1 : 0].zoom
+                    : 1;
+                lightboxCompareViewState[paneIndex] = {zoom: linkedZoom, baseWidth: 0, baseHeight: 0};
+            }
             imgEl.draggable = false;
             imgEl.onload = null;
             imgEl.onerror = null;
@@ -761,10 +983,10 @@ function enableStickyCompareFromCurrentPanes() {
             const pinnedImage = getActiveLightboxImage();
             const candidatePane = getInactiveComparePaneIndex();
             const candidateImage = lightboxCompareItems[candidatePane];
-            const pinnedIndex = getImageDisplayIndexByObject(pinnedImage);
-            const candidateIndex = getImageDisplayIndexByObject(candidateImage);
+            const pinnedIndex = getStillLightboxImageIndexByObject(pinnedImage);
+            const candidateIndex = getStillLightboxImageIndexByObject(candidateImage);
             if (pinnedIndex < 0 || candidateIndex < 0) {
-                showToast('Sticky compare needs two review images');
+                showToast('Still images only can be compared');
                 return;
             }
             lightboxStickyCompareMode = true;
@@ -775,12 +997,13 @@ function enableStickyCompareFromCurrentPanes() {
             updateComparePaneImage(lightboxStickyPinnedPane, lightboxCompareItems[lightboxStickyPinnedPane], true);
             updateComparePaneImage(lightboxStickyCandidatePane, lightboxCompareItems[lightboxStickyCandidatePane], true);
             setLightboxCompareActivePane(lightboxStickyPinnedPane);
+            updateLightboxCompareControls();
             showToast('Pinned active image for compare');
         }
 
 function navigateStickyCompare(delta) {
             if (!lightboxCompareMode || !lightboxStickyCompareMode) return;
-            const lightboxImages = getLightboxImages();
+            const lightboxImages = getStillLightboxImages();
             if (lightboxImages.length < 2 || lightboxComparePinnedIndex < 0) return;
             let nextIndex = lightboxCompareCandidateIndex;
             do {
@@ -788,14 +1011,43 @@ function navigateStickyCompare(delta) {
             } while (nextIndex === lightboxComparePinnedIndex && lightboxImages.length > 1);
             lightboxCompareCandidateIndex = nextIndex;
             lightboxCompareItems[lightboxStickyCandidatePane] = lightboxImages[nextIndex];
-            currentIndex = nextIndex;
             lightboxCompareActivePane = lightboxStickyCandidatePane;
             updateComparePaneImage(lightboxStickyCandidatePane, lightboxCompareItems[lightboxStickyCandidatePane]);
             setLightboxCompareActivePane(lightboxStickyCandidatePane);
         }
 
+function advanceComparePair(delta) {
+            if (!lightboxCompareMode || lightboxCompareItems.length !== 2) return false;
+            const lightboxImages = getStillLightboxImages();
+            if (lightboxImages.length < 2) return false;
+            const firstIndex = getStillLightboxImageIndexByObject(lightboxCompareItems[0]);
+            const secondIndex = getStillLightboxImageIndexByObject(lightboxCompareItems[1]);
+            if (firstIndex < 0 || secondIndex < 0) return false;
+            const nextFirst = (firstIndex + delta + lightboxImages.length) % lightboxImages.length;
+            let nextSecond = (secondIndex + delta + lightboxImages.length) % lightboxImages.length;
+            if (nextSecond === nextFirst) {
+                nextSecond = (nextSecond + (delta >= 0 ? 1 : -1) + lightboxImages.length) % lightboxImages.length;
+            }
+            lightboxCompareItems[0] = lightboxImages[nextFirst];
+            lightboxCompareItems[1] = lightboxImages[nextSecond];
+            if (lightboxStickyCompareMode) {
+                lightboxComparePinnedIndex = lightboxStickyPinnedPane === 0 ? nextFirst : nextSecond;
+                lightboxCompareCandidateIndex = lightboxStickyCandidatePane === 0 ? nextFirst : nextSecond;
+            }
+            updateComparePaneImage(0, lightboxCompareItems[0]);
+            updateComparePaneImage(1, lightboxCompareItems[1]);
+            setLightboxCompareActivePane(lightboxCompareActivePane);
+            updateLightboxCompareControls();
+            return true;
+        }
+
 function startLightboxPan(event) {
             if (lightboxCompareMode) {
+                const target = event && event.target;
+                const divider = target && typeof target.closest === 'function'
+                    ? target.closest('#lightbox-compare-divider')
+                    : null;
+                if (lightboxCompareSplitDragging || divider) return;
                 const paneIndex = getActiveComparePaneIndexFromEvent(event);
                 const state = lightboxCompareViewState[paneIndex];
                 const {wrap} = getComparePaneElements(paneIndex);
@@ -831,11 +1083,13 @@ function startLightboxPan(event) {
 
 function moveLightboxPan(event) {
             if (lightboxCompareMode) {
-                if (!lightboxComparePanState || event.pointerId !== lightboxComparePanState.pointerId) return;
+                if (lightboxCompareSplitDragging || !lightboxComparePanState
+                    || event.pointerId !== lightboxComparePanState.pointerId) return;
                 const {wrap} = getComparePaneElements(lightboxComparePanState.paneIndex);
                 if (!wrap) return;
                 wrap.scrollLeft = lightboxComparePanState.scrollLeft - (event.clientX - lightboxComparePanState.startX);
                 wrap.scrollTop = lightboxComparePanState.scrollTop - (event.clientY - lightboxComparePanState.startY);
+                syncComparePaneScroll(lightboxComparePanState.paneIndex);
                 event.preventDefault();
                 return;
             }
@@ -865,6 +1119,7 @@ function endLightboxPan(event) {
 function resetLightboxZoom() {
             if (lightboxCompareMode) {
                 resetComparePaneZoom(lightboxCompareActivePane);
+                if (lightboxCompareSync) resetComparePaneZoom(getInactiveComparePaneIndex());
                 return;
             }
             clearLightboxPanState();

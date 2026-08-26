@@ -140,6 +140,50 @@
         .lightbox-compare-pane.active .lightbox-compare-label {
             padding-left: 72px;
         }
+        .lightbox-compare-divider {
+            display: none;
+        }
+        .lightbox-compare.split-mode {
+            position: relative;
+            display: block;
+            --compare-split-position: 50%;
+        }
+        .lightbox-compare.split-mode .lightbox-compare-pane {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            border-radius: 16px;
+        }
+        .lightbox-compare.split-mode .lightbox-compare-pane[data-compare-pane="0"] {
+            z-index: 1;
+        }
+        .lightbox-compare.split-mode .lightbox-compare-pane[data-compare-pane="1"] {
+            z-index: 2;
+            clip-path: inset(0 0 0 var(--compare-split-position));
+            pointer-events: none;
+        }
+        .lightbox-compare.split-mode .lightbox-compare-pane[data-compare-pane="1"] .lightbox-compare-label,
+        .lightbox-compare.split-mode .lightbox-compare-pane[data-compare-pane="1"] .lightbox-compare-zoom {
+            visibility: hidden;
+        }
+        .lightbox-compare.split-mode .lightbox-compare-divider {
+            display: block;
+            position: absolute;
+            z-index: 4;
+            top: 0;
+            bottom: 0;
+            left: var(--compare-split-position);
+            width: 3px;
+            transform: translateX(-50%);
+            background: var(--accent-primary);
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 0 16px rgba(0, 0, 0, 0.4);
+            cursor: ew-resize;
+            touch-action: none;
+        }
+        .lightbox-compare.split-mode .lightbox-compare-divider:focus-visible {
+            outline: 2px solid var(--focus-ring);
+            outline-offset: 4px;
+        }
         .lightbox-compare-wrap {
             flex: 1;
             max-width: none;
@@ -466,4 +510,23 @@
         .btn-reject { background: var(--button-danger-fill); color: var(--button-danger-text); }
         .btn:hover { opacity: 0.9; }
         .key-hint { font-size: var(--type-label); color: var(--text-muted); margin-top: 3px; text-align: center; }
+
+        @media (max-width: 900px) {
+            .lightbox-compare.split-mode {
+                display: block;
+                height: calc(100vh - 190px);
+                overflow: hidden;
+            }
+            .lightbox-compare.split-mode .lightbox-compare-pane {
+                min-height: 100%;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .lightbox-compare-wrap img,
+            .lightbox-compare-pane,
+            .lightbox-compare-divider {
+                transition: none;
+            }
+        }
 
