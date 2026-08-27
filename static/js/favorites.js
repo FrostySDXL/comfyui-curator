@@ -75,13 +75,14 @@ async function updateAllFavoritesCount() {
         }
 
 async function loadUniversalFavorites() {
+            const priorScope = getViewScopeKey();
             currentBatch = '__favorites__';
             currentFolder = null;
             saveBatchState();
-            resetSelectionState();
-            lastAction = null;
-            resetAiBatchState(false);
-            closeLightbox();
+            const scopeChanged = priorScope !== getViewScopeKey();
+            if (scopeChanged) beginViewTransition({clearImages: true, closeLightbox: true});
+            if (scopeChanged) resetAiBatchState(false);
+            const requestToken = ++folderRequestToken;
             document.querySelectorAll('.batch-name').forEach(el =>
                 el.classList.toggle('selected', el.dataset.batch === '__favorites__'));
             const tabs = document.getElementById('folder-tabs');
@@ -96,6 +97,7 @@ async function loadUniversalFavorites() {
                 return;
             }
             const data = await resp.json();
+            if (requestToken !== folderRequestToken || getViewScopeKey() !== '__favorites__\u001f') return;
             images = (data.favorites || []).map(f => ({
                 name: f.filename,
                 size: f.size || 0,

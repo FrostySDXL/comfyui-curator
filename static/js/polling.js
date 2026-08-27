@@ -16,6 +16,8 @@ async function pollForChanges() {
             if (isInteractionBusy()) return;
             if (!CURATOR_NATIVE) await loadBatches();
             if (!currentBatch || isVirtualCollectionView() || isPublicView() || !currentFolder || serverSelection || selectedImages.size > 0 || isInteractionBusy()) return;
+            const transitionToken = viewTransitionToken;
+            const scopeKey = getViewScopeKey();
             if (CURATOR_NATIVE && folderSnapshot) {
                 const [snapshotResp, runResp] = await Promise.all([
                     apiPollFolderSnapshot(
@@ -26,12 +28,15 @@ async function pollForChanges() {
                 ]);
                 if (!snapshotResp.ok || !runResp.ok) return;
                 const [snapshotData, runData] = await Promise.all([snapshotResp.json(), runResp.json()]);
+                if (transitionToken !== viewTransitionToken || scopeKey !== getViewScopeKey() || isInteractionBusy() || serverSelection || selectedImages.size > 0) return;
                 if (snapshotData.status === 'ready' && snapshotData.changed) {
                     await loadCurrentFolderImages({preserveScroll: true});
                 }
+                if (transitionToken !== viewTransitionToken || scopeKey !== getViewScopeKey() || isInteractionBusy() || serverSelection || selectedImages.size > 0) return;
                 const latestRunId = runData.runs && runData.runs.length > 0 ? runData.runs[runData.runs.length - 1] : null;
                 if ((aiLatestRun?.run_id || null) !== latestRunId) {
                     await aiRefreshRunData(runData.runs || []);
+                    if (transitionToken !== viewTransitionToken || scopeKey !== getViewScopeKey() || isInteractionBusy() || serverSelection || selectedImages.size > 0) return;
                     if (aiShowOverlays || aiFilterMode !== 'all' || (aiCompareRunId && aiCompareRunId !== 'latest')) updateGrid();
                 }
                 return;
@@ -42,6 +47,7 @@ async function pollForChanges() {
             ]);
             if (!imageResp.ok || !runResp.ok) return;
             const [nextImages, runData] = await Promise.all([imageResp.json(), runResp.json()]);
+            if (transitionToken !== viewTransitionToken || scopeKey !== getViewScopeKey() || isInteractionBusy() || serverSelection || selectedImages.size > 0) return;
             // Skip image-list updates when shuffle sort is active -- the server
             // shuffles randomly on each request, so polling would re-shuffle.
             const imageChanged = currentSort !== 'shuffle' && buildImageSignature(nextImages) !== buildImageSignature(images);
@@ -55,6 +61,7 @@ async function pollForChanges() {
             }
             if (aiChanged) {
                 await aiRefreshRunData(runData.runs || []);
+                if (transitionToken !== viewTransitionToken || scopeKey !== getViewScopeKey() || isInteractionBusy() || serverSelection || selectedImages.size > 0) return;
                 // Only redraw the grid when the AI run change actually affects
                 // the visible thumbs: overlays enabled, compare-mode active,
                 // or AI filter on. Otherwise the new run data is captured in

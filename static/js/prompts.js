@@ -774,6 +774,7 @@
                     loading: false,
                     favoriteKeys,
                 };
+                beginViewTransition({clearImages: true, closeLightbox: true});
                 folderRequestToken += 1;
                 resetPagedFolderState();
                 currentBatch = '__search__';
@@ -783,10 +784,7 @@
                     modified_at: item.mtime || 0,
                     favorite: favoriteKeys.has(`${item.batch}\u001f${item.folder}\u001f${item.name}`),
                 }));
-                resetSelectionState();
-                lastAction = null;
                 resetAiBatchState(false);
-                closeLightbox();
                 document.querySelectorAll('.batch-name').forEach(el => el.classList.remove('selected'));
                 document.getElementById('folder-tabs')?.classList.remove('visible');
                 const sortControls = document.getElementById('sort-controls');

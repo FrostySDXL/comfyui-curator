@@ -18,6 +18,7 @@ let aiAppliedThreshold = null;
 let aiThresholdScopeKey = null;
 let aiRunDataRequestToken = 0;
 let aiInspectedImageName = null;
+let aiInspectedImageKey = '';
 let aiBatchRunCounts = {};  // batch -> number of AI runs (for sidebar indicator)
 let aiBatchRunCountsLoaded = false;  // true after first successful load
 const AI_SIDEBAR_WIDTH_KEY = 'imageCurator.aiSidebarWidth';

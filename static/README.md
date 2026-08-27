@@ -21,6 +21,13 @@
   model/endpoint/timeout controls, and secret replace/clear controls backed by
   `/api/curator/settings`.
 
+Inspector and selection transitions are owned by `state.js` helpers
+`beginViewTransition()` and `invalidateInspectorState()`. They publish
+source-qualified image identities, clear stale display snapshots, and advance
+request tokens; folder, virtual, and polling code checks those tokens
+before applying asynchronous results. Same-scope refreshes may retain the
+inspector and selection.
+
 ## Key Concepts
 
 ### Architecture

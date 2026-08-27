@@ -111,6 +111,46 @@
         let inspectorMetadata = null;
         let inspectorMetadataLoading = false;
         let inspectorMetadataError = null;
+        let viewTransitionToken = 0;
+
+/* Source-qualified identity is the shared contract for inspector and
+   selection transitions.  Real-folder items may omit batch/folder because
+   those values come from the current view; virtual/search items carry them. */
+function getImageIdentityKey(img, sourceOverride = null) {
+            if (!img || !img.name) return '';
+            const source = sourceOverride || (
+                img.batch && img.folder
+                    ? {batch: img.batch, folder: img.folder}
+                    : {batch: currentBatch, folder: currentFolder}
+            );
+            return `${source.batch || ''}\u001f${source.folder || ''}\u001f${img.name}`;
+        }
+
+function invalidateInspectorState() {
+            inspectorMetadataRequestToken += 1;
+            inspectorMetadataKey = '';
+            inspectorMetadata = null;
+            inspectorMetadataLoading = false;
+            inspectorMetadataError = null;
+            if (typeof aiInspectedImageName !== 'undefined') aiInspectedImageName = null;
+            if (typeof aiInspectedImageKey !== 'undefined') aiInspectedImageKey = '';
+        }
+
+function beginViewTransition(options = {}) {
+            viewTransitionToken += 1;
+            folderRequestToken += 1;
+            invalidateInspectorState();
+            currentDisplayImages = [];
+            if (typeof resetPagedFolderState === 'function') resetPagedFolderState();
+            if (options.clearImages) images = [];
+            if (typeof resetSelectionState === 'function') resetSelectionState();
+            lastAction = null;
+            if (options.closeLightbox && typeof closeLightbox === 'function') closeLightbox();
+        }
+
+function getViewScopeKey() {
+            return `${currentBatch || ''}\u001f${currentFolder || ''}`;
+        }
 
 function isVirtualCollectionView() {
             return currentBatch === '__favorites__' || currentBatch === '__public__' || currentBatch === '__search__';

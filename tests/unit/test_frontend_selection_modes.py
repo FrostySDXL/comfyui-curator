@@ -48,7 +48,31 @@ def test_selection_mode_resets_on_context_change_move_and_escape() -> None:
         "async function loadBatchPublic(batch)",
         "async function loadAllPublic()",
     ):
-        assert "resetSelectionState();" in extract_function_body(js, signature), signature
+        body = extract_function_body(js, signature)
+        assert "beginViewTransition(" in body or "resetSelectionState();" in body, signature
+
+    assert "function beginViewTransition(options = {})" in js
+    assert "resetSelectionState();" in js
+
+
+def test_server_selection_mutations_rerender_inspector_before_return() -> None:
+    js = read_frontend_js()
+    toggle = extract_function_body(js, "function toggleSelect(index, event)")
+    select_all = extract_function_body(js, "function selectAllDisplayedImages()")
+    render_call = "if (typeof aiRenderImageInspector === 'function') aiRenderImageInspector();"
+
+    toggle_branch = toggle.split("if (serverSelection) {", 1)[1].split("            }", 1)[0]
+    assert toggle_branch.index("updateActionBar();") < toggle_branch.index(render_call)
+    assert toggle_branch.index(render_call) < toggle_branch.index("return;")
+
+    snapshot_branch = (
+        select_all.split("if (pagedFolderMode && folderSnapshot) {", 1)[1].split(
+            "                return;", 1
+        )[0]
+        + "                return;"
+    )
+    assert snapshot_branch.index("updateActionBar();") < snapshot_branch.index(render_call)
+    assert snapshot_branch.index(render_call) < snapshot_branch.index("return;")
 
     move = extract_function_body(js, "async function moveBatch(filenames, destination)")
     lightbox_move = extract_function_body(js, "async function moveImage(destination)")

@@ -204,7 +204,7 @@ def test_ai_inspector_renders_score_details_without_api_calls() -> None:
     assert "aiPopulateRunSelect('ai-inspect-run-select'" in js
 
     assert "let aiInspectedImageName = null;" in js
-    assert "function aiSetInspectedImage(img)" in js
+    assert "function aiSetInspectedImage(img, sourceOverride = null)" in js
     assert "function aiRenderImageInspector(img = null)" in js
     assert "function aiRenderSelectionInspector()" in js
     assert "if (selectedImages.size > 1)" in js
@@ -236,7 +236,7 @@ def test_grid_and_lightbox_update_ai_inspected_image() -> None:
     )
     assert "if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(img);" in js
     assert (
-        "thumb.classList.toggle('inspected', typeof aiInspectedImageName !== 'undefined' && aiInspectedImageName === img.name);"
+        "thumb.classList.toggle('inspected', typeof aiInspectedImageKey !== 'undefined' && aiInspectedImageKey === getImageIdentityKey(img, source));"
         in js
     )
     assert ".thumb.inspected" in css

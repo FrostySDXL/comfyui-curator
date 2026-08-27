@@ -257,6 +257,9 @@ linked/unlinked Sync Pan/Zoom and an optional A/B Split for still images.
 ## UI behavior
 
 - Sidebar state and thumbnail density persist across sessions.
+- Changing review scope clears the previous inspector target and selection.
+  Inspector identity includes the source batch and folder, and native snapshot
+  Select All/exclusions update the Overview count immediately.
 - Lightbox videos autoplay and loop by default. Disable both together from
   **View → Autoplay + loop lightbox videos**; the preference persists locally.
 - Background polling avoids interrupting lightbox review, drag/drop, and resize

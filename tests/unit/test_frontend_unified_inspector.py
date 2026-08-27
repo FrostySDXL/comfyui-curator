@@ -69,7 +69,9 @@ def test_inspector_uses_effective_server_snapshot_selection_and_zero_fallback() 
 
 def test_inspected_image_metadata_load_has_one_lifecycle_owner() -> None:
     js = read_frontend_js()
-    inspected = extract_function_body(js, "function aiSetInspectedImage(img)")
+    inspected = extract_function_body(
+        js, "function aiSetInspectedImage(img, sourceOverride = null)"
+    )
     render = extract_function_body(js, "function aiRenderImageInspector(img = null)")
 
     assert "loadInspectorMetadata" not in inspected

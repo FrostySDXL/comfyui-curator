@@ -390,6 +390,11 @@ function createHarness() {
         let gridDensity = 'comfortable';
         let allCounts = {};
         let folderRequestToken = 0;
+        function getImageIdentityKey(img, sourceOverride = null) {
+            if (!img || !img.name) return '';
+            const source = sourceOverride || {batch: currentBatch, folder: currentFolder};
+            return String(source.batch || '') + '\\u001f' + String(source.folder || '') + '\\u001f' + img.name;
+        }
         const GRID_DENSITY_KEY = 'imageCurator.gridDensity';
         const MAX_GRID_LOADING_PLACEHOLDERS = 200;
         const THUMBNAIL_BLOB_CACHE_MAX = 1000;

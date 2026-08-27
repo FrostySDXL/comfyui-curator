@@ -736,13 +736,14 @@ function normalizePublicItems(items) {
         }
 
 async function loadBatchPublic(batch) {
+            const priorScope = getViewScopeKey();
             currentBatch = batch;
             currentFolder = 'public';
             saveBatchState();
-            resetSelectionState();
-            lastAction = null;
-            resetAiBatchState(false);
-            closeLightbox();
+            const scopeChanged = priorScope !== getViewScopeKey();
+            if (scopeChanged) beginViewTransition({clearImages: true, closeLightbox: true});
+            if (scopeChanged) resetAiBatchState(false);
+            const requestToken = ++folderRequestToken;
             document.querySelectorAll('.batch-name').forEach(el =>
                 el.classList.toggle('selected', el.dataset.batch === batch));
             document.querySelectorAll('.folder-tab').forEach(t =>
@@ -751,6 +752,7 @@ async function loadBatchPublic(batch) {
             const pathEl = document.getElementById('current-path');
             pathEl.replaceChildren(createTextElement('span', 'path', batch), document.createTextNode(' / public'));
             const publicData = await apiGetBatchPublic(batch);
+            if (requestToken !== folderRequestToken || getViewScopeKey() !== `${batch}\u001fpublic`) return;
             images = normalizePublicItems(publicData);
             updateImageCountLabel();
             updateGrid();
@@ -759,13 +761,14 @@ async function loadBatchPublic(batch) {
         }
 
 async function loadAllPublic() {
+            const priorScope = getViewScopeKey();
             currentBatch = '__public__';
             currentFolder = null;
             saveBatchState();
-            resetSelectionState();
-            lastAction = null;
-            resetAiBatchState(false);
-            closeLightbox();
+            const scopeChanged = priorScope !== getViewScopeKey();
+            if (scopeChanged) beginViewTransition({clearImages: true, closeLightbox: true});
+            if (scopeChanged) resetAiBatchState(false);
+            const requestToken = ++folderRequestToken;
             document.querySelectorAll('.batch-name').forEach(el =>
                 el.classList.toggle('selected', el.dataset.batch === '__public__'));
             const tabs = document.getElementById('folder-tabs');
@@ -776,6 +779,7 @@ async function loadAllPublic() {
             updateAutoImportQuickAction(document.getElementById('active-batch-select').value || null);
             try {
                 const data = await apiGetAllPublic();
+                if (requestToken !== folderRequestToken || getViewScopeKey() !== '__public__\u001f') return;
                 images = normalizePublicItems(data.public || []);
                 universalPublicCount = images.length;
                 updateImageCountLabel();

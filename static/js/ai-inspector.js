@@ -8,16 +8,17 @@ function aiGetSingleSelectedImage() {
         }
 
 function aiGetInspectedImage() {
-            if (!aiInspectedImageName) return null;
-            return images.find(img => img && img.name === aiInspectedImageName) || null;
+            if (!aiInspectedImageKey) return null;
+            return images.find(img => img && getImageIdentityKey(img) === aiInspectedImageKey) || null;
         }
 
-function aiSetInspectedImage(img) {
+function aiSetInspectedImage(img, sourceOverride = null) {
             aiInspectedImageName = img ? img.name : null;
+            aiInspectedImageKey = img ? getImageIdentityKey(img, sourceOverride) : '';
             aiRenderImageInspector(img || null);
             if (typeof renderLightboxAiPanel === 'function') renderLightboxAiPanel();
             document.querySelectorAll('#grid .thumb').forEach(thumb => {
-                thumb.classList.toggle('inspected', !!aiInspectedImageName && thumb.dataset.name === aiInspectedImageName);
+                thumb.classList.toggle('inspected', !!aiInspectedImageKey && (thumb.dataset.inspectorKey || '') === aiInspectedImageKey);
             });
         }
 

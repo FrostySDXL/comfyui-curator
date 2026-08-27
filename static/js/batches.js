@@ -509,8 +509,6 @@ function selectBatch(batch) {
             const batchChanged = currentBatch !== batch;
             currentBatch = batch;
             saveBatchState();
-            resetSelectionState();
-            lastAction = null;  // Clear undo state on batch switch
             updateAutoImportQuickAction(document.getElementById('active-batch-select').value || null);
             document.querySelectorAll('.batch-name').forEach(el =>
                 el.classList.toggle('selected', el.dataset.batch === batch));
@@ -518,9 +516,8 @@ function selectBatch(batch) {
             if (batchChanged) {
                 // Immediately replace old thumbnails with thumb-shaped placeholders
                 // while the new batch's image list loads.
-                images = [];
+                beginViewTransition({clearImages: true, closeLightbox: true});
                 resetAiBatchState(false);
-                closeLightbox();
                 showGridLoadingPlaceholders(batch, 'inbox');
             }
             showAiCuratePanel();
@@ -535,10 +532,17 @@ async function selectFolder(batch, folder) {
                 deactivateWorkspaceSearchFilter();
                 workspaceSearchReturnContext = null;
             }
+            if (folder === 'public') {
+                await loadBatchPublic(batch);
+                return;
+            }
+            const priorScope = getViewScopeKey();
             currentBatch = batch;
             currentFolder = folder;
             saveBatchState();
-            resetSelectionState();
+            if (priorScope !== getViewScopeKey()) {
+                beginViewTransition({clearImages: true, closeLightbox: true});
+            }
 
             document.querySelectorAll('.folder-tab').forEach(t =>
                 t.classList.toggle('active', t.dataset.folder === folder));
@@ -552,12 +556,6 @@ async function selectFolder(batch, folder) {
             pathEl.appendChild(document.createTextNode(' / ' + folder));
             updateAutoImportQuickAction(document.getElementById('active-batch-select').value || null);
 
-            if (folder === 'public') {
-                updateFolderTabs();
-                await loadBatchPublic(batch);
-                return;
-            }
-            images = [];
             showGridLoadingPlaceholders(batch, folder);
             updateFolderTabs();
             await loadCurrentFolderImages();

@@ -27,6 +27,7 @@ function toggleSelect(index, event) {
                 else serverSelection.excluded.add(name);
                 updateSelectionVisuals();
                 updateActionBar();
+                if (typeof aiRenderImageInspector === 'function') aiRenderImageInspector();
                 return;
             }
             if (event.shiftKey && lastSelectIndex >= 0) {
@@ -221,6 +222,7 @@ function selectAllDisplayedImages() {
                 lastSelectIndex = images.length - 1;
                 updateSelectionVisuals();
                 updateActionBar();
+                if (typeof aiRenderImageInspector === 'function') aiRenderImageInspector();
                 return;
             }
             const displayedNames = getDisplayImages().map(img => img.name);

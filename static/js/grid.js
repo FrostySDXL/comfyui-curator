@@ -883,7 +883,7 @@ function setGridLoadingStatus(loading, message = '') {
         }
 
 function getImageBatchAndFolder(img) {
-            return isVirtualCollectionView()
+            return img && img.batch && img.folder
                 ? {batch: img.batch, folder: img.folder}
                 : {batch: currentBatch, folder: currentFolder};
         }
@@ -1091,7 +1091,7 @@ function getThumbRenderSignature(img, index) {
                 source.batch,
                 source.folder,
                 selected,
-                typeof aiInspectedImageName !== 'undefined' && aiInspectedImageName === img.name,
+                typeof aiInspectedImageKey !== 'undefined' && aiInspectedImageKey === getImageIdentityKey(img, source),
                 shouldShow,
                 aiShowOverlays,
                 scoreResult ? scoreResult.score : null,
@@ -1120,6 +1120,7 @@ function updateThumbElement(thumb, img, index) {
 
             thumb.dataset.name = img.name;
             thumb.dataset.imageKey = getImageRenderKey(img);
+            thumb.dataset.inspectorKey = getImageIdentityKey(img, source);
             thumb.dataset.index = String(index);
             thumb.dataset.mediaKind = img.media_kind || 'media';
             thumb.dataset.sourceBatch = source.batch || '';
@@ -1127,7 +1128,7 @@ function updateThumbElement(thumb, img, index) {
                 ? !serverSelection.excluded.has(img.name)
                 : selectedImages.has(img.name);
             thumb.classList.toggle('selected', selected);
-            thumb.classList.toggle('inspected', typeof aiInspectedImageName !== 'undefined' && aiInspectedImageName === img.name);
+            thumb.classList.toggle('inspected', typeof aiInspectedImageKey !== 'undefined' && aiInspectedImageKey === getImageIdentityKey(img, source));
             thumb.classList.toggle('ai-filtered-out', !shouldShow);
             thumb.classList.remove('removing');
             const previewCapable = img.media_kind === 'animated_image' || img.media_kind === 'video';

@@ -52,6 +52,12 @@ Applied via `@pytest.mark.component`, `@pytest.mark.integration`, or `pytestmark
 
 The `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tests** -- they read ordered split JS/CSS sources through `tests/unit/frontend_source.py` and assert on regex matches for function names, code patterns, or the absence of undefined references. There is no headless browser, DOM testing, or JS test framework. These tests catch regressions in function naming and structural invariants but do NOT test interactive behavior.
 
+`state_transitions_lifecycle_test.js` is an executable Node VM regression for
+source-qualified inspector identity, delayed metadata, virtual-loader, and
+polling response ownership across view transitions. Its Python wrapper runs it
+with the frontend source-invariant tests; transition reset ownership lives in
+`beginViewTransition()` rather than being duplicated in each loader.
+
 ## Key Files & Responsibilities
 
 | File | Subject Under Test | Key Patterns |

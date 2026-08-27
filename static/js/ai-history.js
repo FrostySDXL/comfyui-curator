@@ -234,6 +234,7 @@ function resetAiBatchState(refreshGrid = true) {
             aiRunDetails = {};
             aiCompareRunId = 'previous';
             aiInspectedImageName = null;
+            aiInspectedImageKey = '';
             aiThresholdScopeKey = null;
             aiThresholdValue = 70;
             aiAppliedThreshold = null;
