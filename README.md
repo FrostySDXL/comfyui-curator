@@ -358,4 +358,6 @@ queue FIFO. Designed for single-user operation, not concurrent scoring.
 - **Agent guidance:** `AGENTS.md` -- startup instructions for AI agents
   working in this repo, plus per-directory READMEs in `ai_curate/`,
   `image_curator/`, `static/`, `tests/`, and `scripts/`.
+- **Native template maintenance:** Edit `templates/index.html`, then run
+  `python scripts/generate_curator_template.py --write` and commit both templates.
 - **License:** MIT -- see `LICENSE`.

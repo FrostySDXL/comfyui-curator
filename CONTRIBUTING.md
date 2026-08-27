@@ -28,6 +28,11 @@ This repository is operator-maintained. Keep changes minimal, explicit, and easy
 - Tests: `tests/unit/`, `tests/component/`, `tests/integration/`
 - Internal repo guidance: `README.md`, `AGENTS.md`, `CONTRIBUTING.md`
 
+When changing `templates/index.html`, run
+`.venv\Scripts\python.exe scripts\generate_curator_template.py --write` and
+commit the resulting `templates/curator.html` alongside it. The generator's
+`--check` mode is read-only and runs in the verification runner.
+
 Avoid adding new production modules at repo root unless they are explicit entrypoints. Prefer `image_curator/`, `ai_curate/`, or another responsibility-based package with docs and tests.
 
 ### CSS file map
@@ -188,7 +193,7 @@ Also update the runner tests in `tests/unit/test_run_all_script.py` so the expec
 - Update `README.md` when operator-visible behavior, compatibility surfaces, ownership boundaries, or cleanup guidance changes
 - Check `AGENTS.md`, this file, and the in-app Help modal for duplicated commands, paths, shortcuts, or compatibility surfaces
 - If verification expectations change, update `scripts/run_all.py`, `tests/unit/test_run_all_script.py`, README verification notes, and this file together
-- If `templates/index.html` changes, mirror the two-transform update to `templates/curator.html` (`/static/` → `/curator_static/` plus native-mode script block)
+- If `templates/index.html` changes, run `.venv\Scripts\python.exe scripts\generate_curator_template.py --write` and commit both templates
 
 ## Completion standard
 

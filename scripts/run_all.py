@@ -120,6 +120,10 @@ def _all_checks() -> dict[str, Check]:
             "css-assets",
             [sys.executable, "scripts/run_all.py", "--check-css-assets"],
         ),
+        "curator-template": Check(
+            "curator-template",
+            [sys.executable, "scripts/generate_curator_template.py", "--check"],
+        ),
         "mypy": Check(
             "mypy",
             _python_module("mypy", "--explicit-package-bases", *PYTHON_TARGETS),
@@ -164,6 +168,7 @@ def build_checks(mode: str = "default", skip_js: bool = False) -> list[Check]:
         "quick": [
             "compileall",
             "css-assets",
+            "curator-template",
             "unit-tests",
             "javascript-syntax",
             "javascript-duplicate-declarations",
@@ -173,6 +178,7 @@ def build_checks(mode: str = "default", skip_js: bool = False) -> list[Check]:
             "ruff-check",
             "compileall",
             "css-assets",
+            "curator-template",
             "unit-tests",
             "component-tests",
             "integration-tests",
@@ -185,6 +191,7 @@ def build_checks(mode: str = "default", skip_js: bool = False) -> list[Check]:
             "ruff-check",
             "compileall",
             "css-assets",
+            "curator-template",
             "unit-tests",
             "component-tests",
             "integration-tests",

@@ -35,6 +35,8 @@
   - All API calls and media URL construction must use these helpers; raw `/api/`, `/thumb/`, or `/image/` strings in `fetch()` are validated by test invariants.
 - **`curator.html` synchronization:** The native template must stay synchronized with `index.html`. The transform is: replace `/static/` with `/curator_static/` and insert `window.CURATOR_NATIVE = true` before the first `<script src="...">`. Tested by `test_comfyui_static_ui.py`.
 
+Edit `templates/index.html`, then run `.venv\Scripts\python.exe scripts\generate_curator_template.py --write` and commit both shipped templates. The read-only `--check` mode is included in the shared verification runner.
+
 ### CSS File Map
 
 | File | Responsibility |
@@ -304,7 +306,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - **Never:** Change keyboard shortcut keybindings without updating the Help modal in both `templates/index.html` and `templates/curator.html`.
 - **Never:** Add a frontend framework or build step -- the project is intentionally vanilla JS.
 - **Never:** Use raw `/api/`, `/thumb/`, `/preview/`, or `/image/` URL strings in `fetch()` calls -- use `ccApiPath`, `ccThumbUrl`, `ccPreviewUrl`, or `ccImageUrl`.
-- **Always:** When changing `templates/index.html`, mirror the same change to `templates/curator.html` using the two-transform rule (`/static/` → `/curator_static/` plus native-mode script block).
+- **Always:** When changing `templates/index.html`, regenerate `templates/curator.html` with `.venv\Scripts\python.exe scripts\generate_curator_template.py --write` and commit both files.
 - **Always:** Use `folderRequestToken` pattern (increment + check) when making async fetch calls that may be superseded by a newer request.
 - **Always:** Check `isInteractionBusy()` before executing polling-triggered DOM updates to avoid interrupting drag, lightbox, or resize interactions.
 - **Verification:** No automated browser tests exist. All frontend changes require manual browser smoke testing. For JS syntax:
@@ -315,7 +317,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 ## Agent Instructions
 
 - Start with `templates/index.html` to understand the DOM structure (IDs, CSS classes), then trace behavior in the focused `static/js/*.js` file from the JavaScript File Map above.
-- When changing `index.html`, mirror the change to `templates/curator.html` using the two-transform rule: replace `/static/` with `/curator_static/` and ensure `window.CURATOR_NATIVE = true` appears before the first `<script src="...">`.
+- When changing `index.html`, run `.venv\Scripts\python.exe scripts\generate_curator_template.py --write` to regenerate `templates/curator.html`; the two transforms are `/static/` → `/curator_static/` and the native marker before the first `<script src="...">`.
 - Changes to styling go in the focused `static/css/*.css` file for the affected surface. Keep selector names stable unless all HTML/JS/test references are updated. The dark theme is fixed -- no light mode.
 - When adding a new API call, route it through `ccApiPath()` and add it to the API Call Inventory table above.
 - The `test_frontend_*.py` files in `tests/unit/` regex-scan the ordered split JS/CSS sources via `tests/unit/frontend_source.py` for function names and invariants. They are NOT browser tests. After JS changes, run them to avoid regressions on the invariants they check, but always also test manually in a browser.

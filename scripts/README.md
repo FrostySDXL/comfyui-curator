@@ -25,6 +25,20 @@ When adding new test layers or verification tools, update `run_all.py`, its unit
 
 The JavaScript checks use the same ordered classic-script list as the browser load order. They run `node --check` for each existing `static/js/*.js` split file and a cross-file duplicate top-level `let`/`const` declaration check so classic scripts do not fail at page load.
 
+## Native template generation
+
+Edit `templates/index.html`, then regenerate the shipped native template and
+commit both files:
+
+```powershell
+.venv\Scripts\python.exe scripts\generate_curator_template.py --write
+```
+
+The read-only `--check` mode is included in every `run_all.py` verification
+mode except `--format`; it never rewrites stale output. The generator replaces
+`/static/` with `/curator_static/` and inserts the native marker before the
+first ordered script. It is never used at application runtime.
+
 ## Local browser fixture
 
 Use `setup_local_browser_fixture.py` to create disposable batches and sample

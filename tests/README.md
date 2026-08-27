@@ -122,6 +122,10 @@ The `test_frontend_*.py` files in `tests/unit/` are **Python source-scraping tes
 - When adding a new verification surface, update `scripts/run_all.py`, `tests/unit/test_run_all_script.py`, and this README together.
 - For parametrized validation tests, follow `test_storage.py`'s `bad_batch` pattern (matrix of bad inputs x methods = many assertions in one test).
 - **Native extension tests are mock-based:** `test_comfyui_extension.py` and `test_comfyui_static_ui.py` validate entrypoint structure, route registration, template parity, and URL helper behavior using mock ComfyUI modules. A manual ComfyUI smoke test is required for any claim of native extension readiness.
+- **Template generation tests:** `test_generate_curator_template.py` covers
+  deterministic transforms, idempotence, stale/missing diagnostics, and
+  explicit write/check modes. Edit `templates/index.html`, regenerate
+  `templates/curator.html`, and commit both.
 
 ## Gotchas & Common Pitfalls
 

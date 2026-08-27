@@ -27,6 +27,7 @@ def test_default_plan_uses_python_modules_and_all_test_layers():
         "ruff-check",
         "compileall",
         "css-assets",
+        "curator-template",
         "unit-tests",
         "component-tests",
         "integration-tests",
@@ -40,7 +41,7 @@ def test_default_plan_uses_python_modules_and_all_test_layers():
     assert ruff_check.command[:3] == [sys.executable, "-m", "ruff"]
     assert "check" in ruff_check.command
     assert checks[3].command == [sys.executable, "scripts/run_all.py", "--check-css-assets"]
-    assert checks[4].command == [sys.executable, "-m", "pytest", "tests/unit"]
+    assert checks[4].command == [sys.executable, "scripts/generate_curator_template.py", "--check"]
 
 
 def test_quick_plan_is_smaller_and_can_skip_js():
@@ -49,7 +50,7 @@ def test_quick_plan_is_smaller_and_can_skip_js():
     checks = run_all.build_checks(mode="quick", skip_js=True)
     names = [check.name for check in checks]
 
-    assert names == ["compileall", "css-assets", "unit-tests"]
+    assert names == ["compileall", "css-assets", "curator-template", "unit-tests"]
 
 
 def test_quick_plan_includes_all_javascript_checks():
@@ -144,6 +145,15 @@ def test_format_plan_mutates_only_when_requested():
 
     assert [check.name for check in checks] == ["ruff-format"]
     assert checks[0].command[:4] == [sys.executable, "-m", "ruff", "format"]
+
+
+def test_template_check_runs_in_all_non_format_modes():
+    run_all = load_run_all_module()
+
+    for mode in ("quick", "default", "full"):
+        names = [check.name for check in run_all.build_checks(mode=mode)]
+        assert "curator-template" in names
+    assert "curator-template" not in [check.name for check in run_all.build_checks(mode="format")]
 
 
 def test_full_plan_includes_mypy():

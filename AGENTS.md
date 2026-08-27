@@ -248,6 +248,9 @@ Treat these as stability-sensitive:
 - **Start:** Read this file, then use the Decision Tree to locate the right files for your task. Check for per-directory `README.md` files (`ai_curate/`, `image_curator/`, `static/`, `tests/`, `scripts/`) -- each has module-scoped startup guidance: architecture, contracts, gotchas, and verification commands specific to that directory.
 - **Never:** Read `image-curator.service` (use `.example`). Read `.env` files. Commit secrets or tokens.
 - **Always:** Use `.venv/`. Run `python scripts/run_all.py --quick` after changes. Re-read changed files before claiming completion.
+- **Template source rule:** Edit `templates/index.html`, then run
+  `.venv\Scripts\python.exe scripts\generate_curator_template.py --write` and
+  commit both shipped templates; the runner's template check is read-only.
 - **Know your layer:** Unit tests for isolated logic. Component tests for multi-module interactions. Integration tests for full HTTP/filesystem workflows. Manual browser validation for interactive UI changes.
 - **Before committing:** `ruff check` and `ruff format --check` must pass on all touched paths.
 - **Completion:** State files changed, commands run, manual verification performed, and remaining risk or follow-up work.
@@ -276,7 +279,10 @@ Treat these as stability-sensitive:
 - **Native extension scope:** Native settings, batch/image/thumbnail foundation routes, curation mutations, favorites, public workflow, prompt history, media search, and AI scoring lifecycle are namespaced under `/api/curator/*` and `/curator/{thumb,image}/*`. Native AI uses a lifecycle-owned queue with bounded shutdown.
 - **Native public export root default:** `NativeCuratorSettings.from_host_paths()` resolves a ComfyUI-owned `public-exports` directory under the curator system user directory (`<system_dir>/public-exports`). The editable path appears only in the dedicated local-operator settings response, not general page or batch payloads.
 - **Native settings:** `<system_dir>/config.json` is the normal native source. Persisted values precede environment fallbacks and ComfyUI-owned defaults. The dedicated settings endpoint returns editable paths and API-key set status, never the key; saves support explicit replacement and clearing and are rejected while AI work is active.
-- **curator.html must stay synchronized with index.html:** The native template is derived from `index.html` by two transforms: `/static/` → `/curator_static/` and inserting `window.CURATOR_NATIVE = true` before the first `<script src="...">`. Any change to `index.html` must be mirrored in `curator.html`.
+- **curator.html must stay synchronized with index.html:** After editing
+  `index.html`, run `.venv\Scripts\python.exe scripts\generate_curator_template.py --write`.
+  The transforms are `/static/` → `/curator_static/` and inserting
+  `window.CURATOR_NATIVE = true` before the first `<script src="...">`.
 - **Shared frontend mode detection:** `static/js/state.js` checks `window.CURATOR_NATIVE === true` to select API paths, thumb URLs, and image URLs. Do not remove or rename `CURATOR_NATIVE` without updating both templates and all URL helpers.
 
 ## Verification Standard
