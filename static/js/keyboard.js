@@ -4,7 +4,7 @@
 document.addEventListener('keydown', (e) => {
             const activeEl = document.activeElement;
             const searchInput = document.getElementById('batch-search');
-            const isTypingTarget = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable;
+            const isTypingTarget = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable;
             const lightboxActive = document.getElementById('lightbox').classList.contains('active');
 
             if (typeof isLightboxOpenPending === 'function' && isLightboxOpenPending()) {
@@ -15,14 +15,37 @@ document.addEventListener('keydown', (e) => {
                 return;
             }
 
-            if (e.key === "/" && !isTypingTarget) {
+            if (e.defaultPrevented) return;
+
+            const trappedOverlay = typeof _getActiveFocusTrapModal === 'function'
+                ? _getActiveFocusTrapModal()
+                : null;
+            if (trappedOverlay && trappedOverlay.classList.contains('modal')) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const closeById = {
+                        'new-batch-modal': hideNewBatchModal,
+                        'delete-modal': hideDeleteModal,
+                        'publish-modal': hidePublishModal,
+                        'public-destination-modal': hidePublicDestinationModal,
+                        'public-delete-modal': hidePublicDeleteModal,
+                        'help-modal': hideHelpModal,
+                        'prompts-modal': hidePromptsModal,
+                        'settings-modal': hideSettingsModal,
+                    }[trappedOverlay.id];
+                    if (closeById) closeById();
+                }
+                return;
+            }
+            if (e.key === "/" && !isTypingTarget && !lightboxActive) {
                 e.preventDefault();
                 ensureBatchSidebarOpen();
                 if (searchInput) searchInput.focus();
                 return;
             }
 
-            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && !lightboxActive) {
                 e.preventDefault();
                 ensureBatchSidebarOpen();
                 if (searchInput) {

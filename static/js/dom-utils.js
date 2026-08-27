@@ -23,14 +23,25 @@ function formatSize(bytes) {
 
         // --- Modal focus trap ---
 
-        let _modalFocusRestore = null;
+        const _modalFocusStack = [];
         let _activeModal = null;
+
+function _modalFocusable(modal) {
+            if (!modal) return [];
+            const all = modal.querySelectorAll(
+                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+            );
+            return [...all].filter(el => {
+                if (el.disabled || el.hidden || el.tabIndex === -1) return false;
+                // offsetParent is null for position:fixed controls (including
+                // the lightbox Close button), so use rendered client rects.
+                return el.getClientRects().length > 0;
+            });
+        }
 
 function _modalKey(e) {
             if (e.key !== 'Tab' || !_activeModal) return;
-            const focusable = _activeModal.querySelectorAll(
-                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-            );
+            const focusable = _modalFocusable(_activeModal);
             if (focusable.length === 0) return;
             const first = focusable[0];
             const last = focusable[focusable.length - 1];
@@ -48,26 +59,28 @@ function _modalKey(e) {
         }
 
 function _trapFocus(modal, initialFocus = null) {
+            if (_activeModal === modal) return;
+            _modalFocusStack.push({modal, restore: document.activeElement});
             _activeModal = modal;
-            _modalFocusRestore = document.activeElement;
-            const all = modal.querySelectorAll(
-                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-            );
-            const focusable = [...all].filter(el => el.tabIndex !== -1 && !el.disabled && el.offsetParent !== null);
+            const focusable = _modalFocusable(modal);
             const first = initialFocus && focusable.includes(initialFocus) ? initialFocus : focusable[0];
             modal.addEventListener('keydown', _modalKey);
             if (first) first.focus();
         }
 
 function _releaseFocusTrap() {
-            if (_activeModal) {
-                _activeModal.removeEventListener('keydown', _modalKey);
+            const entry = _modalFocusStack.pop();
+            if (!entry) return;
+            entry.modal.removeEventListener('keydown', _modalKey);
+            const previous = _modalFocusStack[_modalFocusStack.length - 1];
+            _activeModal = previous ? previous.modal : null;
+            if (entry.restore && entry.restore.isConnected) {
+                entry.restore.focus({preventScroll: true});
             }
-            _activeModal = null;
-            if (_modalFocusRestore) {
-                _modalFocusRestore.focus();
-                _modalFocusRestore = null;
-            }
+        }
+
+function _getActiveFocusTrapModal() {
+            return _activeModal;
         }
 
 function copyTextWithTextareaFallback(value) {

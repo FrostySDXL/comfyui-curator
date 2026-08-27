@@ -58,6 +58,14 @@ and mocked ComfyUI modules; they do not start ComfyUI or a browser.
   selection remain usable.
 - Open Help and Activity. After inbox → shortlisted → inbox settles, Activity
   must show 0 active items and prior folder-load records must remain terminal.
+- Keyboard/focus: with Help, Search, Settings, or New Batch open, press `/`,
+  `Ctrl+K`, arrows, and review shortcuts; focus must remain inside the active
+  overlay. `Escape` closes only the topmost overlay, while keyboard activation
+  of its Close control still works. Verify `Tab` and
+  `Shift+Tab` wrap between visible enabled controls. Open an image, verify the
+  lightbox initially focuses Close and traps focus, then open Prepare Public,
+  close it with Escape, and verify focus returns to the lightbox control; close
+  the lightbox and verify focus returns to the original thumbnail/opener.
 - Keep this core smoke read-only: do not save Settings, run AI scoring, import,
   move, or delete files. Record any popup/button click separately from direct
   `/curator` loading evidence; a click is not proof that a new tab opened.

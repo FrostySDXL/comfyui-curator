@@ -49,10 +49,16 @@ function createElement() {
         onload: null,
         onerror: null,
         hidden: false,
+        disabled: false,
+        tabIndex: 0,
+        offsetParent: {},
+        isConnected: true,
         paused: true,
         playCalls: 0,
         replaceChildrenCount: 0,
         addEventListener() {},
+        removeEventListener() {},
+        focus() { global.document.activeElement = this; },
         setAttribute(name, value) { attributes[name] = String(value); },
         getAttribute(name) { return attributes[name] || null; },
         setPointerCapture() {},
@@ -65,9 +71,11 @@ function createElement() {
         appendChild() {},
         replaceChildren() { this.replaceChildrenCount++; },
         setProperty() {},
-        querySelectorAll() { return []; },
+        querySelectorAll() { return this.focusables || []; },
+        querySelector(selector) { return selector === ".lightbox-close" ? this.closeButton : null; },
         closest() { return {style: {}}; },
         getBoundingClientRect() { return {left: 0, top: 0, width: 800, height: 600}; },
+        getClientRects() { return [{}]; },
     };
 }
 
@@ -80,6 +88,8 @@ function createRuntime() {
     visibleImage.naturalHeight = 600;
     const lightbox = createElement();
     lightbox.classList.add("active");
+    lightbox.closeButton = createElement();
+    lightbox.focusables = [lightbox.closeButton];
     const elements = {
         lightbox,
         "lightbox-img": visibleImage,
@@ -103,6 +113,9 @@ function createRuntime() {
         "lightbox-compare-zoom-0": createElement(),
         "lightbox-compare-zoom-1": createElement(),
         "lightbox-compare-divider": createElement(),
+        toast: createElement(),
+        "toast-text": createElement(),
+        "toast-undo": createElement(),
     };
     const comparePanes = [createElement(), createElement()];
     comparePanes.forEach((pane, index) => { pane.dataset.comparePane = String(index); });
@@ -153,6 +166,8 @@ function createRuntime() {
     const context = {
         console,
         Promise,
+        setTimeout,
+        clearTimeout,
         Image: MockImage,
         currentIndex: 0,
         currentBatch: "batch",
@@ -162,6 +177,7 @@ function createRuntime() {
         selectedImages: new Set(),
         aiActiveRun: null,
         lightboxMetadataRequestToken: 0,
+        toastTimeout: null,
         currentLightboxMetadata: null,
         currentLightboxMetadataError: null,
         currentLightboxMetadataLoading: false,
@@ -193,7 +209,10 @@ function createRuntime() {
         createTextElement() { return createElement(); },
         showToast() {},
     };
+    context.window = {addEventListener() {}};
     vm.createContext(context);
+    global.document = context.document;
+    vm.runInContext(fs.readFileSync("static/js/dom-utils.js", "utf8"), context, {filename: "dom-utils.js"});
     vm.runInContext(source, context, {filename: "lightbox.js"});
     return {context, elements, imageUrls, loaders, items};
 }
@@ -232,6 +251,9 @@ async function testNewSessionHidesPreviousImageUntilVisibleTargetLoads() {
 
     if (elements["lightbox-img"].onload) elements["lightbox-img"].onload();
     check(elements.lightbox.classList.contains("active"), "visible-image load activates the prepared new session");
+    check(context._getActiveFocusTrapModal() === elements.lightbox, "prepared still-image activation owns the focus trap");
+    check(context.document.activeElement === elements.lightbox.closeButton, "prepared still-image activation focuses Close");
+    check(elements.lightbox.inert === false, "active lightbox is not inert");
     check(vm.runInContext("lightboxBaseWidth > 0 && lightboxBaseHeight > 0", context), "new session measures nonzero base dimensions before activation");
     check(vm.runInContext("lightboxZoom === 1", context), "new session activates at 100 percent zoom");
 }
@@ -261,6 +283,8 @@ async function testClosePreservesCommittedInlineDimensions() {
     context.closeLightbox();
 
     check(committedWidth !== "" && committedHeight !== "", "active measured image has explicit committed dimensions before close");
+    check(context._getActiveFocusTrapModal() === null, "closing a prepared session releases its focus trap");
+    check(elements.lightbox.inert === true, "closed lightbox becomes inert");
     check(visibleImage.style.width === committedWidth && visibleImage.style.height === committedHeight, "close preserves committed inline dimensions through fade-out");
 }
 
@@ -757,6 +781,23 @@ function testTypedAudioCloseReleasesPlayerAndArtwork() {
     testTypedVideoNavigationReleasesPlayerResource();
     testTypedVideoAutoplaysLoopsAndTogglesBeforeNativeFocus();
     testTypedAudioCloseReleasesPlayerAndArtwork();
+    const focusRuntime = createRuntime();
+    focusRuntime.context.document.activeElement = createElement();
+    focusRuntime.context._trapFocus(focusRuntime.elements.lightbox);
+    focusRuntime.context._trapFocus(focusRuntime.elements.lightbox);
+    check(focusRuntime.context._getActiveFocusTrapModal() === focusRuntime.elements.lightbox,
+        "repeated lightbox trap activation is idempotent");
+    focusRuntime.context.closeLightbox();
+    check(focusRuntime.context._getActiveFocusTrapModal() === null,
+        "closing lightbox releases its owned focus trap");
+    const nestedRuntime = createRuntime();
+    nestedRuntime.elements.lightbox.classList.remove("active");
+    const unrelatedModal = createElement();
+    unrelatedModal.classList.add("modal");
+    nestedRuntime.context._trapFocus(unrelatedModal);
+    nestedRuntime.context.closeLightbox();
+    check(nestedRuntime.context._getActiveFocusTrapModal() === unrelatedModal,
+        "closing an inactive lightbox does not pop an unrelated modal trap");
     const failed = details.filter(detail => !detail.pass).length;
     process.stdout.write(JSON.stringify({total: details.length, failed, details}));
     process.exitCode = failed === 0 ? 0 : 1;
