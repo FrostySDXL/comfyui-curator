@@ -46,6 +46,7 @@ JS_FILES = [
     "viewport-loader.js",
     "favorites.js",
     "publish.js",
+    "selection.js",
     "moves.js",
     "lightbox.js",
     "metadata.js",

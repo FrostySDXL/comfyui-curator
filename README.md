@@ -335,6 +335,10 @@ The repository includes a native ComfyUI integration:
   `ccPreviewUrl` in
   `static/js/state.js`) switch between `/api`/`/thumb`/`/image` and
   `/api/curator`/`/curator/thumb`/`/curator/image` based on the native flag.
+- Selection and compare-candidate ownership lives in the ordered
+  `static/js/selection.js` module; `static/js/moves.js` retains drag/drop,
+  filesystem moves, undo, and reject deletion. Both modules intentionally
+  share the mutable globals in `state.js`.
 - `GET` and `POST /api/curator/settings` back the native-only Settings modal;
   editable paths are returned only by this dedicated local-operator endpoint.
 

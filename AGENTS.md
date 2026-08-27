@@ -1,6 +1,6 @@
 # AGENTS.md
 
-**Purpose:** Operator-focused web application for reviewing generated images with optional AI-assisted scoring. **Status:** Actively maintained. **Audience:** AI agents and single-operator maintainers. **Last Updated:** 2026-08-24
+**Purpose:** Operator-focused web application for reviewing generated images with optional AI-assisted scoring. **Status:** Actively maintained. **Audience:** AI agents and single-operator maintainers. **Last Updated:** 2026-08-27
 
 ## Quickstart
 
@@ -114,7 +114,7 @@ Frontend (shared static/js/*.js + static/css/*.css)
 | | `ai_curate/native_lifecycle.py` | `NativeAiLifecycle`: native AI lifecycle manager with idempotent startup, permanent-shutdown state machine, submission gate, worker thread tracking, public `submit_job()`, and batch-folder containment |
 | **Frontend** | `templates/index.html` | Single-page Flask template (Jinja2, server-injected model list) |
 | | `templates/curator.html` | Native ComfyUI template derived from `index.html` with `/curator_static/` paths and `CURATOR_NATIVE` flag; must stay synchronized with `index.html` |
-| | `static/js/state.js`, `dom-utils.js`, `api.js`, `sidebar.js`, `batches.js`, `grid.js`, `favorites.js`, `publish.js`, `moves.js`, `lightbox.js`, `metadata.js`, `prompts.js`, `ai-*.js`, `ai.js`, `polling.js`, `modals.js`, `combobox.js`, `keyboard.js`, `events.js`, `bootstrap.js` | Ordered classic browser scripts; vanilla JS, imperative, no framework/build step; `state.js` includes `ccApiPath`/`ccThumbUrl`/`ccImageUrl` helpers for dual-mode (standalone Flask vs native ComfyUI) URL construction |
+| | `static/js/state.js`, `dom-utils.js`, `api.js`, `sidebar.js`, `batches.js`, `grid.js`, `favorites.js`, `publish.js`, `selection.js`, `moves.js`, `lightbox.js`, `metadata.js`, `prompts.js`, `ai-*.js`, `ai.js`, `polling.js`, `modals.js`, `combobox.js`, `keyboard.js`, `events.js`, `bootstrap.js` | Ordered classic browser scripts; vanilla JS, imperative, no framework/build step; `state.js` includes `ccApiPath`/`ccThumbUrl`/`ccImageUrl` helpers for dual-mode (standalone Flask vs native ComfyUI) URL construction |
 | | `static/js/app.js` | Compatibility stub pointing to the split files |
 | | `static/css/base.css`, `sidebar.css`, `layout.css`, `grid.css`, `lightbox.css`, `modals.css`, `prompts.css`, `toast.css`, `ai.css`, `responsive.css` | Browser-loaded split styling in template order (dark theme, flexbox + CSS grid) |
 | | `static/README.md` | Module-scoped agent startup guide (global state, function groups, API calls, gotchas) |

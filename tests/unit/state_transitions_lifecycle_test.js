@@ -96,7 +96,7 @@ assert.equal(
 // The real selection reset owner clears selected state and mode.
 vm.runInContext([
     "updateSelectionVisuals = () => {}; updateActionBar = () => {}; setSelectionMode = (active) => { selectionMode = active; };",
-    extractFunction(fs.readFileSync("static/js/moves.js", "utf8"), "function resetSelectionState()"),
+    extractFunction(fs.readFileSync("static/js/selection.js", "utf8"), "function resetSelectionState()"),
     "selectedImages = new Set(['same.png']); selectionMode = true; resetSelectionState();",
 ].join("\n"), context);
 assert.equal(vm.runInContext("selectedImages.size === 0 && selectionMode === false", context), true, "transition reset clears real selection state");

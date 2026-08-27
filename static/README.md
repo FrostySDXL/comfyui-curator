@@ -45,6 +45,10 @@ and All Public retain their own hidden-rail behavior.
 
 - **Ordered vanilla JS files** under `static/js/`. No framework, ES modules, bundler, transpiler, or build step.
 - **Imperative, event-driven.** Classic scripts share top-level globals intentionally. DOM manipulation is direct.
+- `selection.js` is loaded immediately before `moves.js`; it owns selection and
+  compare behavior while mutable state remains in `state.js`. Its lightbox and
+  inspector callbacks are invoked at runtime after the ordered scripts have
+  loaded; loading this file itself does not render or subscribe to events.
 - **Scripts load at bottom of `<body>`** in both `index.html` (standalone Flask) and `curator.html` (native ComfyUI extension) in deterministic order. Initialization lives in `bootstrap.js`.
 - **Split plain CSS files** under `static/css/`, loaded directly by both templates in deterministic order. No CSS framework, preprocessor, bundler, or build step.
 - **Dual-mode URL construction:** Three helpers in `state.js` (`ccApiPath`, `ccThumbUrl`, `ccImageUrl`) select the correct URL prefix for each mode:
@@ -85,7 +89,8 @@ Edit `templates/index.html`, then run `.venv\Scripts\python.exe scripts\generate
 | `viewport-loader.js` | Viewport-aware thumbnail load-start scheduling: visible/near approach triggers, concurrency 16, single rAF pump, no-unload invariants, and background draining only when `IntersectionObserver` is unavailable |
 | `favorites.js` | Favorites filter/toggle and All Favorites view/count |
 | `publish.js` | Public export modal, batch Public view, All Public view/count, public copy/move/delete actions |
-| `moves.js` | Multi-select, bounded compare-candidate ordering/removal, drag/drop, move, undo, Empty Rejects modal |
+| `selection.js` | Multi-select, bounded compare-candidate ordering/removal, selection visuals, and action-bar rendering |
+| `moves.js` | Drag/drop, move, undo, and Empty Rejects modal |
 | `lightbox.js` | Still/GIF image review, MP4/MP3 playback and cleanup, navigation, zoom, scored navigation, and favorite UI |
 | `metadata.js` | PNG + adjacent JSON sidecar metadata loading/rendering, structured external-favorites post/favorite fields and tag chips, and prompt/JSON copy helpers |
 | `prompts.js` | Library Search tab state, scoped/debounced media queries and results, search-index lifecycle/status rendering, stable paged workspace loading, source-qualified chip filter apply/edit/clear/move reconciliation, Prompt History scope/selection/rendering, build/rebuild controls |

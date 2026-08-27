@@ -9,7 +9,7 @@ ROOT = Path(__file__).parents[2]
 INDEX = ROOT / "templates" / "index.html"
 CURATOR = ROOT / "templates" / "curator.html"
 LIGHTBOX = ROOT / "static" / "js" / "lightbox.js"
-MOVES = ROOT / "static" / "js" / "moves.js"
+SELECTION = ROOT / "static" / "js" / "selection.js"
 GRID_CSS = ROOT / "static" / "css" / "grid.css"
 
 
@@ -27,7 +27,7 @@ def test_candidate_tray_markup_is_compact_accessible_and_dismissible() -> None:
 def test_candidate_tray_uses_selection_as_source_and_orders_only_stills() -> None:
     js = read_frontend_js()
     lightbox = LIGHTBOX.read_text(encoding="utf-8")
-    moves = MOVES.read_text(encoding="utf-8")
+    selection = SELECTION.read_text(encoding="utf-8")
     for function_name in (
         "syncCompareCandidateOrder",
         "renderCompareCandidateTray",
@@ -38,7 +38,7 @@ def test_candidate_tray_uses_selection_as_source_and_orders_only_stills() -> Non
     assert "isStillLightboxImage" in lightbox
     assert "compareCandidateOrder" in js
     assert "selectedImages.has(img.name)" in js
-    assert "Compare supports still images only" in moves
+    assert "Compare supports still images only" in selection
     assert "compare-candidate-launch" in js
     assert "launchCompareCandidateTray();" in js
 

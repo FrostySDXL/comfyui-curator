@@ -13,6 +13,7 @@ JS_FILES = [
     Path("static/js/viewport-loader.js"),
     Path("static/js/favorites.js"),
     Path("static/js/publish.js"),
+    Path("static/js/selection.js"),
     Path("static/js/moves.js"),
     Path("static/js/lightbox.js"),
     Path("static/js/metadata.js"),

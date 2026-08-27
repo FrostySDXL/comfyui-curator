@@ -1,6 +1,6 @@
 # CONTRIBUTING.md
 
-**Last Updated:** 2026-06-13
+**Last Updated:** 2026-08-27
 
 This repository is operator-maintained. Keep changes minimal, explicit, and easy to verify.
 
@@ -24,6 +24,9 @@ This repository is operator-maintained. Keep changes minimal, explicit, and easy
 - Shared AI curation logic: `ai_curate/`
 - HTML templates: `templates/` (`index.html` for standalone Flask; `curator.html` for native ComfyUI extension)
 - Frontend behavior and styling: `static/js/`, `static/css/`
+- Frontend selection/compare behavior is owned by `static/js/selection.js`;
+  filesystem move, undo, drag/drop, and reject deletion behavior remains in
+  `static/js/moves.js`. Preserve their ordered classic-script load relationship.
 - Native ComfyUI extension: `__init__.py` (entrypoint), `py/curator_manager.py` (registration), `image_curator/native_settings.py` and `image_curator/native_routes.py` (foundation services/routes), `web/comfyui/` (frontend button)
 - Tests: `tests/unit/`, `tests/component/`, `tests/integration/`
 - Internal repo guidance: `README.md`, `AGENTS.md`, `CONTRIBUTING.md`
