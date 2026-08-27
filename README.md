@@ -38,7 +38,9 @@ before manual selection. Single-user, local-first, filesystem-backed.
   status; the filesystem remains authoritative. Images queries can become
   persistent workspace filters with visible query, scope, and source chips so
   grid and lightbox review remain inside the matching set until the operator
-  edits or clears the filter.
+  edits or clears the filter. Pending workspace-search applies are cancelled
+  by closing Search, changing
+  its query/scope/tab, or navigating away; late results do not reclaim the view.
 - **Import from ComfyUI** -- one-click **Import All** moves available outputs
   and adjacent JSON sidecars into the selected batch inbox. A lightweight
   one-second status check enables the always-visible control when media arrives.

@@ -58,6 +58,13 @@ polling response ownership across view transitions. Its Python wrapper runs it
 with the frontend source-invariant tests; transition reset ownership lives in
 `beginViewTransition()` rather than being duplicated in each loader.
 
+`media_search_apply_lifecycle_test.js` executes the real search/state scripts
+with transport and DOM doubles. `test_frontend_media_search.py` runs it with a
+30-second timeout (skipped if Node is absent). It checks delayed search and
+favorite responses, away-and-back navigation, modal cancellation/button
+recovery, overlapping applies, normalized virtual scope, favorite mapping,
+and late preview JSON. Browser timing and layout still require manual checks.
+
 ## Key Files & Responsibilities
 
 | File | Subject Under Test | Key Patterns |

@@ -1,4 +1,6 @@
 from pathlib import Path
+import subprocess
+import shutil
 
 from tests.unit.frontend_source import extract_function_body
 
@@ -7,6 +9,25 @@ INDEX_HTML = Path("templates/index.html")
 API_JS = Path("static/js/api.js")
 PROMPTS_JS = Path("static/js/prompts.js")
 EVENTS_JS = Path("static/js/events.js")
+
+
+def test_media_search_apply_lifecycle_vm_regression():
+    node = shutil.which("node")
+    if node is None:
+        import pytest
+
+        pytest.skip("node is required for frontend lifecycle regression")
+    repo_root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [node, str(repo_root / "tests/unit/media_search_apply_lifecycle_test.js")],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "media search apply lifecycle checks passed" in result.stdout
 
 
 def _search_modal_markup() -> str:

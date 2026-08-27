@@ -28,6 +28,13 @@ request tokens; folder, virtual, and polling code checks those tokens
 before applying asynchronous results. Same-scope refreshes may retain the
 inspector and selection.
 
+Library Search apply ownership is separate from preview-query ownership:
+`_invalidateMediaSearchApply()` cancels the pending apply and restores its
+button, while `_mediaSearchApplyStillOwned()` checks operation generation,
+view generation/scope, and the original query/scope controls. Apply cancels a
+pending debounce and invalidates preview responses before starting. Preserve
+the post-JSON preview guard and post-favorites apply guard when refactoring.
+
 ## Key Concepts
 
 ### Architecture

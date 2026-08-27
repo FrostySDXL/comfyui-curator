@@ -29,6 +29,7 @@
         let _promptBlurTimer = null;
         let _promptsRenderTimer = null;
         let mediaSearchRequestToken = 0;
+        let mediaSearchApplyToken = 0;
         let mediaSearchTimer = null;
         let mediaSearchResults = null;
         let mediaSearchBuilding = false;
@@ -108,6 +109,7 @@
                 mediaSearchTimer = null;
             }
             mediaSearchRequestToken += 1;
+            _invalidateMediaSearchApply();
             _promptCloseDropdown();
             hideMediaSearchBuildConfirm();
             hideBuildAllConfirm();
@@ -288,6 +290,7 @@
         // --- Library search tabs and media metadata search ---
 
         function setLibrarySearchTab(tab, options = {}) {
+            _invalidateMediaSearchApply();
             librarySearchTab = tab === 'images' ? 'images' : 'prompts';
             _promptsLocalSet(LIBRARY_SEARCH_TAB_KEY, librarySearchTab);
             const mediaTab = document.getElementById('media-search-tab');
@@ -339,6 +342,7 @@
         }
 
         function scheduleMediaSearch() {
+            _invalidateMediaSearchApply();
             if (mediaSearchTimer) clearTimeout(mediaSearchTimer);
             mediaSearchTimer = setTimeout(() => {
                 mediaSearchTimer = null;
@@ -347,6 +351,7 @@
         }
 
         async function runMediaSearch() {
+            _invalidateMediaSearchApply();
             const input = document.getElementById('media-search-input');
             const list = document.getElementById('media-search-results');
             const total = document.getElementById('media-search-total');
@@ -363,7 +368,9 @@
                 const resp = await apiSearchMedia(query, options);
                 if (token !== mediaSearchRequestToken) return;
                 if (!resp.ok) throw new Error('media search failed');
-                mediaSearchResults = await resp.json();
+                const data = await resp.json();
+                if (token !== mediaSearchRequestToken) return;
+                mediaSearchResults = data;
                 renderMediaSearchResults(mediaSearchResults);
             } catch {
                 if (token !== mediaSearchRequestToken) return;
@@ -725,6 +732,22 @@
             syncWorkspaceSearchFilterBar();
         }
 
+        function _invalidateMediaSearchApply() {
+            mediaSearchApplyToken += 1;
+            const applyButton = document.getElementById('media-search-apply-btn');
+            if (applyButton) applyButton.disabled = false;
+        }
+
+        function _mediaSearchApplyStillOwned(operation) {
+            if (!operation || operation.token !== mediaSearchApplyToken) return false;
+            if (operation.transitionToken !== viewTransitionToken || operation.scopeKey !== getViewScopeKey()) return false;
+            const input = document.getElementById('media-search-input');
+            const scope = document.getElementById('media-search-scope');
+            if ((input?.value.trim() || '') !== operation.query) return false;
+            if ((scope?.value || 'folder') !== operation.scopeControl) return false;
+            return true;
+        }
+
         async function applyMediaSearchToWorkspace() {
             const input = document.getElementById('media-search-input');
             const query = input?.value.trim() || '';
@@ -735,11 +758,25 @@
             }
             const options = {..._mediaSearchOptions(), limit: 500, offset: 0};
             const applyButton = document.getElementById('media-search-apply-btn');
+            if (mediaSearchTimer) {
+                clearTimeout(mediaSearchTimer);
+                mediaSearchTimer = null;
+            }
+            mediaSearchRequestToken += 1;
+            const operation = {
+                token: ++mediaSearchApplyToken,
+                transitionToken: viewTransitionToken,
+                scopeKey: getViewScopeKey(),
+                query,
+                scopeControl: document.getElementById('media-search-scope')?.value || 'folder',
+            };
             if (applyButton) applyButton.disabled = true;
             try {
                 const resp = await apiSearchMedia(query, options);
+                if (!_mediaSearchApplyStillOwned(operation)) return;
                 if (!resp.ok) throw new Error('workspace search failed');
                 const data = await resp.json();
+                if (!_mediaSearchApplyStillOwned(operation)) return;
                 mediaSearchResults = data;
                 renderMediaSearchResults(data);
                 const unavailable = [...(data.missing_batches || []), ...(data.stale_batches || [])];
@@ -755,6 +792,8 @@
                         favoriteKeys = new Set((favoriteData.favorites || []).map(item => `${item.batch}\u001f${item.folder}\u001f${item.filename}`));
                     }
                 } catch { console.warn('workspace search favorite status load failed'); }
+
+                if (!_mediaSearchApplyStillOwned(operation)) return;
 
                 if (!isWorkspaceSearchView()) {
                     workspaceSearchReturnContext = {batch: currentBatch, folder: currentFolder};
@@ -801,9 +840,10 @@
                     ? `Loaded ${images.length} of ${workspaceSearchFilter.total} matching media items`
                     : `Workspace filtered to ${images.length} matching item${images.length === 1 ? '' : 's'}`);
             } catch {
+                if (!_mediaSearchApplyStillOwned(operation)) return;
                 showToast('Could not filter the workspace');
             } finally {
-                if (applyButton) applyButton.disabled = false;
+                if (applyButton && operation.token === mediaSearchApplyToken) applyButton.disabled = false;
             }
         }
 
