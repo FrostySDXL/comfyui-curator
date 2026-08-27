@@ -63,7 +63,9 @@ with transport and DOM doubles. `test_frontend_media_search.py` runs it with a
 30-second timeout (skipped if Node is absent). It checks delayed search and
 favorite responses, away-and-back navigation, modal cancellation/button
 recovery, overlapping applies, normalized virtual scope, favorite mapping,
-and late preview JSON. Browser timing and layout still require manual checks.
+and late preview JSON. It also executes Clear filter through the real
+`selectFolder()` and batch-Public loader to verify restored scope and folder
+rail visibility. Browser timing and layout still require manual checks.
 
 ## Key Files & Responsibilities
 

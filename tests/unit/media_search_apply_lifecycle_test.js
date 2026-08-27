@@ -16,13 +16,14 @@ function makeNode(id = '') {
         value: id === "media-search-scope" ? "folder" : (id === "media-search-input" ? "needle" : ""),
         disabled: false,
         hidden: false,
+        style: {},
         textContent: "",
         classList: {
-            active: true,
-            add() {},
-            remove() {},
-            toggle() {},
-            contains(name) { return name === "active" ? this.active : false; },
+            classes: new Set(["active"]),
+            add(name) { this.classes.add(name); },
+            remove(name) { this.classes.delete(name); },
+            toggle(name, force) { if (force) this.classes.add(name); else this.classes.delete(name); },
+            contains(name) { return this.classes.has(name); },
         },
         replaceChildren() {},
         append() {},
@@ -82,7 +83,42 @@ function makeContext() {
     return {context, nodes, toasts};
 }
 
+function extractFunction(sourceText, signature) {
+    const start = sourceText.indexOf(signature);
+    if (start < 0) throw new Error(`missing ${signature}`);
+    const open = sourceText.indexOf("{", start);
+    let depth = 0;
+    for (let i = open; i < sourceText.length; i += 1) {
+        if (sourceText[i] === "{") depth += 1;
+        if (sourceText[i] === "}" && --depth === 0) return sourceText.slice(start, i + 1);
+    }
+    throw new Error(`unterminated ${signature}`);
+}
+
 async function main() {
+    const folderContext = makeContext();
+    const folderTabs = folderContext.context.document.getElementById("folder-tabs");
+    vm.runInContext([
+        extractFunction(fs.readFileSync("static/js/batches.js", "utf8"), "async function selectFolder("),
+        extractFunction(fs.readFileSync("static/js/publish.js", "utf8"), "async function loadBatchPublic("),
+        extractFunction(fs.readFileSync("static/js/publish.js", "utf8"), "function normalizePublicItems("),
+        "saveBatchState = () => {}; updateAutoImportQuickAction = () => {}; showGridLoadingPlaceholders = () => {}; updateFolderTabs = () => {};",
+        "loadCurrentFolderImages = async () => {};",
+        "apiGetBatchPublic = async () => []; activityComplete = () => {};",
+        "currentBatch = '__search__'; currentFolder = null; workspaceSearchFilter = {}; workspaceSearchReturnContext = {batch: 'batch-a', folder: 'shortlisted'};",
+    ].join("\n"), folderContext.context);
+    await folderContext.context.clearWorkspaceSearchFilter();
+    assert.equal(vm.runInContext("currentBatch", folderContext.context), "batch-a");
+    assert.equal(vm.runInContext("currentFolder", folderContext.context), "shortlisted");
+    assert.equal(vm.runInContext("workspaceSearchFilter", folderContext.context), null);
+    assert.equal(vm.runInContext("workspaceSearchReturnContext", folderContext.context), null);
+    assert.equal(folderTabs.classList.contains("visible"), true, "real-folder clear restores folder rail visibility");
+    vm.runInContext("currentBatch = '__search__'; currentFolder = null; workspaceSearchFilter = {}; workspaceSearchReturnContext = {batch: 'batch-a', folder: 'public'};", folderContext.context);
+    folderTabs.classList.remove("visible");
+    await folderContext.context.clearWorkspaceSearchFilter();
+    assert.equal(vm.runInContext("currentFolder", folderContext.context), "public");
+    assert.equal(folderTabs.classList.contains("visible"), true, "batch public clear restores folder rail visibility");
+
     const delayedView = makeContext();
     const delayedViewSearch = deferred();
     let delayedViewRenders = 0;

@@ -532,6 +532,7 @@ async function selectFolder(batch, folder) {
                 deactivateWorkspaceSearchFilter();
                 workspaceSearchReturnContext = null;
             }
+            document.getElementById('folder-tabs').classList.add('visible');
             if (folder === 'public') {
                 await loadBatchPublic(batch);
                 return;

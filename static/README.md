@@ -35,6 +35,10 @@ view generation/scope, and the original query/scope controls. Apply cancels a
 pending debounce and invalidates preview responses before starting. Preserve
 the post-JSON preview guard and post-favorites apply guard when refactoring.
 
+`selectFolder()` restores the real-batch folder rail before its Public branch,
+including when Clear filter returns from a virtual search. Virtual Favorites
+and All Public retain their own hidden-rail behavior.
+
 ## Key Concepts
 
 ### Architecture
