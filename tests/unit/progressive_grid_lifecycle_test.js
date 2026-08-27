@@ -9,6 +9,10 @@ const gridSource = fs.readFileSync(
     path.join(__dirname, "..", "..", "static", "js", "grid.js"),
     "utf8",
 );
+const activitySource = fs.readFileSync(
+    path.join(__dirname, "..", "..", "static", "js", "activity-center.js"),
+    "utf8",
+);
 
 let assertionCount = 0;
 function assert(condition, message) {
@@ -225,6 +229,8 @@ class MockElement {
 
 class MockDocument {
     constructor() {
+        this.readyState = "loading";
+        this.addEventListener = () => {};
         this.elements = new Map();
         this.gridReplaceCount = 0;
         this.gridDetachCount = 0;
@@ -245,6 +251,13 @@ class MockDocument {
         this.register("img-count", new MockElement("span", this));
         this.register("sort-dir-btn", new MockElement("button", this));
         this.register("lightbox", new MockElement("div", this));
+        this.register("activity-center-list", new MockElement("div", this));
+        this.register("activity-center-summary", new MockElement("div", this));
+        this.register("activity-center-badge", new MockElement("span", this));
+        this.register("activity-center-panel", new MockElement("section", this));
+        this.register("activity-center-toggle", new MockElement("button", this));
+        this.register("activity-center-close", new MockElement("button", this));
+        this.elements.get("activity-center-list").appendChild(new MockElement("div", this));
         Object.defineProperty(this.content, "scrollHeight", {
             get: () => Math.max(this.content.clientHeight, this.grid.children.length * 10),
         });
@@ -401,6 +414,7 @@ function createHarness() {
         const thumbnailBlobUrlCache = new Map();
         const thumbnailBlobInflight = new Map();
     `, context);
+    vm.runInContext(activitySource, context);
     vm.runInContext(gridSource, context);
 
     return {
@@ -754,6 +768,19 @@ function testReusedThumbUnschedulesBeforeSourceKeyChange() {
     assert(image.classList.contains("loaded"), "source change should keep the displayed thumbnail visible until replacement resolves");
 }
 
+function testPlaceholdersDoNotResurrectPreviousFolderActivity() {
+    const harness = createHarness();
+    const group = "folder-view:batch-a:inbox";
+    harness.setCounts({"batch-a": {inbox: 4}});
+    for (const [index, status] of ["running", "completed", "failed", "partial", "cancelled"].entries()) {
+        const id = `old-attempt-${index}`;
+        harness.evaluate(`activityRegister({id: "${id}", group: "${group}", status: "${status}", detail: "original detail"});`);
+        harness.context.showGridLoadingPlaceholders("batch-a", "inbox");
+        assert(harness.evaluate(`activityRecords.get('${id}').status`) === status, `placeholders must preserve ${status} folder activity state`);
+        assert(harness.evaluate(`activityRecords.get('${id}').detail`) === "original detail", `placeholders must preserve ${status} activity detail`);
+    }
+}
+
 function testThirtyThousandTraversalKeepsBoundedLiveWindow() {
     const harness = createHarness();
     harness.document.content.clientHeight = 900;
@@ -832,6 +859,7 @@ try {
     testContinuousScrollReconcilesWindowBeforeIdle();
     testUnchangedWindowPreservesDecodedThumbIdentity();
     testHoverPreviewAllowsOnlyOneActiveDecoder();
+    testPlaceholdersDoNotResurrectPreviousFolderActivity();
     process.stdout.write(`virtual grid lifecycle: ${assertionCount} assertions passed\n`);
 } catch (error) {
     process.stderr.write(`${error.stack}\n`);

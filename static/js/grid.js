@@ -1200,14 +1200,6 @@ function showGridLoadingPlaceholders(batch, folder) {
             const grid = document.getElementById('grid');
             setGridLoadingStatus(true, 'Loading images…');
             const expectedCount = allCounts[batch]?.[folder] || 0;
-            const activity = activityGetLatest(`folder-view:${batch}:${folder}`);
-            if (activity) {
-                activityUpdate(activity.id, {
-                    status: 'running',
-                    total: expectedCount || activity.total,
-                    detail: 'Preparing visible thumbnails…',
-                });
-            }
             gridThumbMap.clear();
             if (expectedCount <= 0) {
                 grid.replaceChildren();

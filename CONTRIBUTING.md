@@ -126,6 +126,9 @@ A manual ComfyUI smoke test is required to claim native extension readiness:
 install the package into `ComfyUI/custom_nodes`, start ComfyUI, confirm the
 action-bar button appears and `/curator` loads. Native batch/image foundation
 routes are namespaced under `/api/curator/*` and `/curator/{thumb,image}/*`.
+Use the repeatable route-mode checklist in
+[`tests/manual_route_smoke.md`](tests/manual_route_smoke.md) and record the
+real browser evidence separately from mocked/in-process test results.
 
 ### Comfy Registry package validation
 

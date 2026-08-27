@@ -125,6 +125,23 @@ class TestStandaloneIndexHtmlUnchanged:
         assert "CURATOR_NATIVE" not in index
 
 
+class TestPageBootAssets:
+    """Both page modes reference the locally shipped ordered assets."""
+
+    @pytest.mark.parametrize("template_name", ["index.html", "curator.html"])
+    def test_all_css_and_js_references_exist_locally(self, template_name):
+        html = (REPO_ROOT / "templates" / template_name).read_text(encoding="utf-8")
+        references = re.findall(r'(?:href|src)="/(static|curator_static)/([^"?]+)"', html)
+
+        assert references, f"{template_name} should reference local page assets"
+        missing = [
+            f"{prefix}/{asset}"
+            for prefix, asset in references
+            if not (REPO_ROOT / "static" / asset).is_file()
+        ]
+        assert not missing, f"{template_name} references missing local assets: {missing}"
+
+
 # ---------------------------------------------------------------------------
 # Page handler context
 # ---------------------------------------------------------------------------

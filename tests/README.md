@@ -120,6 +120,13 @@ rail visibility. Browser timing and layout still require manual checks.
 | `tests/integration/test_prompt_history_api.py` | Prompt-history API -- build/load/rebuild/staleness/missing cache | `client` fixture, `PngInfo`-rich PNGs |
 | `tests/integration/test_search_api.py` | Search-index build and scoped query APIs, sidecar matching, and parameter validation | Flask test client, temp typed media and JSON sidecars |
 
+Repeatable real-browser route checks are documented in
+[`tests/manual_route_smoke.md`](manual_route_smoke.md). They complement, rather
+than replace, the mocked native and in-process Flask coverage above.
+The progressive-grid lifecycle harness executes the real grid and activity
+models together, including the revisit regression that preserves terminal
+folder-load states.
+
 ## Known Coverage Gaps
 
 | Gap | Risk | Notes |
