@@ -143,21 +143,37 @@ def _timeout(value: object) -> int:
     return parsed if 1 <= parsed <= 3600 else 120
 
 
-def _validate_editable_directory(field: str, path: Path) -> Path:
+def _validate_editable_directory(
+    field: str, path: Path, *, allow_configured_alias: bool = False
+) -> Path:
     message = f"{field} must reference a safe directory"
     try:
         current = Path(path.anchor)
+        alias_component = False
         for part in path.parts[1:]:
             current /= part
             if current.is_symlink():
-                raise NativeConfigError(message)
+                alias_component = True
+                if not allow_configured_alias:
+                    raise NativeConfigError(message)
             if current.exists() and not current.is_dir():
                 raise NativeConfigError(message)
         lexical = Path(os.path.abspath(path))
-        if path.resolve() != lexical:
+        path_exists = os.path.lexists(os.fspath(path))
+        resolved = path.resolve(strict=path_exists)
+        alias_component = alias_component or (path_exists and resolved != lexical)
+        if not allow_configured_alias and resolved != lexical:
+            raise NativeConfigError(message)
+        if allow_configured_alias and not alias_component and resolved != lexical:
+            raise NativeConfigError(message)
+        if allow_configured_alias and alias_component and not resolved.is_dir():
+            raise NativeConfigError(message)
+        if allow_configured_alias and path_exists and not resolved.is_dir():
             raise NativeConfigError(message)
     except NativeConfigError:
         raise
+    except RuntimeError as exc:
+        raise NativeConfigError(message) from exc
     except OSError as exc:
         raise NativeConfigError(message) from exc
     return path
@@ -299,7 +315,7 @@ class NativeCuratorSettings:
         if export_enabled and not export.is_absolute():
             raise NativeConfigError("Public export path must be absolute")
         for field, path in paths.items():
-            _validate_editable_directory(field, path)
+            _validate_editable_directory(field, path, allow_configured_alias=field == "batch_root")
         if export_enabled:
             _validate_editable_directory("public_export_root", export)
         url = str(data.get("llm_base_url", "")).strip()

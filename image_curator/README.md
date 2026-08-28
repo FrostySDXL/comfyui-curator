@@ -136,6 +136,9 @@ Written atomically via `.tmp` + `os.replace()`.
   rebuildable index. Locks are process-local; run one curator process per
   library. The optional `move_image(..., no_overwrite=True)` path uses exclusive
   hardlinks and safe rollback, not overwrite-capable `shutil.move` fallback.
+  An explicitly configured root alias is resolved and pinned for each history
+  store. Internal stage or journal redirects remain guarded; a disconnected
+  alias must not cause a replacement target directory to be created.
   See README's Undo / History limits before changing storage or transfer rules.
 - **`_collision_safe_name` has no locking:** If two processes import simultaneously, both could see `exists() == False` and one file would overwrite. Low risk for single-user operation.
 - **LoRA hash is always `None`:** `_parse_loras()` hardcodes `"hash": None`. The field exists in the return schema but is never populated.

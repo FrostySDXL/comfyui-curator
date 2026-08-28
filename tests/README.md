@@ -69,6 +69,12 @@ assert that a history row is present. Real drag gestures, lightbox continuity,
 and reload/restart recovery also require the mutating fixture-only section of
 `manual_route_smoke.md`.
 
+`component/test_symlink_root_review.py` independently exercises configured-root
+aliases through Flask and native adapters, native settings persistence,
+canonical locking, and rejection of internal redirects/disconnected targets.
+It creates actual symlinks where permitted, with Windows directory junctions
+as a fallback when symbolic-link privilege is unavailable.
+
 `state_transitions_lifecycle_test.js` is an executable Node VM regression for
 source-qualified inspector identity, delayed metadata, virtual-loader, and
 polling response ownership across view transitions. Its Python wrapper runs it

@@ -385,7 +385,7 @@ def test_native_settings_rejects_read_only_response_fields_on_update(tmp_path, f
     assert not settings.config_store.path.exists()
 
 
-@pytest.mark.parametrize("field", ["batch_root", "import_source", "public_export_root"])
+@pytest.mark.parametrize("field", ["import_source", "public_export_root"])
 def test_native_settings_rejects_direct_symlink_paths(tmp_path, field):
     from image_curator.native_settings import (
         NativeConfigError,
@@ -418,6 +418,75 @@ def test_native_settings_rejects_direct_symlink_paths(tmp_path, field):
 
     assert str(linked) not in str(error.value)
     assert not settings.config_store.path.exists()
+
+
+def test_native_settings_accepts_configured_batch_root_alias(tmp_path, monkeypatch):
+    from image_curator.native_settings import NativeConfigStore, NativeCuratorSettings
+
+    target = tmp_path / "external-library"
+    target.mkdir()
+    alias = tmp_path / "library-alias"
+    real_resolve = Path.resolve
+    real_is_symlink = Path.is_symlink
+    monkeypatch.setattr(
+        Path,
+        "resolve",
+        lambda path, *args, **kwargs: (
+            target if path == alias else real_resolve(path, *args, **kwargs)
+        ),
+    )
+    monkeypatch.setattr(
+        Path,
+        "is_symlink",
+        lambda path: True if path == alias else real_is_symlink(path),
+    )
+    settings = NativeCuratorSettings(
+        batch_root=tmp_path / "batches",
+        import_source=tmp_path / "output",
+        state_file=tmp_path / "state.json",
+        config_store=NativeConfigStore(tmp_path / "system"),
+    )
+
+    result = settings.update(_editable_request(settings, batch_root=str(alias)))
+
+    assert result["batch_root"] == str(alias)
+    assert settings.batch_root == alias
+
+
+def test_native_settings_rejects_missing_child_under_batch_root_alias(tmp_path, monkeypatch):
+    from image_curator.native_settings import (
+        NativeConfigStore,
+        NativeConfigError,
+        NativeCuratorSettings,
+    )
+
+    target = tmp_path / "external-library"
+    target.mkdir()
+    alias = tmp_path / "library-alias"
+    candidate = alias / "missing-child"
+    real_resolve = Path.resolve
+    real_is_symlink = Path.is_symlink
+    monkeypatch.setattr(
+        Path,
+        "resolve",
+        lambda path, *args, **kwargs: (
+            target if path == alias else real_resolve(path, *args, **kwargs)
+        ),
+    )
+    monkeypatch.setattr(
+        Path,
+        "is_symlink",
+        lambda path: True if path == alias else real_is_symlink(path),
+    )
+    settings = NativeCuratorSettings(
+        batch_root=tmp_path / "batches",
+        import_source=tmp_path / "output",
+        state_file=tmp_path / "state.json",
+        config_store=NativeConfigStore(tmp_path / "system"),
+    )
+
+    with pytest.raises(NativeConfigError, match="batch_root"):
+        settings.update(_editable_request(settings, batch_root=str(candidate)))
 
 
 def test_native_settings_rejects_intermediate_symlink_path(tmp_path):

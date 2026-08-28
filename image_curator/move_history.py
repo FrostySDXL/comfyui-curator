@@ -53,7 +53,11 @@ _LOCKS_GUARD = threading.Lock()
 
 
 def _root_lock(root: Path) -> threading.RLock:
-    key = str(Path(root).resolve())
+    candidate = Path(root)
+    try:
+        key = str(candidate.resolve(strict=True))
+    except (OSError, RuntimeError):
+        key = str(candidate.absolute())
     with _LOCKS_GUARD:
         return _LOCKS.setdefault(key, threading.RLock())
 
@@ -91,28 +95,46 @@ class MoveHistory:
         retention_days: int = RETENTION_DAYS,
     ) -> None:
         self.root = Path(batches_root)
+        try:
+            if os.path.lexists(os.fspath(self.root)) or self.root.is_symlink():
+                self.root = self.root.resolve(strict=True)
+        except (OSError, RuntimeError):
+            # Keep the configured path so normal validation reports a stable
+            # storage error without creating a dangling-link target.
+            pass
         self.dir = self.root / ".curator-undo"
         self.path = self.dir / "history.json"
+        self._storage_root: Path | None = None
         self.max_operations = max_operations
         self.retention_days = retention_days
         self._lock = _root_lock(self.root)
 
     def _validate_storage(self, *, create: bool = False) -> None:
-        root = self.root.absolute()
-        # Check lexical ancestors, not only resolved paths, to prevent a
-        # symlinked parent from redirecting mkdir/open operations.
-        for parent in (root, *root.parents):
-            if parent.is_symlink() or (parent.exists() and not parent.is_dir()):
-                raise OSError("Unsafe move history storage")
-        if not root.exists() and not create:
-            return
-        if create and not root.exists():
-            root.mkdir(parents=True)
-        if root.is_symlink() or not root.is_dir():
+        lexical_root = self.root.absolute()
+        try:
+            if self._storage_root is not None:
+                root = self._storage_root
+            elif os.path.lexists(os.fspath(lexical_root)) or lexical_root.is_symlink():
+                root = lexical_root.resolve(strict=True)
+            elif not create:
+                return
+            else:
+                lexical_root.mkdir(parents=True)
+                root = lexical_root.resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise OSError("Unsafe move history storage") from exc
+        if not root.is_dir():
             raise OSError("Unsafe move history storage")
+        self._storage_root = root
+        self.dir = root / ".curator-undo"
+        self.path = self.dir / "history.json"
         if self.dir.exists() or self.dir.is_symlink():
             if self.dir.is_symlink() or not self.dir.is_dir():
                 raise OSError("Unsafe move history storage")
+            try:
+                self.dir.resolve(strict=True).relative_to(root)
+            except (OSError, RuntimeError, ValueError) as exc:
+                raise OSError("Unsafe move history storage") from exc
         elif create:
             self.dir.mkdir()
         elif self.path.exists() or self.path.is_symlink():
@@ -122,6 +144,10 @@ class MoveHistory:
         if self.path.exists() or self.path.is_symlink():
             if self.path.is_symlink() or not self.path.is_file():
                 raise OSError("Unsafe move history storage")
+            try:
+                self.path.resolve(strict=True).relative_to(root)
+            except (OSError, RuntimeError, ValueError) as exc:
+                raise OSError("Unsafe move history storage") from exc
 
     @staticmethod
     def _validate_item(item: object) -> None:
@@ -303,7 +329,10 @@ class MoveHistory:
             or op["destination"] not in batch_store.BATCH_FOLDERS
         ):
             raise ValueError("Unsafe path")
-        root = self.root.absolute()
+        self._validate_storage()
+        root = self._storage_root
+        if root is None:
+            raise ValueError("Unsafe path")
         batch = root / op["batch"]
         source_dir, destination_dir = batch / op["source"], batch / op["destination"]
         for path in (root, batch, source_dir):
@@ -546,8 +575,10 @@ class MoveHistory:
             moved_items: list[dict] = []
             uncertain_items: list[dict] = []
             for item in valid:
-                src = self.root / batch / source / item["name"]
-                dst = self.root / batch / destination / item["name"]
+                if self._storage_root is None:
+                    raise OSError("Unsafe move history storage")
+                src = self._storage_root / batch / source / item["name"]
+                dst = self._storage_root / batch / destination / item["name"]
                 if batch_store.move_image(src, dst, no_overwrite=True):
                     moved_items.append(item)
                 else:

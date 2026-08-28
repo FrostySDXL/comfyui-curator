@@ -83,6 +83,60 @@ def test_undo_rejects_parent_symlink_and_restart_reconciles_pending(tmp_path, mo
     assert result.moved == 0
 
 
+def test_configured_root_symlink_uses_target_for_move_and_restart_undo(tmp_path, monkeypatch):
+    target = tmp_path / "external-library"
+    batch = target / "batch"
+    (batch / "inbox").mkdir(parents=True)
+    (batch / "shortlisted").mkdir()
+    media = batch / "inbox" / "image.png"
+    media.write_bytes(b"image")
+    alias = tmp_path / "library-alias"
+    real_resolve = Path.resolve
+    real_is_symlink = Path.is_symlink
+    monkeypatch.setattr(
+        Path,
+        "resolve",
+        lambda path, *args, **kwargs: (
+            target if path == alias else real_resolve(path, *args, **kwargs)
+        ),
+    )
+    monkeypatch.setattr(
+        Path,
+        "is_symlink",
+        lambda path: True if path == alias else real_is_symlink(path),
+    )
+
+    history = MoveHistory(alias)
+    result = history.move("batch", "inbox", "shortlisted", [media.name])
+    assert result.moved == 1
+    assert (batch / "shortlisted" / media.name).is_file()
+
+    restarted = MoveHistory(alias)
+    assert restarted.undo(result.operation_id).status == "undone"
+    assert media.is_file()
+
+
+def test_symlink_loop_root_fails_on_use_not_constructor(tmp_path, monkeypatch):
+    root = tmp_path / "loop"
+    real_resolve = Path.resolve
+
+    def resolve(path, *args, **kwargs):
+        if path == root:
+            raise RuntimeError("symlink loop")
+        return real_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", resolve)
+    real_lexists = move_history.os.path.lexists
+    monkeypatch.setattr(
+        move_history.os.path,
+        "lexists",
+        lambda path: True if Path(path) == root else real_lexists(path),
+    )
+    history = MoveHistory(root)
+    with pytest.raises(OSError, match="Unsafe move history storage"):
+        history.list_operations()
+
+
 def test_history_save_ignores_stale_fixed_tmp_and_cleans_failed_unique_tmp(tmp_path, monkeypatch):
     root = tmp_path / "batches"
     history = MoveHistory(root)

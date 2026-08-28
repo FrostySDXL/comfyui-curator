@@ -273,6 +273,10 @@ linked/unlinked Sync Pan/Zoom and an optional A/B Split for still images.
   Interrupted, ambiguous pair transfers retain recovery evidence but may require
   manual repair. Content hashing and very large histories add disk work; the
   journal is capped at 256 MiB and 100,000 members per operation.
+  The configured batches root may be a symlink or Windows directory junction
+  to an existing library, including one on an external drive. Move history uses
+  its resolved target; links inside the library are not granted that trust.
+  Do not retarget the root link while Curator is running.
 - Sidebar state and thumbnail density persist across sessions.
 - Changing review scope clears the previous inspector target and selection.
   Inspector identity includes the source batch and folder, and native snapshot
