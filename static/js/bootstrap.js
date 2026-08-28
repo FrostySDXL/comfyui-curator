@@ -21,3 +21,4 @@ setInterval(() => {
 }, 10000);
 loadBatches();
 pollImportAvailability();
+loadMoveHistory();

@@ -15,7 +15,7 @@
 ## What This Repo Provides
 
 - **Batch filesystem workflow:** inbox/shortlisted/finals/rejects folders under `IMAGE_CURATOR_BATCHES/<batch>/`. Counts, metadata, operator-triggered Import All from ComfyUI outputs.
-- **Web review UI:** Asset-manager style batch sidebar, compact workspace toolbar, center thumbnail grid, unified right inspector. Drag/drop moves, multi-select/Select All, undo toast, progressive contextual shortcut hints, keyboard shortcuts, background polling.
+- **Web review UI:** Asset-manager style batch sidebar, compact workspace toolbar, center thumbnail grid, unified right inspector. Drag/drop moves, multi-select/Select All, durable Undo / History plus undo toast, progressive contextual shortcut hints, keyboard shortcuts, background polling.
 - **Lightbox viewer:** Full-media review with zoom, PNG generation metadata plus adjacent JSON sidecars (`M` toggle), scored-image navigation (`[`/`]`), keyboard folder moves (`S`/`F`/`R`), linked/unlinked side-by-side comparison, a bounded selection-derived candidate tray, Pin A candidate walking, pair advancement, and A/B split.
 - **Favorites workflow:** One-click favorites update batch and universal scope, with a favorites-only filter and virtual All Favorites sidebar view.
 - **Public posting prep:** Selected originals export to metadata-stripped, optionally watermarked generated copies in `<batch>/public/`, with batch Public and virtual All Public views plus derivative-only copy/move/delete actions and export-root destination browsing/history.
@@ -42,7 +42,8 @@ app.py (Flask routes) ← standalone, fully supported
   ├── image_curator/search_index.py ← rebuildable typed-media + sidecar search cache/query
   ├── image_curator/web_validation.py ← route path/batch validation helpers
   ├── image_curator/media.py        ← typed poster/hover-preview cache and fallback helpers
-  ├── image_curator/folder_index.py ← immutable background revisions, pages, O(1) lookup, bulk undo records
+  ├── image_curator/folder_index.py ← immutable background revisions, pages, O(1) lookup
+  ├── image_curator/move_history.py ← durable manual review-move receipts and newest-first undo
   ├── ai_curate/config.py           ← env-backed constants, paths, caps
   ├── ai_curate/elements.py         ← prompt parsing + element extraction + quality checklists
   ├── ai_curate/job_validation.py   ← AI curation submit payload validation
@@ -215,7 +216,7 @@ Treat these as stability-sensitive:
 
 - AI overlay toggle and AI filter state are batch-scoped and must not leak across batch switches
 - The AI image inspector follows clicked thumbnails and lightbox navigation, and resets across batch switches
-- Undo must work for both drag moves and lightbox keyboard moves while the undo toast is active
+- Undo must work for manual drag/toolbar/lightbox moves after toast expiry, reload, and restart; preserve newest-first server operation IDs, conflict reporting, and partial retry. Do not recreate undo by posting reverse filenames.
 - Thumbnail updates should prefer incremental DOM updates over full grid rebuilds when possible
 - Density classes (`density-compact`, `density-comfortable`, `density-large`) should keep thumbnail sizing stable when sidebars open/close
 - The inspector open state and width persist in local storage
@@ -275,6 +276,7 @@ Treat these as stability-sensitive:
   values generally remain strings while `favorite_id`/`total` may be integers.
   Preserve those source types in backend responses.
 - **Large native folders:** Native real-folder views use immutable background revisions, 256-item pages, lightweight polls, and <=500 live thumbnails. Snapshot Select All is revision plus exclusions and undo is tokenized server-side.
+- **Durable move history:** `<batches-root>/.curator-undo/history.json` is generated recovery state, not a rebuildable cache. Never edit it manually. `image_curator/move_history.py` backs `/api/move-history` and operation-token undo in both adapters; retention is 100 operations / 30 days. It covers manual review moves only, not imports, deletions, AI moves, or public derivatives. Read `tests/unit/test_move_history_review.py` for independent recovery acceptance cases.
 - **`ELEMENT_CAP` (12) truncation is silent:** `scoring.py` caps elements without logging a warning.
 - **Native extension scope:** Native settings, batch/image/thumbnail foundation routes, curation mutations, favorites, public workflow, prompt history, media search, and AI scoring lifecycle are namespaced under `/api/curator/*` and `/curator/{thumb,image}/*`. Native AI uses a lifecycle-owned queue with bounded shutdown.
 - **Native public export root default:** `NativeCuratorSettings.from_host_paths()` resolves a ComfyUI-owned `public-exports` directory under the curator system user directory (`<system_dir>/public-exports`). The editable path appears only in the dedicated local-operator settings response, not general page or batch payloads.

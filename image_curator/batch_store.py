@@ -6,6 +6,7 @@ stay focused on route wiring and operator-facing service concerns.
 
 import json
 import logging
+import os
 import random
 import shutil
 from pathlib import Path
@@ -203,7 +204,10 @@ def get_batches(batches_dir: Path) -> list[str]:
     batches_dir = Path(batches_dir)
     if not batches_dir.exists():
         return []
-    return sorted([d.name for d in batches_dir.iterdir() if d.is_dir()])
+    # Hidden root-level stores (including durable undo) are not review batches.
+    return sorted(
+        d.name for d in batches_dir.iterdir() if not d.name.startswith(".") and d.is_dir()
+    )
 
 
 def create_batch(batches_dir: Path, name: str) -> bool:
@@ -356,7 +360,7 @@ def _collision_safe_name(dest_dir: Path, name: str, source_path: Path | None = N
         counter += 1
 
 
-def move_image(src: Path, dst: Path) -> bool:
+def move_image(src: Path, dst: Path, *, no_overwrite: bool = False) -> bool:
     """Move a single file from ``src`` to ``dst``.
 
     Centralised helper used by the Flask routes, the AI curate worker,
@@ -368,7 +372,9 @@ def move_image(src: Path, dst: Path) -> bool:
     """
     src = Path(src)
     dst = Path(dst)
-    if not src.exists():
+    if not src.exists() or src.is_symlink() or not src.is_file():
+        return False
+    if no_overwrite and (dst.exists() or dst.is_symlink()):
         return False
     sidecar = find_json_sidecar(src) if src.suffix.lower() in VIEWABLE_MEDIA_EXTENSIONS else None
     sidecar_dst = sidecar_destination(src, dst, sidecar) if sidecar is not None else None
@@ -376,6 +382,8 @@ def move_image(src: Path, dst: Path) -> bool:
         dst.parent.mkdir(parents=True, exist_ok=True)
         if sidecar_dst is not None and (sidecar_dst.exists() or sidecar_dst.is_symlink()):
             return False
+        if no_overwrite:
+            return _move_pair_no_overwrite(src, dst, sidecar, sidecar_dst)
         shutil.move(str(src), str(dst))
         if sidecar is not None and sidecar_dst is not None:
             try:
@@ -391,6 +399,57 @@ def move_image(src: Path, dst: Path) -> bool:
         return True
     except OSError:
         logger.warning("move_image failed: %s -> %s", src, dst, exc_info=True)
+        return False
+
+
+def _move_pair_no_overwrite(
+    src: Path, dst: Path, sidecar: Path | None, sidecar_dst: Path | None
+) -> bool:
+    """Move media and its sidecar without ever replacing an existing entry.
+
+    ``os.link`` is an exclusive create primitive on the same filesystem.  We
+    install both destination hardlinks first, then unlink the source members.
+    Any failure rolls back destination entries and, when necessary, restores a
+    source member from its destination link.  A cross-device/unsupported link
+    failure is a safe no-op rather than a fallback to overwrite-capable move.
+    """
+    created: list[Path] = []
+    media_unlinked = False
+    try:
+        os.link(str(src), str(dst))
+        created.append(dst)
+        if sidecar is not None and sidecar_dst is not None:
+            os.link(str(sidecar), str(sidecar_dst))
+            created.append(sidecar_dst)
+        src.unlink()
+        media_unlinked = True
+        if sidecar is not None:
+            sidecar.unlink()
+        return True
+    except OSError:
+        # If media was already unlinked, restore it exclusively before
+        # removing the temporary destination link.  Never replace a racing
+        # source entry during rollback.
+        if media_unlinked and dst.exists() and not src.exists():
+            try:
+                os.link(str(dst), str(src))
+                media_unlinked = False
+            except OSError:
+                logger.error(
+                    "move_image could not restore media after no-overwrite failure: %s", src
+                )
+        for path in reversed(created):
+            if path == dst and media_unlinked:
+                # The source could not be restored; keep the only remaining
+                # media copy rather than turning a failed operation into data
+                # loss.
+                continue
+            try:
+                if path.is_symlink() or not path.exists():
+                    continue
+                path.unlink()
+            except OSError:
+                logger.error("move_image could not roll back no-overwrite destination: %s", path)
         return False
 
 

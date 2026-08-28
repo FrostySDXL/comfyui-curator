@@ -16,7 +16,6 @@ from .favorites import (
 )
 from .folder_index import (
     DEFAULT_PAGE_SIZE,
-    BulkMoveOperationStore,
     FolderIndexService,
     normalize_shuffle_seed,
 )
@@ -32,6 +31,7 @@ from .media import (
 from .native_settings import NativeConfigError, NativeCuratorSettings, SettingsConflictError
 from .sidecar_metadata import delete_json_sidecar, extract_media_metadata
 from .web_validation import safe_path
+from .move_history import MAX_OPERATIONS, RETENTION_DAYS, MoveHistory
 
 THUMB_SIZE = (320, 320)
 CACHE_HEADERS = {"Cache-Control": "public, max-age=3600, immutable"}
@@ -43,7 +43,11 @@ class NativeCuratorService:
     def __init__(self, settings: NativeCuratorSettings) -> None:
         self.settings = settings
         self.folder_index = FolderIndexService()
-        self.bulk_move_operations = BulkMoveOperationStore()
+
+    @property
+    def move_history(self) -> MoveHistory:
+        """Resolve the store from current settings (settings can be replaced at runtime)."""
+        return MoveHistory(self.settings.batch_root)
 
     def batch_exists(self, batch: str) -> bool:
         try:
@@ -621,10 +625,21 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
                 return web.json_response({"error": "Invalid path"}, status=400)
         except OSError:
             return web.json_response({"error": "Invalid path"}, status=400)
-        if not await asyncio.to_thread(batch_store.move_image, src_path, dst_path):
-            return web.json_response({"error": f"Could not move {filename}"}, status=500)
+        try:
+            result = await asyncio.to_thread(
+                service.move_history.move, batch, source, destination, [filename]
+            )
+        except (OSError, ValueError):
+            return web.json_response(
+                {"error": "Move history is unavailable; refresh History before retrying"},
+                status=500,
+            )
+        if result.moved != 1:
+            return web.json_response(
+                {"error": result.error or f"Could not move {filename}"}, status=500
+            )
         service.folder_index.refresh(batch, source, destination)
-        return web.json_response({"success": True})
+        return web.json_response({"success": True, "operation_id": result.operation_id})
 
     async def move_batch(request):
         data = await _json_body(request)
@@ -701,21 +716,23 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
         moved = 0
         moved_names: list[str] = []
         if valid_filenames:
-            moved, skipped_in_loop, moved_names = await asyncio.to_thread(
-                batch_store.move_images,
-                source_dir=src_dir,
-                names=valid_filenames,
-                dest_dir=dst_dir,
-            )
+            try:
+                result = await asyncio.to_thread(
+                    service.move_history.move, batch, source, destination, valid_filenames
+                )
+            except (OSError, ValueError):
+                return web.json_response(
+                    {"error": "Move history is unavailable; refresh History before retrying"},
+                    status=500,
+                )
+            moved, skipped_in_loop, moved_names = result.moved, result.skipped, list(result.names)
             skipped += skipped_in_loop
         service.folder_index.refresh(batch, source, destination)
         if moved == 0 and raw_filenames:
             return web.json_response({"success": False, "moved": 0, "skipped": skipped})
         payload = {"success": True, "moved": moved, "skipped": skipped}
-        if selection is not None and moved_names:
-            payload["operation_id"] = service.bulk_move_operations.record(
-                batch, source, destination, moved_names
-            )
+        if moved_names:
+            payload["operation_id"] = result.operation_id
         return web.json_response(payload)
 
     async def undo_snapshot_move(request):
@@ -723,22 +740,51 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
         token = _string_field(data, "operation_id")
         if not token:
             return web.json_response({"error": "operation_id required"}, status=400)
-        operation = service.bulk_move_operations.pop(token)
-        if operation is None:
+        history = service.move_history
+        try:
+            operations = await asyncio.to_thread(history.list_operations)
+        except (OSError, ValueError):
+            return web.json_response({"error": "Move history is unavailable"}, status=500)
+        operation_info = next((item for item in operations if item["id"] == token), None)
+        if operation_info is None:
             return web.json_response({"error": "Undo operation expired or not found"}, status=404)
         try:
-            source_dir = service.resolve_content_directory(operation.batch, operation.destination)
-            destination_dir = service.resolve_content_directory(operation.batch, operation.source)
-        except ValueError:
-            return web.json_response({"error": "Invalid path"}, status=400)
-        moved, skipped, _moved_names = await asyncio.to_thread(
-            batch_store.move_images,
-            source_dir,
-            list(operation.names),
-            destination_dir,
+            result = await asyncio.to_thread(history.undo, token)
+        except (OSError, ValueError):
+            return web.json_response(
+                {"error": "Move history is unavailable; refresh History before retrying"},
+                status=500,
+            )
+        if result.error == "Undo operation expired or not found":
+            return web.json_response({"error": result.error}, status=404)
+        service.folder_index.refresh(
+            operation_info["batch"], operation_info["source"], operation_info["destination"]
         )
-        service.folder_index.refresh(operation.batch, operation.source, operation.destination)
-        return web.json_response({"success": moved > 0, "moved": moved, "skipped": skipped})
+        payload = {
+            "success": result.moved > 0 or result.status == "undone",
+            "moved": result.moved,
+            "skipped": result.skipped,
+            "remaining": result.remaining,
+            "status": result.status,
+        }
+        if result.error:
+            payload["error"] = result.error
+        return web.json_response(payload, status=409 if result.status == "blocked" else 200)
+
+    async def move_history(request):
+        try:
+            operations = await asyncio.to_thread(service.move_history.list_operations)
+        except (OSError, ValueError):
+            return web.json_response({"error": "Move history is unavailable"}, status=500)
+        response = web.json_response(
+            {
+                "operations": operations,
+                "retention_days": RETENTION_DAYS,
+                "max_operations": MAX_OPERATIONS,
+            }
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     async def delete_rejects(request):
         batch = request.match_info["batch"]
@@ -788,6 +834,7 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
     app.router.add_post("/api/curator/move", move_single)
     app.router.add_post("/api/curator/move-batch", move_batch)
     app.router.add_post("/api/curator/move-batch/undo", undo_snapshot_move)
+    app.router.add_get("/api/curator/move-history", move_history)
     app.router.add_post("/api/curator/delete-rejects/{batch}", delete_rejects)
 
     async def get_batch_favorites(request):

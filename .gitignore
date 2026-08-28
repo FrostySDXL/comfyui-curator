@@ -25,6 +25,7 @@ docs/plans
 
 # Runtime state
 state.json
+**/.curator-undo/
 .env
 *.log
 

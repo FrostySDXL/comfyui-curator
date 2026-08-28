@@ -346,6 +346,60 @@ def test_move_image_carries_filename_preserving_json_sidecar(tmp_path):
     assert not sidecar.exists()
 
 
+def test_move_image_no_overwrite_uses_exclusive_transfer_and_rolls_back_pair(tmp_path, monkeypatch):
+    """No-overwrite moves must not call overwrite-capable shutil.move.
+
+    If the paired sidecar transfer fails after the media has been installed,
+    both destination entries are removed and both source entries remain.
+    """
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    source.mkdir()
+    destination.mkdir()
+    media = source / "clip.mp4"
+    sidecar = source / "clip.mp4.json"
+    media.write_bytes(b"video")
+    sidecar.write_bytes(b"metadata")
+
+    def fail_shutil(*_args, **_kwargs):
+        raise AssertionError("no-overwrite must not use shutil.move")
+
+    monkeypatch.setattr(batch_store.shutil, "move", fail_shutil)
+    real_link = batch_store.os.link
+
+    def fail_sidecar(src, dst, *args, **kwargs):
+        if str(src).endswith("clip.mp4.json"):
+            raise OSError("injected sidecar collision")
+        return real_link(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(batch_store.os, "link", fail_sidecar)
+
+    assert batch_store.move_image(media, destination / media.name, no_overwrite=True) is False
+    assert media.read_bytes() == b"video"
+    assert sidecar.read_bytes() == b"metadata"
+    assert not (destination / media.name).exists()
+    assert not (destination / sidecar.name).exists()
+
+
+def test_move_image_no_overwrite_rejects_existing_media_and_sidecar(tmp_path):
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    source.mkdir()
+    destination.mkdir()
+    media = source / "clip.mp4"
+    sidecar = source / "clip.mp4.json"
+    media.write_bytes(b"source")
+    sidecar.write_bytes(b"source-sidecar")
+    (destination / media.name).write_bytes(b"destination")
+    (destination / sidecar.name).write_bytes(b"destination-sidecar")
+
+    assert batch_store.move_image(media, destination / media.name, no_overwrite=True) is False
+    assert media.read_bytes() == b"source"
+    assert sidecar.read_bytes() == b"source-sidecar"
+    assert (destination / media.name).read_bytes() == b"destination"
+    assert (destination / sidecar.name).read_bytes() == b"destination-sidecar"
+
+
 def test_move_images_reports_moved_and_skipped(tmp_path):
     """move_images returns (moved_count, skipped_count) for a batch."""
     (tmp_path / "a.png").write_bytes(b"a")

@@ -24,6 +24,9 @@ This repository is operator-maintained. Keep changes minimal, explicit, and easy
 - Shared AI curation logic: `ai_curate/`
 - HTML templates: `templates/` (`index.html` for standalone Flask; `curator.html` for native ComfyUI extension)
 - Frontend behavior and styling: `static/js/`, `static/css/`
+- Manual review-move recovery: `image_curator/move_history.py`, both web route
+  adapters, and `static/js/moves.js`. Keep persistence, partial recovery,
+  newest-first semantics, and source/sidecar safety covered by executable tests.
 - Frontend selection/compare behavior is owned by `static/js/selection.js`;
   filesystem move, undo, drag/drop, and reject deletion behavior remains in
   `static/js/moves.js`. Preserve their ordered classic-script load relationship.
@@ -168,6 +171,9 @@ Also update the runner tests in `tests/unit/test_run_all_script.py` so the expec
 - Load at least one test batch
 - Verify changed UI controls render and behave correctly
 - Verify any changed API route returns expected JSON
+- For move/undo changes, use the separate disposable-fixture checks in
+  `tests/manual_route_smoke.md`, including toast expiry, page reload, server
+  restart, snapshot exclusions, and final media/sidecar hash restoration.
 - For CSS-only changes, also confirm browser developer tools show no missing CSS file 404s and resize below `900px` to check responsive layout.
 - Frontend source-scraping invariants are auto-verified by
   `python scripts/run_all.py --quick`; see `tests/README.md` for the test

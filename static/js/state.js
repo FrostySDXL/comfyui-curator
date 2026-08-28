@@ -75,7 +75,14 @@
         let selectionMode = false;
         let lastSelectIndex = -1;
         let lastAction = null;
+        let moveHistory = [];
+        let moveHistoryLoading = false;
+        let moveHistoryUndoInflight = null;
+        let moveHistoryError = null;
+        let moveHistoryLoadPromise = null;
+        let moveUndoSearchStates = new Map();
         let draggedFiles = [];
+        let draggedSnapshotSelection = false;
         let toastTimeout = null;
         let batchSort = (localStorage.getItem(BATCH_SORT_KEY) || 'alpha');
         let gridDensity = localStorage.getItem(GRID_DENSITY_KEY) || 'comfortable';
@@ -144,7 +151,6 @@ function beginViewTransition(options = {}) {
             if (typeof resetPagedFolderState === 'function') resetPagedFolderState();
             if (options.clearImages) images = [];
             if (typeof resetSelectionState === 'function') resetSelectionState();
-            lastAction = null;
             if (options.closeLightbox && typeof closeLightbox === 'function') closeLightbox();
         }
 

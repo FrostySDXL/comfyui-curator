@@ -72,3 +72,32 @@ and mocked ComfyUI modules; they do not start ComfyUI or a browser.
 
 Record the date, checkout revision, route (`/` or `/curator`), browser, and any
 failed request or console error with the root task's real browser evidence.
+
+## Move and durable undo verification (disposable fixtures only)
+
+This is a separate, mutating check. Back up and hash the fixture media and
+sidecars first; never run it against an operator's working library.
+
+- In both modes, move a single lightbox image with `S`, `F`, or `R`. Confirm
+  the viewer advances without closing when another item remains.
+- Wait for the toast to disappear. Open **Undo / History**, verify the batch,
+  stages, count, timestamp, and latest Undo action, then reload the page and
+  restart the server. The same operation must still be available.
+- Undo from History and with `Ctrl+Z` outside text inputs. Check that media and
+  the selected adjacent JSON sidecars return unchanged. Undo two successive
+  moves newest-first; older rows must not offer out-of-order undo.
+- Select multiple thumbnails and move from the toolbar. In native mode also
+  Select All, exclude one thumbnail, move, and undo; the excluded media and its
+  sidecar must never leave the source folder.
+- Drag a selected thumbnail onto another review stage; verify ordinary
+  multiselection and native snapshot exclusions. If automation cannot deliver
+  native HTML drag events, record that limitation separately from executable
+  handler tests and toolbar/browser evidence.
+- Verify a conflicting original destination is not overwritten, the history
+  explains incomplete recovery, and retry works after the conflict is resolved.
+  Use only disposable, explicitly owned conflict files.
+- Open History with the keyboard, verify focus containment, close with Escape,
+  and verify focus returns to its opener. Check the empty/error states and that
+  duplicate clicks cannot submit the same undo concurrently.
+- Restore the starting review folders and compare the complete file inventory
+  and hashes with the backup. Record retained history separately from media.

@@ -1275,11 +1275,84 @@ def test_native_move_moves_single_file(tmp_path, monkeypatch):
             },
         )
         assert status == 200
-        assert payload == {"success": True}
+        assert payload["success"] is True
+        assert len(payload["operation_id"]) == 32
         assert not (settings.batch_root / "alpha" / "inbox" / "pic.png").exists()
         assert (
             settings.batch_root / "alpha" / "shortlisted" / "pic.png"
         ).read_bytes() == b"image-data"
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("fail_storage", [False, True])
+def test_native_move_history_persistence_and_storage_errors(tmp_path, monkeypatch, fail_storage):
+    from image_curator import batch_store
+    from image_curator.move_history import MoveHistory
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        source = settings.batch_root / "alpha" / "inbox" / "a.png"
+        source.write_bytes(b"original")
+        service = native_routes.NativeCuratorService(settings)
+        router = _Router()
+        native_routes.register_native_routes(SimpleNamespace(router=router), service)
+        move_body = {
+            "batch": "alpha",
+            "filename": "a.png",
+            "source": "inbox",
+            "destination": "finals",
+        }
+        if fail_storage:
+
+            def fail_load(_self):
+                raise OSError("private path must not be returned")
+
+            monkeypatch.setattr(MoveHistory, "_load", fail_load)
+            for method, path, body in [
+                ("GET", "move-history", None),
+                ("POST", "move", move_body),
+                ("POST", "move-batch", {**move_body, "filenames": ["a.png"]}),
+                ("POST", "move-batch/undo", {"operation_id": "unknown"}),
+            ]:
+                status, payload = await _invoke(router, method, f"/api/curator/{path}", body)
+                assert status == 500
+                assert "private path" not in payload["error"]
+            assert source.read_bytes() == b"original"
+            return
+        status, moved = await _invoke(router, "POST", "/api/curator/move", move_body)
+        assert status == 200
+        # Reconstruct the service, mirroring a restart rather than an in-memory token store.
+        restarted = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=restarted), native_routes.NativeCuratorService(settings)
+        )
+        status, listing = await _invoke(restarted, "GET", "/api/curator/move-history")
+        assert status == 200 and listing["operations"][0]["id"] == moved["operation_id"]
+        status, batches = await _invoke(restarted, "GET", "/api/curator/batches")
+        assert status == 200 and batches["batches"] == ["alpha"]
+        for expected_moved in (1, 0):
+            status, undone = await _invoke(
+                restarted,
+                "POST",
+                "/api/curator/move-batch/undo",
+                {"operation_id": moved["operation_id"]},
+            )
+            assert status == 200 and undone["success"]
+            assert undone["moved"] == expected_moved and undone["status"] == "undone"
+        assert source.read_bytes() == b"original"
+        service.settings = NativeCuratorSettings(
+            batch_root=tmp_path / "other",
+            import_source=settings.import_source,
+            state_file=settings.state_file,
+        )
+        assert service.move_history.list_operations() == []
 
     asyncio.run(scenario())
 

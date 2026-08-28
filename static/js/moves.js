@@ -6,6 +6,7 @@ function onDragStart(event, index) {
             const img = getCurrentDisplayImages()[index];
             if (!img) return;
             isDraggingImages = true;
+            draggedSnapshotSelection = Boolean(serverSelection && !(serverSelection.excluded || new Set()).has(img.name));
             if (selectedImages.has(img.name) && selectedImages.size > 0) {
                 draggedFiles = [...selectedImages];
             } else {
@@ -16,12 +17,14 @@ function onDragStart(event, index) {
             event.target.addEventListener('dragend', () => {
                 isDraggingImages = false;
                 draggedFiles = [];
+                draggedSnapshotSelection = false;
             }, {once: true});
             // Safety net: reset on document-level dragend in case the
             // element-level event doesn't fire (e.g. element removed mid-drag).
             document.addEventListener('dragend', function resetDragState() {
                 isDraggingImages = false;
                 draggedFiles = [];
+                draggedSnapshotSelection = false;
                 document.removeEventListener('dragend', resetDragState);
             }, {once: true});
         }
@@ -45,19 +48,163 @@ function onDrop(event, folder, target) {
                 return;
             }
             if (draggedFiles.length > 0 && folder !== currentFolder) {
-                moveBatch(draggedFiles, folder);
+                if (draggedSnapshotSelection) moveSelected(folder);
+                else moveBatch(draggedFiles, folder);
             }
             draggedFiles = [];
+            draggedSnapshotSelection = false;
         }
 
-function recordLastAction(filenames, source, destination, batch = currentBatch) {
+function recordLastAction(filenames, source, destination, batch = currentBatch, operationId = null) {
             lastAction = {
+                operationId,
                 batch,
                 filenames: [...filenames],
                 source,
                 destination,
-                expiresAt: Date.now() + 8000,
             };
+        }
+
+function _moveHistoryTime(value) {
+            if (!value) return 'Unknown time';
+            const date = new Date(value);
+            return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+        }
+
+function _moveHistoryStatusLabel(item) {
+            if (item.status === 'undone') return 'Undone';
+            if (item.status === 'partial') return `Partial (${item.restored || 0}/${item.count || 0} restored)`;
+            if (item.status === 'blocked') return 'Blocked';
+            return item.can_undo === false ? 'Unavailable' : 'Available';
+        }
+
+function renderMoveHistory() {
+            const list = document.getElementById('move-history-list');
+            const state = document.getElementById('move-history-state');
+            const badge = document.getElementById('move-history-badge');
+            if (!list || !state) return;
+            const focusedOperation = document.activeElement?.classList?.contains('move-history-undo') ? document.activeElement.dataset.operationId : null;
+            const available = moveHistory.filter(item => item.can_undo && (item.status === 'available' || item.status === 'partial')).length;
+            if (badge) {
+                badge.textContent = String(available);
+                badge.setAttribute('aria-label', `${available} undoable move${available === 1 ? '' : 's'}`);
+            }
+            state.textContent = moveHistoryLoading ? 'Loading move history...' : (moveHistoryError || (moveHistory.length ? `${moveHistory.length} recent manual review move${moveHistory.length === 1 ? '' : 's'}` : 'No manual review moves yet.'));
+            list.replaceChildren();
+            moveHistory.forEach(item => {
+                const row = document.createElement('article');
+                row.className = `move-history-row move-history-${item.status || 'available'}`;
+                const undoable = item.can_undo && (item.status === 'available' || item.status === 'partial') && !moveHistoryUndoInflight;
+                const error = item.error ? `<small class="move-history-error">${_escapeHtml(item.error)}</small>` : '';
+                row.innerHTML = `<div class="move-history-main"><strong>${_escapeHtml(item.batch || 'Unknown batch')}</strong><span>${_escapeHtml(item.source || '?')} → ${_escapeHtml(item.destination || '?')} · ${item.count || 0} item${item.count === 1 ? '' : 's'}</span><time>${_escapeHtml(_moveHistoryTime(item.created_at))}</time>${error}</div><div class="move-history-side"><span class="move-history-status">${_escapeHtml(_moveHistoryStatusLabel(item))}</span><button type="button" class="move-history-undo" data-operation-id="${_escapeHtml(item.id || '')}" ${undoable ? '' : 'disabled'}>${item.status === 'partial' ? 'Retry undo' : 'Undo'}</button></div>`;
+                list.appendChild(row);
+            });
+            if (focusedOperation) {
+                const replacement = list.querySelector(`[data-operation-id="${CSS.escape(focusedOperation)}"]`);
+                if (replacement && !replacement.disabled) replacement.focus();
+                else document.querySelector('#move-history-modal .modal-close-btn')?.focus();
+            }
+        }
+
+async function loadMoveHistory(force = false) {
+            if (moveHistoryLoadPromise) {
+                if (!force) return moveHistoryLoadPromise;
+                await moveHistoryLoadPromise;
+            }
+            moveHistoryLoading = true;
+            moveHistoryError = null;
+            renderMoveHistory();
+            moveHistoryLoadPromise = (async () => { try {
+                const resp = await fetch(ccApiPath('/api/move-history'), {cache: 'no-store'});
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(data.error || 'Could not load move history');
+                moveHistory = Array.isArray(data.operations) ? data.operations : [];
+                const latest = moveHistory.find(item => item.can_undo && (item.status === 'available' || item.status === 'partial'));
+                lastAction = latest ? {operationId: latest.id, batch: latest.batch} : null;
+            } catch (error) {
+                moveHistoryError = error.message || 'Could not load move history';
+            } finally {
+                moveHistoryLoading = false;
+                renderMoveHistory();
+                moveHistoryLoadPromise = null;
+            } })();
+            return moveHistoryLoadPromise;
+        }
+
+function showMoveHistoryModal() {
+            const modal = document.getElementById('move-history-modal');
+            if (!modal) return;
+            modal.classList.add('active');
+            const opener = document.getElementById('move-history-btn');
+            if (opener) opener.setAttribute('aria-expanded', 'true');
+            _trapFocus(modal);
+            loadMoveHistory();
+        }
+
+function hideMoveHistoryModal() {
+            const modal = document.getElementById('move-history-modal');
+            if (modal) modal.classList.remove('active');
+            const opener = document.getElementById('move-history-btn');
+            if (opener) opener.setAttribute('aria-expanded', 'false');
+            _releaseFocusTrap();
+        }
+
+async function undoMoveOperation(operationId) {
+            if (!operationId || moveHistoryUndoInflight) return;
+            const undoViewScope = getViewScopeKey();
+            const undoViewToken = viewTransitionToken;
+            moveHistoryUndoInflight = operationId;
+            renderMoveHistory();
+            try {
+                const resp = await fetch(ccApiPath('/api/move-batch/undo'), {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({operation_id: operationId})});
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok || data.success === false) throw new Error(data.error || 'Move could not be undone');
+                showToast(data.status === 'partial' ? `Partially restored ${data.moved || 0} item${data.moved === 1 ? '' : 's'}; review conflicts` : `Restored ${data.moved || 0} item${data.moved === 1 ? '' : 's'}`);
+                if (lastAction?.operationId === operationId) lastAction = null;
+                await loadMoveHistory(true);
+                if (undoViewScope === getViewScopeKey() && undoViewToken === viewTransitionToken) {
+                    if (currentBatch === '__favorites__' && typeof loadUniversalFavorites === 'function') await loadUniversalFavorites();
+                    else if (currentBatch === '__public__' && typeof loadAllPublic === 'function') await loadAllPublic();
+                    else if (currentBatch === '__search__' && moveUndoSearchStates.get(operationId)?.filter === workspaceSearchFilter && typeof restoreWorkspaceSearchAfterUndo === 'function') {
+                        restoreWorkspaceSearchAfterUndo(moveUndoSearchStates.get(operationId).state);
+                        moveUndoSearchStates.delete(operationId);
+                    }
+                    else if (currentBatch === '__search__') showToast('Undo completed; refresh or clear the search to review restored items.');
+                    else if (currentBatch) {
+                        const viewer = document.getElementById('lightbox');
+                        const undoLightboxName = viewer?.classList.contains('active') && typeof getActiveLightboxImage === 'function' ? getActiveLightboxImage()?.name : null;
+                        const viewerToken = typeof lightboxOpenToken === 'number' ? lightboxOpenToken : null;
+                        const imageToken = typeof lightboxImageToken === 'number' ? lightboxImageToken : null;
+                        const ownsViewer = () => undoViewScope === getViewScopeKey()
+                            && undoViewToken === viewTransitionToken && viewer?.classList.contains('active')
+                            && (viewerToken === null || viewerToken === lightboxOpenToken)
+                            && (imageToken === null || imageToken === lightboxImageToken);
+                        await loadCurrentFolderImages({preserveScroll: true});
+                        if (undoLightboxName && ownsViewer()) {
+                            let restoredIndex = getDisplayImages().findIndex(item => item?.name === undoLightboxName);
+                            if (restoredIndex < 0 && pagedFolderMode && folderSnapshot) {
+                                const lookup = await apiGetFolderItemIndex(currentBatch, currentFolder, _folderTransportSort(), currentOrder, folderSnapshot.revision, undoLightboxName, folderShuffleSeed);
+                                if (!ownsViewer()) return;
+                                if (lookup.ok) {
+                                    restoredIndex = (await lookup.json()).index;
+                                    if (!ownsViewer()) return;
+                                    await ensureFolderPageForIndex(restoredIndex);
+                                }
+                            }
+                            if (!ownsViewer()) return;
+                            if (restoredIndex >= 0) { currentIndex = restoredIndex; showCurrentImage(); }
+                            else { closeLightbox(); showToast('Undo completed; the reviewed item is no longer available in this view.'); }
+                        }
+                    }
+                    if (typeof loadBatches === 'function') loadBatches();
+                }
+            } catch (error) {
+                showToast(error.message || 'Move could not be undone');
+                await loadMoveHistory();
+            } finally {
+                moveHistoryUndoInflight = null;
+                renderMoveHistory();
+            }
         }
 
 function getThumbByName(name) {
@@ -94,12 +241,16 @@ function removeImagesFromCurrentView(names) {
         }
 
 async function moveBatch(filenames, destination) {
+            const moveBatchScope = getViewScopeKey();
+            const moveBatchToken = viewTransitionToken;
+            const moveBatchName = currentBatch;
+            const moveBatchFolder = currentFolder;
             const resp = await fetch(ccApiPath('/api/move-batch'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
-                    batch: currentBatch, filenames: filenames,
-                    source: currentFolder, destination: destination
+                    batch: moveBatchName, filenames: filenames,
+                    source: moveBatchFolder, destination: destination
                 })
             });
             if (resp.ok) {
@@ -118,14 +269,16 @@ async function moveBatch(filenames, destination) {
                     loadBatches();
                     return;
                 }
-                await animateThumbRemoval(filenames);
-                recordLastAction(filenames, currentFolder, destination);
-                showToast(`Moved ${data.moved} image${data.moved!==1?'s':''} to ${destination}`, true);
+                if (moveBatchScope !== getViewScopeKey() || moveBatchToken !== viewTransitionToken) { loadMoveHistory(true); loadBatches(); return; }
+                if (Number(data.moved) === filenames.length) await animateThumbRemoval(filenames);
+                if (data.operation_id) lastAction = {operationId: data.operation_id, batch: moveBatchName};
+                showToast(`Moved ${data.moved} image${data.moved!==1?'s':''} to ${destination}`, Boolean(data.operation_id));
+                loadMoveHistory(true);
+                if (moveBatchScope !== getViewScopeKey() || moveBatchToken !== viewTransitionToken) { loadBatches(); return; }
                 resetSelectionState();
                 if (pagedFolderMode) await loadCurrentFolderImages({preserveScroll: true});
                 else {
-                    removeImagesFromCurrentView(filenames);
-                    updateGrid();
+                    await loadCurrentFolderImages();
                 }
                 loadBatches();
             } else {
@@ -135,13 +288,17 @@ async function moveBatch(filenames, destination) {
         }
 
 async function moveSelected(destination) {
+            const selectionScope = getViewScopeKey();
+            const selectionToken = viewTransitionToken;
+            const selectionBatch = currentBatch;
+            const selectionFolder = currentFolder;
             if (serverSelection) {
                 const resp = await fetch(ccApiPath('/api/move-batch'), {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
-                        batch: currentBatch,
-                        source: currentFolder,
+                        batch: selectionBatch,
+                        source: selectionFolder,
                         destination,
                         selection: {
                             type: 'snapshot',
@@ -156,9 +313,11 @@ async function moveSelected(destination) {
                 const data = await resp.json().catch(() => ({}));
                 if (!resp.ok) { showToast(data.error || 'Move failed'); return; }
                 if (data.operation_id) {
-                    lastAction = {operationId: data.operation_id, expiresAt: Date.now() + 8000};
+                    lastAction = {operationId: data.operation_id, batch: selectionBatch};
                 }
                 showToast(`Moved ${data.moved || 0} media item${data.moved === 1 ? '' : 's'} to ${destination}`, Boolean(data.operation_id));
+                loadMoveHistory(true);
+                if (selectionScope !== getViewScopeKey() || selectionToken !== viewTransitionToken) return;
                 resetSelectionState();
                 await loadCurrentFolderImages();
                 loadBatches();
@@ -197,6 +356,8 @@ async function moveImage(destination) {
             if (!img) return;
             const movedIndex = getImageDisplayIndexByName(img.name);
             const source = getImageBatchAndFolder(img);
+            const moveImageScope = getViewScopeKey();
+            const moveImageToken = viewTransitionToken;
             const resp = await fetch(ccApiPath('/api/move'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -206,14 +367,19 @@ async function moveImage(destination) {
                 })
             });
             if (resp.ok) {
+                const data = await resp.json().catch(() => ({}));
+                if (data.success === false) { showToast(data.error || 'Move failed'); loadMoveHistory(); return; }
+                if (moveImageScope !== getViewScopeKey() || moveImageToken !== viewTransitionToken) { loadMoveHistory(true); return; }
                 if (!isWorkspaceSearchView() || workspaceSearchFilter?.scope === 'folder') {
                     await animateImageRemoval(img);
                 }
+                if (moveImageScope !== getViewScopeKey() || moveImageToken !== viewTransitionToken) { loadMoveHistory(true); return; }
                 if (isWorkspaceSearchView()) {
                     const moveState = updateWorkspaceSearchAfterMove(img, destination);
-                    recordLastAction([img.name], source.folder, destination, source.batch);
-                    if (lastAction) lastAction.workspaceSearch = moveState;
-                    showToast(`Moved to ${destination}`, true);
+                    if (data.operation_id) lastAction = {operationId: data.operation_id, batch: source.batch};
+                    if (data.operation_id) moveUndoSearchStates.set(data.operation_id, {state: moveState, filter: workspaceSearchFilter});
+                    showToast(`Moved to ${destination}`, Boolean(data.operation_id));
+                    loadMoveHistory(true);
                     resetSelectionState();
                     loadBatches();
                     const remaining = getDisplayImages();
@@ -227,13 +393,15 @@ async function moveImage(destination) {
                 }
                 if (currentBatch === '__favorites__') {
                     await loadUniversalFavorites();
-                    recordLastAction([img.name], source.folder, destination, source.batch);
-                    showToast(`Moved to ${destination}`, true);
+                    if (data.operation_id) lastAction = {operationId: data.operation_id, batch: source.batch};
+                    showToast(`Moved to ${destination}`, Boolean(data.operation_id));
+                    loadMoveHistory(true);
                     loadBatches();
                     return;
                 }
-                recordLastAction([img.name], source.folder, destination, source.batch);
-                showToast(`Moved to ${destination}`, true);
+                if (data.operation_id) lastAction = {operationId: data.operation_id, batch: source.batch};
+                showToast(`Moved to ${destination}`, Boolean(data.operation_id));
+                loadMoveHistory(true);
                 if (pagedFolderMode) {
                     if (compareWasActive) {
                         closeLightbox();
@@ -268,63 +436,13 @@ async function moveImage(destination) {
         }
 
 async function undoLastMove() {
-            if (!lastAction) return;
-            if (lastAction.expiresAt && Date.now() > lastAction.expiresAt) {
-                lastAction = null;
-                hideToast();
-                return;
-            }
-            if (lastAction.operationId) {
-                const resp = await fetch(ccApiPath('/api/move-batch/undo'), {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({operation_id: lastAction.operationId}),
-                });
-                const data = await resp.json().catch(() => ({}));
-                lastAction = null;
-                hideToast();
-                showToast(resp.ok ? `Restored ${data.moved || 0} media items` : (data.error || 'Nothing to restore'));
-                if (currentBatch && !isVirtualCollectionView()) loadCurrentFolderImages();
-                loadBatches();
-                return;
-            }
-            const action = lastAction;
-            const {batch, filenames, source, destination} = action;
-            const resp = await fetch(ccApiPath('/api/move-batch'), {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    batch, filenames, source: destination, destination: source
-                })
-            });
-            if (resp.ok) {
-                const data = await resp.json();
-                lastAction = null;
-                hideToast();
-                if (!data.success) {
-                    showToast('Nothing to restore');
-                    loadBatches();
-                    if (currentBatch === '__favorites__') {
-                        loadUniversalFavorites();
-                    } else if (currentBatch === '__public__') {
-                        loadAllPublic();
-                    } else if (currentBatch === batch) {
-                        loadCurrentFolderImages();
-                    }
-                    return;
-                }
-                showToast(`Restored ${filenames.length} image${filenames.length!==1?'s':''}`);
-                loadBatches();
-                if (currentBatch === '__search__') {
-                    restoreWorkspaceSearchAfterUndo(action.workspaceSearch);
-                } else if (currentBatch === '__favorites__') {
-                    loadUniversalFavorites();
-                } else if (currentBatch === '__public__') {
-                    loadAllPublic();
-                } else if (currentBatch === batch) {
-                    loadCurrentFolderImages();
-                }
-            }
+            if (moveHistoryUndoInflight) return;
+            await loadMoveHistory(true);
+            if (moveHistoryError) { showToast(moveHistoryError); return; }
+            const operation = moveHistory.find(item => item.can_undo && (item.status === 'available' || item.status === 'partial'))?.id;
+            if (!operation) { showToast('No move is available to undo'); return; }
+            hideToast();
+            await undoMoveOperation(operation);
         }
 
 function showDeleteModal() {

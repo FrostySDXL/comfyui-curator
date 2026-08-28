@@ -9,8 +9,8 @@ before manual selection. Single-user, local-first, filesystem-backed.
 - **Batch review UI** -- asset-manager style batch sidebar, stable local folder
   stage rail (inbox / shortlisted / finals / rejects), compact workspace toolbar,
   center thumbnail grid, sort/favorites/AI controls, and persistent thumbnail density modes.
-  Drag images between folders, multi-select or Select All for bulk moves, undo
-  toast for the last operation.
+  Drag images between folders, multi-select or Select All for bulk moves, and
+  reopen recent manual moves from **Undo / History** after the toast disappears.
 - **Lightbox viewer** -- full-size image review with zoom, keyboard
   navigation, scored-image jumps, PNG generation metadata (prompt,
   seed, sampler, CFG, LoRAs), adjacent JSON sidecars, and two-image comparison
@@ -258,6 +258,21 @@ linked/unlinked Sync Pan/Zoom and an optional A/B Split for still images.
 
 ## UI behavior
 
+- **Undo / History** retains manual review-folder moves across page reloads and
+  server restarts. Undo works newest-first across batches within the configured
+  library; `Ctrl+Z` uses the latest eligible move. The toast is only a shortcut,
+  not the recovery deadline. History retains up to 100 operations for 30 days
+  under `<batches-root>/.curator-undo/history.json`; keep this runtime file with
+  library backups and do not edit it manually. Conflicting or changed files are
+  not overwritten; incomplete recovery remains visible for retry. This is move
+  recovery, not a backup or recycle bin: imports, deletion, AI moves, and public
+  preparation/export are not covered, and there is no Redo.
+  Run only one curator process against a given library and avoid external file
+  changes during moves. Safe manual transfers require same-filesystem hardlink
+  support; unsupported/cross-device transfers fail without an overwrite fallback.
+  Interrupted, ambiguous pair transfers retain recovery evidence but may require
+  manual repair. Content hashing and very large histories add disk work; the
+  journal is capped at 256 MiB and 100,000 members per operation.
 - Sidebar state and thumbnail density persist across sessions.
 - Changing review scope clears the previous inspector target and selection.
   Inspector identity includes the source batch and folder, and native snapshot
@@ -346,7 +361,7 @@ Native foundation routes use `/api/curator/*`; media uses
 `/curator/thumb/*`, `/curator/preview/*`, and `/curator/image/*`. Real-folder
 transport uses `/api/curator/v2/folders/*` snapshot, poll, and item pages.
 Single-image moves, multi-image
-moves (undo-compatible reverse calls), reject deletion, favorites
+moves with durable operation-token undo, reject deletion, favorites
 (batch/universal toggles, All Favorites), and public publish/export, listing,
 destination browsing, copy/move/delete, prompt history, media search index/query,
 and AI scoring lifecycle

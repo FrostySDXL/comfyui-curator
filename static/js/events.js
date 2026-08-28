@@ -55,6 +55,14 @@ function _bindDelegatedEvents() {
             const helpBtn = document.getElementById('help-btn');
             if (helpBtn) helpBtn.addEventListener('click', showHelpModal);
 
+            const moveHistoryBtn = document.getElementById('move-history-btn');
+            if (moveHistoryBtn) moveHistoryBtn.addEventListener('click', showMoveHistoryModal);
+            const moveHistoryList = document.getElementById('move-history-list');
+            if (moveHistoryList) moveHistoryList.addEventListener('click', function(e) {
+                const undo = e.target.closest('.move-history-undo');
+                if (undo && !undo.disabled) undoMoveOperation(undo.dataset.operationId);
+            });
+
             const promptsBtn = document.getElementById('prompts-btn');
             if (promptsBtn) promptsBtn.addEventListener('click', showPromptsModal);
             const settingsBtn = document.getElementById('settings-btn');

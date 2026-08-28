@@ -18,8 +18,10 @@
   quality-first GIF/MP4 hover proxies, atomic cache writes, and stable decoder
   fallback tiles.
 - **Background folder index** (`folder_index.py`): Bounded-worker immutable
-  revisions, O(1) name lookup, 256-item pages, reconciliation, and short-lived
-  server-side bulk-move undo records.
+  revisions, O(1) name lookup, 256-item pages, and reconciliation.
+- **Manual move recovery** (`move_history.py`): Shared durable receipts and
+  newest-first undo for both web adapters, including native snapshot selections.
+  Recovery state belongs to the configured batches root, not a browser session.
 - **Native ComfyUI foundation** (`native_settings.py`, `native_routes.py`): Locked atomic `config.json` persistence, persisted/environment/default resolution, and namespaced aiohttp adapters including editable settings GET/POST.
 
 Modules are responsibility-scoped; keep AI-specific validation and worker orchestration in `ai_curate/`.
@@ -108,6 +110,7 @@ Written atomically via `.tmp` + `os.replace()`.
 | `web_validation.py` | `safe_path(base, *parts)` blocks traversal/absolute path escape; `require_existing_batch()` validates app-provided batch lists while preserving Flask route response shape. |
 | `media.py` | Extension-safe poster/preview cache paths, freshness checks, atomic WebP poster generation, FFmpeg-backed hover proxies, stable fallbacks, and safe derivative cleanup. |
 | `folder_index.py` | Immutable `FolderSnapshot` objects, revision metadata/polls, bounded pages, O(1) name lookup, mutation-triggered refresh, periodic reconciliation, and bulk-operation undo tokens. |
+| `move_history.py` | Manual review-move journaling, actual-member receipts, conflict-aware recovery, retention, and library-root locking. Web mutations go through this service; AI/CLI move behavior remains separate. |
 | `native_settings.py` | Persists schema-versioned native operation settings beside `state.json`; rejects symlinked, escaping, and non-regular config/temp targets and unsafe editable directory paths; resolves environment fallbacks; and exposes API-key status without the secret. |
 | `native_routes.py` | Registers native settings, batch/state/import, legacy and v2 revisioned media lists plus O(1) filename lookup, typed posters/previews/originals, moves and revision selections, reject deletion, favorites, public, prompt-history, and media-search contracts. Filesystem scans and derivative work are dispatched off the aiohttp event loop. |
 | `native_ai_routes.py` | Registers namespaced native AI preview, submit, status, cancellation, run-history, latest-run, and element-history aiohttp contracts using `ai_curate.native_lifecycle.NativeAiLifecycle`. |
@@ -118,6 +121,10 @@ Written atomically via `.tmp` + `os.replace()`.
 - For route path or existing-batch validation: read `web_validation.py` and the app-level wrappers in `app.py`.
 - For media cache/generation behavior: read `media.py` and the poster/preview/original routes in `app.py` and `native_routes.py`.
 - For large-folder transport: read `folder_index.py`, then the v2 routes in both adapters.
+- For manual move/undo: read `move_history.py`, both adapters, and
+  `tests/unit/test_move_history_review.py`; test recovery after reconstructing
+  the service, not just in-memory receipt lookup. See root `AGENTS.md` for the
+  public retention/storage contract and excluded operation types.
 - For PNG metadata work (parameter extraction, LoRA parsing): read `png_metadata.py`.
 - For adjacent JSON discovery, display limits, and lifecycle behavior: read `sidecar_metadata.py`.
 - `batch_store.get_images()` gracefully handles files deleted between `iterdir()` and `stat()` (catches `FileNotFoundError`/`OSError`).
@@ -125,6 +132,11 @@ Written atomically via `.tmp` + `os.replace()`.
 
 ## Gotchas & Common Pitfalls
 
+- **Move history is recovery state:** Do not treat the hidden journal as a
+  rebuildable index. Locks are process-local; run one curator process per
+  library. The optional `move_image(..., no_overwrite=True)` path uses exclusive
+  hardlinks and safe rollback, not overwrite-capable `shutil.move` fallback.
+  See README's Undo / History limits before changing storage or transfer rules.
 - **`_collision_safe_name` has no locking:** If two processes import simultaneously, both could see `exists() == False` and one file would overwrite. Low risk for single-user operation.
 - **LoRA hash is always `None`:** `_parse_loras()` hardcodes `"hash": None`. The field exists in the return schema but is never populated.
 - **Workflow JSON is size-only:** `extract_png_metadata` returns `workflow_available: bool` and `workflow_size: int` but not the workflow JSON content itself. Callers needing the full workflow must re-read the file.

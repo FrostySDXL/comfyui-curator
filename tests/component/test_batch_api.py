@@ -367,9 +367,80 @@ def test_api_move_moves_single_file(client, app_module, make_file):
     )
 
     assert response.status_code == 200
-    assert response.get_json() == {"success": True}
+    assert response.get_json()["success"] is True
+    assert len(response.get_json()["operation_id"]) == 32
     assert not (app_module.BATCHES_DIR / "batch" / "inbox" / "pic.png").exists()
     assert (app_module.BATCHES_DIR / "batch" / "shortlisted" / "pic.png").exists()
+
+
+@pytest.mark.component
+def test_move_history_routes_retain_receipt_and_idempotent_undo(client, app_module, make_file):
+    app_module.create_batch("batch")
+    source = app_module.BATCHES_DIR / "batch" / "inbox" / "pic.png"
+    make_file(source, b"original")
+    moved = client.post(
+        "/api/move",
+        json={"batch": "batch", "filename": "pic.png", "source": "inbox", "destination": "finals"},
+    ).get_json()
+    listing = client.get("/api/move-history").get_json()
+    assert listing["operations"][0]["id"] == moved["operation_id"]
+    assert listing["operations"][0]["can_undo"]
+    assert listing["max_operations"] == 100 and listing["retention_days"] == 30
+    batches = client.get("/api/batches")
+    assert batches.status_code == 200
+    assert batches.get_json()["batches"] == ["batch"]
+    for expected_moved in (1, 0):
+        response = client.post("/api/move-batch/undo", json={"operation_id": moved["operation_id"]})
+        assert response.status_code == 200
+        assert response.get_json()["success"]
+        assert response.get_json()["status"] == "undone"
+        assert response.get_json()["moved"] == expected_moved
+    assert source.read_bytes() == b"original"
+
+
+@pytest.mark.component
+@pytest.mark.parametrize(
+    "endpoint,body",
+    [
+        ("move-history", None),
+        (
+            "move",
+            {"batch": "batch", "filename": "pic.png", "source": "inbox", "destination": "finals"},
+        ),
+        (
+            "move-batch",
+            {
+                "batch": "batch",
+                "filenames": ["pic.png"],
+                "source": "inbox",
+                "destination": "finals",
+            },
+        ),
+        ("move-batch/undo", {"operation_id": "unknown"}),
+    ],
+)
+def test_move_history_storage_errors_are_json_and_fail_closed(
+    client, app_module, make_file, monkeypatch, endpoint, body
+):
+    from image_curator.move_history import MoveHistory
+
+    app_module.create_batch("batch")
+    source = app_module.BATCHES_DIR / "batch" / "inbox" / "pic.png"
+    make_file(source, b"original")
+
+    def fail_load(_self):
+        raise OSError("private path must not be returned")
+
+    monkeypatch.setattr(MoveHistory, "_load", fail_load)
+    response = (
+        client.get(f"/api/{endpoint}")
+        if body is None
+        else client.post(f"/api/{endpoint}", json=body)
+    )
+    assert response.status_code == 500
+    assert response.is_json
+    assert "private path" not in response.get_json()["error"]
+    assert source.read_bytes() == b"original"
 
 
 @pytest.mark.component

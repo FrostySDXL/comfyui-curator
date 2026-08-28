@@ -76,6 +76,19 @@
         .modal-buttons .create { background: var(--button-accent-fill); color: var(--button-accent-text); }
         .modal-buttons .create:disabled { background: #003d80; color: #999; cursor: not-allowed; }
         .modal-buttons .delete-confirm { background: var(--button-danger-fill); color: var(--button-danger-text); }
+        .move-history-content { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: hidden; display: flex; flex-direction: column; }
+        .move-history-header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+        .move-history-header p { margin-top: -8px; }
+        .modal-close-btn { background: transparent; border: 0; color: var(--text-muted); font-size: 24px; cursor: pointer; line-height: 1; }
+        .move-history-state { color: var(--text-muted); font-size: 12px; margin: 4px 0 10px; }
+        .move-history-list { overflow-y: auto; min-height: 0; display: grid; gap: 8px; }
+        .move-history-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-raised); }
+        .move-history-main, .move-history-side { display: flex; flex-direction: column; gap: 3px; }
+        .move-history-main span, .move-history-main time, .move-history-status { color: var(--text-muted); font-size: 12px; }
+        .move-history-error { color: var(--accent-danger, #ef8b8b); font-size: 11px; }
+        .move-history-side { align-items: flex-end; flex-shrink: 0; }
+        .move-history-undo { border: 1px solid var(--border-strong); border-radius: 4px; background: transparent; color: var(--accent-primary); cursor: pointer; padding: 4px 9px; }
+        .move-history-undo:disabled { color: var(--text-muted); cursor: not-allowed; opacity: .65; }
         .publish-modal-content {
             width: min(880px, calc(100vw - 32px));
             max-height: calc(100vh - 24px);

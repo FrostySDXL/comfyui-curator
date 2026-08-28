@@ -33,6 +33,7 @@ document.addEventListener('keydown', (e) => {
                         'help-modal': hideHelpModal,
                         'prompts-modal': hidePromptsModal,
                         'settings-modal': hideSettingsModal,
+                        'move-history-modal': typeof hideMoveHistoryModal === 'function' ? hideMoveHistoryModal : null,
                     }[trappedOverlay.id];
                     if (closeById) closeById();
                 }

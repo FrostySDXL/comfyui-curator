@@ -140,7 +140,7 @@ Edit `templates/index.html`, then run `.venv\Scripts\python.exe scripts\generate
 | `_lastBatchListKey` | `string` | Hash of last batch list for skip-shortcut in polling |
 | `selectedImages` | `Set<filename>` | Multi-selected image filenames |
 | `draggedFiles` | `array\<filename\>` | Files being dragged |
-| `lastAction` | `object\|null` | Last move for undo (batch, filenames, source, dest, expiry) |
+| `lastAction` | `object\|null` | Latest server-backed move receipt for toast/undo; no toast-bound expiry |
 | `lightboxZoom` | `number` | Current lightbox zoom level (0.6--3) |
 | `lightboxVideoAutoplayLoopEnabled` | `boolean` | Persistent preference controlling both autoplay and looping for lightbox videos |
 | `lightboxPanState` | `object\|null` | Active pointer-drag pan state for zoomed lightbox images |
@@ -183,7 +183,7 @@ Edit `templates/index.html`, then run `.venv\Scripts\python.exe scripts\generate
 | **Keyboard Shortcuts** | `keyboard.js` document `keydown` handler | `document` |
 | **Drag/Drop** | `onDragStart`, `onDragOver`, `onDrop`, `moveBatch` | `.thumb`, `.folder-tab` |
 | **Multi-Select** | `toggleSelect`, `clearSelection`, `updateActionBar` | `#action-bar`, `.thumb-select` |
-| **Undo** | `recordLastAction`, `showToast`, `undoLastMove` | `#toast` |
+| **Undo** | `loadMoveHistory`, `undoMoveOperation`, `undoLastMove` | `#move-history-modal`, `#toast` |
 | **Lightbox** | `openLightbox`, `openCompareLightbox`, `openStickyCompareLightbox`, `navigateStickyCompare`, `advanceComparePair`, `setLightboxCompareSync`, `toggleLightboxCompareSplit`, `closeLightbox`, `navigate`, `navigateScored`, `zoomLightbox`, `zoomComparePane`, `toggleLightboxMetadata`, `toggleLightboxAiPanel`, `loadLightboxMetadata` | `#lightbox`, `#lightbox-compare`, `#lightbox-compare-divider` |
 | **Unified inspector** | `toggleAiSidebar`, `syncAiSidebarUi`, `setInspectorTab`, `aiSetPanelTab`, `aiSubmitJob`, `aiPollJobStatus`, `aiRefreshRunData`, `aiLoadElementHistory`, `aiRenderImageInspector`, `loadInspectorMetadata` | `#ai-sidebar-shell`, `#unified-inspector`, `#inspector-overview-section`, `#inspector-metadata-section`, `#inspector-ai-section`, `#ai-image-inspector` |
 | **AI Grid Overlay** | `aiToggleOverlays`, `aiScoreGradient`, `aiShouldShowImage`, `aiSortImages`, `aiShowHeaderControls` | `.ai-score-badge`, `#ai-display-controls` |
@@ -205,7 +205,8 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 | `POST /api/import-all` | `importAll()` | Import button click |
 | `GET /api/images/<batch>/<folder>?sort=&order=` | `loadCurrentFolderImages()`, `pollForChanges()` | Batch switch, folder switch, 5s poll |
 | `GET /api/v2/folders/<batch>/<folder>/{snapshot,poll,items}` | `loadCurrentFolderImages()`, `ensureFolderPageForIndex()`, `pollForChanges()` | Native revision metadata, unchanged lightweight polls, and 256-item pages |
-| `POST /api/move-batch` | `moveBatch()`, `undoLastMove()` | Drag drop, action bar, undo |
+| `POST /api/move-batch` | `moveBatch()`, `moveSelected()` | Drag drop, action bar, snapshot selection |
+| `GET /api/move-history`, `POST /api/move-batch/undo` | `loadMoveHistory()`, `undoMoveOperation()` | Persistent manual-move history and newest-first operation-token undo |
 | `POST /api/move` | `moveImage()` | Lightbox keyboard move (S/F/R) |
 | `POST /api/delete-rejects/<batch>` | `confirmDeleteRejects()` | Empty Rejects button |
 | `GET /api/image-metadata/<batch>/<folder>/<name>` | `loadLightboxMetadata()` | Lightbox open, lightbox navigate |
@@ -312,7 +313,7 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
   `aria-busy`, while failed posters keep their tile size and offer a filename-
   and media-aware keyboard Retry through the bounded viewport scheduler.
 - Select All in a paged folder stores revision plus exclusions instead of
-  materializing thousands of names. Move and short-lived undo are server-side;
+  materializing thousands of names. Move and durable undo are server-side;
   stale revisions return 409 and trigger safe reconciliation.
 - Hover previews are persisted by the View-menu/`H` toggle, delayed by 180ms,
   muted, and limited to one decoder. Leaving a thumb releases its proxy source;

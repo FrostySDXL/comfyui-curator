@@ -36,7 +36,6 @@ from image_curator.media import (
 )
 from image_curator.folder_index import (
     DEFAULT_PAGE_SIZE,
-    BulkMoveOperationStore,
     FolderIndexService,
     normalize_shuffle_seed,
 )
@@ -52,6 +51,7 @@ from image_curator.search_index import (
     summarize_search_index,
 )
 from image_curator.web_validation import require_existing_batch, safe_path
+from image_curator.move_history import MAX_OPERATIONS, RETENTION_DAYS, MoveHistory
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,6 @@ IMAGE_EXTENSIONS = batch_store.IMAGE_EXTENSIONS
 _PUBLIC_EXPORT_ROOT_RAW = os.environ.get("IMAGE_CURATOR_PUBLIC_EXPORTS", "").strip()
 PUBLIC_EXPORT_ROOT = Path(_PUBLIC_EXPORT_ROOT_RAW).expanduser() if _PUBLIC_EXPORT_ROOT_RAW else None
 _folder_index = FolderIndexService()
-_bulk_move_operations = BulkMoveOperationStore()
 atexit.register(_folder_index.close)
 
 # Warn on startup if critical defaults are unlikely to work
@@ -121,6 +120,11 @@ def save_state(state):
 def get_batches():
     """Get list of all batch names."""
     return batch_store.get_batches(BATCHES_DIR)
+
+
+def _move_history() -> MoveHistory:
+    """Resolve on demand so tests and operators can change the configured root."""
+    return MoveHistory(BATCHES_DIR)
 
 
 def create_batch(name):
@@ -335,10 +339,16 @@ def api_move():
     if not src_path.exists():
         return jsonify({"error": "File not found"}), 404
 
-    if not batch_store.move_image(src_path, dst_path):
-        return jsonify({"error": f"Could not move {filename}"}), 500
+    try:
+        result = _move_history().move(batch_name, source, destination, [filename])
+    except (OSError, ValueError):
+        return jsonify(
+            {"error": "Move history is unavailable; refresh History before retrying"}
+        ), 500
+    if result.moved != 1:
+        return jsonify({"error": result.error or f"Could not move {filename}"}), 500
     _folder_index.refresh(batch_name, source, destination)
-    return jsonify({"success": True})
+    return jsonify({"success": True, "operation_id": result.operation_id})
 
 
 @app.route("/api/move-batch", methods=["POST"])
@@ -399,11 +409,14 @@ def api_move_batch():
             continue
         valid_filenames.append(filename)
     if valid_filenames:
-        moved, skipped_in_loop, moved_names = batch_store.move_images(
-            source_dir=source_dir,
-            names=valid_filenames,
-            dest_dir=dest_dir,
-        )
+        try:
+            result = _move_history().move(batch_name, source, destination, valid_filenames)
+        except (OSError, ValueError):
+            return jsonify(
+                {"error": "Move history is unavailable; refresh History before retrying"}
+            ), 500
+        moved, skipped_in_loop = result.moved, result.skipped
+        moved_names = list(result.names)
         skipped += skipped_in_loop
     _folder_index.refresh(batch_name, source, destination)
     if moved == 0 and filenames:
@@ -413,10 +426,8 @@ def api_move_batch():
         # a 200 status so callers don't treat this as a 4xx failure.
         return jsonify({"success": False, "moved": 0, "skipped": skipped})
     payload = {"success": True, "moved": moved, "skipped": skipped}
-    if selection is not None and moved_names:
-        payload["operation_id"] = _bulk_move_operations.record(
-            batch_name, source, destination, moved_names
-        )
+    if moved_names:
+        payload["operation_id"] = result.operation_id
     return jsonify(payload)
 
 
@@ -426,18 +437,64 @@ def api_undo_snapshot_move():
     token = data.get("operation_id", "")
     if not isinstance(token, str) or not token:
         return jsonify({"error": "operation_id required"}), 400
-    operation = _bulk_move_operations.pop(token)
-    if operation is None:
+    history = _move_history()
+    try:
+        operation_info = next(
+            (item for item in history.list_operations() if item["id"] == token), None
+        )
+    except (OSError, ValueError):
+        return jsonify({"error": "Move history is unavailable"}), 500
+    if operation_info is None:
         return jsonify({"error": "Undo operation expired or not found"}), 404
-    if operation.batch not in get_batches():
-        return jsonify({"error": "Batch does not exist"}), 404
-    source_dir = get_batch_folder(operation.batch, operation.destination)
-    dest_dir = get_batch_folder(operation.batch, operation.source)
-    moved, skipped, _moved_names = batch_store.move_images(
-        source_dir, list(operation.names), dest_dir
+    try:
+        result = history.undo(token)
+    except (OSError, ValueError):
+        return jsonify(
+            {"error": "Move history is unavailable; refresh History before retrying"}
+        ), 500
+    if result.error == "Undo operation expired or not found":
+        return jsonify({"error": result.error}), 404
+    if result.status == "blocked":
+        return jsonify(
+            {
+                "success": False,
+                "moved": 0,
+                "skipped": result.skipped,
+                "remaining": result.remaining,
+                "status": result.status,
+                "error": result.error,
+            }
+        ), 409
+    _folder_index.refresh(
+        operation_info["batch"], operation_info["source"], operation_info["destination"]
     )
-    _folder_index.refresh(operation.batch, operation.source, operation.destination)
-    return jsonify({"success": moved > 0, "moved": moved, "skipped": skipped})
+    return jsonify(
+        {
+            "success": result.moved > 0 or result.status == "undone",
+            "moved": result.moved,
+            "skipped": result.skipped,
+            "remaining": result.remaining,
+            "status": result.status,
+            **({"error": result.error} if result.error else {}),
+        }
+    )
+
+
+@app.route("/api/move-history", methods=["GET"])
+def api_move_history():
+    try:
+        operations = _move_history().list_operations()
+    except (OSError, ValueError):
+        return jsonify({"error": "Move history is unavailable"}), 500
+    response = jsonify(
+        {
+            "operations": operations,
+            "retention_days": RETENTION_DAYS,
+            "max_operations": MAX_OPERATIONS,
+        }
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.route("/api/import-status", methods=["GET"])

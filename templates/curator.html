@@ -73,6 +73,7 @@
                 <button id="batch-sidebar-toggle-btn" class="batch-sidebar-toggle-btn" type="button">Hide Batches</button>
                 <button id="ai-sidebar-toggle-btn" class="ai-sidebar-toggle-btn hidden" type="button">Hide Inspector</button>
                 <button id="activity-center-toggle" class="help-btn activity-center-toggle" type="button" aria-expanded="false" aria-controls="activity-center-panel">Activity <span id="activity-center-badge" class="activity-center-badge" aria-label="0 active activities">0</span></button>
+                <button id="move-history-btn" class="help-btn" type="button" aria-expanded="false" aria-controls="move-history-modal">Undo / History <span id="move-history-badge" class="activity-center-badge" aria-label="0 undoable moves">0</span></button>
                 <button id="help-btn" class="help-btn" type="button">Help</button>
                 <button id="prompts-btn" class="help-btn" type="button">Search</button>
                 <button id="settings-btn" class="help-btn hidden" type="button">Settings</button>
@@ -673,6 +674,7 @@
                     <li><strong>P</strong> open Library Search on the last-used Images or Prompt groups tab (the dialog initially focuses Close)</li>
                     <li><strong>Ctrl/Cmd+A</strong> select all images in current folder (not in lightbox)</li>
                     <li><strong>Ctrl/Cmd+Z</strong> undo last move while undo is available</li>
+                    <li><strong>Undo / History</strong> keeps the newest eligible manual review move available across reloads for 30 days (up to 100); it excludes deletion, import, AI moves, and public exports.</li>
                     <li><strong>U</strong> toggle the batch sidebar</li>
                     <li><strong>F</strong> toggle favorites-only filter</li>
                     <li><strong>B</strong> toggle AI badges when an AI run is available</li>
@@ -936,6 +938,14 @@
     </div>
 
     <!-- Toast -->
+    <div id="move-history-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="move-history-title" onclick="closeModalOnBackdropClick(event, hideMoveHistoryModal)">
+        <div class="modal-content move-history-content">
+            <div class="move-history-header"><div><h3 id="move-history-title">Undo History</h3><p>Only manual review moves are retained for 30 days (up to 100). Newest operations are listed first, and Ctrl/Cmd+Z undoes the newest eligible move. Deletion, import, AI moves, and public exports are excluded.</p></div><button type="button" class="modal-close-btn" aria-label="Close undo history" onclick="hideMoveHistoryModal()">×</button></div>
+            <div id="move-history-state" class="move-history-state" role="status" aria-live="polite">Loading move history...</div>
+            <div id="move-history-list" class="move-history-list"></div>
+            <div class="modal-buttons"><button class="cancel" type="button" onclick="hideMoveHistoryModal()">Close</button></div>
+        </div>
+    </div>
     <div id="toast" class="toast" role="alert" aria-live="polite" aria-atomic="true">
         <span id="toast-text"></span>
         <button class="toast-undo hidden" id="toast-undo">Undo</button>

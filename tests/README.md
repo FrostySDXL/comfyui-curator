@@ -57,6 +57,18 @@ Selection and compare-candidate source contracts live in the ordered
 `static/js/moves.js`. The split is an ownership extraction, not a frontend
 framework or state-store migration.
 
+`move_history_lifecycle_test.js` executes the real move/history scripts with
+transport and DOM doubles. Its pytest wrapper runs in the existing unit layer;
+no browser framework or new runner mode is required. Keep executable assertions
+for snapshot drag payloads, stale-view ownership, history requests, and undo
+behavior alongside source-contract checks. The backend recovery tests are
+`test_move_history.py` and the independently authored
+`test_move_history_review.py`; both use disposable filesystem fixtures.
+Restart tests must actually undo from a reconstructed service, not merely
+assert that a history row is present. Real drag gestures, lightbox continuity,
+and reload/restart recovery also require the mutating fixture-only section of
+`manual_route_smoke.md`.
+
 `state_transitions_lifecycle_test.js` is an executable Node VM regression for
 source-qualified inspector identity, delayed metadata, virtual-loader, and
 polling response ownership across view transitions. Its Python wrapper runs it

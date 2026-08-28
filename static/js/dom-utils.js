@@ -135,7 +135,6 @@ function showToast(message, undoable = false) {
             toast.classList.add('show');
             if (toastTimeout) clearTimeout(toastTimeout);
             toastTimeout = setTimeout(() => {
-                if (undoable) lastAction = null;
                 toast.classList.remove('show');
             }, undoable ? 8000 : 3000);
         }
