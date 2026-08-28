@@ -347,6 +347,7 @@ def api_move():
         ), 500
     if result.moved != 1:
         return jsonify({"error": result.error or f"Could not move {filename}"}), 500
+    _folder_index.invalidate(batch_name, source, destination)
     _folder_index.refresh(batch_name, source, destination)
     return jsonify({"success": True, "operation_id": result.operation_id})
 
@@ -418,6 +419,7 @@ def api_move_batch():
         moved, skipped_in_loop = result.moved, result.skipped
         moved_names = list(result.names)
         skipped += skipped_in_loop
+    _folder_index.invalidate(batch_name, source, destination)
     _folder_index.refresh(batch_name, source, destination)
     if moved == 0 and filenames:
         # Zero files moved is a legitimate no-op (e.g. all requested files
@@ -465,6 +467,9 @@ def api_undo_snapshot_move():
                 "error": result.error,
             }
         ), 409
+    _folder_index.invalidate(
+        operation_info["batch"], operation_info["source"], operation_info["destination"]
+    )
     _folder_index.refresh(
         operation_info["batch"], operation_info["source"], operation_info["destination"]
     )

@@ -638,6 +638,7 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             return web.json_response(
                 {"error": result.error or f"Could not move {filename}"}, status=500
             )
+        service.folder_index.invalidate(batch, source, destination)
         service.folder_index.refresh(batch, source, destination)
         return web.json_response({"success": True, "operation_id": result.operation_id})
 
@@ -727,6 +728,7 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
                 )
             moved, skipped_in_loop, moved_names = result.moved, result.skipped, list(result.names)
             skipped += skipped_in_loop
+        service.folder_index.invalidate(batch, source, destination)
         service.folder_index.refresh(batch, source, destination)
         if moved == 0 and raw_filenames:
             return web.json_response({"success": False, "moved": 0, "skipped": skipped})
@@ -757,6 +759,9 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             )
         if result.error == "Undo operation expired or not found":
             return web.json_response({"error": result.error}, status=404)
+        service.folder_index.invalidate(
+            operation_info["batch"], operation_info["source"], operation_info["destination"]
+        )
         service.folder_index.refresh(
             operation_info["batch"], operation_info["source"], operation_info["destination"]
         )

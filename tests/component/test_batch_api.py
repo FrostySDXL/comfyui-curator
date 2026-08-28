@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 from PIL import Image
 
@@ -598,3 +600,166 @@ def test_thumbnail_cache_keys_are_namespaced_by_folder(client, app_module):
     assert cache_files[0] != cache_files[1]
     assert any("inbox" in name for name in cache_files)
     assert any("shortlisted" in name for name in cache_files)
+
+
+# ---------------------------------------------------------------------------
+# Folder snapshot invalidation after move/undo (stale-revision regression)
+# ---------------------------------------------------------------------------
+
+
+def _warm_folder_snapshot(client, app_module, batch, folder, sort="name", order="asc"):
+    """Build and return the ready snapshot for a folder's paged view."""
+    client.get(f"/api/v2/folders/{batch}/{folder}/snapshot?sort={sort}&order={order}")
+    assert app_module._folder_index.wait_until_ready(batch, folder, sort, order, timeout=2)
+    response = client.get(f"/api/v2/folders/{batch}/{folder}/snapshot?sort={sort}&order={order}")
+    assert response.status_code == 200
+    return response.get_json()
+
+
+def _block_folder_index_rebuild(app_module, monkeypatch):
+    """Hold subsequent folder-index rebuilds in flight until released.
+
+    This makes the mutation-triggered rebuild deterministically still-running
+    when the snapshot endpoint is inspected, so the test can prove the route
+    never serves the pre-mutation revision as a final ``ready`` result.
+    """
+    release = threading.Event()
+    original_scan = app_module._folder_index._scan_directory
+
+    def blocking_scan(directory, sort_by, order, shuffle_seed=""):
+        release.wait(timeout=5)
+        return original_scan(directory, sort_by, order, shuffle_seed)
+
+    monkeypatch.setattr(app_module._folder_index, "_scan_directory", blocking_scan)
+    return release
+
+
+def _assert_snapshot_reflects_mutation(
+    client,
+    app_module,
+    release,
+    batch,
+    folder,
+    pre_revision,
+    expected_count,
+    sort="name",
+    order="asc",
+):
+    """Assert the snapshot endpoint does not serve ``pre_revision`` as final.
+
+    Accepts either an immediate ``202`` "building" response (then releases the
+    blocked rebuild and awaits a new ready revision) or an immediate ``200``
+    whose revision differs and whose count reflects the mutation.
+    """
+    response = client.get(f"/api/v2/folders/{batch}/{folder}/snapshot?sort={sort}&order={order}")
+    assert response.status_code in {200, 202}
+    payload = response.get_json()
+    if response.status_code == 200:
+        release.set()
+        assert payload["status"] == "ready"
+        assert payload["revision"] != pre_revision
+        assert payload["count"] == expected_count
+        return payload
+    assert payload == {"status": "building"}
+    release.set()
+    assert app_module._folder_index.wait_until_ready(batch, folder, sort, order, timeout=5)
+    ready = client.get(f"/api/v2/folders/{batch}/{folder}/snapshot?sort={sort}&order={order}")
+    assert ready.status_code == 200
+    body = ready.get_json()
+    assert body["status"] == "ready"
+    assert body["revision"] != pre_revision
+    assert body["count"] == expected_count
+    return body
+
+
+@pytest.mark.component
+def test_api_move_invalidates_snapshot_revision(client, app_module, make_file, monkeypatch):
+    app_module.create_batch("move-single")
+    make_file(app_module.BATCHES_DIR / "move-single" / "inbox" / "pic.png")
+
+    pre = _warm_folder_snapshot(client, app_module, "move-single", "inbox")
+    release = _block_folder_index_rebuild(app_module, monkeypatch)
+
+    try:
+        moved = client.post(
+            "/api/move",
+            json={
+                "batch": "move-single",
+                "filename": "pic.png",
+                "source": "inbox",
+                "destination": "shortlisted",
+            },
+        )
+        assert moved.status_code == 200
+
+        _assert_snapshot_reflects_mutation(
+            client, app_module, release, "move-single", "inbox", pre["revision"], 0
+        )
+    finally:
+        release.set()
+
+
+@pytest.mark.component
+def test_api_move_batch_invalidates_snapshot_revision(client, app_module, make_file, monkeypatch):
+    app_module.create_batch("move-bulk")
+    inbox = app_module.BATCHES_DIR / "move-bulk" / "inbox"
+    make_file(inbox / "one.png")
+    make_file(inbox / "two.jpg")
+
+    pre = _warm_folder_snapshot(client, app_module, "move-bulk", "inbox")
+    release = _block_folder_index_rebuild(app_module, monkeypatch)
+
+    try:
+        moved = client.post(
+            "/api/move-batch",
+            json={
+                "batch": "move-bulk",
+                "filenames": ["one.png", "two.jpg"],
+                "source": "inbox",
+                "destination": "finals",
+            },
+        )
+        assert moved.status_code == 200
+
+        _assert_snapshot_reflects_mutation(
+            client, app_module, release, "move-bulk", "inbox", pre["revision"], 0
+        )
+    finally:
+        release.set()
+
+
+@pytest.mark.component
+def test_undo_invalidates_snapshot_revision_not_serving_pre_undo(
+    client, app_module, make_file, monkeypatch
+):
+    app_module.create_batch("move-undo")
+    make_file(app_module.BATCHES_DIR / "move-undo" / "inbox" / "pic.png")
+
+    pre = _warm_folder_snapshot(client, app_module, "move-undo", "inbox")
+
+    moved = client.post(
+        "/api/move",
+        json={
+            "batch": "move-undo",
+            "filename": "pic.png",
+            "source": "inbox",
+            "destination": "finals",
+        },
+    )
+    assert moved.status_code == 200
+    operation_id = moved.get_json()["operation_id"]
+
+    post_move = _assert_snapshot_reflects_mutation(
+        client, app_module, threading.Event(), "move-undo", "inbox", pre["revision"], 0
+    )
+
+    release = _block_folder_index_rebuild(app_module, monkeypatch)
+    try:
+        undone = client.post("/api/move-batch/undo", json={"operation_id": operation_id})
+        assert undone.status_code == 200
+
+        _assert_snapshot_reflects_mutation(
+            client, app_module, release, "move-undo", "inbox", post_move["revision"], 1
+        )
+    finally:
+        release.set()

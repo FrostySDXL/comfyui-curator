@@ -671,11 +671,18 @@ function _restoreGridAnchor(index) {
 
 function getGridScrollOrigin(grid) {
             const shell = document.getElementById('grid-shell');
-            if (shell && Number.isFinite(shell.offsetTop)) return shell.offsetTop;
+            const content = document.querySelector('.content');
+            if (shell && content) {
+                // offsetTop can be relative to the page, including the toolbar.
+                // Virtual rows and scrollTop must share the scroller's coordinates.
+                return shell.getBoundingClientRect().top - content.getBoundingClientRect().top
+                    - content.clientTop + content.scrollTop;
+            }
             return Number.isFinite(grid.offsetTop) ? grid.offsetTop : 0;
         }
 
-function updateGridShellLayout() {
+function updateGridShellLayout(options = {}) {
+            const skipAnchorRestore = options.skipAnchorRestore === true;
             const content = document.querySelector('.content');
             const shell = document.getElementById('grid-shell');
             const grid = document.getElementById('grid');
@@ -692,10 +699,15 @@ function updateGridShellLayout() {
             }
 
             const previousColumns = Math.max(1, Number(grid.style.getPropertyValue('--grid-columns')) || 1);
-            const anchorIndex = _captureGridAnchor(previousColumns);
+            const anchorIndex = skipAnchorRestore ? null : _captureGridAnchor(previousColumns);
             const usedColumns = _calculateFittedGridColumns(displayCount);
             grid.style.setProperty('--grid-columns', String(usedColumns));
-            if (usedColumns !== previousColumns) _restoreGridAnchor(anchorIndex);
+            if (!skipAnchorRestore && usedColumns !== previousColumns) {
+                // Sidebar/viewport reflows can increase the scroll extent too.
+                const {track, gap} = getGridDensityConfig();
+                shell.style.height = `${Math.max(track, Math.ceil(displayCount / usedColumns) * (track + gap) - gap)}px`;
+                _restoreGridAnchor(anchorIndex);
+            }
         }
 
 function initializeGridShellLayout() {
@@ -727,7 +739,16 @@ function setGridDensity(density) {
                 grid.classList.remove('density-compact', 'density-comfortable', 'density-large');
                 grid.classList.add(`density-${gridDensity}`);
             }
-            updateGridShellLayout();
+            updateGridShellLayout({skipAnchorRestore: true});
+            const shell = document.getElementById('grid-shell');
+            if (grid && shell) {
+                const columns = Math.max(1, Number(grid.style.getPropertyValue('--grid-columns')) || 1);
+                const count = currentDisplayImages.length || Number(grid.dataset.canonicalCount) || 0;
+                if (count > 0) {
+                    const {track, gap} = getGridDensityConfig();
+                    shell.style.height = `${Math.max(track, Math.ceil(count / columns) * (track + gap) - gap)}px`;
+                }
+            }
             _restoreGridAnchor(anchorIndex);
             _scheduleProgressiveGridGrowthCheck();
             document.querySelectorAll('.density-btn').forEach(btn => {

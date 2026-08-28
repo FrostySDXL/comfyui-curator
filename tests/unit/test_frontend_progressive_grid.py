@@ -150,12 +150,12 @@ def test_continuous_scroll_defers_recycled_thumbnail_source_work() -> None:
 
 
 def test_grid_shell_columns_use_full_canonical_display_count() -> None:
-    body = extract_function_body(read_frontend_js(), "function updateGridShellLayout()")
+    source = read_frontend_js()
 
     assert (
         "const displayCount = currentDisplayImages.length || "
         "grid.querySelectorAll('.thumb.loading-placeholder').length;"
-    ) in body
+    ) in source
 
 
 def test_dynamic_benchmark_dispatches_production_scroll_event() -> None:
@@ -164,6 +164,28 @@ def test_dynamic_benchmark_dispatches_production_scroll_event() -> None:
     assert "dynamic-traversal-growth-v1" in benchmark
     assert "content.dispatchEvent(new Event('scroll', {bubbles: true}));" in benchmark
     assert "dispatchEvent(new Event('scroll'" in benchmark
+
+
+def test_content_scroller_disables_browser_scroll_anchoring() -> None:
+    css = Path("static/css/grid.css").read_text(encoding="utf-8")
+    rule = re.search(r"\.content\s*\{[^{}]*\}", css)
+    assert rule is not None, ".content rule not found in grid.css"
+    assert "overflow-anchor: none" in rule.group(0), (
+        ".content rule must set overflow-anchor: none so browser scroll anchoring "
+        "does not override the JS-restored scrollTop during a density switch"
+    )
+
+
+def test_density_switch_presets_shell_height_before_anchor_restore() -> None:
+    source = read_frontend_js()
+    set_density = extract_function_body(source, "function setGridDensity(density)")
+
+    assert "function updateGridShellLayout(options = {})" in source
+    assert "const skipAnchorRestore = options.skipAnchorRestore === true;" in source
+    assert re.search(r"updateGridShellLayout\(\{\s*skipAnchorRestore:\s*true\s*\}\)", set_density)
+    assert set_density.index("shell.style.height") < set_density.index(
+        "_restoreGridAnchor(anchorIndex)"
+    )
 
 
 def test_progressive_grid_node_lifecycle() -> None:

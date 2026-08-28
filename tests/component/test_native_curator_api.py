@@ -2,6 +2,7 @@ import asyncio
 import importlib.util
 import json
 import sys
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -4055,5 +4056,236 @@ def test_native_get_all_prompt_indices_skips_unsafe_caches(tmp_path, monkeypatch
         assert "alpha" in payload["batches"], "safe batch alpha must be present"
         assert "beta" not in payload["batches"], "batch with symlinked cache must be omitted"
         assert payload["total_prompts"] == 1
+
+    asyncio.run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Native folder snapshot invalidation after move/undo (stale-revision regression)
+# ---------------------------------------------------------------------------
+
+
+async def _native_warm_snapshot(router, service, batch, folder, sort="name", order="asc"):
+    match = {"batch": batch, "folder": folder}
+    query = {"sort": sort, "order": order}
+    await _invoke(
+        router,
+        "GET",
+        "/api/curator/v2/folders/{batch}/{folder}/snapshot",
+        match_info=match,
+        query=query,
+    )
+    assert service.folder_index.wait_until_ready(batch, folder, sort, order, timeout=2)
+    status, payload = await _invoke(
+        router,
+        "GET",
+        "/api/curator/v2/folders/{batch}/{folder}/snapshot",
+        match_info=match,
+        query=query,
+    )
+    assert status == 200
+    return payload
+
+
+async def _native_assert_snapshot_reflects_mutation(
+    router, service, release, batch, folder, pre_revision, expected_count, sort="name", order="asc"
+):
+    match = {"batch": batch, "folder": folder}
+    query = {"sort": sort, "order": order}
+    status, payload = await _invoke(
+        router,
+        "GET",
+        "/api/curator/v2/folders/{batch}/{folder}/snapshot",
+        match_info=match,
+        query=query,
+    )
+    assert status in {200, 202}
+    if status == 200:
+        release.set()
+        assert payload["status"] == "ready"
+        assert payload["revision"] != pre_revision
+        assert payload["count"] == expected_count
+        return payload
+    assert payload == {"status": "building"}
+    release.set()
+    assert service.folder_index.wait_until_ready(batch, folder, sort, order, timeout=5)
+    status, ready = await _invoke(
+        router,
+        "GET",
+        "/api/curator/v2/folders/{batch}/{folder}/snapshot",
+        match_info=match,
+        query=query,
+    )
+    assert status == 200
+    assert ready["status"] == "ready"
+    assert ready["revision"] != pre_revision
+    assert ready["count"] == expected_count
+    return ready
+
+
+def test_native_move_invalidates_snapshot_revision(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "move-single")
+        (settings.batch_root / "move-single" / "inbox" / "pic.png").write_bytes(b"image")
+        service = native_routes.NativeCuratorService(settings)
+        router = _Router()
+        native_routes.register_native_routes(SimpleNamespace(router=router), service)
+
+        pre = await _native_warm_snapshot(router, service, "move-single", "inbox")
+
+        release = threading.Event()
+        original_scan = service.folder_index._scan_directory
+
+        def blocking_scan(directory, sort_by, order, shuffle_seed=""):
+            release.wait(timeout=5)
+            return original_scan(directory, sort_by, order, shuffle_seed)
+
+        monkeypatch.setattr(service.folder_index, "_scan_directory", blocking_scan)
+
+        try:
+            status, _payload = await _invoke(
+                router,
+                "POST",
+                "/api/curator/move",
+                {
+                    "batch": "move-single",
+                    "filename": "pic.png",
+                    "source": "inbox",
+                    "destination": "shortlisted",
+                },
+            )
+            assert status == 200
+
+            await _native_assert_snapshot_reflects_mutation(
+                router, service, release, "move-single", "inbox", pre["revision"], 0
+            )
+        finally:
+            release.set()
+        service.close()
+
+    asyncio.run(scenario())
+
+
+def test_native_move_batch_invalidates_snapshot_revision(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "move-bulk")
+        inbox = settings.batch_root / "move-bulk" / "inbox"
+        (inbox / "one.png").write_bytes(b"one")
+        (inbox / "two.jpg").write_bytes(b"two")
+        service = native_routes.NativeCuratorService(settings)
+        router = _Router()
+        native_routes.register_native_routes(SimpleNamespace(router=router), service)
+
+        pre = await _native_warm_snapshot(router, service, "move-bulk", "inbox")
+
+        release = threading.Event()
+        original_scan = service.folder_index._scan_directory
+
+        def blocking_scan(directory, sort_by, order, shuffle_seed=""):
+            release.wait(timeout=5)
+            return original_scan(directory, sort_by, order, shuffle_seed)
+
+        monkeypatch.setattr(service.folder_index, "_scan_directory", blocking_scan)
+
+        try:
+            status, _payload = await _invoke(
+                router,
+                "POST",
+                "/api/curator/move-batch",
+                {
+                    "batch": "move-bulk",
+                    "filenames": ["one.png", "two.jpg"],
+                    "source": "inbox",
+                    "destination": "finals",
+                },
+            )
+            assert status == 200
+
+            await _native_assert_snapshot_reflects_mutation(
+                router, service, release, "move-bulk", "inbox", pre["revision"], 0
+            )
+        finally:
+            release.set()
+        service.close()
+
+    asyncio.run(scenario())
+
+
+def test_native_undo_invalidates_snapshot_revision_not_serving_pre_undo(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "move-undo")
+        (settings.batch_root / "move-undo" / "inbox" / "pic.png").write_bytes(b"image")
+        service = native_routes.NativeCuratorService(settings)
+        router = _Router()
+        native_routes.register_native_routes(SimpleNamespace(router=router), service)
+
+        pre = await _native_warm_snapshot(router, service, "move-undo", "inbox")
+
+        status, moved = await _invoke(
+            router,
+            "POST",
+            "/api/curator/move",
+            {
+                "batch": "move-undo",
+                "filename": "pic.png",
+                "source": "inbox",
+                "destination": "finals",
+            },
+        )
+        assert status == 200
+        operation_id = moved["operation_id"]
+
+        post_move = await _native_assert_snapshot_reflects_mutation(
+            router, service, threading.Event(), "move-undo", "inbox", pre["revision"], 0
+        )
+
+        release = threading.Event()
+        original_scan = service.folder_index._scan_directory
+
+        def blocking_scan(directory, sort_by, order, shuffle_seed=""):
+            release.wait(timeout=5)
+            return original_scan(directory, sort_by, order, shuffle_seed)
+
+        monkeypatch.setattr(service.folder_index, "_scan_directory", blocking_scan)
+
+        try:
+            undo_status, _undone = await _invoke(
+                router,
+                "POST",
+                "/api/curator/move-batch/undo",
+                {"operation_id": operation_id},
+            )
+            assert undo_status == 200
+
+            await _native_assert_snapshot_reflects_mutation(
+                router, service, release, "move-undo", "inbox", post_move["revision"], 1
+            )
+        finally:
+            release.set()
+        service.close()
 
     asyncio.run(scenario())

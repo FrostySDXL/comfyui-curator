@@ -184,6 +184,19 @@ class MockElement {
         if (this.parentNode) this.parentNode._detach(this);
     }
 
+    removeChild(node) {
+        this._detach(node);
+        return node;
+    }
+
+    get firstElementChild() {
+        return this.children.length > 0 ? this.children[0] : null;
+    }
+
+    get lastElementChild() {
+        return this.children.length > 0 ? this.children[this.children.length - 1] : null;
+    }
+
     querySelector(selector) {
         return this.querySelectorAll(selector)[0] || null;
     }
@@ -242,12 +255,14 @@ class MockDocument {
         this.content.className = "content";
         this.content.clientWidth = 1200;
         this.content.clientHeight = 100;
-        this.content.scrollTop = 0;
+        this.content.clientTop = 0;
         this.body.appendChild(this.content);
         this.shell = this.register("grid-shell", new MockElement("div", this));
         this.grid = this.register("grid", new MockElement("div", this));
         this.content.appendChild(this.shell);
         this.shell.appendChild(this.grid);
+        this.content.getBoundingClientRect = () => ({top: 0});
+        this.shell.getBoundingClientRect = () => ({top: -this.content.scrollTop});
         this.register("img-count", new MockElement("span", this));
         this.register("sort-dir-btn", new MockElement("button", this));
         this.register("lightbox", new MockElement("div", this));
@@ -258,8 +273,21 @@ class MockDocument {
         this.register("activity-center-toggle", new MockElement("button", this));
         this.register("activity-center-close", new MockElement("button", this));
         this.elements.get("activity-center-list").appendChild(new MockElement("div", this));
+        let contentScrollTop = 0;
+        Object.defineProperty(this.content, "scrollTop", {
+            get: () => contentScrollTop,
+            set: (value) => {
+                contentScrollTop = Math.max(
+                    0,
+                    Math.min(value, this.content.scrollHeight - this.content.clientHeight),
+                );
+            },
+        });
         Object.defineProperty(this.content, "scrollHeight", {
-            get: () => Math.max(this.content.clientHeight, this.grid.children.length * 10),
+            get: () => {
+                const shellHeight = parseFloat(this.shell.style.height) || 0;
+                return Math.max(this.content.clientHeight, shellHeight);
+            },
         });
     }
 
@@ -854,12 +882,164 @@ function testHoverPreviewAllowsOnlyOneActiveDecoder() {
     assert(harness.document.grid.querySelectorAll(".preview-active").length === 1, "only one preview is active");
 }
 
+function testDensitySwitchRestoresSameAnchorItem() {
+    const harness = createHarness();
+    harness.initialize();
+    harness.setImages(makeImages(2000));
+    harness.updateGrid();
+
+    harness.context.setGridDensity("compact");
+    const compactColumns = harness.evaluate(
+        "Number(document.getElementById('grid').style.getPropertyValue('--grid-columns'))",
+    );
+    assert(compactColumns === 8, `compact columns should be 8, got ${compactColumns}`);
+
+    const compactTrack = 138;
+    const compactGap = 7;
+    const row = 37;
+    harness.document.content.scrollTop = row * (compactTrack + compactGap);
+    const anchorIndex = harness.evaluate("_captureGridAnchor(null, 'compact')");
+    assert(
+        anchorIndex === row * compactColumns,
+        `compact anchor index should be ${row * compactColumns}, got ${anchorIndex}`,
+    );
+
+    harness.context.setGridDensity("large");
+    const largeColumns = harness.evaluate(
+        "Number(document.getElementById('grid').style.getPropertyValue('--grid-columns'))",
+    );
+    const largeTrack = 250;
+    const largeGap = 16;
+    assert(largeColumns === 4, `large columns should be 4, got ${largeColumns}`);
+    const expectedScrollTop = Math.floor(anchorIndex / largeColumns) * (largeTrack + largeGap);
+    assert(
+        harness.document.content.scrollTop === expectedScrollTop,
+        `density switch should restore scrollTop to ${expectedScrollTop}, got ${harness.document.content.scrollTop}`,
+    );
+}
+
+function testDensitySwitchPreservesAnchorAgainstStaleShellHeight() {
+    const harness = createHarness();
+    harness.initialize();
+    harness.setImages(makeImages(2000));
+    harness.updateGrid();
+
+    harness.context.setGridDensity("compact");
+    harness.flushRaf(2);
+    const compactColumns = harness.evaluate(
+        "Number(document.getElementById('grid').style.getPropertyValue('--grid-columns'))",
+    );
+    assert(compactColumns === 8, `compact columns should be 8, got ${compactColumns}`);
+    const compactTrack = 138;
+    const compactGap = 7;
+
+    const row = 120;
+    harness.document.content.scrollTop = row * (compactTrack + compactGap);
+    const anchorIndex = harness.evaluate("_captureGridAnchor(null, 'compact')");
+    assert(
+        anchorIndex === row * compactColumns,
+        `compact anchor index should be ${row * compactColumns}, got ${anchorIndex}`,
+    );
+
+    harness.context.setGridDensity("large");
+    const largeColumns = harness.evaluate(
+        "Number(document.getElementById('grid').style.getPropertyValue('--grid-columns'))",
+    );
+    const largeTrack = 250;
+    const largeGap = 16;
+    assert(largeColumns === 4, `large columns should be 4, got ${largeColumns}`);
+    const expectedScrollTop = Math.floor(anchorIndex / largeColumns) * (largeTrack + largeGap);
+    assert(
+        harness.document.content.scrollTop === expectedScrollTop,
+        `density switch should restore scrollTop to ${expectedScrollTop}, got ${harness.document.content.scrollTop}`,
+    );
+}
+
+function testAnchorUsesScrollerCoordinatesBelowToolbar() {
+    const harness = createHarness();
+    harness.document.content.clientWidth = 450;
+    harness.document.content.clientHeight = 584;
+    harness.document.content.getBoundingClientRect = () => ({top: 136});
+    harness.document.shell.offsetTop = 150;
+    harness.document.shell.getBoundingClientRect = () => ({
+        top: 150 - harness.document.content.scrollTop,
+    });
+    harness.setImages(makeImages(600));
+    harness.updateGrid();
+    harness.context.setGridDensity("compact");
+    harness.flushRaf(2);
+    harness.document.content.scrollTop = 14330;
+    assert(harness.evaluate("getGridScrollOrigin(document.getElementById('grid'))") === 14,
+        "grid origin must be relative to its scroller, not the toolbar/viewport");
+    assert(harness.evaluate("_captureGridAnchor()") === 294,
+        "a toolbar offset must not move the anchor to the preceding row");
+    harness.context.setGridDensity("large");
+    assert(harness.document.content.scrollTop === 14 + 294 * 266,
+        "restore must place item 294 at the scroller top");
+}
+
+function testNarrowerSidebarLayoutPresizesBeforeRestoringAnchor() {
+    const harness = createHarness();
+    harness.setImages(makeImages(2000));
+    harness.updateGrid();
+    harness.context.setGridDensity("compact");
+    harness.flushRaf(2);
+    harness.document.content.scrollTop = 120 * 145;
+    assert(harness.evaluate("_captureGridAnchor()") === 960, "start at compact row 120");
+    harness.document.content.clientWidth = 450;
+    harness.context.updateGridShellLayout();
+    assert(harness.document.content.scrollTop === 320 * 145,
+        "sidebar narrowing must expand the spacer before restoring the same item");
+}
+
+function testDensitySwitchReversePreservesAnchorRow() {
+    const harness = createHarness();
+    harness.initialize();
+    harness.setImages(makeImages(2000));
+    harness.updateGrid();
+
+    harness.context.setGridDensity("large");
+    harness.flushRaf(2);
+    const largeColumns = harness.evaluate(
+        "Number(document.getElementById('grid').style.getPropertyValue('--grid-columns'))",
+    );
+    assert(largeColumns === 4, `large columns should be 4, got ${largeColumns}`);
+    const largeTrack = 250;
+    const largeGap = 16;
+
+    const row = 80;
+    harness.document.content.scrollTop = row * (largeTrack + largeGap);
+    const anchorIndex = harness.evaluate("_captureGridAnchor(null, 'large')");
+    assert(
+        anchorIndex === row * largeColumns,
+        `large anchor index should be ${row * largeColumns}, got ${anchorIndex}`,
+    );
+
+    harness.context.setGridDensity("compact");
+    const compactColumns = harness.evaluate(
+        "Number(document.getElementById('grid').style.getPropertyValue('--grid-columns'))",
+    );
+    const compactTrack = 138;
+    const compactGap = 7;
+    assert(compactColumns === 8, `compact columns should be 8, got ${compactColumns}`);
+    const expectedScrollTop = Math.floor(anchorIndex / compactColumns) * (compactTrack + compactGap);
+    assert(
+        harness.document.content.scrollTop === expectedScrollTop,
+        `reverse density switch should preserve the anchor row at scrollTop ${expectedScrollTop}, got ${harness.document.content.scrollTop}`,
+    );
+}
+
 try {
     testThirtyThousandTraversalKeepsBoundedLiveWindow();
     testContinuousScrollReconcilesWindowBeforeIdle();
     testUnchangedWindowPreservesDecodedThumbIdentity();
     testHoverPreviewAllowsOnlyOneActiveDecoder();
     testPlaceholdersDoNotResurrectPreviousFolderActivity();
+    testDensitySwitchRestoresSameAnchorItem();
+    testDensitySwitchPreservesAnchorAgainstStaleShellHeight();
+    testDensitySwitchReversePreservesAnchorRow();
+    testAnchorUsesScrollerCoordinatesBelowToolbar();
+    testNarrowerSidebarLayoutPresizesBeforeRestoringAnchor();
     process.stdout.write(`virtual grid lifecycle: ${assertionCount} assertions passed\n`);
 } catch (error) {
     process.stderr.write(`${error.stack}\n`);

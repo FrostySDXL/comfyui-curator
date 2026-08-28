@@ -28,7 +28,7 @@ def test_thumbnail_cache_hits_mark_the_tile_loaded_without_waiting_for_reveal() 
     assert "imageEl.dataset.loadedThumbnailCacheKey = cacheKey;" in cache_hit_body
 
 
-def test_reduced_motion_still_minimizes_thumbnail_transitions() -> None:
+def test_reduced_motion_disables_transitions_without_animating_grid_geometry() -> None:
     css = Path("static/css/base.css").read_text(encoding="utf-8")
     reduced_motion = re.search(
         r"@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{(?P<body>.*)\}\s*$",
@@ -38,7 +38,9 @@ def test_reduced_motion_still_minimizes_thumbnail_transitions() -> None:
 
     assert reduced_motion
     assert "*, *::before, *::after" in reduced_motion.group("body")
-    assert "transition-duration: 0.01ms !important;" in reduced_motion.group("body")
+    # A positive universal duration activates the default transition-property: all
+    # even on the virtual spacer, delaying its measured height before scroll restore.
+    assert "transition-duration: 0s !important;" in reduced_motion.group("body")
 
 
 def test_retained_thumbnail_lifecycle_never_resets_loaded_state() -> None:

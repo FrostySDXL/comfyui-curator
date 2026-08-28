@@ -63,6 +63,8 @@
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after {
                 animation-duration: 0.01ms !important;
-                transition-duration: 0.01ms !important;
+                /* Nonzero durations introduce transitions on otherwise static
+                   geometry (the virtual grid spacer must resize synchronously). */
+                transition-duration: 0s !important;
             }
         }

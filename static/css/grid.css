@@ -5,7 +5,7 @@
             min-height: 0;
             overflow: hidden;
         }
-        .content { flex: 1; padding: 14px 18px 18px; overflow-y: auto; scrollbar-gutter: stable; min-width: 0; background: var(--surface-canvas); }
+        .content { flex: 1; padding: 14px 18px 18px; overflow-y: auto; overflow-anchor: none; scrollbar-gutter: stable; min-width: 0; background: var(--surface-canvas); }
         body.has-active-selection .content {
             padding-bottom: calc(18px + var(--action-bar-safe-area, 0px));
         }

@@ -301,7 +301,13 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 - The grid computes visible rows plus two overscan rows and never creates more
   than 500 live thumbnail elements. Same-key elements inside an unchanged
   window retain identity, decoded sources, selection, inspection, and loader
-  state. Density/sidebar column changes re-anchor the first visible item.
+  state. Density/sidebar column changes re-anchor the first visible item,
+  rounded to its new row. Anchors use scroller-relative shell coordinates,
+  not page-relative `offsetTop`; set the new spacer extent before restoring
+  scroll position. Density changes must not recapture an anchor using mixed
+  old-column/new-row geometry. Reduced motion uses zero transition duration:
+  a positive universal duration implicitly animates spacer height via the
+  default `transition-property: all`, causing old-extent scroll clamping.
 - During continuous scrolling, recycled cells update canonical identity and
   layout immediately but defer source replacement until an 80 ms idle
   boundary. Fetch/decode callbacks stay off fling frames, then the final
