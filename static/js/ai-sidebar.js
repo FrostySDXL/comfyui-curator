@@ -5,6 +5,14 @@ function clampAiSidebarWidth(value) {
             return Math.max(AI_SIDEBAR_WIDTH_MIN, Math.min(AI_SIDEBAR_WIDTH_MAX, value));
         }
 
+const AI_SIDEBAR_NARROW_QUERY = window.matchMedia
+    ? window.matchMedia('(max-width: 900px)')
+    : null;
+
+function isAiSidebarNarrowViewport() {
+            return Boolean(AI_SIDEBAR_NARROW_QUERY && AI_SIDEBAR_NARROW_QUERY.matches);
+        }
+
 function applyAiSidebarWidth(value, persist = true) {
             aiSidebarWidth = clampAiSidebarWidth(value);
             document.documentElement.style.setProperty('--ai-sidebar-width', `${aiSidebarWidth}px`);
@@ -18,8 +26,17 @@ function initializeAiSidebarState() {
 
             const sidebarOpenRaw = localStorage.getItem(AI_SIDEBAR_OPEN_KEY);
             aiSidebarOpen = sidebarOpenRaw === null ? true : sidebarOpenRaw === 'true';
+            if (isAiSidebarNarrowViewport()) aiSidebarOpen = false;
             syncAiSidebarUi(false);
             aiSetPanelTab(aiActivePanelTab);
+
+            if (AI_SIDEBAR_NARROW_QUERY) {
+                if (AI_SIDEBAR_NARROW_QUERY.addEventListener) {
+                    AI_SIDEBAR_NARROW_QUERY.addEventListener('change', onAiSidebarNarrowChange);
+                } else if (AI_SIDEBAR_NARROW_QUERY.addListener) {
+                    AI_SIDEBAR_NARROW_QUERY.addListener(onAiSidebarNarrowChange);
+                }
+            }
         }
 
 function syncAiSidebarUi(persist = true) {
@@ -42,6 +59,14 @@ function syncAiSidebarUi(persist = true) {
             if (persist) {
                 localStorage.setItem(AI_SIDEBAR_OPEN_KEY, String(aiSidebarOpen));
             }
+        }
+
+function onAiSidebarNarrowChange(event) {
+            if (!event.matches || !aiSidebarOpen) return;
+            // The narrow inspector is a grid-covering overlay; default it closed
+            // without persisting, so the wide-viewport preference survives.
+            aiSidebarOpen = false;
+            syncAiSidebarUi(false);
         }
 
 function toggleAiSidebar() {

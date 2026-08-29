@@ -39,10 +39,17 @@
             }
             .action-bar {
                 left: var(--sidebar-effective-width);
+                flex-wrap: wrap;
+            }
+            .action-group {
+                flex-wrap: wrap;
             }
             .header {
                 flex-wrap: wrap;
                 gap: 8px;
+            }
+            .header-actions {
+                flex-wrap: wrap;
             }
             .workspace-toolbar {
                 align-items: stretch;
@@ -68,6 +75,7 @@
             .folder-tabs.visible {
                 flex: 0 0 auto;
                 flex-direction: row;
+                flex-wrap: wrap;
                 align-items: center;
                 gap: 5px;
                 min-width: 0;
@@ -118,9 +126,17 @@
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
             .lightbox-nav {
-                bottom: 20px;
+                top: 50%;
+                bottom: auto;
+                transform: translateY(-50%);
                 padding: 12px;
                 font-size: 38px;
+            }
+            .lightbox-controls {
+                left: 20px;
+                right: 20px;
+                transform: none;
+                flex-wrap: wrap;
             }
             .metadata-grid {
                 grid-template-columns: 1fr;
