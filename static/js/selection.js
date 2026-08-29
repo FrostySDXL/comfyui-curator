@@ -150,7 +150,9 @@ function initializeCompareCandidateTray() {
 function renderCompareCandidateTray() {
             const tray = document.getElementById('compare-candidate-tray');
             if (!tray) return;
-            const selectedCount = serverSelection ? 0 : selectedImages.size;
+            const selectedCount = serverSelection
+                ? Math.max(0, serverSelection.count - serverSelection.excluded.size)
+                : selectedImages.size;
             if (!selectedCount || compareCandidateTrayDismissed) {
                 tray.hidden = true;
                 return;
@@ -173,9 +175,11 @@ function renderCompareCandidateTray() {
                 toggle.setAttribute('aria-expanded', trayCollapsed ? 'false' : 'true');
             }
             if (status) {
-                status.textContent = stillCandidates.length < 2
-                    ? `${stillCandidates.length} still candidates${skippedCount ? ` · ${skippedCount} non-still skipped` : ''} · select at least two still images`
-                    : `${stillCandidates.length} still candidates · first two will be compared${hiddenCandidateCount ? ` · + ${hiddenCandidateCount} more not shown` : ''}${skippedCount ? ` · ${skippedCount} non-still skipped` : ''}`;
+                status.textContent = serverSelection
+                    ? `${selectedCount} selected (snapshot) · compare candidates need individually selected still images`
+                    : stillCandidates.length < 2
+                        ? `${stillCandidates.length} still candidates${skippedCount ? ` · ${skippedCount} non-still skipped` : ''} · select at least two still images`
+                        : `${stillCandidates.length} still candidates · first two will be compared${hiddenCandidateCount ? ` · + ${hiddenCandidateCount} more not shown` : ''}${skippedCount ? ` · ${skippedCount} non-still skipped` : ''}`;
             }
             if (launch) {
                 launch.disabled = stillCandidates.length < 2;

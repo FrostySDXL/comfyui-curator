@@ -139,3 +139,12 @@ def test_candidate_tray_collapses_on_narrow_viewports_with_explicit_toggle() -> 
     assert "toggleCompareCandidateTray();" in events
     bootstrap = (ROOT / "static" / "js" / "bootstrap.js").read_text(encoding="utf-8")
     assert "initializeCompareCandidateTray();" in bootstrap
+
+
+def test_candidate_tray_renders_for_snapshot_selections_with_honest_status() -> None:
+    js = read_frontend_js()
+    render = extract_function_body(js, "function renderCompareCandidateTray()")
+    assert "serverSelection.count - serverSelection.excluded.size" in render
+    assert "selected (snapshot)" in render
+    assert "compare candidates need individually selected still images" in render
+    assert "serverSelection ? 0 : selectedImages.size" not in js
