@@ -40,7 +40,7 @@ def test_lightbox_controls_wrap_below_1100() -> None:
 
 
 def test_grid_minimum_band_overlays_inspector_and_wraps_bar() -> None:
-    block = _block(960)
+    block = _block(1012)
     assert "position: relative;" in _rule_body(block, ".workspace")
     assert "display: none;" in _rule_body(block, ".ai-sidebar-resizer")
     shell = _rule_body(block, ".ai-sidebar-shell")

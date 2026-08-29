@@ -56,7 +56,7 @@ def test_inspector_overlay_defaults_closed_on_narrow_viewports() -> None:
     init = extract_function_body(js, "function initializeAiSidebarState()")
     handler = extract_function_body(js, "function onAiSidebarNarrowChange(event)")
 
-    assert "matchMedia('(max-width: 960px)')" in js
+    assert "matchMedia('(max-width: 1012px)')" in js
     assert "isAiSidebarNarrowViewport()" in init
     assert "addEventListener('change', onAiSidebarNarrowChange)" in js
     assert "addListener(onAiSidebarNarrowChange)" in js

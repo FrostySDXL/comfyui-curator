@@ -6,7 +6,7 @@ function clampAiSidebarWidth(value) {
         }
 
 const AI_SIDEBAR_NARROW_QUERY = window.matchMedia
-    ? window.matchMedia('(max-width: 960px)')
+    ? window.matchMedia('(max-width: 1012px)')
     : null;
 
 function isAiSidebarNarrowViewport() {
