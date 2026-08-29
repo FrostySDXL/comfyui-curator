@@ -72,6 +72,37 @@ want a clean manual-testing reset.
 After launching, see `CONTRIBUTING.md` for the manual UI/API verification
 checklist.
 
+## Evaluation fixture
+
+`setup_evaluation_fixture.py` builds the deterministic test batch required by
+the section-10 "Decision-ready prototype brief" evaluation protocol in
+`UI_UX_REDESIGN_RESEARCH.md`. It is disposable and ignored under `tmp/`.
+
+Generate the full fixture (small culling batch plus the 30,000-file paging
+batch):
+
+```powershell
+.venv\Scripts\python.exe scripts\setup_evaluation_fixture.py --force
+```
+
+Generate only the small culling batch (tests and smoke runs), then re-check it:
+
+```powershell
+.venv\Scripts\python.exe scripts\setup_evaluation_fixture.py `
+  --root tmp\phase4-eval\smoke --skip-large --force
+.venv\Scripts\python.exe scripts\setup_evaluation_fixture.py `
+  --root tmp\phase4-eval\smoke --verify
+```
+
+It creates `batches/eval-culling/` (mixed-media inbox with PNG prompt metadata,
+near-duplicate pairs, transport markers, adjacent JSON sidecars, corrupt and
+zero-byte PNGs, favorites, two AI run-history files plus `latest.json`, and
+stale `prompt-history.json` / `search-index.json` indexes), `batches/eval-paging/`
+(the 30,000-file revisioned-paging folder), a root `state.json`, and a
+`fixture-manifest.json` that `--verify` checks against. The script prints the
+PowerShell launch block and a note to point the native settings batch root at
+`<root>/batches`. Output defaults to ignored `tmp/evaluation-fixture/`.
+
 ## Thumbnail benchmark harness
 
 `benchmark_thumbnails.py` is an optional manual performance harness for the
