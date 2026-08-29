@@ -744,6 +744,18 @@ async function loadBatchPublic(batch) {
             if (scopeChanged) beginViewTransition({clearImages: true, closeLightbox: true});
             if (scopeChanged) resetAiBatchState(false);
             const requestToken = ++folderRequestToken;
+            const activityGroup = `folder-view:${batch}:public`;
+            const activityId = activityAttemptId(activityGroup, requestToken);
+            activityRegister({
+                id: activityId,
+                group: activityGroup,
+                kind: 'snapshot',
+                title: 'Load public view',
+                scope: batch,
+                status: 'running',
+                detail: 'Reading public copies…',
+            });
+            setGridLoadingStatus(true, 'Loading public copies…');
             document.querySelectorAll('.batch-name').forEach(el =>
                 el.classList.toggle('selected', el.dataset.batch === batch));
             document.querySelectorAll('.folder-tab').forEach(t =>
@@ -751,13 +763,31 @@ async function loadBatchPublic(batch) {
             document.getElementById('sort-controls').style.display = 'flex';
             const pathEl = document.getElementById('current-path');
             pathEl.replaceChildren(createTextElement('span', 'path', batch), document.createTextNode(' / public'));
-            const publicData = await apiGetBatchPublic(batch);
-            if (requestToken !== folderRequestToken || getViewScopeKey() !== `${batch}\u001fpublic`) return;
-            images = normalizePublicItems(publicData);
-            updateImageCountLabel();
-            updateGrid();
-            updateFolderTabs();
-            activityComplete(`folder-view:${batch}:public`, 'completed', {detail: 'Public folder ready'});
+            try {
+                const publicData = await apiGetBatchPublic(batch);
+                if (requestToken !== folderRequestToken || getViewScopeKey() !== `${batch}\u001fpublic`) {
+                    activityRemove(activityId);
+                    return;
+                }
+                images = normalizePublicItems(publicData);
+                updateImageCountLabel();
+                updateGrid();
+                updateFolderTabs();
+                activityComplete(activityId, 'completed', {
+                    completed: images.length,
+                    total: images.length,
+                    detail: 'Public folder ready',
+                });
+            } catch (error) {
+                console.warn('loadBatchPublic failed:', error);
+                if (requestToken === folderRequestToken && getViewScopeKey() === `${batch}\u001fpublic`) {
+                    setGridLoadingStatus(false);
+                    activityComplete(activityId, 'failed', {error: 'Public image load failed', detail: 'Try opening the folder again'});
+                    showFolderErrorState({title: 'Public image load failed', detail: 'Try opening the folder again'});
+                } else {
+                    activityRemove(activityId);
+                }
+            }
         }
 
 async function loadAllPublic() {

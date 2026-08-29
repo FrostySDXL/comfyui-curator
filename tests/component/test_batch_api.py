@@ -763,3 +763,37 @@ def test_undo_invalidates_snapshot_revision_not_serving_pre_undo(
         )
     finally:
         release.set()
+
+
+@pytest.mark.component
+def test_thumbnail_route_returns_non_ok_for_corrupt_image(client, app_module):
+    app_module.create_batch("alpha")
+    inbox = app_module.BATCHES_DIR / "alpha" / "inbox"
+    (inbox / "corrupt.png").write_bytes(b"not-a-real-png")
+
+    response = client.get("/thumb/alpha/inbox/corrupt.png")
+
+    assert response.status_code != 200
+
+
+@pytest.mark.component
+def test_thumbnail_route_does_not_cache_fallback_for_corrupt_image(client, app_module):
+    app_module.create_batch("alpha")
+    inbox = app_module.BATCHES_DIR / "alpha" / "inbox"
+    (inbox / "corrupt.png").write_bytes(b"not-a-real-png")
+
+    client.get("/thumb/alpha/inbox/corrupt.png")
+
+    cache = app_module.BATCHES_DIR / "alpha" / ".thumbs" / "inbox__corrupt--png.webp"
+    assert not cache.exists()
+
+
+@pytest.mark.component
+def test_thumbnail_route_serves_valid_image(client, app_module):
+    app_module.create_batch("alpha")
+    _write_test_png(app_module.BATCHES_DIR / "alpha" / "inbox" / "valid.png")
+
+    response = client.get("/thumb/alpha/inbox/valid.png")
+
+    assert response.status_code == 200
+    assert response.mimetype == "image/webp"

@@ -656,6 +656,38 @@ def test_native_metadata_and_media_contracts_enforce_boundaries(tmp_path, monkey
     asyncio.run(scenario())
 
 
+def test_native_thumbnail_returns_non_ok_for_corrupt_image(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        inbox = settings.batch_root / "alpha" / "inbox"
+        (inbox / "corrupt.png").write_bytes(b"not-a-real-png")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+
+        status, payload = await _invoke(
+            router,
+            "GET",
+            "/curator/thumb/{batch}/{folder}/{name}",
+            match_info={"batch": "alpha", "folder": "inbox", "name": "corrupt.png"},
+        )
+        assert status == 500
+        assert payload == {"error": "Failed to generate thumbnail"}
+        cache = settings.batch_root / "alpha" / ".thumbs" / "inbox__corrupt--png.webp"
+        assert not cache.exists()
+
+    asyncio.run(scenario())
+
+
 def test_native_media_rejects_symlinked_review_folder(tmp_path, monkeypatch):
     from PIL import Image
 
@@ -3619,6 +3651,50 @@ def test_native_get_prompt_index_stale_check(tmp_path, monkeypatch):
         assert status == 200
         assert payload["stale"] is True
         assert payload["current_image_count"] == 2
+
+    asyncio.run(scenario())
+
+
+def test_native_get_prompt_index_detects_same_total_folder_move(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        inbox = settings.batch_root / "alpha" / "inbox"
+        shortlisted = settings.batch_root / "alpha" / "shortlisted"
+        _write_png_test(inbox / "one.png", "cat\nSteps: 1")
+        _write_png_test(inbox / "two.png", "dog\nSteps: 1")
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+        await _invoke(
+            router,
+            "POST",
+            "/api/curator/prompt-history/{batch}/build",
+            match_info={"batch": "alpha"},
+        )
+
+        (inbox / "two.png").rename(shortlisted / "two.png")
+
+        status, payload = await _invoke(
+            router,
+            "GET",
+            "/api/curator/prompt-history/{batch}",
+            match_info={"batch": "alpha"},
+            query={"check_stale": "true"},
+        )
+        assert status == 200
+        assert payload["stale"] is True
+        assert payload["current_image_count"] == 2
+        assert payload["current_folder_counts"]["inbox"] == 1
+        assert payload["current_folder_counts"]["shortlisted"] == 1
 
     asyncio.run(scenario())
 

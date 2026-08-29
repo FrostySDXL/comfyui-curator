@@ -240,10 +240,11 @@ function _cancelBackgroundDrain() {
 function scheduleThumbnailLoad(element, imageSrc, cacheKey, priority, scopeBatch, options) {
             _ensureViewportObservers();
 
-            if (typeof activityGet === 'function' && typeof currentBatch !== 'undefined' &&
+            if (typeof activityGetLatest === 'function' && typeof activityUpdate === 'function' &&
+                typeof currentBatch !== 'undefined' &&
                 typeof currentFolder !== 'undefined' && (priority === VIEWPORT_PRIORITY_VISIBLE || priority === VIEWPORT_PRIORITY_NEAR)) {
                 const folderActivity = activityGetLatest(`folder-view:${currentBatch}:${currentFolder}`);
-                if (folderActivity && folderActivity.detail !== 'Loading visible thumbnails…') {
+                if (folderActivity && folderActivity.status === 'running' && folderActivity.detail !== 'Loading visible thumbnails…') {
                     activityUpdate(folderActivity.id, {detail: 'Loading visible thumbnails…'});
                 }
             }

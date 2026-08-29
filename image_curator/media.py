@@ -154,8 +154,7 @@ def generate_media_poster(
                 _save_webp_atomic(frame, cache_path, thumb_size)
             return True
         except (OSError, ValueError):
-            _fallback_tile(cache_path, thumb_size, "IMAGE")
-            return True
+            return False
 
     ffmpeg = ffmpeg_path or os.environ.get("IMAGE_CURATOR_FFMPEG", "ffmpeg")
     temp_path = _atomic_temp_path(cache_path)

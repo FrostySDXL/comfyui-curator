@@ -13,6 +13,10 @@ const activitySource = fs.readFileSync(
     path.join(__dirname, "..", "..", "static", "js", "activity-center.js"),
     "utf8",
 );
+const viewportSource = fs.readFileSync(
+    path.join(__dirname, "..", "..", "static", "js", "viewport-loader.js"),
+    "utf8",
+);
 
 let assertionCount = 0;
 function assert(condition, message) {
@@ -213,6 +217,15 @@ class MockElement {
         return results;
     }
 
+    closest(selector) {
+        let node = this;
+        while (node) {
+            if (selectorMatches(node, selector)) return node;
+            node = node.parentNode;
+        }
+        return null;
+    }
+
     addEventListener(type, callback) {
         if (!this.listeners.has(type)) this.listeners.set(type, []);
         this.listeners.get(type).push(callback);
@@ -264,6 +277,7 @@ class MockDocument {
         this.content.getBoundingClientRect = () => ({top: 0});
         this.shell.getBoundingClientRect = () => ({top: -this.content.scrollTop});
         this.register("img-count", new MockElement("span", this));
+        this.register("grid-status", new MockElement("div", this));
         this.register("sort-dir-btn", new MockElement("button", this));
         this.register("lightbox", new MockElement("div", this));
         this.register("activity-center-list", new MockElement("div", this));
@@ -327,7 +341,8 @@ class MockDocument {
     }
 }
 
-function createHarness() {
+function createHarness(options = {}) {
+    const loadViewportLoader = options.loadViewportLoader === true;
     const document = new MockDocument();
     let nextRafId = 1;
     const rafQueue = new Map();
@@ -341,7 +356,7 @@ function createHarness() {
     const windowListeners = new Map();
 
     let context;
-    context = vm.createContext({
+    const contextBase = {
         console,
         document,
         URL: { createObjectURL: () => "blob:test", revokeObjectURL: () => {} },
@@ -374,6 +389,7 @@ function createHarness() {
         },
         localStorage: { getItem: () => null, setItem: () => {} },
         formatSize: (size) => String(size || 0),
+        ccApiPath: (path) => path,
         ccThumbUrl: (batch, folder, name) => `/thumb/${batch}/${folder}/${name}`,
         ccPreviewUrl: (batch, folder, name) => `/preview/${batch}/${folder}/${name}`,
         isVirtualCollectionView: () => false,
@@ -391,21 +407,27 @@ function createHarness() {
         setSelectionMode: () => {},
         toggleSelect: () => {},
         toggleFavorite: () => {},
-        scheduleThumbnailLoad(element, imageSrc, cacheKey) {
+        VIEWPORT_PRIORITY_VISIBLE: 0,
+        VIEWPORT_PRIORITY_NEAR: 1,
+        VIEWPORT_PRIORITY_DEFERRED: 2,
+    };
+    if (!loadViewportLoader) {
+        contextBase.scheduleThumbnailLoad = function (element, imageSrc, cacheKey) {
             scheduleCalls.push({ element, imageSrc, cacheKey });
             scheduledElements.set(element, cacheKey);
             schedulerLog.push({ type: "schedule", element, cacheKey });
-        },
-        unscheduleThumbnailLoad(element) {
+        };
+        contextBase.unscheduleThumbnailLoad = function (element) {
             unscheduleCalls.push(element);
             scheduledElements.delete(element);
             schedulerLog.push({ type: "unschedule", element });
-        },
-        cancelScheduledViewportLoads() {
+        };
+        contextBase.cancelScheduledViewportLoads = function () {
             cancelCalls += 1;
             scheduledElements.clear();
-        },
-    });
+        };
+    }
+    context = vm.createContext(contextBase);
     context.window.window = context.window;
     context.window.document = document;
     context.window.requestAnimationFrame = context.requestAnimationFrame;
@@ -423,6 +445,8 @@ function createHarness() {
         let serverSelection = null;
         let gridThumbMap = new Map();
         let displayIndexByName = new Map();
+        let displayIndexByKey = new Map();
+        let folderPageInflight = new Map();
         let pagedFolderMode = false;
         let folderSnapshot = null;
         let hoverPreviewsEnabled = true;
@@ -431,6 +455,7 @@ function createHarness() {
         let gridDensity = 'comfortable';
         let allCounts = {};
         let folderRequestToken = 0;
+        const CURATOR_NATIVE = false;
         function getImageIdentityKey(img, sourceOverride = null) {
             if (!img || !img.name) return '';
             const source = sourceOverride || {batch: currentBatch, folder: currentFolder};
@@ -444,6 +469,9 @@ function createHarness() {
     `, context);
     vm.runInContext(activitySource, context);
     vm.runInContext(gridSource, context);
+    if (loadViewportLoader) {
+        vm.runInContext(viewportSource, context);
+    }
 
     return {
         context,
@@ -454,6 +482,7 @@ function createHarness() {
         get cancelCalls() { return cancelCalls; },
         setImages(items) { context.__items = items; vm.runInContext("images = __items", context); },
         setCounts(counts) { context.__counts = counts; vm.runInContext("allCounts = __counts", context); },
+        setFetch(fn) { context.fetch = fn; },
         setContext(values) {
             context.__contextValues = values;
             vm.runInContext(`
@@ -797,7 +826,7 @@ function testReusedThumbUnschedulesBeforeSourceKeyChange() {
 }
 
 function testPlaceholdersDoNotResurrectPreviousFolderActivity() {
-    const harness = createHarness();
+            const harness = createHarness();
     const group = "folder-view:batch-a:inbox";
     harness.setCounts({"batch-a": {inbox: 4}});
     for (const [index, status] of ["running", "completed", "failed", "partial", "cancelled"].entries()) {
@@ -1029,7 +1058,128 @@ function testDensitySwitchReversePreservesAnchorRow() {
     );
 }
 
-try {
+function testPagedLoadStatusTracksMaterialization() {
+    const harness = createHarness();
+    harness.evaluate(`
+        pagedFolderMode = true;
+        folderSnapshot = {count: 3};
+        displayIndexByName = new Map([['a.png', 0], ['b.png', 1]]);
+    `);
+    harness.evaluate("updatePagedLoadStatus()");
+    const status = harness.document.getElementById("grid-status");
+    assert(status.textContent === "Loaded 2 of 3", `expected 'Loaded 2 of 3', got '${status.textContent}'`);
+    assert(status.hidden === false, "status should remain visible while materializing");
+
+    harness.evaluate("displayIndexByName.set('c.png', 2)");
+    harness.evaluate("updatePagedLoadStatus()");
+    assert(status.hidden === true, "status should hide once fully materialized");
+    assert(status.textContent === "", "status should clear once complete");
+}
+
+async function testFolderLoadFailureShowsErrorAndRetryRecovers() {
+    const harness = createHarness();
+    harness.setContext({ batch: "batch-a", folder: "shortlisted" });
+    harness.setCounts({ "batch-a": { shortlisted: 0 } });
+
+    harness.setFetch(() => Promise.reject(new Error("network down")));
+    await harness.evaluate("loadCurrentFolderImages()");
+
+    const failed = harness.evaluate("activityGetLatest('folder-view:batch-a:shortlisted')");
+    assert(failed.status === "failed", `activity should be failed, got ${failed.status}`);
+    assert(failed.error === "Folder image load failed", `unexpected error copy: ${failed.error}`);
+    assert(failed.detail === "Try opening the folder again", "unexpected detail copy");
+    assert(harness.document.grid.getAttribute("aria-busy") === "false", "busy state should be cleared after failure");
+    const retryButton = harness.document.grid.querySelector(".grid-retry");
+    assert(!!retryButton, "Retry control should be rendered on folder-load failure");
+    assert(retryButton.textContent === "Retry", "Retry control should use the Retry label");
+
+    harness.setFetch(() => Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve([
+            { name: "a.png", size: 1 },
+            { name: "b.png", size: 2 },
+        ]),
+    }));
+    retryButton.dispatchEvent({ type: "click" });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const recovered = harness.evaluate("activityGetLatest('folder-view:batch-a:shortlisted')");
+    assert(recovered.status === "completed", `activity should complete after retry, got ${recovered.status}`);
+    assert(harness.evaluate("images.length") === 2, "retry should recover the grid with the fetched images");
+    assert(harness.document.grid.getAttribute("aria-busy") === "false", "busy state should clear after recovery");
+    assert(!harness.document.grid.querySelector(".grid-retry"), "error state should be replaced after recovery");
+}
+
+async function testThumbnailFailuresAggregateAndRecover() {
+    const harness = createHarness();
+    harness.setContext({ batch: "batch-a", folder: "shortlisted" });
+    const items = makeImages(3, "img");
+    harness.setFetch(() => Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(items),
+    }));
+    await harness.evaluate("loadCurrentFolderImages()");
+
+    const group = "folder-view:batch-a:shortlisted";
+    const latest = () => harness.evaluate(`activityGetLatest('${group}')`);
+
+    let record = latest();
+    assert(record.status === "completed", `folder load should complete, got ${record.status}`);
+    assert(record.completed === 3 && record.total === 3, "completed activity should read 3 of 3");
+    assert(record.detail === "Folder ready · thumbnails loaded on demand", `unexpected detail: ${record.detail}`);
+
+    const thumbs = harness.document.grid.children;
+    assert(thumbs.length === 3, `expected 3 rendered thumbs, got ${thumbs.length}`);
+
+    thumbs[0].querySelector("img").dispatchEvent({ type: "error" });
+    record = latest();
+    assert(record.status === "partial", `first thumbnail failure should move to partial, got ${record.status}`);
+    assert(record.completed === 2 && record.total === 3, `partial should read 2 of 3, got ${record.completed} of ${record.total}`);
+    assert(record.detail === "1 thumbnail failed · Retry available on the tiles", `unexpected detail: ${record.detail}`);
+
+    thumbs[1].querySelector("img").dispatchEvent({ type: "error" });
+    record = latest();
+    assert(record.status === "partial", "second thumbnail failure should keep partial");
+    assert(record.completed === 1 && record.total === 3, `partial should read 1 of 3, got ${record.completed} of ${record.total}`);
+    assert(record.detail === "2 thumbnails failed · Retry available on the tiles", `unexpected detail: ${record.detail}`);
+
+    harness.evaluate("retryThumbnailLoad(document.getElementById('grid').children[0])");
+    thumbs[0].querySelector("img").dispatchEvent({ type: "load" });
+    record = latest();
+    assert(record.status === "partial", "one recovered tile should keep partial");
+    assert(record.completed === 2 && record.total === 3, `partial should read 2 of 3, got ${record.completed} of ${record.total}`);
+    assert(record.detail === "1 thumbnail failed · Retry available on the tiles", `unexpected detail: ${record.detail}`);
+
+    harness.evaluate("retryThumbnailLoad(document.getElementById('grid').children[1])");
+    thumbs[1].querySelector("img").dispatchEvent({ type: "load" });
+    record = latest();
+    assert(record.status === "completed", `full recovery should complete, got ${record.status}`);
+    assert(record.completed === 3 && record.total === 3, `completed should read 3 of 3, got ${record.completed} of ${record.total}`);
+    assert(record.detail === "Folder ready · thumbnails loaded on demand", `unexpected detail: ${record.detail}`);
+}
+
+function testLoaderNeverWritesLoadingDetailOntoTerminalRecord() {
+    const harness = createHarness({ loadViewportLoader: true });
+    harness.setContext({ batch: "batch-a", folder: "inbox" });
+    harness.setImages(makeImages(1));
+    harness.updateGrid();
+
+    const group = "folder-view:batch-a:inbox";
+    for (const status of ["completed", "partial", "failed", "cancelled"]) {
+        harness.evaluate(
+            `activityRegister({id: 'folder-view:batch-a:inbox:attempt', group: '${group}', kind: 'snapshot', title: 'Load folder view', scope: 'batch-a / inbox', status: '${status}', completed: 1, total: 1, detail: 'folder ready detail'})`,
+        );
+        harness.evaluate(
+            "scheduleThumbnailLoad(document.getElementById('grid').children[0], '/thumb/x.png?v=1', 'key-visible', 0, null)",
+        );
+        const record = harness.evaluate(`activityGetLatest('${group}')`);
+        assert(record.status === status, `loader must not change terminal status ${status}`);
+        assert(record.detail === "folder ready detail", `loader must not mutate detail for terminal ${status}, got ${record.detail}`);
+        harness.evaluate("activityRemove('folder-view:batch-a:inbox:attempt')");
+    }
+}
+
+async function main() {
     testThirtyThousandTraversalKeepsBoundedLiveWindow();
     testContinuousScrollReconcilesWindowBeforeIdle();
     testUnchangedWindowPreservesDecodedThumbIdentity();
@@ -1040,8 +1190,14 @@ try {
     testDensitySwitchReversePreservesAnchorRow();
     testAnchorUsesScrollerCoordinatesBelowToolbar();
     testNarrowerSidebarLayoutPresizesBeforeRestoringAnchor();
+    testPagedLoadStatusTracksMaterialization();
+    await testFolderLoadFailureShowsErrorAndRetryRecovers();
+    await testThumbnailFailuresAggregateAndRecover();
+    testLoaderNeverWritesLoadingDetailOntoTerminalRecord();
     process.stdout.write(`virtual grid lifecycle: ${assertionCount} assertions passed\n`);
-} catch (error) {
+}
+
+main().catch((error) => {
     process.stderr.write(`${error.stack}\n`);
     process.exitCode = 1;
-}
+});

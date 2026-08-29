@@ -188,6 +188,50 @@ def test_density_switch_presets_shell_height_before_anchor_restore() -> None:
     )
 
 
+def test_folder_load_failure_finalizes_activity_and_renders_retry() -> None:
+    source = read_frontend_js()
+
+    assert "async function loadCurrentFolderImages(options = {}) {" in source
+    assert "} catch (error) {" in source
+    assert "console.warn('loadCurrentFolderImages failed:', error);" in source
+    assert "function failFolderLoad(requestToken, activityId, errorText, detail) {" in source
+    assert "function showFolderErrorState(message = {}) {" in source
+    assert "function createGridErrorState(message = {}) {" in source
+    fail = extract_function_body(source, "function failFolderLoad(")
+    assert "setGridLoadingStatus(false)" in fail
+    assert "activityComplete(activityId, 'failed'" in fail
+    assert "showFolderErrorState({title: errorText, detail})" in fail
+    assert "grid-retry" in source
+    assert "Retry loading folder" in source
+    assert "loadCurrentFolderImages();" in source
+
+
+def test_public_folder_load_uses_distinct_title_and_count() -> None:
+    source = read_frontend_js()
+    public = source.split("async function loadBatchPublic(batch) {", 1)[1].split(
+        "async function loadAllPublic", 1
+    )[0]
+    load = source.split("async function loadCurrentFolderImages(options = {}) {", 1)[1]
+
+    assert "title: 'Load public view'" in public
+    assert "scope: batch" in public
+    assert "completed: images.length" in public
+    assert "total: images.length" in public
+    assert "loadBatchPublic(currentBatch)" in load
+
+
+def test_native_paged_load_status_indicator() -> None:
+    source = read_frontend_js()
+    status = source.split("function updatePagedLoadStatus() {", 1)[1].split(
+        "function setGridLoadingStatus", 1
+    )[0]
+
+    assert "Loaded ${loaded} of ${total}" in status
+    assert "setGridLoadingStatus(true, `Loaded ${loaded} of ${total}`)" in status
+    assert "setGridLoadingStatus(false)" in status
+    assert "updatePagedLoadStatus()" in source
+
+
 def test_progressive_grid_node_lifecycle() -> None:
     completed = subprocess.run(
         ["node", "tests/unit/progressive_grid_lifecycle_test.js"],
@@ -202,3 +246,36 @@ def test_progressive_grid_node_lifecycle() -> None:
     match = re.search(r"(\d+) assertions passed", completed.stdout)
     assert match is not None, completed.stdout
     assert int(match.group(1)) >= 15
+
+
+def test_viewport_loader_guards_detail_updates_on_terminal_status() -> None:
+    source = read_frontend_js()
+    schedule = extract_function_body(source, "function scheduleThumbnailLoad(element")
+
+    assert "activityGetLatest(`folder-view:${currentBatch}:${currentFolder}`)" in schedule
+    assert "folderActivity.status === 'running'" in schedule
+    assert "folderActivity.detail !== 'Loading visible thumbnails…'" in schedule
+    assert "activityUpdate(folderActivity.id, {detail: 'Loading visible thumbnails…'})" in schedule
+
+
+def test_folder_view_aggregates_thumbnail_failures_into_partial_activity() -> None:
+    source = read_frontend_js()
+    load_start = source.index("async function loadCurrentFolderImages(options = {})")
+    load = source[load_start : load_start + 2000]
+    complete = extract_function_body(source, "function _completeFolderViewActivity(activityId")
+    failure = extract_function_body(source, "function _recordFolderViewThumbnailFailure()")
+    recovery = extract_function_body(source, "function _recordFolderViewThumbnailRecovery()")
+    mark_error = extract_function_body(source, "function markThumbnailError(img)")
+    mark_loaded = extract_function_body(source, "function markThumbnailLoaded(img)")
+
+    assert "_folderViewThumbFailures = 0;" in load
+    assert "_folderViewActivityId = activityId;" in load
+    assert "activityComplete(activityId, 'partial'" in complete
+    assert "completed: _folderViewLoadedCount()" in complete
+    assert "_folderViewThumbFailures += 1;" in failure
+    assert "record.status === 'completed' || record.status === 'partial'" in failure
+    assert "_folderViewThumbFailures -= 1;" in recovery
+    assert "_folderViewThumbFailures === 0" in recovery
+    assert "if (!wasFailed) _recordFolderViewThumbnailFailure();" in mark_error
+    assert "_recordFolderViewThumbnailRecovery();" in mark_loaded
+    assert "Retry available on the tiles" in source

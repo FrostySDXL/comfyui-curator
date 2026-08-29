@@ -71,13 +71,14 @@ def test_retry_uses_existing_visible_queue_and_pump_without_observer_transition(
     assert "_requestPriorityPump();" in scheduler_body
 
 
-def test_settled_page_request_clears_status_only_for_current_context() -> None:
+def test_settled_page_request_updates_paged_status_only_for_current_context() -> None:
     js = read_frontend_js()
     page_body = extract_function_body(js, "function ensureFolderPageForIndex")
 
     assert "folderPageInflight.get(offset) !== promise" in page_body
     assert "folderPageInflight.delete(offset);" in page_body
-    assert "folderPageInflight.size === 0" in page_body
     assert "pageRequestToken === folderRequestToken" in page_body
-    assert "setGridLoadingStatus(false);" in page_body
-    assert "if (requestToken === folderRequestToken) setGridLoadingStatus(false);" in js
+    assert "updatePagedLoadStatus();" in page_body
+    status_body = extract_function_body(js, "function updatePagedLoadStatus()")
+    assert "setGridLoadingStatus(true, `Loaded ${loaded} of ${total}`)" in status_body
+    assert "setGridLoadingStatus(false)" in status_body

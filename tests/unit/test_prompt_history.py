@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -9,8 +10,10 @@ from image_curator.prompt_history import (
     _normalize_prompt,
     _prompt_hash,
     build_prompt_index,
+    count_prompt_index_folders,
     load_all_prompt_indices,
     load_prompt_index,
+    prompt_index_is_stale,
 )
 
 
@@ -84,6 +87,66 @@ def test_build_index_dedups_same_normalized_prompt_and_negative(tmp_path):
 
 def test_load_missing_prompt_index_returns_none(tmp_path):
     assert load_prompt_index(tmp_path, "alpha") is None
+
+
+# ---------------------------------------------------------------------------
+# Staleness: per-folder distribution
+# ---------------------------------------------------------------------------
+
+
+def _folder_counts(**overrides):
+    counts = {folder: 0 for folder in ("inbox", "shortlisted", "finals", "rejects")}
+    counts.update(overrides)
+    return counts
+
+
+def test_prompt_index_is_stale_detects_same_total_folder_move():
+    index = {"image_count": 2, "folder_counts": _folder_counts(inbox=2)}
+
+    moved = prompt_index_is_stale(index, _folder_counts(inbox=1, shortlisted=1))
+    unchanged = prompt_index_is_stale(index, _folder_counts(inbox=2))
+
+    assert moved is True
+    assert unchanged is False
+
+
+def test_prompt_index_is_stale_falls_back_to_total_for_legacy_index():
+    legacy = {"image_count": 2}
+
+    same_total_moved = prompt_index_is_stale(legacy, _folder_counts(inbox=1, shortlisted=1))
+    changed_total = prompt_index_is_stale(legacy, _folder_counts(inbox=3))
+
+    assert same_total_moved is False
+    assert changed_total is True
+
+
+def test_build_index_records_folder_counts(tmp_path):
+    make_batch(tmp_path)
+    write_png(tmp_path / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")
+    write_png(tmp_path / "alpha" / "shortlisted" / "two.png", "dog\nSteps: 1")
+
+    index = build_prompt_index(tmp_path, "alpha")
+
+    assert index["folder_counts"] == _folder_counts(inbox=1, shortlisted=1)
+
+
+def test_build_index_move_marks_distribution_stale(tmp_path):
+    make_batch(tmp_path)
+    write_png(tmp_path / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")
+    write_png(tmp_path / "alpha" / "inbox" / "two.png", "dog\nSteps: 1")
+    index = build_prompt_index(tmp_path, "alpha")
+
+    shutil.move(
+        tmp_path / "alpha" / "inbox" / "two.png",
+        tmp_path / "alpha" / "shortlisted" / "two.png",
+    )
+
+    current = count_prompt_index_folders(tmp_path, "alpha")
+    assert prompt_index_is_stale(index, current) is True
+    assert sum(current.values()) == index["image_count"]
+
+    rebuilt = build_prompt_index(tmp_path, "alpha")
+    assert prompt_index_is_stale(rebuilt, count_prompt_index_folders(tmp_path, "alpha")) is False
 
 
 def test_build_index_cache_roundtrip_matches_original(tmp_path):

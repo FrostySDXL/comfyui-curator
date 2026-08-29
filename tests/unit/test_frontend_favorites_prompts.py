@@ -1,7 +1,7 @@
 from pathlib import Path
 
 INDEX_HTML = Path("templates/index.html")
-from tests.unit.frontend_source import read_frontend_js
+from tests.unit.frontend_source import extract_function_body, read_frontend_js
 
 
 def test_favorites_frontend_functions_and_virtual_batch_handling_exist():
@@ -142,6 +142,23 @@ def test_prompt_history_help_section_documented():
     assert "<strong>P</strong>" in html
     assert "<strong>copy positive</strong>" in html
     assert 'id="prompts-build-all-confirm"' in html
+
+
+def test_prompt_history_stale_warning_renders_age_and_count():
+    source = read_frontend_js()
+    footer = extract_function_body(source, "function updatePromptsFooter()")
+
+    assert "_promptsStaleCopy()" in footer
+    assert "_updatePromptsStaleLabel(stale, _promptsStaleCopy())" in footer
+    assert "function _promptsStaleCopy()" in source
+    assert "function _updatePromptsStaleLabel(" in source
+    stale_copy = extract_function_body(source, "function _promptsStaleCopy()")
+    assert "Index may be stale" in stale_copy
+    assert "prompt_count" in stale_copy
+    assert "built" in stale_copy
+    stale_label = extract_function_body(source, "function _updatePromptsStaleLabel(")
+    assert "prompts-rebuild-btn" in stale_label
+    assert "createTextNode" in stale_label
 
 
 def test_favorites_and_prompts_controls_are_rendered():

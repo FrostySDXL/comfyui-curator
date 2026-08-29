@@ -59,6 +59,26 @@ def test_staleness_check_false_when_counts_match(client, app_module):
     assert payload["current_image_count"] == 1
 
 
+def test_staleness_check_detects_same_total_folder_move(client, app_module):
+    app_module.create_batch("alpha")
+    inbox = app_module.BATCHES_DIR / "alpha" / "inbox"
+    shortlisted = app_module.BATCHES_DIR / "alpha" / "shortlisted"
+    write_png(inbox / "one.png", "cat\nSteps: 1")
+    write_png(inbox / "two.png", "dog\nSteps: 1")
+    client.post("/api/prompt-history/alpha/build")
+
+    (inbox / "two.png").rename(shortlisted / "two.png")
+
+    response = client.get("/api/prompt-history/alpha?check_stale=true")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["stale"] is True
+    assert payload["current_image_count"] == 2
+    assert payload["current_folder_counts"]["inbox"] == 1
+    assert payload["current_folder_counts"]["shortlisted"] == 1
+
+
 def test_staleness_check_ignores_non_png_review_images(client, app_module):
     app_module.create_batch("alpha")
     write_png(app_module.BATCHES_DIR / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")

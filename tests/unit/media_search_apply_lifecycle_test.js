@@ -104,7 +104,7 @@ async function main() {
         extractFunction(fs.readFileSync("static/js/publish.js", "utf8"), "function normalizePublicItems("),
         "saveBatchState = () => {}; updateAutoImportQuickAction = () => {}; showGridLoadingPlaceholders = () => {}; updateFolderTabs = () => {};",
         "loadCurrentFolderImages = async () => {};",
-        "apiGetBatchPublic = async () => []; activityComplete = () => {};",
+        "apiGetBatchPublic = async () => []; activityComplete = () => {}; activityAttemptId = (g, t) => g + ':' + t; activityRegister = () => {}; activityRemove = () => {}; setGridLoadingStatus = () => {};",
         "currentBatch = '__search__'; currentFolder = null; workspaceSearchFilter = {}; workspaceSearchReturnContext = {batch: 'batch-a', folder: 'shortlisted'};",
     ].join("\n"), folderContext.context);
     await folderContext.context.clearWorkspaceSearchFilter();

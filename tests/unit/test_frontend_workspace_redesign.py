@@ -93,6 +93,22 @@ def test_grid_empty_states_distinguish_filters_and_empty_folders() -> None:
     assert ".empty-detail" in css
 
 
+def test_empty_folder_copy_is_folder_aware_without_import_implication() -> None:
+    js = read_frontend_js()
+    detail = extract_function_body(js, "function getGridEmptyFolderDetail()")
+    message = extract_function_body(js, "function getGridEmptyStateMessage()")
+
+    assert "getGridEmptyFolderDetail()" in message
+    assert "'inbox'" in detail
+    assert "Move or import images into this folder" in detail
+    assert "Move images into this folder, or choose another folder to review." in detail
+    assert "Select a batch from the sidebar." in detail
+    # Import wording must be gated behind the inbox branch, not the shared tail.
+    assert detail.index("Move or import images") < detail.index(
+        "Move images into this folder, or choose"
+    )
+
+
 def test_public_views_have_specific_empty_states_and_followup_action() -> None:
     js = read_frontend_js()
     html = read_index_html()
@@ -171,11 +187,7 @@ def test_public_views_sort_without_review_folder_api_reload() -> None:
     loader_start = js.index("async function loadCurrentFolderImages(options = {})")
     folder_loader = js[loader_start : loader_start + 7000]
     assert "if (currentFolder === 'public')" in folder_loader
-    assert "await loadBatchPublic(batch);" in folder_loader
-    assert (
-        "activityComplete(activityId, 'completed', {detail: 'Public folder ready'})"
-        in folder_loader
-    )
+    assert "await loadBatchPublic(currentBatch);" in folder_loader
 
 
 def test_public_actions_replace_review_moves_in_public_views() -> None:

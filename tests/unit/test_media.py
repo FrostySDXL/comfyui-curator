@@ -100,6 +100,39 @@ def test_generate_thumbnail_uses_high_quality_webp(tmp_path):
     assert "method=6" in source
 
 
+def test_image_decode_failure_returns_false_and_writes_no_fallback_tile(tmp_path):
+    source = tmp_path / "corrupt.png"
+    cache = tmp_path / "thumbs" / "corrupt.webp"
+    source.write_bytes(b"not-a-real-png")
+
+    generated = generate_media_poster(source, cache, (320, 320), media_kind="image")
+
+    assert generated is False
+    assert not cache.exists()
+
+
+def test_zero_byte_image_returns_false_and_writes_no_fallback_tile(tmp_path):
+    source = tmp_path / "zero.png"
+    cache = tmp_path / "thumbs" / "zero.webp"
+    source.write_bytes(b"")
+
+    generated = generate_media_poster(source, cache, (320, 320), media_kind="image")
+
+    assert generated is False
+    assert not cache.exists()
+
+
+def test_animated_image_decode_failure_returns_false_and_writes_no_fallback_tile(tmp_path):
+    source = tmp_path / "broken.gif"
+    cache = tmp_path / "thumbs" / "broken.webp"
+    source.write_bytes(b"garbage-gif-bytes")
+
+    generated = generate_media_poster(source, cache, (320, 320), media_kind="animated_image")
+
+    assert generated is False
+    assert not cache.exists()
+
+
 def test_audio_poster_has_stable_fallback_when_ffmpeg_is_missing(tmp_path):
     source = tmp_path / "track.mp3"
     cache = tmp_path / "track.webp"

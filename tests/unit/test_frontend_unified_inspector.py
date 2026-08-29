@@ -83,3 +83,15 @@ def test_header_toggle_uses_inspector_operator_labels() -> None:
     sidebar = extract_function_body(js, "function syncAiSidebarUi(persist = true)")
 
     assert "headerBtn.textContent = aiSidebarOpen ? 'Hide Inspector' : 'Show Inspector';" in sidebar
+
+
+def test_inspector_overview_maps_search_sentinel_to_human_label() -> None:
+    js = read_frontend_js()
+    overview = extract_function_body(js, "function renderInspectorOverview()")
+    label = extract_function_body(js, "function inspectorBatchLabel(batch)")
+
+    assert "__search__" in label
+    assert "Search results" in label
+    assert "inspectorBatchLabel(currentBatch)" in overview
+    assert "Filtered workspace results" in overview
+    assert "currentFolder || 'Choose a folder'" in overview

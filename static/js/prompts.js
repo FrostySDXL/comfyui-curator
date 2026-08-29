@@ -1512,7 +1512,29 @@
                 const isStale = promptsData?.stale === true;
                 stale.classList.toggle('hidden', !isStale);
                 stale.setAttribute('aria-live', 'polite');
+                if (isStale) _updatePromptsStaleLabel(stale, _promptsStaleCopy());
             }
+        }
+
+        function _promptsStaleCopy() {
+            const promptCount = promptsData?.prompt_count;
+            const age = promptsData?.built_at ? _formatRelativeTime(promptsData.built_at) : '';
+            const parts = ['Index may be stale'];
+            if (promptCount !== null && promptCount !== undefined) parts.push(`${promptCount} prompts`);
+            if (age) parts.push(`built ${age}`);
+            return parts.join(' · ');
+        }
+
+        function _updatePromptsStaleLabel(stale, text) {
+            const btn = document.getElementById('prompts-rebuild-btn');
+            if (!btn || btn.parentNode !== stale) return;
+            let node = stale.firstChild;
+            while (node && node !== btn) {
+                const next = node.nextSibling;
+                stale.removeChild(node);
+                node = next;
+            }
+            if (text) stale.insertBefore(document.createTextNode(`${text} `), btn);
         }
 
         // --- Build / rebuild ---

@@ -16,6 +16,11 @@
         let _progressiveGridGeneration = 0;
         let _progressiveGridContextKey = null;
         const virtualShuffleRanks = new Map();
+        let _folderViewThumbFailures = 0;
+        let _folderViewActivityId = null;
+        let _folderViewBaseCompleted = null;
+        let _folderViewBaseTotal = null;
+        let _folderViewReadyDetail = '';
 
         function getProgressiveGridState() {
             return {
@@ -421,13 +426,12 @@ async function ensureFolderPageForIndex(index) {
                         displayIndexByName.set(item.name, item.index);
                     });
                     updateGrid();
+                    updatePagedLoadStatus();
                     return images[index] || null;
                 }).finally(() => {
                     if (folderPageInflight.get(offset) !== promise) return;
                     folderPageInflight.delete(offset);
-                    if (folderPageInflight.size === 0 && pageRequestToken === folderRequestToken) {
-                        setGridLoadingStatus(false);
-                    }
+                    if (pageRequestToken === folderRequestToken) updatePagedLoadStatus();
                 });
                 folderPageInflight.set(offset, promise);
             }
@@ -447,13 +451,69 @@ async function _waitForFolderSnapshot(batch, folder, requestToken) {
             return null;
         }
 
+function failFolderLoad(requestToken, activityId, errorText, detail) {
+            if (requestToken !== folderRequestToken) {
+                activityRemove(activityId);
+                return;
+            }
+            setGridLoadingStatus(false);
+            activityComplete(activityId, 'failed', {error: errorText, detail});
+            showFolderErrorState({title: errorText, detail});
+        }
+
+function showFolderErrorState(message = {}) {
+            images = [];
+            currentDisplayImages = [];
+            resetPagedFolderState();
+            _resetProgressiveGridLifecycle();
+            setGridLoadingStatus(false);
+            updateImageCountLabel();
+            const grid = document.getElementById('grid');
+            if (!grid) return;
+            grid.classList.add('is-empty');
+            grid.style.transform = '';
+            grid.replaceChildren(createGridErrorState(message));
+            gridThumbMap.clear();
+            const shell = document.getElementById('grid-shell');
+            if (shell) shell.style.height = '';
+            updateGridShellLayout();
+        }
+
+function createGridErrorState(message = {}) {
+            const error = document.createElement('div');
+            error.className = 'empty grid-error';
+            const title = document.createElement('div');
+            title.className = 'empty-title';
+            title.textContent = message.title || 'Folder unavailable';
+            const detail = document.createElement('div');
+            detail.className = 'empty-detail';
+            detail.textContent = message.detail || 'Try opening the folder again';
+            const retry = document.createElement('button');
+            retry.type = 'button';
+            retry.className = 'grid-retry';
+            retry.textContent = 'Retry';
+            retry.setAttribute('aria-label', 'Retry loading folder');
+            retry.addEventListener('click', () => loadCurrentFolderImages());
+            error.append(title, detail, retry);
+            return error;
+        }
+
 async function loadCurrentFolderImages(options = {}) {
             if (!currentBatch || !currentFolder) return;
+            if (currentFolder === 'public') {
+                await loadBatchPublic(currentBatch);
+                return;
+            }
             const requestToken = ++folderRequestToken;
             const batch = currentBatch;
             const folder = currentFolder;
             const activityGroup = `folder-view:${batch}:${folder}`;
             const activityId = activityAttemptId(activityGroup, requestToken);
+            _folderViewThumbFailures = 0;
+            _folderViewBaseCompleted = null;
+            _folderViewBaseTotal = null;
+            _folderViewReadyDetail = '';
+            _folderViewActivityId = activityId;
             activityRegister({
                 id: activityId,
                 group: activityGroup,
@@ -464,119 +524,89 @@ async function loadCurrentFolderImages(options = {}) {
                 detail: 'Reading folder snapshot…',
             });
             setGridLoadingStatus(true, 'Loading images…');
-            if (currentFolder === 'public') {
-                await loadBatchPublic(batch);
-                if (requestToken !== folderRequestToken) {
-                    activityRemove(activityId);
-                } else {
-                    activityComplete(activityId, 'completed', {detail: 'Public folder ready'});
-                }
-                return;
-            }
-            if (CURATOR_NATIVE) {
-                const content = document.querySelector('.content');
-                const priorScrollTop = content ? content.scrollTop : 0;
-                const snapshot = await _waitForFolderSnapshot(batch, folder, requestToken);
-                if (!snapshot || requestToken !== folderRequestToken) {
-                    if (requestToken === folderRequestToken) {
-                        setGridLoadingStatus(false);
-                        activityComplete(activityId, 'failed', {error: 'Folder snapshot unavailable', detail: 'Try opening the folder again'});
-                    } else {
-                        activityRemove(activityId);
+            try {
+                if (CURATOR_NATIVE) {
+                    const content = document.querySelector('.content');
+                    const priorScrollTop = content ? content.scrollTop : 0;
+                    const snapshot = await _waitForFolderSnapshot(batch, folder, requestToken);
+                    if (!snapshot || requestToken !== folderRequestToken) {
+                        failFolderLoad(requestToken, activityId, 'Folder snapshot unavailable', 'Try opening the folder again');
+                        return;
                     }
-                    return;
-                }
-                activityUpdate(activityId, {
-                    total: snapshot.count,
-                    completed: 0,
-                    detail: 'Snapshot ready · loading visible thumbnails…',
-                });
-                if (requestToken !== folderRequestToken) {
-                    activityRemove(activityId);
-                    return;
-                }
-                if (requiresMaterializedNativeFolder()) {
-                    resetPagedFolderState();
-                    folderSnapshot = snapshot;
-                    const resp = await fetch(ccApiPath(`/api/images/${batch}/${folder}?sort=${_folderTransportSort()}&order=${currentOrder}`));
-                    if (!resp.ok) {
-                        if (requestToken === folderRequestToken) {
-                            setGridLoadingStatus(false);
-                            activityComplete(activityId, 'failed', {error: 'Folder image load failed', detail: 'Try opening the folder again'});
-                        } else {
+                    activityUpdate(activityId, {
+                        total: snapshot.count,
+                        completed: 0,
+                        detail: 'Snapshot ready · loading visible thumbnails…',
+                    });
+                    if (requestToken !== folderRequestToken) {
+                        activityRemove(activityId);
+                        return;
+                    }
+                    if (requiresMaterializedNativeFolder()) {
+                        resetPagedFolderState();
+                        folderSnapshot = snapshot;
+                        const resp = await fetch(ccApiPath(`/api/images/${batch}/${folder}?sort=${_folderTransportSort()}&order=${currentOrder}`));
+                        if (!resp.ok) {
+                            failFolderLoad(requestToken, activityId, 'Folder image load failed', 'Try opening the folder again');
+                            return;
+                        }
+                        const nextImages = await resp.json();
+                        if (requestToken !== folderRequestToken) {
                             activityRemove(activityId);
+                            return;
+                        }
+                        images = nextImages;
+                        displayIndexByName = new Map(images.map((img, index) => [img.name, index]));
+                        updateImageCountLabel();
+                        updateGrid();
+                        if (options.preserveScroll && content) content.scrollTop = priorScrollTop;
+                        if (requestToken !== folderRequestToken) {
+                            activityRemove(activityId);
+                        } else {
+                            _completeFolderViewActivity(activityId, nextImages.length, snapshot.count, 'Folder ready · thumbnails loaded on demand');
                         }
                         return;
                     }
-                    const nextImages = await resp.json();
-                    if (requestToken !== folderRequestToken) {
-                        activityRemove(activityId);
-                        return;
-                    }
-                    images = nextImages;
-                    displayIndexByName = new Map(images.map((img, index) => [img.name, index]));
+                    folderSnapshot = snapshot;
+                    pagedFolderMode = true;
+                    folderPageInflight.clear();
+                    images = new Array(snapshot.count);
+                    currentDisplayImages = images;
+                    displayIndexByName.clear();
                     updateImageCountLabel();
                     updateGrid();
+                    updatePagedLoadStatus();
                     if (options.preserveScroll && content) content.scrollTop = priorScrollTop;
+                    const firstImage = await ensureFolderPageForIndex(0);
                     if (requestToken !== folderRequestToken) {
                         activityRemove(activityId);
+                    } else if (firstImage || snapshot.count === 0) {
+                        _completeFolderViewActivity(activityId, Math.min(FOLDER_PAGE_SIZE, snapshot.count), snapshot.count, 'Folder ready · more thumbnails load as needed');
                     } else {
-                        activityComplete(activityId, 'completed', {
-                        completed: nextImages.length,
-                        total: snapshot.count,
-                        detail: 'Folder ready · thumbnails loaded on demand',
-                        });
+                        failFolderLoad(requestToken, activityId, 'Visible folder page failed', 'Try opening the folder again');
                     }
                     return;
                 }
-                folderSnapshot = snapshot;
-                pagedFolderMode = true;
-                folderPageInflight.clear();
-                images = new Array(snapshot.count);
-                currentDisplayImages = images;
-                displayIndexByName.clear();
-                updateImageCountLabel();
-                updateGrid();
-                if (options.preserveScroll && content) content.scrollTop = priorScrollTop;
-                const firstImage = await ensureFolderPageForIndex(0);
+                resetPagedFolderState();
+                const resp = await fetch(ccApiPath(`/api/images/${batch}/${folder}?sort=${currentSort}&order=${currentOrder}`));
+                if (!resp.ok) {
+                    failFolderLoad(requestToken, activityId, 'Folder image load failed', 'Try opening the folder again');
+                    return;
+                }
+                const nextImages = await resp.json();
                 if (requestToken !== folderRequestToken) {
                     activityRemove(activityId);
-                } else if (firstImage || snapshot.count === 0) {
-                    activityComplete(activityId, 'completed', {
-                        completed: Math.min(FOLDER_PAGE_SIZE, snapshot.count),
-                        total: snapshot.count,
-                        detail: 'Folder ready · more thumbnails load as needed',
-                    });
-                } else {
-                    activityComplete(activityId, 'failed', {error: 'Visible folder page failed', detail: 'Try opening the folder again'});
+                    return;
                 }
-                return;
+                images = nextImages;
+                displayIndexByName = new Map(images.map((img, index) => [img.name, index]));
+                updateImageCountLabel();
+                updateGrid();
+                _completeFolderViewActivity(activityId, nextImages.length, nextImages.length, 'Folder ready · thumbnails loaded on demand');
+            } catch (error) {
+                console.warn('loadCurrentFolderImages failed:', error);
+                failFolderLoad(requestToken, activityId, 'Folder image load failed', 'Try opening the folder again');
             }
-            resetPagedFolderState();
-            const resp = await fetch(ccApiPath(`/api/images/${batch}/${folder}?sort=${currentSort}&order=${currentOrder}`));
-            if (!resp.ok) {
-                if (requestToken === folderRequestToken) setGridLoadingStatus(false);
-                if (requestToken === folderRequestToken) {
-                    activityComplete(activityId, 'failed', {error: 'Folder image load failed', detail: 'Try opening the folder again'});
-                } else {
-                    activityRemove(activityId);
-                }
-                return;
-            }
-            const nextImages = await resp.json();
-            if (requestToken !== folderRequestToken) {
-                activityRemove(activityId);
-                return;
-            }
-            images = nextImages;
-            displayIndexByName = new Map(images.map((img, index) => [img.name, index]));
-            updateImageCountLabel();
-            updateGrid();
-            activityComplete(activityId, 'completed', {
-                completed: nextImages.length,
-                total: nextImages.length,
-                detail: 'Folder ready · thumbnails loaded on demand',
-            });
         }
 
 function setSort(sort) {
@@ -867,8 +897,14 @@ function getGridEmptyStateMessage() {
             }
             return {
                 title: 'No images in this folder',
-                detail: currentBatch ? 'Move or import images into this folder to continue reviewing.' : 'Select a batch from the sidebar.',
+                detail: getGridEmptyFolderDetail(),
             };
+        }
+
+function getGridEmptyFolderDetail() {
+            if (!currentBatch) return 'Select a batch from the sidebar.';
+            if (currentFolder === 'inbox') return 'Move or import images into this folder to continue reviewing.';
+            return 'Move images into this folder, or choose another folder to review.';
         }
 
 function createGridEmptyState(message) {
@@ -891,6 +927,17 @@ function updateImageCountLabel() {
             if (images.length === 0) countEl.textContent = '';
             else if (favoritesFilterOn && displayCount !== images.length) countEl.textContent = ` (${displayCount} of ${images.length})`;
             else countEl.textContent = ` (${images.length})`;
+        }
+
+function updatePagedLoadStatus() {
+            if (typeof pagedFolderMode === 'undefined' || !pagedFolderMode || !folderSnapshot) return;
+            const loaded = typeof displayIndexByName !== 'undefined' ? displayIndexByName.size : 0;
+            const total = folderSnapshot.count;
+            if (loaded < total) {
+                setGridLoadingStatus(true, `Loaded ${loaded} of ${total}`);
+            } else {
+                setGridLoadingStatus(false);
+            }
         }
 
 function setGridLoadingStatus(loading, message = '') {
@@ -959,19 +1006,90 @@ function toggleHoverPreviews() {
             showToast(`Hover previews ${hoverPreviewsEnabled ? 'on' : 'off'}`);
         }
 
+function _folderViewFailureDetail() {
+            const count = _folderViewThumbFailures;
+            return `${count} thumbnail${count === 1 ? '' : 's'} failed · Retry available on the tiles`;
+        }
+
+function _folderViewLoadedCount() {
+            const base = typeof _folderViewBaseCompleted === 'number' ? _folderViewBaseCompleted : 0;
+            return Math.max(0, base - _folderViewThumbFailures);
+        }
+
+function _completeFolderViewActivity(activityId, completed, total, detail) {
+            _folderViewBaseCompleted = completed;
+            _folderViewBaseTotal = total;
+            _folderViewReadyDetail = detail;
+            if (_folderViewThumbFailures > 0) {
+                activityComplete(activityId, 'partial', {
+                    completed: _folderViewLoadedCount(),
+                    total,
+                    detail: _folderViewFailureDetail(),
+                });
+            } else {
+                activityComplete(activityId, 'completed', {completed, total, detail});
+            }
+        }
+
+function _recordFolderViewThumbnailFailure() {
+            if (typeof isVirtualCollectionView === 'function' && isVirtualCollectionView()) return;
+            if (typeof isPublicView === 'function' && isPublicView()) return;
+            _folderViewThumbFailures += 1;
+            const record = _folderViewActivityId ? activityGet(_folderViewActivityId) : null;
+            if (!record) return;
+            if (record.status === 'running') return;
+            if (record.status === 'completed' || record.status === 'partial') {
+                activityComplete(record.id, 'partial', {
+                    completed: _folderViewLoadedCount(),
+                    total: typeof _folderViewBaseTotal === 'number' ? _folderViewBaseTotal : record.total,
+                    detail: _folderViewFailureDetail(),
+                });
+            }
+        }
+
+function _recordFolderViewThumbnailRecovery() {
+            if (typeof isVirtualCollectionView === 'function' && isVirtualCollectionView()) return;
+            if (typeof isPublicView === 'function' && isPublicView()) return;
+            if (_folderViewThumbFailures <= 0) return;
+            _folderViewThumbFailures -= 1;
+            const record = _folderViewActivityId ? activityGet(_folderViewActivityId) : null;
+            if (!record || record.status !== 'partial') return;
+            if (_folderViewThumbFailures === 0) {
+                activityComplete(record.id, 'completed', {
+                    completed: typeof _folderViewBaseCompleted === 'number' ? _folderViewBaseCompleted : record.completed,
+                    total: typeof _folderViewBaseTotal === 'number' ? _folderViewBaseTotal : record.total,
+                    detail: _folderViewReadyDetail || 'Folder ready · thumbnails loaded on demand',
+                });
+            } else {
+                activityComplete(record.id, 'partial', {
+                    completed: _folderViewLoadedCount(),
+                    total: typeof _folderViewBaseTotal === 'number' ? _folderViewBaseTotal : record.total,
+                    detail: _folderViewFailureDetail(),
+                });
+            }
+        }
+
 function markThumbnailLoaded(img) {
+            const thumb = img.closest('.thumb');
+            if (thumb && thumb.dataset.retryRecovery === '1') {
+                delete thumb.dataset.retryRecovery;
+                _recordFolderViewThumbnailRecovery();
+            }
             img.dataset.loadedThumbnailCacheKey = img.dataset.thumbnailCacheKey || '';
             img.classList.add('loaded');
-            clearThumbnailError(img.closest('.thumb'), img);
+            clearThumbnailError(thumb, img);
         }
 
 function markThumbnailError(img) {
             const thumb = img.closest('.thumb');
             if (!thumb || !img.dataset.thumbnailCacheKey) return;
+            const wasFailed = thumb.classList.contains('thumbnail-failed') || thumb.dataset.retryRecovery === '1';
             img.classList.remove('loaded');
             delete img.dataset.loadedThumbnailCacheKey;
             thumb.dataset.thumbnailErrorCacheKey = img.dataset.thumbnailCacheKey;
             thumb.classList.add('thumbnail-failed');
+            delete thumb.dataset.retryRecovery;
+            if (!wasFailed) _recordFolderViewThumbnailFailure();
             const errorPanel = thumb.querySelector('.thumbnail-error');
             if (!errorPanel) return;
             errorPanel.replaceChildren();
@@ -1012,6 +1130,7 @@ function retryThumbnailLoad(thumb) {
             const imageSrc = imageEl?.dataset.thumbnailSource;
             if (!imageEl || !cacheKey || !imageSrc) return;
             unscheduleThumbnailLoad(thumb);
+            thumb.dataset.retryRecovery = '1';
             clearThumbnailError(thumb, imageEl);
             imageEl.classList.remove('loaded');
             delete imageEl.dataset.loadedThumbnailCacheKey;
@@ -1145,6 +1264,7 @@ function updateThumbElement(thumb, img, index) {
             thumb.dataset.index = String(index);
             thumb.dataset.mediaKind = img.media_kind || 'media';
             thumb.dataset.sourceBatch = source.batch || '';
+            delete thumb.dataset.retryRecovery;
             const selected = typeof serverSelection !== 'undefined' && serverSelection
                 ? !serverSelection.excluded.has(img.name)
                 : selectedImages.has(img.name);
@@ -1219,6 +1339,8 @@ function updateThumbElement(thumb, img, index) {
 function showGridLoadingPlaceholders(batch, folder) {
             _resetProgressiveGridLifecycle();
             const grid = document.getElementById('grid');
+            const countEl = document.getElementById('img-count');
+            if (countEl) countEl.textContent = '';
             setGridLoadingStatus(true, 'Loading images…');
             const expectedCount = allCounts[batch]?.[folder] || 0;
             gridThumbMap.clear();

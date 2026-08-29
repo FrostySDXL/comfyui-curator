@@ -39,6 +39,13 @@ function getInspectorSelectionCount() {
             return typeof selectedImages !== 'undefined' ? selectedImages.size : 0;
         }
 
+function inspectorBatchLabel(batch) {
+            if (batch === '__search__') return 'Search results';
+            if (batch === '__favorites__') return 'All favorites';
+            if (batch === '__public__') return 'All public';
+            return batch;
+        }
+
 function renderInspectorOverview() {
             const content = document.getElementById('inspector-overview-content');
             if (!content) return;
@@ -67,8 +74,8 @@ function renderInspectorOverview() {
                 return;
             }
             if (!target) {
-                content.append(createTextElement('div', 'inspector-title', currentBatch));
-                content.append(createTextElement('div', 'inspector-subtitle', currentFolder || 'Choose a folder'));
+                content.append(createTextElement('div', 'inspector-title', inspectorBatchLabel(currentBatch)));
+                content.append(createTextElement('div', 'inspector-subtitle', isWorkspaceSearchView() ? 'Filtered workspace results' : (currentFolder || 'Choose a folder')));
                 content.append(createTextElement('div', 'inspector-empty-detail', 'Click a thumbnail to inspect its filename, source, media facts, metadata, and advisory evidence.'));
                 return;
             }

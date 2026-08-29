@@ -92,28 +92,47 @@ def _save_cache(batches_dir: Path, batch: str, data: dict[str, Any]) -> None:
         tmp_path.replace(path)
 
 
-def count_prompt_index_images(batches_dir: Path, batch: str) -> int:
-    """Return the current count of PNG files eligible for prompt indexing."""
+def count_prompt_index_folders(batches_dir: Path, batch: str) -> dict[str, int]:
+    """Return the current per-folder PNG counts eligible for prompt indexing."""
     _validate_name(batch, "batch name")
     root, batch_dir, resolved_batch = _resolved_batch(batches_dir, batch)
-    count = 0
+    counts = {folder: 0 for folder in BATCH_FOLDERS}
     for folder in BATCH_FOLDERS:
         folder_dir = _safe_stage(root, batch_dir, resolved_batch, folder)
         if folder_dir is None:
             continue
         for path in folder_dir.iterdir():
-            if path.suffix.lower() == ".png":
-                try:
-                    if path.is_symlink() or not path.is_file():
-                        raise ValueError("Unsafe prompt history path")
-                    resolved_path = path.resolve()
-                    resolved_path.relative_to(folder_dir)
-                    if resolved_path.parent != folder_dir:
-                        raise ValueError("Unsafe prompt history path")
-                except (OSError, ValueError) as exc:
-                    raise ValueError("Unsafe prompt history path") from exc
-                count += 1
-    return count
+            if path.suffix.lower() != ".png":
+                continue
+            try:
+                if path.is_symlink() or not path.is_file():
+                    raise ValueError("Unsafe prompt history path")
+                resolved_path = path.resolve()
+                resolved_path.relative_to(folder_dir)
+                if resolved_path.parent != folder_dir:
+                    raise ValueError("Unsafe prompt history path")
+            except (OSError, ValueError) as exc:
+                raise ValueError("Unsafe prompt history path") from exc
+            counts[folder] += 1
+    return counts
+
+
+def count_prompt_index_images(batches_dir: Path, batch: str) -> int:
+    """Return the current count of PNG files eligible for prompt indexing."""
+    return sum(count_prompt_index_folders(batches_dir, batch).values())
+
+
+def prompt_index_is_stale(index: dict[str, Any], current_counts: dict[str, int]) -> bool:
+    """Return whether a cached index no longer matches current per-folder counts.
+
+    Compares the index's recorded per-folder counts against the filesystem so a
+    same-total move between folders is detected as stale. Legacy indexes without
+    ``folder_counts`` fall back to the recorded total image count.
+    """
+    stored = index.get("folder_counts")
+    if stored is None:
+        return sum(current_counts.values()) != index.get("image_count")
+    return current_counts != stored
 
 
 def build_prompt_index(batches_dir: Path, batch: str) -> dict[str, Any]:
@@ -174,11 +193,15 @@ def build_prompt_index(batches_dir: Path, batch: str) -> dict[str, Any]:
         groups[key]["images"].append(image_entry)
 
     prompts = sorted(groups.values(), key=lambda item: item["count"], reverse=True)
+    folder_counts = {folder: 0 for folder in BATCH_FOLDERS}
+    for _mtime, folder, _path in files:
+        folder_counts[folder] = folder_counts.get(folder, 0) + 1
     index = {
         "built_at": datetime.now(timezone.utc).isoformat(),
         "batch": batch,
         "image_count": len(files),
         "prompt_count": len(prompts),
+        "folder_counts": folder_counts,
         "prompts": prompts,
     }
     _save_cache(batches_dir, batch, index)

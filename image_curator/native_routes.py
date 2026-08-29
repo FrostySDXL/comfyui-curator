@@ -417,13 +417,15 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
                 else await asyncio.to_thread(media_cache_is_fresh, cache, source)
             )
             if not fresh:
-                await asyncio.to_thread(
+                generated = await asyncio.to_thread(
                     generate_media_poster,
                     source,
                     cache,
                     THUMB_SIZE,
                     media_kind=kind,
                 )
+                if kind in {"image", "animated_image"} and not generated:
+                    return web.json_response({"error": "Failed to generate thumbnail"}, status=500)
         except ValueError:
             return web.json_response({"error": "Invalid thumbnail cache path"}, status=400)
         except Exception:
@@ -1078,14 +1080,15 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             return web.json_response({"error": "prompt history not built"}, status=404)
         if request.query.get("check_stale", "").lower() == "true":
             try:
-                current_count = prompt_history.count_prompt_index_images(
+                current_counts = prompt_history.count_prompt_index_folders(
                     service.settings.batch_root, batch
                 )
             except ValueError:
                 return web.json_response({"error": "Unsafe prompt history path"}, status=400)
             index = dict(index)
-            index["stale"] = current_count != index.get("image_count")
-            index["current_image_count"] = current_count
+            index["stale"] = prompt_history.prompt_index_is_stale(index, current_counts)
+            index["current_image_count"] = sum(current_counts.values())
+            index["current_folder_counts"] = current_counts
         return web.json_response(index)
 
     async def get_all_prompt_indices(_request):

@@ -41,9 +41,10 @@ from image_curator.folder_index import (
 )
 from image_curator.prompt_history import (
     build_prompt_index,
-    count_prompt_index_images,
+    count_prompt_index_folders,
     load_all_prompt_indices,
     load_prompt_index,
+    prompt_index_is_stale,
 )
 from image_curator.search_index import (
     build_search_index,
@@ -731,10 +732,11 @@ def api_get_prompt_history(batch):
     if index is None:
         return jsonify({"error": "prompt history not built"}), 404
     if request.args.get("check_stale", "").lower() == "true":
-        current_count = count_prompt_index_images(BATCHES_DIR, batch_name)
+        current_counts = count_prompt_index_folders(BATCHES_DIR, batch_name)
         index = dict(index)
-        index["stale"] = current_count != index.get("image_count")
-        index["current_image_count"] = current_count
+        index["stale"] = prompt_index_is_stale(index, current_counts)
+        index["current_image_count"] = sum(current_counts.values())
+        index["current_folder_counts"] = current_counts
     return jsonify(index)
 
 
@@ -814,13 +816,15 @@ def serve_thumbnail(batch, folder, filename):
         return resp
 
     try:
-        generate_media_poster(filepath, cache_path, THUMB_SIZE, media_kind=kind)
-        resp = send_file(str(cache_path), mimetype="image/webp", max_age=3600)
-        resp.headers["Cache-Control"] = "public, max-age=3600, immutable"
-        return resp
+        generated = generate_media_poster(filepath, cache_path, THUMB_SIZE, media_kind=kind)
     except Exception:
         print(f"Thumbnail generation failed for {filepath}", flush=True)
         return jsonify({"error": "Failed to generate thumbnail"}), 500
+    if kind in {"image", "animated_image"} and not generated:
+        return jsonify({"error": "Failed to generate thumbnail"}), 500
+    resp = send_file(str(cache_path), mimetype="image/webp", max_age=3600)
+    resp.headers["Cache-Control"] = "public, max-age=3600, immutable"
+    return resp
 
 
 def _folder_snapshot_request(batch: str, folder: str):
