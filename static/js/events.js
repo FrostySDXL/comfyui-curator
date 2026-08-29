@@ -536,6 +536,8 @@ function _bindDelegatedEvents() {
                     if (!button) return;
                     if (button.id === 'compare-candidate-dismiss') {
                         dismissCompareCandidateTray();
+                    } else if (button.id === 'compare-candidate-toggle') {
+                        toggleCompareCandidateTray();
                     } else if (button.id === 'compare-candidate-launch') {
                         launchCompareCandidateTray();
                     } else if (button.dataset.candidateMove) {

@@ -22,6 +22,9 @@ def test_candidate_tray_markup_is_compact_accessible_and_dismissible() -> None:
     assert 'id="compare-candidate-dismiss"' in html
     assert 'id="compare-candidate-launch"' in html
     assert 'id="compare-candidate-status"' in html
+    assert 'id="compare-candidate-toggle"' in html
+    assert 'aria-controls="compare-candidate-list"' in html
+    assert 'aria-expanded="true"' in html
 
 
 def test_candidate_tray_uses_selection_as_source_and_orders_only_stills() -> None:
@@ -107,3 +110,32 @@ def test_tray_launch_uses_explicit_pair_and_restores_focus_to_launch_control() -
     assert "explicitSelection" in compare
     assert "rememberLightboxReturnFocus(focusElement || document.activeElement);" in compare
     assert "isVirtualCollectionView() || isPublicView()" in compare
+
+
+def test_candidate_tray_collapses_on_narrow_viewports_with_explicit_toggle() -> None:
+    css = GRID_CSS.read_text(encoding="utf-8")
+    assert ".compare-candidate-tray.collapsed" in css
+    assert ".compare-candidate-toggle" in css
+    js = read_frontend_js()
+    render = extract_function_body(js, "function renderCompareCandidateTray()")
+    assert "compareCandidateTrayCollapsed === null" in render
+    assert "matchMedia('(max-width: 900px)').matches" in render
+    assert "classList.toggle('collapsed', trayCollapsed)" in render
+    assert "aria-expanded" in render
+    toggle = extract_function_body(js, "function toggleCompareCandidateTray()")
+    assert "compareCandidateTrayCollapsed = !tray.classList.contains('collapsed');" in toggle
+    assert "renderCompareCandidateTray();" in toggle
+    assert "syncActionBarSafeArea();" in toggle
+    handler = extract_function_body(js, "function onCompareCandidateTrayMediaChange()")
+    assert "compareCandidateTrayCollapsed !== null" in handler
+    assert "renderCompareCandidateTray();" in handler
+    init = extract_function_body(js, "function initializeCompareCandidateTray()")
+    assert "matchMedia('(max-width: 900px)')" in init
+    assert "addEventListener('change', onCompareCandidateTrayMediaChange)" in init
+    assert "addListener(onCompareCandidateTrayMediaChange)" in init
+    reset = extract_function_body(js, "function resetSelectionState()")
+    assert "compareCandidateTrayCollapsed = null;" in reset
+    events = (ROOT / "static" / "js" / "events.js").read_text(encoding="utf-8")
+    assert "toggleCompareCandidateTray();" in events
+    bootstrap = (ROOT / "static" / "js" / "bootstrap.js").read_text(encoding="utf-8")
+    assert "initializeCompareCandidateTray();" in bootstrap

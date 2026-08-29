@@ -63,6 +63,7 @@ function resetSelectionState() {
             selectionMode = false;
             compareCandidateOrder = [];
             compareCandidateTrayDismissed = false;
+            compareCandidateTrayCollapsed = null;
             updateSelectionVisuals();
             setSelectionMode(false);
             if (typeof aiRenderImageInspector === 'function') aiRenderImageInspector();
@@ -118,6 +119,34 @@ function dismissCompareCandidateTray() {
             syncActionBarSafeArea();
         }
 
+function toggleCompareCandidateTray() {
+            const tray = document.getElementById('compare-candidate-tray');
+            if (!tray || tray.hidden) return;
+            compareCandidateTrayCollapsed = !tray.classList.contains('collapsed');
+            renderCompareCandidateTray();
+            syncActionBarSafeArea();
+        }
+
+let compareCandidateTrayMediaQuery = null;
+
+function onCompareCandidateTrayMediaChange() {
+            if (compareCandidateTrayCollapsed !== null) return;
+            const tray = document.getElementById('compare-candidate-tray');
+            if (!tray || tray.hidden) return;
+            renderCompareCandidateTray();
+            syncActionBarSafeArea();
+        }
+
+function initializeCompareCandidateTray() {
+            if (compareCandidateTrayMediaQuery || typeof window.matchMedia !== 'function') return;
+            compareCandidateTrayMediaQuery = window.matchMedia('(max-width: 900px)');
+            if (typeof compareCandidateTrayMediaQuery.addEventListener === 'function') {
+                compareCandidateTrayMediaQuery.addEventListener('change', onCompareCandidateTrayMediaChange);
+            } else if (typeof compareCandidateTrayMediaQuery.addListener === 'function') {
+                compareCandidateTrayMediaQuery.addListener(onCompareCandidateTrayMediaChange);
+            }
+        }
+
 function renderCompareCandidateTray() {
             const tray = document.getElementById('compare-candidate-tray');
             if (!tray) return;
@@ -134,6 +163,15 @@ function renderCompareCandidateTray() {
             const status = document.getElementById('compare-candidate-status');
             const launch = document.getElementById('compare-candidate-launch');
             tray.hidden = false;
+            const trayCollapsed = compareCandidateTrayCollapsed === null
+                ? (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 900px)').matches)
+                : compareCandidateTrayCollapsed;
+            tray.classList.toggle('collapsed', trayCollapsed);
+            const toggle = document.getElementById('compare-candidate-toggle');
+            if (toggle) {
+                toggle.textContent = trayCollapsed ? 'Expand' : 'Collapse';
+                toggle.setAttribute('aria-expanded', trayCollapsed ? 'false' : 'true');
+            }
             if (status) {
                 status.textContent = stillCandidates.length < 2
                     ? `${stillCandidates.length} still candidates${skippedCount ? ` · ${skippedCount} non-still skipped` : ''} · select at least two still images`

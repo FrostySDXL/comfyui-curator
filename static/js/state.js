@@ -71,6 +71,7 @@
         let selectedImages = new Set();
         let compareCandidateOrder = [];
         let compareCandidateTrayDismissed = false;
+        let compareCandidateTrayCollapsed = null;
         let serverSelection = null;
         let selectionMode = false;
         let lastSelectIndex = -1;

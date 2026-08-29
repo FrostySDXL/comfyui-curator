@@ -6,6 +6,7 @@ initializeAiSidebarState();
 initializeGridDensity();
 initializeViewMenu();
 initializeActionBarSafeArea();
+initializeCompareCandidateTray();
 _bindCustomSelectKeys();
 _bindDelegatedEvents();
 // Sync batch sort button highlights with stored preference
