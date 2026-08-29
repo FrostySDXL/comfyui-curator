@@ -204,3 +204,21 @@ def test_typed_selections_disable_incompatible_compare_and_publish_actions() -> 
         "publishBtn.disabled = !activePublicView && !isStillReviewMedia(activeImage)"
         in sync_lightbox
     )
+
+
+def test_clear_selection_action_exits_snapshot_selection_in_one_click() -> None:
+    js = read_frontend_js()
+
+    assert "function clearSelection()" not in js
+    branch = js.split("if (btn.classList.contains('action-clear')) {", 1)[1].split("} else if", 1)[
+        0
+    ]
+    assert "resetSelectionState();" in branch
+    assert "clearSelection()" not in branch
+    assert "setSelectionMode(" not in branch
+
+    reset = extract_function_body(js, "function resetSelectionState()")
+    assert "selectedImages.clear();" in reset
+    assert "serverSelection = null;" in reset
+    assert "selectionMode = false;" in reset
+    assert "setSelectionMode(false);" in reset

@@ -46,17 +46,6 @@ function toggleSelect(index, event) {
             if (typeof aiRenderImageInspector === 'function') aiRenderImageInspector();
         }
 
-function clearSelection() {
-            selectedImages.clear();
-            serverSelection = null;
-            lastSelectIndex = -1;
-            compareCandidateOrder = [];
-            compareCandidateTrayDismissed = false;
-            updateSelectionVisuals();
-            updateActionBar();
-            if (typeof aiRenderImageInspector === 'function') aiRenderImageInspector();
-        }
-
 function setSelectionMode(active) {
             selectionMode = active === true && !isWorkspaceSearchView();
             const browseBtn = document.getElementById('browse-mode-btn');

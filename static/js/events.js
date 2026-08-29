@@ -512,8 +512,7 @@ function _bindDelegatedEvents() {
                     const btn = e.target.closest('.action-btn');
                     if (!btn) return;
                     if (btn.classList.contains('action-clear')) {
-                        if (serverSelection || selectedImages.size > 0) clearSelection();
-                        else setSelectionMode(false);
+                        resetSelectionState();
                     } else if (btn.id === 'compare-lightbox-btn') {
                         openCompareLightbox();
                     } else if (btn.id === 'publish-btn') {

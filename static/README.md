@@ -182,7 +182,7 @@ Edit `templates/index.html`, then run `.venv\Scripts\python.exe scripts\generate
 | **Thumbnail Viewport Scheduling** | `scheduleThumbnailLoad`, `unscheduleThumbnailLoad`, `cancelScheduledViewportLoads` | Thumb `.thumb` elements, `IntersectionObserver` |
 | **Keyboard Shortcuts** | `keyboard.js` document `keydown` handler | `document` |
 | **Drag/Drop** | `onDragStart`, `onDragOver`, `onDrop`, `moveBatch` | `.thumb`, `.folder-tab` |
-| **Multi-Select** | `toggleSelect`, `clearSelection`, `updateActionBar` | `#action-bar`, `.thumb-select` |
+| **Multi-Select** | `toggleSelect`, `resetSelectionState`, `updateActionBar` | `#action-bar`, `.thumb-select` |
 | **Undo** | `loadMoveHistory`, `undoMoveOperation`, `undoLastMove` | `#move-history-modal`, `#toast` |
 | **Lightbox** | `openLightbox`, `openCompareLightbox`, `openStickyCompareLightbox`, `navigateStickyCompare`, `advanceComparePair`, `setLightboxCompareSync`, `toggleLightboxCompareSplit`, `closeLightbox`, `navigate`, `navigateScored`, `zoomLightbox`, `zoomComparePane`, `toggleLightboxMetadata`, `toggleLightboxAiPanel`, `loadLightboxMetadata` | `#lightbox`, `#lightbox-compare`, `#lightbox-compare-divider` |
 | **Unified inspector** | `toggleAiSidebar`, `syncAiSidebarUi`, `setInspectorTab`, `aiSetPanelTab`, `aiSubmitJob`, `aiPollJobStatus`, `aiRefreshRunData`, `aiLoadElementHistory`, `aiRenderImageInspector`, `loadInspectorMetadata` | `#ai-sidebar-shell`, `#unified-inspector`, `#inspector-overview-section`, `#inspector-metadata-section`, `#inspector-ai-section`, `#ai-image-inspector` |
