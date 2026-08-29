@@ -19,12 +19,12 @@ def _rule_body(block: str, selector: str) -> str:
     return match.group("body")
 
 
-def test_header_and_selection_surfaces_wrap_below_1280() -> None:
+def test_header_wraps_below_1280_without_touching_the_selection_bar() -> None:
     block = _block(1279)
     assert "min-width: 200px;" in _rule_body(block, ".workspace-context")
     assert "flex-wrap: wrap;" in _rule_body(block, ".header-actions")
-    assert "flex-wrap: wrap;" in _rule_body(block, ".action-bar")
-    assert "flex-wrap: wrap;" in _rule_body(block, ".action-group")
+    assert ".action-bar" not in block
+    assert ".action-group" not in block
 
 
 def test_lightbox_controls_wrap_below_1100() -> None:
@@ -37,3 +37,16 @@ def test_lightbox_controls_wrap_below_1100() -> None:
     assert "top: 50%;" in nav
     assert "bottom: auto;" in nav
     assert "transform: translateY(-50%);" in nav
+
+
+def test_grid_minimum_band_overlays_inspector_and_wraps_bar() -> None:
+    block = _block(960)
+    assert "position: relative;" in _rule_body(block, ".workspace")
+    assert "display: none;" in _rule_body(block, ".ai-sidebar-resizer")
+    shell = _rule_body(block, ".ai-sidebar-shell")
+    assert "position: absolute;" in shell
+    assert "inset: 0 0 0 auto;" in shell
+    assert "max-width: 100%;" in shell
+    assert "max-width: 100%;" in _rule_body(block, ".unified-inspector")
+    assert "flex-wrap: wrap;" in _rule_body(block, ".action-bar")
+    assert "flex-wrap: wrap;" in _rule_body(block, ".action-group")

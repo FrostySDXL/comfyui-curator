@@ -1,11 +1,10 @@
-        /* Intermediate 901-1279px: the single-row header and nowrap selection
-           bar fit only at >=1280px; below that the 685px action cluster
-           squeezes the workspace title and the bar overflows. */
+        /* Intermediate 901-1279px: the single-row header fits only at
+           >=1280px; below that the 685px action cluster squeezes the
+           workspace title. The selection bar keeps the desktop nowrap
+           shrink treatment here; it wraps only in the grid-minimum band. */
         @media (max-width: 1279px) and (min-width: 901px) {
             .workspace-context { min-width: 200px; }
             .header-actions { flex-wrap: wrap; }
-            .action-bar { flex-wrap: wrap; }
-            .action-group { flex-wrap: wrap; }
         }
         /* Lightbox controls need 1014px nowrap plus 40px margins; wrap them
            below 1100px so both ends stay visible. */
@@ -21,6 +20,28 @@
                 bottom: auto;
                 transform: translateY(-50%);
             }
+        }
+        /* Grid-minimum band 901-960px: a docked 360px inspector leaves
+           viewport - 748px of content, and after the 15px scrollbar gutter
+           and 18px content padding fewer than 180px remain for one grid
+           track below 961px. The inspector overlays and defaults closed
+           and the selection bar wraps, mirroring the <=900px treatment. */
+        @media (max-width: 960px) and (min-width: 901px) {
+            .workspace { position: relative; }
+            .ai-sidebar-resizer { display: none; }
+            .ai-sidebar-shell {
+                position: absolute;
+                inset: 0 0 0 auto;
+                z-index: 20;
+                width: min(100%, var(--ai-sidebar-width));
+                max-width: 100%;
+                border-left: 1px solid var(--border-subtle);
+                border-top: none;
+                box-shadow: -12px 0 32px rgba(0, 0, 0, 0.34);
+            }
+            .unified-inspector { max-width: 100%; }
+            .action-bar { flex-wrap: wrap; }
+            .action-group { flex-wrap: wrap; }
         }
         @media (max-width: 900px) {
             .shortcut-learning-strip {
