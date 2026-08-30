@@ -99,3 +99,22 @@ def test_narrow_overlays_and_library_search_keep_content_reachable() -> None:
     )
     assert "max-height: calc(100vh - 180px);" in panel
     assert "overflow-y: auto;" in panel
+
+
+def test_short_narrow_shell_scrolls_rows_with_bounded_grid_viewport() -> None:
+    css = RESPONSIVE_CSS.read_text(encoding="utf-8")
+    marker = "@media (max-width: 900px) and (max-height: 500px)"
+    assert marker in css
+    block = css.split(marker, 1)[1].split("@media", 1)[0]
+
+    main = _rule_body(block, ".main")
+    assert "overflow-y: auto;" in main
+    assert "overflow-x: hidden;" in main
+
+    frame = _rule_body(block, ".workspace-frame")
+    assert "flex: 0 0 auto;" in frame
+
+    column = _rule_body(block, ".workspace-column")
+    assert "flex: 0 0 auto;" in column
+    assert "height: clamp(240px, calc(100vh - 120px), 420px);" in column
+    assert "min-height: 0;" in column

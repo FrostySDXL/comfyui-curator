@@ -255,6 +255,26 @@
             .folder-tab-label { flex-shrink: 0; }
         }
 
+        /* At 200% zoom on a short physical display, the narrow reflow can
+           make the header, folder rail, and toolbar taller than the viewport.
+           Keep those rows in normal flow and let the main shell scroll instead
+           of shrinking the workspace underneath the rail. Bound the workspace
+           column so the virtual grid spacer remains owned by .content. */
+        @media (max-width: 900px) and (max-height: 500px) {
+            .main {
+                overflow-x: hidden;
+                overflow-y: auto;
+            }
+            .workspace-frame {
+                flex: 0 0 auto;
+            }
+            .workspace-column {
+                flex: 0 0 auto;
+                height: clamp(240px, calc(100vh - 120px), 420px);
+                min-height: 0;
+            }
+        }
+
         /* Windows High Contrast / forced-colors: keep state and focus cues
            explicit when authored fills, gradients, and shadows are replaced. */
         @media (forced-colors: active) {
