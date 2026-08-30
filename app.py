@@ -52,6 +52,7 @@ from image_curator.search_index import (
     query_search_indices,
     summarize_search_index,
 )
+from image_curator.search_index_jobs import ActiveSearchIndexJob, SearchIndexJobManager
 from image_curator.web_validation import require_existing_batch, safe_path
 from image_curator.move_history import MAX_OPERATIONS, RETENTION_DAYS, MoveHistory
 
@@ -98,6 +99,8 @@ _PUBLIC_EXPORT_ROOT_RAW = os.environ.get("IMAGE_CURATOR_PUBLIC_EXPORTS", "").str
 PUBLIC_EXPORT_ROOT = Path(_PUBLIC_EXPORT_ROOT_RAW).expanduser() if _PUBLIC_EXPORT_ROOT_RAW else None
 _folder_index = FolderIndexService()
 atexit.register(_folder_index.close)
+_search_index_jobs = SearchIndexJobManager(lambda: BATCHES_DIR)
+atexit.register(_search_index_jobs.close)
 
 # Warn on startup if critical defaults are unlikely to work
 if os.environ.get("IMAGE_CURATOR_LLM_URL", "").strip() == "":
@@ -758,6 +761,35 @@ def api_build_search_index(batch):
     except Exception:
         logger.exception("Search index build failed for %s", batch_name)
         return jsonify({"error": "Search index build failed"}), 500
+
+
+@app.route("/api/search-index/<batch>/jobs", methods=["POST"])
+def api_start_search_index_job(batch):
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
+    try:
+        return jsonify(_search_index_jobs.submit(batch_name)), 202
+    except ActiveSearchIndexJob as exc:
+        return jsonify({"error": str(exc), "job": exc.job}), 409
+    except (OSError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/search-index/jobs/<job_id>", methods=["GET"])
+def api_get_search_index_job(job_id):
+    job = _search_index_jobs.get(job_id)
+    if job is None:
+        return jsonify({"error": "Search index job not found"}), 404
+    return jsonify(job)
+
+
+@app.route("/api/search-index/jobs/<job_id>/cancel", methods=["POST"])
+def api_cancel_search_index_job(job_id):
+    job = _search_index_jobs.cancel(job_id)
+    if job is None:
+        return jsonify({"error": "Search index job not found"}), 404
+    return jsonify(job)
 
 
 @app.route("/api/search", methods=["GET"])

@@ -225,7 +225,10 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 | `GET /api/prompt-history/<batch>?check_stale=true` | `loadPromptsData()` | Prompt modal batch view |
 | `POST /api/prompt-history/<batch>/build` | `buildPromptIndex()` | Prompt index build/rebuild |
 | `GET /api/search?q=...&batch=...&folder=...` | `runMediaSearch()` | Scoped filename, PNG generation metadata, and adjacent JSON sidecar search |
-| `POST /api/search-index/<batch>/build` | `_buildMediaSearchIndexes()` | Build/rebuild one typed-media metadata search cache |
+| `POST /api/search-index/<batch>/build` | Legacy API callers | Compatibility synchronous build/rebuild of one typed-media metadata search cache |
+| `POST /api/search-index/<batch>/jobs` | `_buildMediaSearchIndexes()` | Start an asynchronous cancellable media-index build; native maps this to `/api/curator/search-index/{batch}/jobs` |
+| `GET /api/search-index/jobs/<jobId>` | `_buildMediaSearchIndexes()` | Poll queued/running/cancelling/completed/cancelled/failed job state; native uses the `/api/curator/` prefix |
+| `POST /api/search-index/jobs/<jobId>/cancel` | Activity Center cancel action | Request cooperative cancellation; the UI enters cancelling only when the response has `cancel_accepted: true`, and commit-time refusal remains running |
 | `GET /api/v2/folders/<batch>/<folder>/lookup` | `openMediaSearchResult()` | Resolve an indexed filename to its O(1) revision position before opening a large native folder item |
 | `GET /thumb/<batch>/<folder>/<name>` | `resolveThumbnailBlobUrl()` | Thumb render (lazy, via blob cache) |
 | `GET /image/<batch>/<folder>/<name>` | `showCurrentImage()` | Lightbox image src |

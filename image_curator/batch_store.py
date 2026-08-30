@@ -238,7 +238,9 @@ def _is_viewable_media(path: Path) -> bool:
     return path.suffix.lower() in VIEWABLE_MEDIA_EXTENSIONS
 
 
-def get_images(directory: Path, sort_by: str = "date", order: str = "desc") -> list[Path]:
+def get_images(
+    directory: Path, sort_by: str = "date", order: str = "desc", *, cancel_check=None
+) -> list[Path]:
     """Return supported image files in a directory with configurable sorting.
 
     Files whose ``stat()`` raises ``OSError`` (for example because they were
@@ -246,13 +248,18 @@ def get_images(directory: Path, sort_by: str = "date", order: str = "desc") -> l
     skipped so a concurrent deletion does not crash the image-listing
     endpoint. The same protection applies to the date-sort branch below,
     so a file that vanishes after the initial filter is also dropped
-    rather than raising.
+    rather than raising. ``cancel_check``, when supplied, is called between
+    filesystem entries and may raise a caller-owned cancellation exception.
     """
     directory = Path(directory)
     if not directory.is_dir():
         return []
+    if cancel_check is not None:
+        cancel_check()
     images = []
     for f in directory.iterdir():
+        if cancel_check is not None:
+            cancel_check()
         # ``is_symlink()`` calls ``lstat`` -> ``stat``; if the file is
         # removed between ``iterdir()`` and that call, the underlying
         # stat raises FileNotFoundError. Treat that the same as an
@@ -276,6 +283,8 @@ def get_images(directory: Path, sort_by: str = "date", order: str = "desc") -> l
         # iterdir() and the sort key call is dropped, not raised.
         dated = []
         for path in images:
+            if cancel_check is not None:
+                cancel_check()
             try:
                 dated.append((path.stat().st_mtime, path))
             except OSError:

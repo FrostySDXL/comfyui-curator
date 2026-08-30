@@ -9,6 +9,7 @@ from typing import Any
 from aiohttp import web
 
 from . import batch_store, prompt_history, publish, search_index
+from .search_index_jobs import ActiveSearchIndexJob, SearchIndexJobManager
 from .favorites import (
     get_batch_favorite_filenames,
     resolve_universal_favorites,
@@ -44,6 +45,7 @@ class NativeCuratorService:
     def __init__(self, settings: NativeCuratorSettings) -> None:
         self.settings = settings
         self.folder_index = FolderIndexService()
+        self.search_index_jobs = SearchIndexJobManager(lambda: self.settings.batch_root)
 
     @property
     def move_history(self) -> MoveHistory:
@@ -60,6 +62,7 @@ class NativeCuratorService:
 
     def close(self) -> None:
         self.folder_index.close()
+        self.search_index_jobs.close()
 
     def resolve_content_directory(self, batch: str, folder: str):
         root = self.settings.batch_root.resolve()
@@ -1122,6 +1125,29 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
         except Exception:
             return web.json_response({"error": "Search index build failed"}, status=500)
 
+    async def start_media_search_index_job(request):
+        batch = request.match_info["batch"]
+        if not service.batch_exists(batch):
+            return web.json_response({"error": "Batch does not exist"}, status=404)
+        try:
+            return web.json_response(service.search_index_jobs.submit(batch), status=202)
+        except ActiveSearchIndexJob as exc:
+            return web.json_response({"error": str(exc), "job": exc.job}, status=409)
+        except (OSError, ValueError) as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def get_media_search_index_job(request):
+        job = service.search_index_jobs.get(request.match_info["job_id"])
+        if job is None:
+            return web.json_response({"error": "Search index job not found"}, status=404)
+        return web.json_response(job)
+
+    async def cancel_media_search_index_job(request):
+        job = service.search_index_jobs.cancel(request.match_info["job_id"])
+        if job is None:
+            return web.json_response({"error": "Search index job not found"}, status=404)
+        return web.json_response(job)
+
     async def search_media(request):
         query = request.query.get("q", "")
         batch = request.query.get("batch") or None
@@ -1148,4 +1174,9 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
         return web.json_response(result, status=409 if result.get("snapshot_expired") else 200)
 
     app.router.add_post("/api/curator/search-index/{batch}/build", build_media_search_index)
+    app.router.add_post("/api/curator/search-index/{batch}/jobs", start_media_search_index_job)
+    app.router.add_get("/api/curator/search-index/jobs/{job_id}", get_media_search_index_job)
+    app.router.add_post(
+        "/api/curator/search-index/jobs/{job_id}/cancel", cancel_media_search_index_job
+    )
     app.router.add_get("/api/curator/search", search_media)

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-**Purpose:** Operator-focused web application for reviewing generated images with optional AI-assisted scoring. **Status:** Actively maintained. **Audience:** AI agents and single-operator maintainers. **Last Updated:** 2026-08-27
+**Purpose:** Operator-focused web application for reviewing generated images with optional AI-assisted scoring. **Status:** Actively maintained. **Audience:** AI agents and single-operator maintainers. **Last Updated:** 2026-08-29
 
 ## Quickstart
 
@@ -40,6 +40,7 @@ app.py (Flask routes) ← standalone, fully supported
   ├── image_curator/publish.py      ← public derivative creation/list/copy/move/delete
   ├── image_curator/prompt_history.py ← manual PNG prompt index cache
   ├── image_curator/search_index.py ← rebuildable typed-media + sidecar search cache/query
+  ├── image_curator/search_index_jobs.py ← shared cancellable search-index job lifecycle for Flask/native
   ├── image_curator/web_validation.py ← route path/batch validation helpers
   ├── image_curator/media.py        ← typed poster/hover-preview cache and fallback helpers
   ├── image_curator/folder_index.py ← immutable background revisions, pages, O(1) lookup
@@ -92,6 +93,7 @@ Frontend (shared static/js/*.js + static/css/*.css)
 | | `image_curator/publish.py` | Metadata-stripped optional-watermark public copy creation, public listing, external copy/move/delete under configured export root |
 | | `image_curator/prompt_history.py` | Manual prompt-history cache builder from PNG metadata |
 | | `image_curator/search_index.py` | Per-batch typed-media search index, bounded JSON sidecar flattening, AND-token query, stale-folder detection |
+| | `image_curator/search_index_jobs.py` | Shared cancellable search-index jobs with one active build per pinned root+batch, atomic cancellation safety, bounded terminal retention, and shutdown joins |
 | | `image_curator/web_validation.py` | Path traversal and existing-batch validation helpers used by app route wrappers |
 | | `image_curator/media.py` | Thumbnail cache key/freshness helpers and WebP generation |
 | | `image_curator/README.md` | Module-scoped agent startup guide (layout, contracts, gotchas) |
@@ -179,7 +181,7 @@ Treat these as stability-sensitive:
 - AI score-cutoff preview/apply/clear semantics and partial-failure labels/details
 - Favorites API shapes, favorites filter button, All Favorites sidebar entry, and lightbox/thumb star behavior
 - Public API shapes, batch `public/` generated-output view, All Public sidebar entry, public action labels, public export-root destination browser/history, and derivative-only safety copy
-- Library Search Images / Prompt groups tabs, Images-to-workspace query/scope/source chips and Edit/Clear actions, per-batch index status/age/count labels, Prompt History controls, search and prompt-history API shapes, and manual cache file semantics
+- Library Search Images / Prompt groups tabs, Images-to-workspace query/scope/source chips and Edit/Clear actions, per-batch index status/age/count labels, cancellable media-index job routes and `cancel_accepted` semantics, Prompt History controls, search and prompt-history API shapes, and manual cache file semantics
 - Native extension entrypoint (`__init__.py` exports), `WEB_DIRECTORY`, `/curator` page route, `/curator_static` static mount, and `/api/curator/health` route
 - `templates/curator.html` two-transform parity with `index.html` (`/static/` → `/curator_static/` plus `window.CURATOR_NATIVE = true` before ordered scripts)
 - Shared frontend `ccApiPath`/`ccThumbUrl`/`ccImageUrl` URL helper behavior and mode-detection through `window.CURATOR_NATIVE`
@@ -266,6 +268,7 @@ Treat these as stability-sensitive:
 - **Favorites one click updates both scopes:** `toggle_favorite()` writes batch and universal stores; universal view uses `__favorites__` as a frontend sentinel, never as a real batch.
 - **Public copies are generated derivatives:** `public/` is not a normal curation stage. Do not move originals when preparing, copying, moving, or deleting public copies. External copy/move requires `IMAGE_CURATOR_PUBLIC_EXPORTS`; the destination browser lists directories only under that configured export root.
 - **Prompt history is manual:** Build/rebuild is synchronous and operator-triggered. Staleness checks compare total image count only.
+- **Media search-index builds:** The legacy synchronous build route remains compatible, while the frontend uses the shared asynchronous job lifecycle. Jobs are pinned to the root at submission, cancellable cooperatively, preserve a prior valid index on cancellation, and expose truthful terminal states. A cancel response with `cancel_accepted: false` means the build is finishing and the Activity Center must remain actionable/running.
 - **Score < 0 means failed:** `ImageResult.score` defaults to -1 for unscored/failed images. `normalized_score` also returns -1. Frontend checks `score >= 0` to distinguish scored from failed.
 - **No CORS headers:** The app binds to `127.0.0.1` by default. For remote access, use a reverse proxy with auth (nginx, Caddy).
 - **Media cache keys include folder and source extension:** `<folder>__<stem>--<ext>.webp|.mp4` prevents folder and same-stem cross-format collisions.

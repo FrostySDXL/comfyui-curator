@@ -66,6 +66,9 @@ def test_media_search_uses_dual_mode_api_wrappers_and_debounced_requests():
 
     query = extract_function_body(api, "async function apiSearchMedia(")
     build = extract_function_body(api, "async function apiBuildMediaSearchIndex(")
+    start_job = extract_function_body(api, "async function apiStartMediaSearchIndexJob(")
+    get_job = extract_function_body(api, "async function apiGetMediaSearchIndexJob(")
+    cancel_job = extract_function_body(api, "async function apiCancelMediaSearchIndexJob(")
     schedule = extract_function_body(prompts, "function scheduleMediaSearch()")
     render = extract_function_body(prompts, "function renderMediaSearchResults(")
     snippet = extract_function_body(prompts, "function _mediaSearchSnippet(")
@@ -75,6 +78,9 @@ def test_media_search_uses_dual_mode_api_wrappers_and_debounced_requests():
     assert "ccApiPath('/api/search" in query
     assert "URLSearchParams" in query
     assert "/api/search-index/" in build and "ccApiPath" in build
+    assert "/jobs" in start_job and "method: 'POST'" in start_job
+    assert "/jobs/" in get_job and "ccApiPath" in get_job
+    assert "/cancel" in cancel_job and "method: 'POST'" in cancel_job
     assert "setTimeout" in schedule
     assert "mediaSearchRequestToken" in prompts
     assert "sidecar_summary" in snippet
@@ -210,6 +216,21 @@ def test_media_search_restore_anchor_resolves_paged_anchors():
     assert "ensureFolderPageForIndex(lookup.index)" in restore
     assert "_restoreGridIdentityAnchor(anchor)" in restore
     assert "typeof _restoreGridIdentityAnchor === 'function'" in restore
+
+
+def test_media_search_build_uses_cancellable_job_lifecycle() -> None:
+    prompts = PROMPTS_JS.read_text(encoding="utf-8")
+    build = extract_function_body(prompts, "async function _buildMediaSearchIndexes(")
+
+    assert "apiStartMediaSearchIndexJob" in build
+    assert "apiGetMediaSearchIndexJob" in build
+    assert "apiCancelMediaSearchIndexJob" in build
+    assert "cancel:" in build
+    assert "cancel_accepted" in build
+    assert "result?.cancel_accepted !== true" in build
+    assert "activityStatus" in build and "'cancelling'" in build
+    assert "activityComplete(activityId, 'cancelled'" in build
+    assert "setTimeout(resolve, 250)" in build
 
 
 def test_editing_workspace_search_can_narrow_from_original_review_context():

@@ -12,7 +12,7 @@
 - **Favorites persistence** (`favorites.py`): Stores batch-scoped and universal favorite image records with atomic JSON writes.
 - **Public derivative workflow** (`publish.py`): Creates metadata-stripped optional-watermark copies under `<batch>/public/`, lists public images, and copy/move/delete generated public copies under a configured export root.
 - **Prompt history indexing** (`prompt_history.py`): Builds manual prompt indexes from PNG metadata, deduplicated by normalized prompt/negative prompt. Safety: rejects symlinked review stages and resolves-containment escapes during build/count; rejects symlinked and non-regular cache entries during load; aggregate loading silently omits batches with unsafe caches.
-- **Media metadata search** (`search_index.py`): Builds atomic per-batch indexes for every reviewable media type from filenames, PNG generation fields, and bounded adjacent JSON keys/values. Folder-mtime state prevents stale move/import results from being returned; in-place sidecar edits require an explicit rebuild.
+- **Media metadata search** (`search_index.py`, `search_index_jobs.py`): Builds atomic per-batch indexes for every reviewable media type from filenames, PNG generation fields, and bounded adjacent JSON keys/values. The shared job manager allows one cancellable build per pinned root+batch, preserves a prior valid index on cancellation, and bounds terminal job retention. Folder-mtime state prevents stale move/import results from being returned; in-place sidecar edits require an explicit rebuild.
 - **Web validation** (`web_validation.py`): Path traversal guard and existing-batch validation helpers used by Flask route wrappers.
 - **Typed media cache helpers** (`media.py`): Extension-safe WebP posters,
   quality-first GIF/MP4 hover proxies, atomic cache writes, and stable decoder
@@ -89,7 +89,7 @@ Written atomically via `.tmp` + `os.replace()`.
 - **Always:** Use `move_image()` for file moves -- it creates destination directories and never raises OSError to callers.
 - **Favorites:** Tracking is filename-based within each batch; duplicate filenames across folders are resolved by scanning the standard folders.
 - **Prompt history:** Cache builds are manual and synchronous; moving files between folders does not by itself make count-based staleness detection fire.
-- **Media search:** Cache builds are manual and synchronous. Folder mutations are detected from stage-directory mtimes and stale indexes are excluded. Existing sidecar content edits do not change directory mtimes on every filesystem, so rebuild after editing sidecars in place.
+- **Media search:** The legacy build route remains synchronous for compatibility; the frontend uses the shared cancellable job lifecycle. Only one job is active per pinned root+batch. Cancellation is cooperative, writes atomically only after a successful scan, preserves the prior valid cache, and retains only a bounded terminal job history. Folder mutations are detected from stage-directory mtimes and stale indexes are excluded. Existing sidecar content edits do not change directory mtimes on every filesystem, so rebuild after editing sidecars in place.
 - **Verification:** After changes in this directory, run:
   ```bash
   python -m pytest tests/unit/test_batch_store.py tests/unit/test_png_metadata.py -v
@@ -107,6 +107,7 @@ Written atomically via `.tmp` + `os.replace()`.
 | `publish.py` | `create_public_copies`, `list_batch_public`, `list_all_public`, `copy_public_items`, `move_public_items`, `delete_public_items`; strips metadata by re-saving with Pillow, applies text watermarks, and confines external destinations to `IMAGE_CURATOR_PUBLIC_EXPORTS`. |
 | `prompt_history.py` | `build_prompt_index`, `load_prompt_index`, `load_all_prompt_indices`; scans PNG metadata, strips LoRA tags with `png_metadata.LORA_RE`, hashes normalized prompt pairs, and writes `prompt-history.json` atomically. |
 | `search_index.py` | `build_search_index`, `query_search_indices`; safely scans review folders, flattens bounded sidecar scalar keys/values without mutating their source types, stores a rebuildable atomic cache, applies normalized AND-token matching, and omits stale batch indexes. |
+| `search_index_jobs.py` | `SearchIndexJobManager`; shared Flask/native cancellable search-index job lifecycle with pinned roots, cooperative cancellation, atomic prior-cache preservation, bounded terminal retention, and shutdown joins. |
 | `web_validation.py` | `safe_path(base, *parts)` blocks traversal/absolute path escape; `require_existing_batch()` validates app-provided batch lists while preserving Flask route response shape. |
 | `media.py` | Extension-safe poster/preview cache paths, freshness checks, atomic WebP poster generation, FFmpeg-backed hover proxies, stable fallbacks, and safe derivative cleanup. |
 | `folder_index.py` | Immutable `FolderSnapshot` objects, revision metadata/polls, bounded pages, O(1) name lookup, mutation-triggered refresh, periodic reconciliation, and bulk-operation undo tokens. |

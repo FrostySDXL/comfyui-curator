@@ -29,6 +29,10 @@ _SEPARATOR_RE = re.compile(r"[_\-]+")
 _CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
 
+class SearchIndexBuildCancelled(Exception):
+    """Raised when a cooperative search-index build cancellation is requested."""
+
+
 def _normalize(value: object) -> str:
     text = _CAMEL_BOUNDARY_RE.sub(" ", str(value))
     return " ".join(_SEPARATOR_RE.sub(" ", text.casefold()).split())
@@ -199,23 +203,40 @@ def _build_item(batch: str, folder: str, path: Path) -> dict[str, Any]:
     }
 
 
-def _source_state(batches_dir: Path, batch: str) -> dict[str, dict[str, int]]:
+def _check_cancelled(cancel_check) -> None:
+    if cancel_check is not None and cancel_check():
+        raise SearchIndexBuildCancelled
+
+
+def _source_state(batches_dir: Path, batch: str, *, cancel_check=None) -> dict[str, dict[str, int]]:
     root, batch_dir, resolved_batch = _resolved_batch(batches_dir, batch)
     state: dict[str, dict[str, int]] = {}
     for folder in batch_store.BATCH_FOLDERS:
+        _check_cancelled(cancel_check)
         stage = _safe_stage(root, batch_dir, resolved_batch, folder)
         state[folder] = {
             "mtime_ns": stage.stat().st_mtime_ns,
-            "item_count": len(batch_store.get_images(stage, sort_by="name", order="asc")),
+            "item_count": len(
+                batch_store.get_images(
+                    stage,
+                    sort_by="name",
+                    order="asc",
+                    cancel_check=lambda: _check_cancelled(cancel_check),
+                )
+            ),
         }
     return state
 
 
-def _save_index(batches_dir: Path, batch: str, index: dict[str, Any]) -> None:
+def _save_index(
+    batches_dir: Path, batch: str, index: dict[str, Any], *, temp_path: Path | None = None
+) -> None:
     with _LOCK:
         root, _batch_dir, resolved_batch = _resolved_batch(batches_dir, batch)
         path = _cache_path(batches_dir, batch)
-        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        tmp_path = (
+            Path(temp_path) if temp_path is not None else path.with_suffix(path.suffix + ".tmp")
+        )
         if not _safe_cache_target(root, resolved_batch, path) or not _safe_cache_target(
             root, resolved_batch, tmp_path
         ):
@@ -224,28 +245,62 @@ def _save_index(batches_dir: Path, batch: str, index: dict[str, Any]) -> None:
         tmp_path.replace(path)
 
 
-def build_search_index(batches_dir: Path, batch: str) -> dict[str, Any]:
+def build_search_index(
+    batches_dir: Path,
+    batch: str,
+    *,
+    cancel_check=None,
+    progress_callback=None,
+    commit_check=None,
+    temp_path: Path | None = None,
+) -> dict[str, Any]:
     """Build and atomically persist one batch's media metadata search index."""
     root, batch_dir, resolved_batch = _resolved_batch(batches_dir, batch)
-    items: list[dict[str, Any]] = []
+    paths_by_folder: list[tuple[str, list[Path]]] = []
     for folder in batch_store.BATCH_FOLDERS:
+        _check_cancelled(cancel_check)
         stage = _safe_stage(root, batch_dir, resolved_batch, folder)
-        for path in batch_store.get_images(stage, sort_by="name", order="asc"):
+        paths_by_folder.append(
+            (
+                folder,
+                batch_store.get_images(
+                    stage,
+                    sort_by="name",
+                    order="asc",
+                    cancel_check=lambda: _check_cancelled(cancel_check),
+                ),
+            )
+        )
+    total = sum(len(paths) for _folder, paths in paths_by_folder)
+    if progress_callback is not None:
+        progress_callback(0, total)
+    items: list[dict[str, Any]] = []
+    for folder, paths in paths_by_folder:
+        _check_cancelled(cancel_check)
+        stage = _safe_stage(root, batch_dir, resolved_batch, folder)
+        for path in paths:
+            _check_cancelled(cancel_check)
             try:
                 if path.is_symlink() or path.resolve().parent != stage:
                     raise ValueError("Unsafe search index path")
                 items.append(_build_item(batch, folder, path))
             except OSError:
                 continue
+            if progress_callback is not None:
+                progress_callback(len(items), total)
+    _check_cancelled(cancel_check)
     index = {
         "version": SEARCH_INDEX_VERSION,
         "built_at": datetime.now(timezone.utc).isoformat(),
         "batch": batch,
         "item_count": len(items),
-        "source_state": _source_state(batches_dir, batch),
+        "source_state": _source_state(batches_dir, batch, cancel_check=cancel_check),
         "items": items,
     }
-    _save_index(batches_dir, batch, index)
+    _check_cancelled(cancel_check)
+    if commit_check is not None:
+        commit_check()
+    _save_index(batches_dir, batch, index, temp_path=temp_path)
     return index
 
 

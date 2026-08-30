@@ -3894,6 +3894,53 @@ def test_native_search_build_and_query_include_sidecar_metadata(tmp_path, monkey
     asyncio.run(scenario())
 
 
+def test_native_search_index_job_routes_report_terminal_status(tmp_path, monkeypatch):
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "async")
+        service = native_routes.NativeCuratorService(settings)
+        router = _Router()
+        try:
+            native_routes.register_native_routes(SimpleNamespace(router=router), service)
+            route = "/api/curator/search-index/{batch}/jobs"
+            status, payload = await _invoke(router, "POST", route, match_info={"batch": "async"})
+            assert status == 202
+            assert payload["status"] in {"queued", "running"}
+            job_id = payload["job_id"]
+            for _ in range(100):
+                status, payload = await _invoke(
+                    router,
+                    "GET",
+                    "/api/curator/search-index/jobs/{job_id}",
+                    match_info={"job_id": job_id},
+                )
+                if payload["status"] == "completed":
+                    break
+                await asyncio.sleep(0.01)
+            assert status == 200
+            assert payload["status"] == "completed"
+            cancel_status, cancelled = await _invoke(
+                router,
+                "POST",
+                "/api/curator/search-index/jobs/{job_id}/cancel",
+                match_info={"job_id": job_id},
+            )
+            assert cancel_status == 200
+            assert cancelled["status"] == "completed"
+            assert cancelled["cancel_accepted"] is False
+        finally:
+            service.close()
+
+    asyncio.run(scenario())
+
+
 # ---------------------------------------------------------------------------
 # Native prompt-history safety: symlink / containment escape rejection
 # ---------------------------------------------------------------------------

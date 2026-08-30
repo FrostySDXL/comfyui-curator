@@ -152,6 +152,18 @@ async function apiBuildMediaSearchIndex(batch) {
     return fetch(ccApiPath(`/api/search-index/${encodeURIComponent(batch)}/build`), {method: 'POST'});
 }
 
+async function apiStartMediaSearchIndexJob(batch) {
+    return fetch(ccApiPath(`/api/search-index/${encodeURIComponent(batch)}/jobs`), {method: 'POST'});
+}
+
+async function apiGetMediaSearchIndexJob(jobId) {
+    return fetch(ccApiPath(`/api/search-index/jobs/${encodeURIComponent(jobId)}`));
+}
+
+async function apiCancelMediaSearchIndexJob(jobId) {
+    return fetch(ccApiPath(`/api/search-index/jobs/${encodeURIComponent(jobId)}/cancel`), {method: 'POST'});
+}
+
 async function apiGetImageMetadata(batch, folder, name) {
     const resp = await fetch(ccApiPath(`/api/image-metadata/${encodeURIComponent(batch)}/${encodeURIComponent(folder)}/${encodeURIComponent(name)}`));
     if (!resp.ok) throw new Error(`metadata request failed (${resp.status})`);

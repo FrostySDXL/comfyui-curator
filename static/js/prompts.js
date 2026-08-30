@@ -590,6 +590,8 @@
         async function _buildMediaSearchIndexes(batches) {
             if (mediaSearchBuilding || batches.length === 0) return;
             const activityId = `media-index:${batches.join('|')}`;
+            let activeJobId = null;
+            let cancelRequested = false;
             activityRegister({
                 id: activityId,
                 kind: 'search-index',
@@ -600,6 +602,29 @@
                 total: batches.length,
                 detail: `Building ${batches[0]}…`,
                 retry: () => _buildMediaSearchIndexes(batches),
+                cancel: async () => {
+                    if (!activeJobId) {
+                        cancelRequested = true;
+                        return true;
+                    }
+                    const resp = await apiCancelMediaSearchIndexJob(activeJobId);
+                    let result = null;
+                    try {
+                        result = await resp.json();
+                    } catch {
+                        result = null;
+                    }
+                    if (!resp.ok || result?.cancel_accepted !== true) {
+                        activityUpdate(activityId, {
+                            status: 'running',
+                            detail: result?.detail || 'Cancellation not accepted; build is finishing',
+                        });
+                        cancelRequested = false;
+                        return false;
+                    }
+                    cancelRequested = true;
+                    return true;
+                },
             });
             mediaSearchBuilding = true;
             const buttons = ['media-search-build-btn', 'media-search-build-all-btn']
@@ -608,6 +633,15 @@
             let activeBatch = null;
             try {
                 for (let index = 0; index < batches.length; index++) {
+                    if (cancelRequested) {
+                        activityComplete(activityId, 'cancelled', {
+                            completed: index,
+                            total: batches.length,
+                            result: 'Media search index build cancelled',
+                            detail: 'No further indexes were started',
+                        });
+                        return;
+                    }
                     activeBatch = batches[index];
                     mediaSearchIndexStates.set(activeBatch, {
                         batch: activeBatch,
@@ -622,14 +656,67 @@
                         total: batches.length,
                         detail: `Building ${batches[index]} (${index + 1} of ${batches.length})…`,
                     });
-                    const resp = await apiBuildMediaSearchIndex(batches[index]);
+                    const resp = await apiStartMediaSearchIndexJob(batches[index]);
                     if (!resp.ok) throw new Error('search index build failed');
-                    const summary = await resp.json();
+                    const submitted = await resp.json();
+                    activeJobId = submitted.job_id;
+                    if (!activeJobId) throw new Error('search index job missing id');
+                    if (cancelRequested) {
+                        const cancelResp = await apiCancelMediaSearchIndexJob(activeJobId);
+                        let cancelResult = null;
+                        try {
+                            cancelResult = await cancelResp.json();
+                        } catch {
+                            cancelResult = null;
+                        }
+                        if (!cancelResp.ok || cancelResult?.cancel_accepted !== true) {
+                            cancelRequested = false;
+                            activityUpdate(activityId, {
+                                status: 'running',
+                                detail: cancelResult?.detail || 'Cancellation not accepted; build is finishing',
+                            });
+                        }
+                    }
+                    let job;
+                    for (;;) {
+                        const jobResp = await apiGetMediaSearchIndexJob(activeJobId);
+                        if (!jobResp.ok) throw new Error('search index job status failed');
+                        job = await jobResp.json();
+                        const jobStatus = job.status || 'running';
+                        const activityStatus = cancelRequested || jobStatus === 'cancelling' ? 'cancelling' : 'running';
+                        activityUpdate(activityId, {
+                            status: activityStatus,
+                            completed: index,
+                            total: batches.length,
+                            detail: job.detail || `Building ${batches[index]} (${index + 1} of ${batches.length})…`,
+                        });
+                        if (['completed', 'failed', 'cancelled'].includes(jobStatus)) break;
+                        await new Promise(resolve => setTimeout(resolve, 250));
+                    }
+                    activeJobId = null;
+                    if (job.status === 'cancelled') {
+                        mediaSearchIndexStates.set(activeBatch, {
+                            batch: activeBatch,
+                            status: 'cancelled',
+                            built_at: null,
+                            item_count: 0,
+                        });
+                        renderMediaSearchIndexStatus(mediaSearchResults);
+                        activityComplete(activityId, 'cancelled', {
+                            completed: index,
+                            total: batches.length,
+                            result: 'Media search index build cancelled',
+                            detail: 'No further indexes were started',
+                        });
+                        showToast('Media search index build cancelled');
+                        return;
+                    }
+                    if (job.status !== 'completed') throw new Error('search index build failed');
                     mediaSearchIndexStates.set(activeBatch, {
                         batch: activeBatch,
                         status: 'ready',
-                        built_at: summary.built_at || null,
-                        item_count: summary.item_count || 0,
+                        built_at: job.built_at || null,
+                        item_count: job.item_count || job.completed || 0,
                     });
                     activityUpdate(activityId, {completed: index + 1, total: batches.length});
                 }

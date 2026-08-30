@@ -157,6 +157,38 @@ async function testClearRestoresLegacyAndPagedAnchors() {
     assert.deepEqual(paged.restored, [paged.anchor], "paged Clear must restore its captured grid anchor");
 }
 
+async function testMediaSearchBuildCancellationStopsQueuedBatches() {
+    const fixture = makeContext();
+    let registration = null;
+    const completed = [];
+    const started = [];
+    let cancelled = false;
+    fixture.context.activityRegister = input => { registration = input; };
+    fixture.context.activityUpdate = () => {};
+    fixture.context.activityComplete = (...args) => { completed.push(args); };
+    fixture.context.apiStartMediaSearchIndexJob = batch => {
+        started.push(batch);
+        return Promise.resolve({ok: true, json: async () => ({job_id: "job-1"})});
+    };
+    fixture.context.apiCancelMediaSearchIndexJob = () => {
+        cancelled = true;
+        return Promise.resolve({ok: true, json: async () => ({cancel_accepted: true})});
+    };
+    fixture.context.apiGetMediaSearchIndexJob = () => Promise.resolve({
+        ok: true,
+        json: async () => ({status: cancelled ? "cancelled" : "running", detail: "Scanning media…"}),
+    });
+    fixture.context.runMediaSearch = async () => {};
+
+    const build = fixture.context._buildMediaSearchIndexes(["batch-a", "batch-b"]);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(typeof registration.cancel, "function", "index activity must expose cancellation");
+    await registration.cancel();
+    await build;
+    assert.deepEqual(started, ["batch-a"], "cancellation must prevent later batch jobs from starting");
+    assert.equal(completed.at(-1)[1], "cancelled", "cancelled build must have a truthful terminal state");
+}
+
 async function main() {
     const folderContext = makeContext();
     const folderTabs = folderContext.context.document.getElementById("folder-tabs");
@@ -320,6 +352,7 @@ async function main() {
     assert.equal(vm.runInContext("images[0].name", overlap.context), "second.png", "newer apply wins the overlap");
     assert.equal(overlap.context.document.getElementById("media-search-apply-btn").disabled, false, "newer apply re-enables its button");
     await testClearRestoresLegacyAndPagedAnchors();
+    await testMediaSearchBuildCancellationStopsQueuedBatches();
     console.log("media search apply lifecycle checks passed");
 }
 

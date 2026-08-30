@@ -1,4 +1,5 @@
 import json
+import time
 
 
 def test_search_api_builds_sidecar_index_and_filters_folder_scope(client, app_module, make_file):
@@ -80,3 +81,32 @@ def test_search_api_pages_results_with_a_stable_snapshot(client, app_module, mak
     assert second["next_offset"] == 4
     assert second["has_more"] is True
     assert second["snapshot"] == first["snapshot"]
+
+
+def test_search_index_job_routes_report_terminal_status_and_cancel_completed_job(
+    client, app_module
+):
+    app_module.create_batch("async")
+
+    submitted = client.post("/api/search-index/async/jobs")
+    assert submitted.status_code == 202
+    job_id = submitted.get_json()["job_id"]
+    assert submitted.get_json()["status"] in {"queued", "running"}
+
+    deadline = time.monotonic() + 2
+    status = None
+    while time.monotonic() < deadline:
+        status = client.get(f"/api/search-index/jobs/{job_id}")
+        if status.get_json()["status"] == "completed":
+            break
+        time.sleep(0.01)
+    assert status is not None
+    assert status.status_code == 200
+    assert status.get_json()["status"] == "completed"
+    assert (app_module.BATCHES_DIR / "async" / "search-index.json").is_file()
+
+    cancelled = client.post(f"/api/search-index/jobs/{job_id}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.get_json()["status"] == "completed"
+    assert cancelled.get_json()["cancel_accepted"] is False
+    assert client.get("/api/search-index/jobs/missing").status_code == 404
