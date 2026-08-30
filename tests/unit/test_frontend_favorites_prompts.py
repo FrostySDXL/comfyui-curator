@@ -18,6 +18,22 @@ def test_favorites_frontend_functions_and_virtual_batch_handling_exist():
     assert "/api/favorites" in source
 
 
+def test_favorite_star_is_keyboard_activatable_without_thumb_click_bubbling():
+    source = read_frontend_js()
+    thumb = extract_function_body(source, "function createThumbElement()")
+    star = thumb.split("const favStar = document.createElement('span');", 1)[1].split(
+        "const img = createThumbImageElement();", 1
+    )[0]
+
+    assert "favStar.setAttribute('role', 'button');" in star
+    assert "favStar.tabIndex = 0;" in star
+    assert "favStar.addEventListener('keydown'" in star
+    assert "event.key !== 'Enter' && event.key !== ' '" in star
+    assert "event.preventDefault();" in star
+    assert "event.stopPropagation();" in star
+    assert star.count("toggleFavorite(Number(thumb.dataset.index));") == 2
+
+
 def test_public_frontend_functions_and_virtual_batch_handling_exist():
     source = read_frontend_js()
     for name in (

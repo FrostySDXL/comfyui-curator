@@ -1203,6 +1203,12 @@ function createThumbElement() {
                 event.stopPropagation();
                 toggleFavorite(Number(thumb.dataset.index));
             });
+            favStar.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                event.stopPropagation();
+                toggleFavorite(Number(thumb.dataset.index));
+            });
 
             const img = createThumbImageElement();
 
