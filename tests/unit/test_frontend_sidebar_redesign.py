@@ -39,6 +39,13 @@ def test_batch_rows_render_titles_breakdowns_and_count_pills() -> None:
     assert ".batch-count-pill" in css
 
 
+def test_visible_active_batch_combobox_has_an_accessible_name() -> None:
+    html = read_index_html()
+    input_tag = html.split('id="active-batch-input"', 1)[1].split(">", 1)[0]
+
+    assert 'aria-label="Select active batch for auto-import"' in input_tag
+
+
 def test_all_favorites_entry_reads_as_pinned_collection() -> None:
     js = read_frontend_js()
     css = read_frontend_css()

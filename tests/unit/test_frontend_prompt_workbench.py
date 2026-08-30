@@ -347,6 +347,17 @@ def test_prompt_modal_initial_focus_is_stable_non_input_without_autofocus_flash(
     assert "first.focus()" in trap
 
 
+def test_prompt_batch_dropdown_closes_when_focus_leaves_its_combobox() -> None:
+    events = EVENTS_JS.read_text(encoding="utf-8")
+
+    assert "promptsBatchWrap.addEventListener('focusout'" in events
+    focusout = events.split("promptsBatchWrap.addEventListener('focusout'", 1)[1].split("});", 1)[0]
+    assert "event.relatedTarget" in focusout
+    assert "promptsBatchWrap.contains(event.relatedTarget)" in focusout
+    assert "_promptCloseDropdown(true);" in focusout
+    assert "_syncPromptDisplay();" in focusout
+
+
 def test_prompt_copy_pair_contract_remains_exact() -> None:
     source = PROMPTS_JS.read_text(encoding="utf-8")
     formatter = extract_function_body(source, "function _formatCopyPair(prompt, negative)")

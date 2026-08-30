@@ -26,7 +26,6 @@
         let promptsRequestToken = 0;
         let promptsBuilding = false;
         let _promptPrevValue = '';
-        let _promptBlurTimer = null;
         let _promptsRenderTimer = null;
         let mediaSearchRequestToken = 0;
         let mediaSearchApplyToken = 0;
@@ -203,7 +202,6 @@
                 if (batch === activeValue) li.classList.add('selected');
                 li.addEventListener('mousedown', (e) => {
                     e.preventDefault();
-                    clearTimeout(_promptBlurTimer);
                     _commitPromptSelection(batch);
                 });
                 dropdown.appendChild(li);
@@ -249,8 +247,6 @@
                 input.setAttribute('aria-expanded', 'false');
                 input.removeAttribute('aria-activedescendant');
             }
-            clearTimeout(_promptBlurTimer);
-            _promptBlurTimer = null;
         }
 
         function _promptVisibleOptions() {

@@ -311,14 +311,6 @@ function _bindDelegatedEvents() {
             const promptsBatchFilter = document.getElementById('prompts-batch-filter');
             if (promptsBatchFilter) {
                 promptsBatchFilter.addEventListener('focus', _promptOpenDropdown);
-                promptsBatchFilter.addEventListener('blur', () => {
-                    _promptBlurTimer = setTimeout(() => {
-                        const wrapper = document.getElementById('prompts-batch-wrap');
-                        if (!wrapper || !wrapper.classList.contains('open')) return;
-                        _promptCloseDropdown(true);
-                        _syncPromptDisplay();
-                    }, 150);
-                });
                 promptsBatchFilter.addEventListener('input', () => {
                     const wrapper = document.getElementById('prompts-batch-wrap');
                     if (wrapper && !wrapper.classList.contains('open')) {
@@ -358,7 +350,6 @@ function _bindDelegatedEvents() {
                             e.preventDefault();
                             const focused = document.querySelector('#prompts-batch-list .prompts-batch-option.focus');
                             if (focused && focused.hasAttribute('data-value')) {
-                                clearTimeout(_promptBlurTimer);
                                 _commitPromptSelection(focused.dataset.value);
                             }
                             break;
@@ -369,6 +360,14 @@ function _bindDelegatedEvents() {
                             _syncPromptDisplay();
                             break;
                     }
+                });
+            }
+            const promptsBatchWrap = document.getElementById('prompts-batch-wrap');
+            if (promptsBatchWrap) {
+                promptsBatchWrap.addEventListener('focusout', (event) => {
+                    if (event.relatedTarget && promptsBatchWrap.contains(event.relatedTarget)) return;
+                    _promptCloseDropdown(true);
+                    _syncPromptDisplay();
                 });
             }
             const promptsSearch = document.getElementById('prompts-search');
