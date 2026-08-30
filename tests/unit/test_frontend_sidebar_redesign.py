@@ -39,6 +39,22 @@ def test_batch_rows_render_titles_breakdowns_and_count_pills() -> None:
     assert ".batch-count-pill" in css
 
 
+def test_batch_rows_are_keyboard_activatable_custom_buttons() -> None:
+    js = read_frontend_js()
+    keydown = js.split("batchList.addEventListener('keydown'", 1)[1].split("});", 1)[0]
+
+    assert "favDiv.setAttribute('role', 'button');" in js
+    assert "publicDiv.setAttribute('role', 'button');" in js
+    assert "div.setAttribute('role', 'button');" in js
+    assert "favDiv.tabIndex = 0;" in js
+    assert "publicDiv.tabIndex = 0;" in js
+    assert "div.tabIndex = 0;" in js
+    assert "e.key !== 'Enter' && e.key !== ' '" in keydown
+    assert "e.target.closest('.batch-name')" in keydown
+    assert "e.preventDefault();" in keydown
+    assert "selectBatch(batchNameEl.dataset.batch);" in keydown
+
+
 def test_visible_active_batch_combobox_has_an_accessible_name() -> None:
     html = read_index_html()
     input_tag = html.split('id="active-batch-input"', 1)[1].split(">", 1)[0]

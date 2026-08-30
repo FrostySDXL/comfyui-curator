@@ -242,6 +242,8 @@ function renderBatchList(filteredBatches) {
             const favDiv = document.createElement('div');
             favDiv.className = 'batch-name' + (currentBatch === '__favorites__' ? ' selected' : '');
             favDiv.dataset.batch = '__favorites__';
+            favDiv.setAttribute('role', 'button');
+            favDiv.tabIndex = 0;
             const favLabel = document.createElement('span');
             favLabel.className = 'batch-label';
             const favTitle = document.createElement('span');
@@ -268,6 +270,8 @@ function renderBatchList(filteredBatches) {
             const publicDiv = document.createElement('div');
             publicDiv.className = 'batch-name' + (currentBatch === '__public__' ? ' selected' : '');
             publicDiv.dataset.batch = '__public__';
+            publicDiv.setAttribute('role', 'button');
+            publicDiv.tabIndex = 0;
             const publicLabel = document.createElement('span');
             publicLabel.className = 'batch-label';
             const publicTitle = document.createElement('span');
@@ -308,6 +312,8 @@ function renderBatchList(filteredBatches) {
                 const div = document.createElement('div');
                 div.className = 'batch-name' + (batch === currentBatch ? ' selected' : '');
                 div.dataset.batch = batch;
+                div.setAttribute('role', 'button');
+                div.tabIndex = 0;
 
                 const label = document.createElement('span');
                 label.className = 'batch-label';

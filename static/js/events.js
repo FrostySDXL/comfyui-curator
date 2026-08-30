@@ -12,6 +12,14 @@
                         selectBatch(batchNameEl.dataset.batch);
                     }
                 });
+                batchList.addEventListener('keydown', (e) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    const batchNameEl = e.target.closest('.batch-name');
+                    if (batchNameEl && batchNameEl.dataset.batch) {
+                        e.preventDefault();
+                        selectBatch(batchNameEl.dataset.batch);
+                    }
+                });
             }
         });
 
