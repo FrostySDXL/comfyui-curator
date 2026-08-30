@@ -331,6 +331,15 @@
                 color: HighlightText;
             }
 
+            .selection-mode-btn[aria-pressed="true"],
+            .prompts-view-controls button[aria-pressed="true"],
+            #lightbox-compare-sync-btn[aria-pressed="true"],
+            #lightbox-compare-split-btn[aria-pressed="true"] {
+                background: Highlight;
+                border-color: Highlight;
+                color: HighlightText;
+            }
+
             .folder-tab.active::before {
                 background: Highlight;
                 box-shadow: none;

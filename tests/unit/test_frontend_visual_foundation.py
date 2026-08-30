@@ -106,6 +106,27 @@ def test_forced_colors_preserves_focus_and_operational_state_distinctions() -> N
     assert ".activity-failed" in forced
     assert ".activity-partial" in forced
     assert ".lightbox-controls" in forced
+    pressed_rule = re.search(
+        r"(?P<selectors>\.selection-mode-btn\[aria-pressed=\"true\"\].*?"
+        r"#lightbox-compare-split-btn\[aria-pressed=\"true\"\])\s*"
+        r"\{(?P<body>.*?)\}",
+        forced,
+        re.DOTALL,
+    )
+    assert pressed_rule, "forced-colors pressed-state rule is missing"
+    for pressed_selector in (
+        '.selection-mode-btn[aria-pressed="true"]',
+        '.prompts-view-controls button[aria-pressed="true"]',
+        '#lightbox-compare-sync-btn[aria-pressed="true"]',
+        '#lightbox-compare-split-btn[aria-pressed="true"]',
+    ):
+        assert pressed_selector in pressed_rule.group("selectors")
+    for declaration in (
+        "background: Highlight;",
+        "border-color: Highlight;",
+        "color: HighlightText;",
+    ):
+        assert declaration in pressed_rule.group("body")
     assert "box-shadow: none;" in forced
     assert "forced-color-adjust" not in forced
 
