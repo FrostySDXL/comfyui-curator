@@ -438,6 +438,7 @@ def _generate_culling_batch(
         if ext == "png" and pair_start <= index < pair_end:
             pair_index = (index - pair_start) // 2
             is_second = (index - pair_start) % 2 == 1
+            group = pair_index % 6  # both pair members share one searchable token group
             color = GROUP_COLORS[group]
             if is_second:
                 color = (color[0], (color[1] + 2) % 256, color[2])

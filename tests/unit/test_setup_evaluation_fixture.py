@@ -168,3 +168,27 @@ def test_corrupt_file_not_decodable(tmp_path):
     with pytest.raises(Exception):
         with Image.open(corrupt) as image:
             image.verify()
+
+
+def _png_parameters(path):
+    with Image.open(path) as image:
+        return image.text["parameters"]
+
+
+def test_near_duplicate_pairs_share_token_group(tmp_path):
+    fixture, result = build(tmp_path)
+    inbox = tmp_path / "batches" / "eval-culling" / "inbox"
+
+    for pair_index in range(3):
+        first_name = f"eval_cull_{100 + pair_index * 2 + 1:04d}.png"
+        second_name = f"eval_cull_{100 + pair_index * 2 + 2:04d}.png"
+        first_prompt = _png_parameters(inbox / first_name).splitlines()[0]
+        second_prompt = _png_parameters(inbox / second_name).splitlines()[0]
+
+        shared_group = fixture.TOKEN_GROUPS[pair_index % 6]
+        assert first_prompt.startswith(shared_group)
+        assert second_prompt.startswith(shared_group)
+
+        pair_marker = f"near-duplicate study pair {pair_index}"
+        assert pair_marker in first_prompt
+        assert pair_marker in second_prompt
