@@ -56,5 +56,16 @@ def test_lightbox_close_restores_focus_to_its_trigger():
     assert "thumb.tabIndex = -1;" in source
     assert "rememberLightboxReturnFocus(event.currentTarget);" in thumb_click
     assert "rememberLightboxReturnFocus(document.activeElement);" in compare_open
-    assert "returnFocus.isConnected" in close
-    assert "returnFocus.focus({preventScroll: true});" in close
+    assert "let lightboxReturnFocusKey = '';" in source
+    assert "function resolveLightboxReturnFocus(" in source
+    assert "document.querySelectorAll('#grid .thumb')" in source
+    assert "document.querySelector('#grid .thumb')" in close
+    assert "element.isConnected" in source
+    assert "fallback.focus({preventScroll: true});" in close
+
+
+def test_lightbox_mouse_and_escape_close_share_the_focus_restore_primitive():
+    source = read_frontend_js()
+
+    assert "lightboxClose.addEventListener('click', closeLightbox);" in source
+    assert source.count("e.preventDefault(); closeLightbox(); break;") >= 2

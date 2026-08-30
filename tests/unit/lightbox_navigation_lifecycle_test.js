@@ -504,6 +504,44 @@ function testPendingOpenCancelViaEscapePreservesNormalGridState() {
         "lightbox stays inactive after pending cancellation");
 }
 
+function testCloseRestoresRecycledVirtualThumbByIdentity() {
+    const {context} = createRuntime();
+    const origin = createElement();
+    origin.dataset.inspectorKey = "batch\u001finbox\u001fa.png";
+    origin.closest = selector => selector === ".thumb" ? origin : null;
+    const replacement = createElement();
+    replacement.dataset.inspectorKey = origin.dataset.inspectorKey;
+    origin.isConnected = false;
+    context.document.activeElement = origin;
+    context.rememberLightboxReturnFocus(origin);
+    context.document.querySelectorAll = selector => selector === "#grid .thumb" ? [replacement] : [];
+    context.navigate(1);
+    context.navigate(-1);
+
+    context.closeLightbox();
+
+    check(context.document.activeElement === replacement,
+        "close resolves a recycled virtual thumbnail by its stable image identity");
+}
+
+function testCloseFallsBackToBatchSearchWhenOriginIsUnavailable() {
+    const {context} = createRuntime();
+    const origin = createElement();
+    origin.dataset.inspectorKey = "batch\u001finbox\u001fa.png";
+    origin.closest = selector => selector === ".thumb" ? origin : null;
+    origin.isConnected = false;
+    const fallback = createElement();
+    context.document.activeElement = origin;
+    context.rememberLightboxReturnFocus(origin);
+    context.document.querySelectorAll = () => [];
+    context.document.querySelector = selector => selector === "#batch-search" ? fallback : null;
+
+    context.closeLightbox();
+
+    check(context.document.activeElement === fallback,
+        "close uses the batch search control when the originating thumbnail is unavailable");
+}
+
 async function testWorkspaceSearchNavigationReanchorsAfterPageReorder() {
     const {context, items} = createRuntime();
     items.splice(0, items.length, {name: "a.png"}, {name: "b.png"});
@@ -778,6 +816,8 @@ function testTypedAudioCloseReleasesPlayerAndArtwork() {
     testIsLightboxOpenPendingReturnsFalseWhenNoPendingOpen();
     testIsLightboxOpenPendingReturnsTrueWhenPendingOpenExists();
     testPendingOpenCancelViaEscapePreservesNormalGridState();
+    testCloseRestoresRecycledVirtualThumbByIdentity();
+    testCloseFallsBackToBatchSearchWhenOriginIsUnavailable();
     testTypedVideoNavigationReleasesPlayerResource();
     testTypedVideoAutoplaysLoopsAndTogglesBeforeNativeFocus();
     testTypedAudioCloseReleasesPlayerAndArtwork();

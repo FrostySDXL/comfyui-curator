@@ -28,6 +28,7 @@ let lightboxCompareSplitMode = false;
 let lightboxCompareSplitPosition = 50;
 let lightboxCompareSplitDragging = false;
 let lightboxReturnFocusElement = null;
+let lightboxReturnFocusKey = '';
 let lightboxCompareViewState = [
     {zoom: 1, baseWidth: 0, baseHeight: 0},
     {zoom: 1, baseWidth: 0, baseHeight: 0},
@@ -39,6 +40,30 @@ function isLightboxOpenPending() {
 
 function rememberLightboxReturnFocus(element) {
     lightboxReturnFocusElement = element && typeof element.focus === 'function' ? element : null;
+    const identityElement = lightboxReturnFocusElement && typeof lightboxReturnFocusElement.closest === 'function'
+        ? lightboxReturnFocusElement.closest('.thumb') || lightboxReturnFocusElement
+        : lightboxReturnFocusElement;
+    lightboxReturnFocusKey = identityElement && identityElement.dataset
+        ? String(identityElement.dataset.inspectorKey || '')
+        : '';
+}
+
+function resolveLightboxReturnFocus(element, identityKey) {
+    if (element && element.isConnected
+        && (!identityKey || !element.dataset || element.dataset.inspectorKey === identityKey)) {
+        return element;
+    }
+    if (identityKey && typeof document.querySelectorAll === 'function') {
+        const candidates = document.querySelectorAll('#grid .thumb');
+        for (const candidate of candidates) {
+            if (candidate && candidate.isConnected !== false
+                && candidate.dataset && candidate.dataset.inspectorKey === identityKey) {
+                return candidate;
+            }
+        }
+    }
+    if (!identityKey && element && element.isConnected) return element;
+    return null;
 }
 
 function stopLightboxMediaResources() {
@@ -374,7 +399,9 @@ function getStillLightboxImageIndexByObject(target) {
 
 function closeLightbox() {
             const returnFocus = lightboxReturnFocusElement;
+            const returnFocusKey = lightboxReturnFocusKey;
             lightboxReturnFocusElement = null;
+            lightboxReturnFocusKey = '';
             ++lightboxOpenToken;
             ++lightboxImageToken;
             ++lightboxMetadataRequestToken;
@@ -419,9 +446,13 @@ function closeLightbox() {
                 const activeTrap = typeof _getActiveFocusTrapModal === 'function'
                     ? _getActiveFocusTrapModal()
                     : null;
-                if (returnFocus && returnFocus.isConnected && !(activeTrap && activeTrap.classList.contains('modal'))) {
-                    returnFocus.focus({preventScroll: true});
-                }
+                if (activeTrap && activeTrap.classList.contains('modal')) return;
+                const resolved = resolveLightboxReturnFocus(returnFocus, returnFocusKey);
+                const fallback = resolved
+                    || document.querySelector('#grid .thumb')
+                    || document.querySelector('#workspace-search-filter-edit')
+                    || document.querySelector('#batch-search');
+                if (fallback && typeof fallback.focus === 'function') fallback.focus({preventScroll: true});
             });
         }
 
