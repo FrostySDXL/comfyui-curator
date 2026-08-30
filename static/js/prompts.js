@@ -796,7 +796,13 @@
                 if (!_mediaSearchApplyStillOwned(operation)) return;
 
                 if (!isWorkspaceSearchView()) {
-                    workspaceSearchReturnContext = {batch: currentBatch, folder: currentFolder};
+                    workspaceSearchReturnContext = {
+                        batch: currentBatch,
+                        folder: currentFolder,
+                        anchor: typeof _captureGridIdentityAnchor === 'function'
+                            ? _captureGridIdentityAnchor()
+                            : null,
+                    };
                 }
                 workspaceSearchFilter = {
                     key: `${Date.now()}-${query}`,
@@ -907,6 +913,34 @@
             void loadMoreWorkspaceSearchResults();
         }
 
+        function _restoreWorkspaceSearchReturnAnchor(context) {
+            const anchor = context?.anchor;
+            if (!anchor?.key) return;
+            if (typeof pagedFolderMode !== 'undefined' && pagedFolderMode && folderSnapshot
+                && typeof apiGetFolderItemIndex === 'function'
+                && typeof ensureFolderPageForIndex === 'function'
+                && typeof _folderTransportSort === 'function'
+                && typeof _restoreGridIdentityAnchor === 'function') {
+                void (async () => {
+                    try {
+                        const lookupResp = await apiGetFolderItemIndex(
+                            context.batch, context.folder || 'inbox', _folderTransportSort(), currentOrder,
+                            folderSnapshot.revision, anchor.key, folderShuffleSeed,
+                        );
+                        if (!lookupResp || !lookupResp.ok || isWorkspaceSearchView()) return;
+                        const lookup = await lookupResp.json();
+                        if (typeof lookup.index !== 'number' || lookup.index < 0) return;
+                        await ensureFolderPageForIndex(lookup.index);
+                        _restoreGridIdentityAnchor(anchor);
+                    } catch { /* anchor restore is best-effort; the view stays at the top */ }
+                })();
+                return;
+            }
+            if (typeof _restoreGridIdentityAnchor === 'function') {
+                _restoreGridIdentityAnchor(anchor);
+            }
+        }
+
         async function clearWorkspaceSearchFilter() {
             const context = workspaceSearchReturnContext;
             deactivateWorkspaceSearchFilter();
@@ -927,6 +961,9 @@
                 await selectFolder(context.batch, context.folder || 'inbox');
                 document.querySelectorAll('.batch-name').forEach(el =>
                     el.classList.toggle('selected', el.dataset.batch === context.batch));
+            }
+            if (typeof _restoreWorkspaceSearchReturnAnchor === 'function') {
+                _restoreWorkspaceSearchReturnAnchor(context);
             }
         }
 

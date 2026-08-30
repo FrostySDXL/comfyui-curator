@@ -183,6 +183,35 @@ def test_workspace_search_pagination_preserves_display_identity_and_stable_shuff
     assert "findIndex" in navigate
 
 
+def test_media_search_apply_captures_grid_identity_anchor():
+    prompts = PROMPTS_JS.read_text(encoding="utf-8")
+
+    apply_filter = extract_function_body(prompts, "async function applyMediaSearchToWorkspace()")
+
+    assert "anchor: typeof _captureGridIdentityAnchor === 'function'" in apply_filter
+    assert "_captureGridIdentityAnchor()" in apply_filter
+
+
+def test_media_search_clear_invokes_restore_anchor_helper():
+    prompts = PROMPTS_JS.read_text(encoding="utf-8")
+
+    clear_filter = extract_function_body(prompts, "async function clearWorkspaceSearchFilter()")
+
+    assert "_restoreWorkspaceSearchReturnAnchor(context)" in clear_filter
+
+
+def test_media_search_restore_anchor_resolves_paged_anchors():
+    prompts = PROMPTS_JS.read_text(encoding="utf-8")
+
+    restore = extract_function_body(prompts, "function _restoreWorkspaceSearchReturnAnchor(")
+
+    assert "!anchor?.key" in restore
+    assert "apiGetFolderItemIndex(" in restore
+    assert "ensureFolderPageForIndex(lookup.index)" in restore
+    assert "_restoreGridIdentityAnchor(anchor)" in restore
+    assert "typeof _restoreGridIdentityAnchor === 'function'" in restore
+
+
 def test_editing_workspace_search_can_narrow_from_original_review_context():
     prompts = PROMPTS_JS.read_text(encoding="utf-8")
 
