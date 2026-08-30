@@ -17,6 +17,10 @@ const viewportSource = fs.readFileSync(
     path.join(__dirname, "..", "..", "static", "js", "viewport-loader.js"),
     "utf8",
 );
+const pollingSource = fs.readFileSync(
+    path.join(__dirname, "..", "..", "static", "js", "polling.js"),
+    "utf8",
+);
 
 let assertionCount = 0;
 function assert(condition, message) {
@@ -402,6 +406,11 @@ function createHarness(options = {}) {
         aiShowOverlays: false,
         aiFilterMode: "all",
         aiInspectedImageName: null,
+        aiLatestRun: null,
+        loadBatches: async () => {},
+        isDraggingImages: false,
+        isSidebarResizing: false,
+        isAiSidebarResizing: false,
         onDragStart: () => {},
         onThumbClick: () => {},
         setSelectionMode: () => {},
@@ -442,7 +451,6 @@ function createHarness(options = {}) {
         let currentOrder = 'desc';
         let favoritesFilterOn = false;
         let selectedImages = new Set();
-        let serverSelection = null;
         let gridThumbMap = new Map();
         let displayIndexByName = new Map();
         let displayIndexByKey = new Map();
@@ -455,12 +463,19 @@ function createHarness(options = {}) {
         let gridDensity = 'comfortable';
         let allCounts = {};
         let folderRequestToken = 0;
+        let folderShuffleSeed = '';
+        let viewTransitionToken = 0;
+        let serverSelection = null;
         const CURATOR_NATIVE = false;
+        const FOLDER_PAGE_SIZE = 256;
         const PAGED_FOLDER_THRESHOLD = 2000;
         function getImageIdentityKey(img, sourceOverride = null) {
             if (!img || !img.name) return '';
             const source = sourceOverride || {batch: currentBatch, folder: currentFolder};
             return String(source.batch || '') + '\\u001f' + String(source.folder || '') + '\\u001f' + img.name;
+        }
+        function getViewScopeKey() {
+            return String(currentBatch || '') + '\\u001f' + String(currentFolder || '');
         }
         const GRID_DENSITY_KEY = 'imageCurator.gridDensity';
         const MAX_GRID_LOADING_PLACEHOLDERS = 200;
@@ -470,6 +485,9 @@ function createHarness(options = {}) {
     `, context);
     vm.runInContext(activitySource, context);
     vm.runInContext(gridSource, context);
+    if (options.loadPolling === true) {
+        vm.runInContext(pollingSource, context);
+    }
     if (loadViewportLoader) {
         vm.runInContext(viewportSource, context);
     }
@@ -1111,9 +1129,137 @@ async function testFolderLoadFailureShowsErrorAndRetryRecovers() {
     assert(!harness.document.grid.querySelector(".grid-retry"), "error state should be replaced after recovery");
 }
 
+async function testPollingDoesNotLegacyFetchKnownPagedFolderBeforeSnapshot() {
+    const harness = createHarness({loadPolling: true});
+    const requests = [];
+    harness.setCounts({"batch-a": {inbox: 30000}});
+    harness.setFetch((url) => {
+        requests.push(url);
+        return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([]),
+        });
+    });
+    await harness.evaluate("pollForChanges()");
+
+    assert(
+        requests.length === 0,
+        "polling a known large standalone folder before its snapshot is ready must not request the legacy full listing",
+    );
+}
+
+async function testPollingKeepsLegacyTransportForSmallStandaloneFolder() {
+    const harness = createHarness({loadPolling: true});
+    const requests = [];
+    const revisionPolls = [];
+    harness.setCounts({"batch-a": {inbox: 800}});
+    harness.context.apiPollFolderSnapshot = (...args) => {
+        revisionPolls.push(args);
+        return Promise.resolve({ok: true, json: () => Promise.resolve({status: "ready", changed: false})});
+    };
+    harness.setFetch((url) => {
+        requests.push(String(url));
+        const isImagesRequest = String(url).includes("/api/images/");
+        return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve(isImagesRequest ? [] : {runs: []}),
+        });
+    });
+
+    await harness.evaluate("pollForChanges()");
+
+    assert(revisionPolls.length === 0, "small standalone folders must not use revision polling without a snapshot");
+    assert(requests.some((url) => url.includes("/api/images/")), "small standalone polling must retain the legacy images request");
+    assert(requests.some((url) => url.includes("/api/ai-curate/batches/batch-a/runs")), "small standalone polling must request AI runs");
+}
+
+async function testPollingUsesRevisionTransportForLargeFolderSnapshot() {
+    const harness = createHarness({loadPolling: true});
+    const requests = [];
+    const revisionPolls = [];
+    harness.setCounts({"batch-a": {inbox: 30000}});
+    harness.evaluate("folderSnapshot = {revision: 'revision-1', count: 30000}; pagedFolderMode = true;");
+    harness.context.apiPollFolderSnapshot = (...args) => {
+        revisionPolls.push(args);
+        return Promise.resolve({ok: true, json: () => Promise.resolve({status: "ready", changed: false})});
+    };
+    harness.setFetch((url) => {
+        requests.push(String(url));
+        return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({runs: []}),
+        });
+    });
+
+    await harness.evaluate("pollForChanges()");
+
+    assert(revisionPolls.length === 1, "large folders with a snapshot must use exactly one revision poll");
+    assert(revisionPolls[0][4] === "revision-1", "revision polling must carry the active folder revision");
+    assert(!requests.some((url) => url.includes("/api/images/")), "large folders with a snapshot must never use the legacy images request");
+    assert(requests.length === 1 && requests[0].includes("/api/ai-curate/batches/batch-a/runs"), "large snapshot polling must still request AI runs");
+}
+
+async function testFreshVisibleThumbnailIsNotEvictedFromFullResidentCache() {
+    const harness = createHarness();
+    const revoked = [];
+    let nextBlobId = 0;
+    harness.context.URL.createObjectURL = () => `blob:new-${nextBlobId++}`;
+    harness.context.URL.revokeObjectURL = (url) => revoked.push(url);
+    harness.evaluate(`
+        _updateRealBatchTracking('batch-a');
+        for (let index = 0; index < 1000; index++) {
+            const key = 'resident-' + index;
+            rememberThumbnailBlobUrl(key, 'blob:resident-' + index, {priority: 0, scopeBatch: 'batch-a'});
+            _touchCacheEntry(key);
+        }
+    `);
+    harness.setFetch(() => Promise.resolve({
+        ok: true,
+        blob: () => Promise.resolve({size: 1}),
+    }));
+
+    const resolved = await harness.evaluate(
+        "resolveThumbnailBlobUrl('/thumb/new.png', 'new-visible', {priority: 0, scopeBatch: 'batch-a'})",
+    );
+
+    assert(resolved === "blob:new-0", "new visible thumbnail should resolve to its created Blob URL");
+    assert(harness.evaluate("thumbnailBlobUrlCache.has('new-visible')"), "new visible thumbnail must remain in the full cache");
+    assert(!revoked.includes("blob:new-0"), "new visible thumbnail Blob URL must not be revoked by its own insertion");
+}
+
+async function testUnknownStandaloneCountUsesLargeSnapshotPaging() {
+    const harness = createHarness();
+    const legacyRequests = [];
+    harness.setCounts({"batch-a": {}});
+    harness.context.apiGetFolderSnapshot = () => Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({revision: "revision-large", count: 30000}),
+    });
+    harness.context.apiGetFolderPage = () => Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+            revision: "revision-large",
+            items: [{index: 0, name: "first.png", size: 1}],
+        }),
+    });
+    harness.setFetch((url) => {
+        legacyRequests.push(String(url));
+        return Promise.reject(new Error("legacy listing should not be requested"));
+    });
+
+    await harness.evaluate("loadCurrentFolderImages()");
+
+    assert(harness.evaluate("pagedFolderMode === true"), "unknown large folder should activate paged mode from its snapshot count");
+    assert(harness.evaluate("folderSnapshot.revision === 'revision-large'"), "paged mode should retain the snapshot revision");
+    assert(legacyRequests.length === 0, "unknown large folder must not fall back to the legacy full listing");
+}
+
 async function testThumbnailFailuresAggregateAndRecover() {
     const harness = createHarness();
     harness.setContext({ batch: "batch-a", folder: "shortlisted" });
+    harness.setCounts({"batch-a": {shortlisted: 3}});
     const items = makeImages(3, "img");
     harness.setFetch(() => Promise.resolve({
         ok: true,
@@ -1192,6 +1338,11 @@ async function main() {
     testAnchorUsesScrollerCoordinatesBelowToolbar();
     testNarrowerSidebarLayoutPresizesBeforeRestoringAnchor();
     testPagedLoadStatusTracksMaterialization();
+    await testPollingDoesNotLegacyFetchKnownPagedFolderBeforeSnapshot();
+    await testPollingKeepsLegacyTransportForSmallStandaloneFolder();
+    await testPollingUsesRevisionTransportForLargeFolderSnapshot();
+    await testFreshVisibleThumbnailIsNotEvictedFromFullResidentCache();
+    await testUnknownStandaloneCountUsesLargeSnapshotPaging();
     await testFolderLoadFailureShowsErrorAndRetryRecovers();
     await testThumbnailFailuresAggregateAndRecover();
     testLoaderNeverWritesLoadingDetailOntoTerminalRecord();

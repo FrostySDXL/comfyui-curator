@@ -51,7 +51,8 @@ def test_stage2_cache_metadata_infrastructure():
     assert "let _realBatchPrev = null;" in source
     assert "function _touchCacheEntry(cacheKey)" in source
     assert "function _updateCacheMetadata(cacheKey, meta)" in source
-    assert "function _evictIfNeeded()" in source
+    assert "function _evictIfNeeded(protectedKey = null)" in source
+    assert "_evictIfNeeded(cacheKey)" in source
     assert "function _mergeInflightMetadata(cacheKey, meta)" in source
     assert "function _takeInflightMetadata(cacheKey)" in source
     assert "function _updateRealBatchTracking(newBatch)" in source

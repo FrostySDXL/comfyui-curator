@@ -18,7 +18,17 @@ async function pollForChanges() {
             if (!currentBatch || isVirtualCollectionView() || isPublicView() || !currentFolder || serverSelection || selectedImages.size > 0 || isInteractionBusy()) return;
             const transitionToken = viewTransitionToken;
             const scopeKey = getViewScopeKey();
-            if (folderSnapshot) {
+            const folderCountHint = allCounts[currentBatch]?.[currentFolder];
+            const usesPagedFolderTransport = Boolean(folderSnapshot)
+                || CURATOR_NATIVE
+                || (typeof folderCountHint === 'number' && folderCountHint >= PAGED_FOLDER_THRESHOLD);
+            if (usesPagedFolderTransport) {
+                // A large standalone folder may still be waiting for its first
+                // snapshot (or be between view transitions). Do not fall back
+                // to the expensive legacy full listing while that load owns the
+                // folder state; the next poll will use the revisioned endpoint
+                // once the snapshot is published.
+                if (!folderSnapshot) return;
                 const [snapshotResp, runResp] = await Promise.all([
                     apiPollFolderSnapshot(
                         currentBatch, currentFolder, _folderTransportSort(), currentOrder, folderSnapshot.revision,

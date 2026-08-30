@@ -86,7 +86,12 @@ def test_standalone_large_folders_use_paged_path_in_folder_loader() -> None:
 def test_standalone_paged_folders_use_revision_poll() -> None:
     body = extract_function_body(read_frontend_js(), "async function pollForChanges()")
 
-    assert "if (folderSnapshot) {" in body
+    assert "const folderCountHint = allCounts[currentBatch]?.[currentFolder];" in body
+    assert "const usesPagedFolderTransport = Boolean(folderSnapshot)" in body
+    assert "folderCountHint >= PAGED_FOLDER_THRESHOLD" in body
+    assert "if (usesPagedFolderTransport) {" in body
+    assert "if (!folderSnapshot) return;" in body
+    assert "apiPollFolderSnapshot(" in body
     assert "if (CURATOR_NATIVE && folderSnapshot)" not in body
     assert "/api/images/${currentBatch}/${currentFolder}" in body
     assert "if (!CURATOR_NATIVE) await loadBatches();" in body

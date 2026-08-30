@@ -187,7 +187,7 @@
             return 0;
         }
 
-        function _evictIfNeeded() {
+        function _evictIfNeeded(protectedKey = null) {
             while (thumbnailBlobUrlCache.size > THUMBNAIL_BLOB_CACHE_MAX) {
                 let weakestKey = null;
                 let weakestScopeProtection = Infinity;
@@ -196,6 +196,7 @@
                 let weakestLruTouch = Infinity;
 
                 for (const [key, blobUrl] of thumbnailBlobUrlCache) {
+                    if (key === protectedKey) continue;
                     const meta = _thumbnailMetadata.get(key);
                     const scopeClass = _getScopeClass(meta ? meta.scopeBatch : null);
                     const priorityClass = _getPriorityClass(meta ? meta.priority : undefined);
@@ -227,7 +228,8 @@
                     _thumbnailMetadata.delete(weakestKey);
                 } else {
                     /* Safety: fallback FIFO if no metadata */
-                    const oldestKey = thumbnailBlobUrlCache.keys().next().value;
+                    const oldestKey = [...thumbnailBlobUrlCache.keys()].find(key => key !== protectedKey);
+                    if (oldestKey === undefined) break;
                     const oldestUrl = thumbnailBlobUrlCache.get(oldestKey);
                     if (oldestUrl) URL.revokeObjectURL(oldestUrl);
                     thumbnailBlobUrlCache.delete(oldestKey);
@@ -301,7 +303,7 @@
             if (existing && existing !== blobUrl) URL.revokeObjectURL(existing);
             thumbnailBlobUrlCache.set(cacheKey, blobUrl);
             if (meta) _updateCacheMetadata(cacheKey, meta);
-            _evictIfNeeded();
+            _evictIfNeeded(cacheKey);
         }
 
         async function resolveThumbnailBlobUrl(imageSrc, cacheKey, meta) {
@@ -498,6 +500,25 @@ function createGridErrorState(message = {}) {
             return error;
         }
 
+async function _loadLegacyFolderImages(batch, folder, requestToken, activityId) {
+            resetPagedFolderState();
+            const resp = await fetch(ccApiPath(`/api/images/${batch}/${folder}?sort=${currentSort}&order=${currentOrder}`));
+            if (!resp.ok) {
+                failFolderLoad(requestToken, activityId, 'Folder image load failed', 'Try opening the folder again');
+                return;
+            }
+            const nextImages = await resp.json();
+            if (requestToken !== folderRequestToken) {
+                activityRemove(activityId);
+                return;
+            }
+            images = nextImages;
+            displayIndexByName = new Map(images.map((img, index) => [img.name, index]));
+            updateImageCountLabel();
+            updateGrid();
+            _completeFolderViewActivity(activityId, nextImages.length, nextImages.length, 'Folder ready · thumbnails loaded on demand');
+        }
+
 async function loadCurrentFolderImages(options = {}) {
             if (!currentBatch || !currentFolder) return;
             if (currentFolder === 'public') {
@@ -531,7 +552,8 @@ async function loadCurrentFolderImages(options = {}) {
                    uses the paged path. */
                 const folderCountHint = allCounts[batch]?.[folder];
                 const usePagedFolder = CURATOR_NATIVE
-                    || (typeof folderCountHint === 'number' && folderCountHint >= PAGED_FOLDER_THRESHOLD);
+                    || typeof folderCountHint !== 'number'
+                    || folderCountHint >= PAGED_FOLDER_THRESHOLD;
                 if (usePagedFolder) {
                     const content = document.querySelector('.content');
                     const priorScrollTop = content ? content.scrollTop : 0;
@@ -539,6 +561,12 @@ async function loadCurrentFolderImages(options = {}) {
                     if (!snapshot || requestToken !== folderRequestToken) {
                         failFolderLoad(requestToken, activityId, 'Folder snapshot unavailable', 'Try opening the folder again');
                         return;
+                    }
+                    const snapshotIsLarge = CURATOR_NATIVE
+                        || (typeof folderCountHint === 'number' && folderCountHint >= PAGED_FOLDER_THRESHOLD)
+                        || snapshot.count >= PAGED_FOLDER_THRESHOLD;
+                    if (!snapshotIsLarge) {
+                        return _loadLegacyFolderImages(batch, folder, requestToken, activityId);
                     }
                     activityUpdate(activityId, {
                         total: snapshot.count,
@@ -594,22 +622,7 @@ async function loadCurrentFolderImages(options = {}) {
                     }
                     return;
                 }
-                resetPagedFolderState();
-                const resp = await fetch(ccApiPath(`/api/images/${batch}/${folder}?sort=${currentSort}&order=${currentOrder}`));
-                if (!resp.ok) {
-                    failFolderLoad(requestToken, activityId, 'Folder image load failed', 'Try opening the folder again');
-                    return;
-                }
-                const nextImages = await resp.json();
-                if (requestToken !== folderRequestToken) {
-                    activityRemove(activityId);
-                    return;
-                }
-                images = nextImages;
-                displayIndexByName = new Map(images.map((img, index) => [img.name, index]));
-                updateImageCountLabel();
-                updateGrid();
-                _completeFolderViewActivity(activityId, nextImages.length, nextImages.length, 'Folder ready · thumbnails loaded on demand');
+                await _loadLegacyFolderImages(batch, folder, requestToken, activityId);
             } catch (error) {
                 console.warn('loadCurrentFolderImages failed:', error);
                 failFolderLoad(requestToken, activityId, 'Folder image load failed', 'Try opening the folder again');
