@@ -1342,6 +1342,28 @@ function showCompareImages() {
             setLightboxCompareActivePane(lightboxCompareActivePane);
         }
 
+function createLightboxFavoriteControl(img) {
+            const fav = document.createElement('span');
+            fav.className = 'lightbox-favorite-star';
+            fav.textContent = img.favorite ? '\u2605' : '\u2606';
+            fav.title = img.favorite ? 'Remove favorite' : 'Add favorite';
+            fav.setAttribute('role', 'button');
+            fav.tabIndex = 0;
+            fav.setAttribute('aria-label', fav.title);
+            fav.setAttribute('aria-pressed', String(Boolean(img.favorite)));
+            fav.addEventListener('click', (event) => {
+                event.stopPropagation();
+                toggleLightboxFavorite();
+            });
+            fav.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                event.stopPropagation();
+                toggleLightboxFavorite();
+            });
+            return fav;
+        }
+
 function updateCompareInfo() {
             const infoEl = document.getElementById('lightbox-info');
             const img = getActiveLightboxImage();
@@ -1350,11 +1372,7 @@ function updateCompareInfo() {
             const lineEl = document.createElement('div');
             lineEl.className = 'lightbox-info-line';
             lineEl.appendChild(document.createTextNode(`Compare active ${lightboxCompareActivePane + 1} / 2  -  ${img.name}`));
-            const fav = document.createElement('span');
-            fav.className = 'lightbox-favorite-star';
-            fav.textContent = img.favorite ? '\u2605' : '\u2606';
-            fav.title = img.favorite ? 'Remove favorite' : 'Add favorite';
-            fav.addEventListener('click', toggleLightboxFavorite);
+            const fav = createLightboxFavoriteControl(img);
             lineEl.appendChild(fav);
             infoEl.appendChild(lineEl);
         }
@@ -1374,11 +1392,7 @@ function updateLightboxInfo(img, w, h) {
             const lineEl = document.createElement('div');
             lineEl.className = 'lightbox-info-line';
             lineEl.appendChild(document.createTextNode(line1));
-            const fav = document.createElement('span');
-            fav.className = 'lightbox-favorite-star';
-            fav.textContent = img.favorite ? '\u2605' : '\u2606';
-            fav.title = img.favorite ? 'Remove favorite' : 'Add favorite';
-            fav.addEventListener('click', toggleLightboxFavorite);
+            const fav = createLightboxFavoriteControl(img);
             lineEl.appendChild(fav);
             infoEl.appendChild(lineEl);
 
@@ -1432,6 +1446,8 @@ function updateLightboxFavorite(img) {
             star.textContent = img.favorite ? '\u2605' : '\u2606';
             star.style.color = img.favorite ? '#e8c84a' : '';
             star.title = img.favorite ? 'Remove favorite' : 'Add favorite';
+            star.setAttribute('aria-label', star.title);
+            star.setAttribute('aria-pressed', String(Boolean(img.favorite)));
         }
 
 async function navigate(delta) {

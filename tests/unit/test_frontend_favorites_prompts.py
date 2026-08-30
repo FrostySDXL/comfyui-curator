@@ -34,6 +34,32 @@ def test_favorite_star_is_keyboard_activatable_without_thumb_click_bubbling():
     assert star.count("toggleFavorite(Number(thumb.dataset.index));") == 2
 
 
+def test_lightbox_favorite_controls_are_keyboard_buttons_with_state():
+    source = read_frontend_js()
+    helper = extract_function_body(source, "function createLightboxFavoriteControl(img)")
+
+    assert "document.createElement('span')" in helper
+    assert "fav.setAttribute('role', 'button');" in helper
+    assert "fav.tabIndex = 0;" in helper
+    assert "fav.setAttribute('aria-label', fav.title);" in helper
+    assert "fav.setAttribute('aria-pressed', String(Boolean(img.favorite)));" in helper
+    assert "fav.addEventListener('click'" in helper
+    assert "fav.addEventListener('keydown'" in helper
+    assert "event.key !== 'Enter' && event.key !== ' '" in helper
+    assert helper.count("event.preventDefault();") == 1
+    assert helper.count("event.stopPropagation();") == 2
+    assert helper.count("toggleLightboxFavorite();") == 2
+
+    for function_name in ("updateCompareInfo", "updateLightboxInfo"):
+        assert "createLightboxFavoriteControl(img)" in extract_function_body(
+            source, f"function {function_name}"
+        )
+
+    update_body = extract_function_body(source, "function updateLightboxFavorite(img)")
+    assert "star.setAttribute('aria-label', star.title);" in update_body
+    assert "star.setAttribute('aria-pressed', String(Boolean(img.favorite)));" in update_body
+
+
 def test_public_frontend_functions_and_virtual_batch_handling_exist():
     source = read_frontend_js()
     for name in (
