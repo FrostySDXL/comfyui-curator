@@ -254,3 +254,207 @@
             .folder-tab,
             .folder-tab-label { flex-shrink: 0; }
         }
+
+        /* Windows High Contrast / forced-colors: keep state and focus cues
+           explicit when authored fills, gradients, and shadows are replaced. */
+        @media (forced-colors: active) {
+            :root {
+                --surface-canvas: Canvas;
+                --surface-0: Canvas;
+                --surface-1: Canvas;
+                --surface-2: Canvas;
+                --surface-raised: Canvas;
+                --surface-overlay: Canvas;
+                --text-primary: CanvasText;
+                --text-secondary: CanvasText;
+                --text-muted: GrayText;
+                --text-disabled: GrayText;
+                --border-subtle: CanvasText;
+                --border-strong: CanvasText;
+                --accent-primary: Highlight;
+                --accent-hover: Highlight;
+                --accent-surface: Highlight;
+                --focus-ring: Highlight;
+                --inspection-ring: LinkText;
+                --success: CanvasText;
+                --warning: CanvasText;
+                --danger: CanvasText;
+                --button-accent-fill: Highlight;
+                --button-accent-text: HighlightText;
+                --button-success-fill: Highlight;
+                --button-success-text: HighlightText;
+                --button-warning-fill: Highlight;
+                --button-warning-text: HighlightText;
+                --button-danger-fill: Highlight;
+                --button-danger-text: HighlightText;
+            }
+
+            body {
+                background: Canvas;
+                color: CanvasText;
+            }
+
+            a { color: LinkText; }
+
+            :where(button, input, select, textarea, [tabindex]) {
+                border-color: CanvasText;
+                background: Canvas;
+                color: ButtonText;
+            }
+
+            :where(button, input, select, textarea, [tabindex]):focus-visible {
+                outline: 3px solid Highlight;
+                outline-offset: 3px;
+            }
+
+            button:disabled,
+            input:disabled,
+            select:disabled,
+            textarea:disabled,
+            [aria-disabled="true"] {
+                background: Canvas;
+                border-color: GrayText;
+                color: GrayText;
+            }
+
+            .folder-tab.active,
+            .inspector-tab.active,
+            .ai-panel-tab.active,
+            .workspace-toolbar .sort-btn.active,
+            .density-btn.active,
+            .batch-sort-btn.active,
+            .favorites-filter-btn.active,
+            .prompts-batch-option.selected,
+            .prompts-entry.selected {
+                background: Highlight;
+                border-color: Highlight;
+                color: HighlightText;
+            }
+
+            .folder-tab.active::before {
+                background: Highlight;
+                box-shadow: none;
+            }
+            .folder-tab[data-folder].active {
+                border-color: Highlight;
+                box-shadow: none;
+            }
+
+            .thumb.selected {
+                border: 2px solid Highlight;
+                box-shadow: none;
+            }
+            .thumb.selected::before {
+                border: 2px solid Highlight;
+            }
+            .thumb.inspected {
+                outline: 3px dashed LinkText;
+                box-shadow: none;
+            }
+            .thumb-select.selected {
+                background: Highlight;
+                border-color: Highlight;
+            }
+            .thumb-select.selected svg { stroke: HighlightText; }
+
+            .action-bar {
+                background: Canvas;
+                border-top: 2px solid Highlight;
+                box-shadow: none;
+                color: CanvasText;
+            }
+            .action-btn,
+            .action-btn[data-dest],
+            .action-btn.action-publish,
+            .action-btn.action-public,
+            .action-btn.action-public-danger {
+                background: Highlight;
+                border: 1px solid Highlight;
+                color: HighlightText;
+            }
+            .action-btn.action-compare {
+                background: Canvas;
+                border: 1px solid Highlight;
+                color: ButtonText;
+            }
+            .action-btn:disabled,
+            .action-btn[data-dest]:disabled,
+            .action-btn.action-publish:disabled,
+            .action-btn.action-public:disabled,
+            .action-btn.action-public-danger:disabled {
+                background: Canvas;
+                border-color: GrayText;
+                color: GrayText;
+            }
+
+            .thumbnail-error,
+            .metadata-error,
+            .publish-preview-error,
+            .settings-error,
+            .settings-config-warning,
+            .activity-failed,
+            .activity-partial {
+                background: Canvas;
+                border: 2px dashed CanvasText;
+                color: CanvasText;
+            }
+            .thumbnail-retry {
+                background: Canvas;
+                border: 2px solid LinkText;
+                color: LinkText;
+            }
+            .activity-failed .activity-item-state,
+            .activity-partial .activity-item-state {
+                color: CanvasText;
+                font-weight: 800;
+                text-decoration: underline;
+            }
+
+            .activity-center-panel,
+            .compare-candidate-tray,
+            .modal-content,
+            .lightbox-controls,
+            .lightbox-metadata-panel,
+            .lightbox-ai-panel,
+            .lightbox-compare-pane {
+                background: Canvas;
+                border-color: CanvasText;
+                box-shadow: none;
+            }
+            .activity-center-list,
+            .move-history-list,
+            .prompts-list,
+            .prompts-control-rail,
+            .prompts-results-pane {
+                color: CanvasText;
+            }
+            .lightbox-close,
+            .lightbox-nav,
+            .lightbox-info,
+            .lightbox-info-line {
+                color: ButtonText;
+            }
+            .lightbox-compare-pane.active {
+                border: 3px solid Highlight;
+            }
+            .lightbox-compare-pane.active::before {
+                background: Highlight;
+                border-color: Highlight;
+                color: HighlightText;
+            }
+            .lightbox-compare.split-mode .lightbox-compare-divider {
+                background: Highlight;
+            }
+
+            .thumb::after,
+            .lightbox-image-wrap,
+            .lightbox-compare-wrap {
+                background-image: none;
+                box-shadow: none;
+            }
+            .thumb-meta {
+                background: Canvas;
+                box-shadow: none;
+                color: CanvasText;
+            }
+        }

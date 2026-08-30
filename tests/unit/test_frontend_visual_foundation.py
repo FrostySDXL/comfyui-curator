@@ -79,6 +79,37 @@ def test_keyboard_focus_uses_a_shared_focus_visible_ring() -> None:
     assert not re.search(r"(?<!-):focus\s*\{[^}]*outline:\s*none", css, re.DOTALL)
 
 
+def test_forced_colors_preserves_focus_and_operational_state_distinctions() -> None:
+    css = Path("static/css/responsive.css").read_text(encoding="utf-8")
+    assert css.count("@media (forced-colors: active)") == 1
+    forced = css.split("@media (forced-colors: active)", 1)[1]
+
+    for system_color in (
+        "Canvas",
+        "CanvasText",
+        "ButtonText",
+        "Highlight",
+        "HighlightText",
+        "GrayText",
+        "LinkText",
+    ):
+        assert system_color in forced
+
+    assert ":where(button, input, select, textarea, [tabindex]):focus-visible" in forced
+    assert "outline: 3px solid Highlight;" in forced
+    assert ".folder-tab.active" in forced
+    assert ".thumb.selected" in forced
+    assert ".thumb.inspected" in forced
+    assert ".action-bar" in forced
+    assert ".action-btn:disabled" in forced
+    assert ".thumbnail-error" in forced
+    assert ".activity-failed" in forced
+    assert ".activity-partial" in forced
+    assert ".lightbox-controls" in forced
+    assert "box-shadow: none;" in forced
+    assert "forced-color-adjust" not in forced
+
+
 def test_operational_states_have_distinct_non_color_visual_grammar() -> None:
     """Keep location, selection, inspection, focus, and compare states legible together."""
     base = read_base_css()
