@@ -976,6 +976,28 @@ function thumbnailMatchesDesired(img) {
     return img.dataset.loadedThumbnailCacheKey === desired;
 }
 
+const thumbnailFailureSampleLimit = 25;
+
+function thumbnailFailed(img) {
+    if (!img || typeof img.closest !== 'function') return false;
+    const thumb = img.closest('.thumb');
+    return Boolean(thumb && thumb.classList && thumb.classList.contains('thumbnail-failed'));
+}
+
+function thumbnailFailureEvidence(thumbs) {
+    const names = Array.from(new Set(thumbs
+        .filter(function(thumb) {
+            return thumb.classList && thumb.classList.contains('thumbnail-failed');
+        })
+        .map(function(thumb) { return thumb.dataset && thumb.dataset.name; })
+        .filter(Boolean)))
+        .sort();
+    return {
+        count: names.length,
+        sample: names.slice(0, thumbnailFailureSampleLimit)
+    };
+}
+
 function readState() {
     var thumbs = Array.from(document.querySelectorAll('#grid .thumb:not(.loading-placeholder)'));
     var images = thumbs.map(function(t) { return t.querySelector('img'); }).filter(Boolean);
@@ -983,13 +1005,23 @@ function readState() {
         var rect = img.getBoundingClientRect();
         return rect.bottom > 0 && rect.top < window.innerHeight;
     });
+    var failureEvidence = thumbnailFailureEvidence(thumbs);
+    var visibleLoaded = visible.filter(thumbnailMatchesDesired).length;
+    var visibleFailed = visible.filter(thumbnailFailed).length;
+    var visibleTerminal = visible.filter(function(img) {
+        return thumbnailMatchesDesired(img) || thumbnailFailed(img);
+    }).length;
     return {
         count: thumbs.length,
         renderedCount: thumbs.length,
         expectedCount: expectedCount,
         loaded: images.filter(thumbnailMatchesDesired).length,
         visibleCount: visible.length,
-        visibleLoaded: visible.filter(thumbnailMatchesDesired).length,
+        visibleLoaded: visibleLoaded,
+        visibleFailed: visibleFailed,
+        terminalCount: visibleTerminal,
+        thumbnailFailureCount: failureEvidence.count,
+        thumbnailFailureSample: failureEvidence.sample,
         currentBatch: typeof currentBatch === 'undefined' ? null : currentBatch
     };
 }
@@ -1002,7 +1034,7 @@ function step(now) {
     var state = readState();
 
     if (state.renderedCount > 0 && state.renderedCount <= state.expectedCount
-        && state.visibleCount > 0 && state.visibleLoaded === state.visibleCount) {
+        && state.visibleCount > 0 && state.terminalCount === state.visibleCount) {
         done({
             available: true,
             ready: true,
@@ -1306,6 +1338,8 @@ const intervals = [];
 const visitedRegions = [];
 const growthEvents = [];
 const visitedNames = new Set();
+const failedThumbnailNames = new Set();
+const thumbnailFailureSampleLimit = 25;
 let canObserveNames = false;
 const started = performance.now();
 let previous = started;
@@ -1343,6 +1377,31 @@ function thumbnailMatchesDesired(img) {
     return !desired || img.dataset.loadedThumbnailCacheKey === desired;
 }
 
+function thumbnailFailed(img) {
+    if (!img || typeof img.closest !== 'function') return false;
+    const thumb = img.closest('.thumb');
+    return Boolean(thumb && thumb.classList && thumb.classList.contains('thumbnail-failed'));
+}
+
+function recordFailedThumbnails() {
+    Array.from(document.querySelectorAll('#grid .thumb:not(.loading-placeholder)')).forEach(
+        function(thumb) {
+            if (thumb.classList && thumb.classList.contains('thumbnail-failed')
+                && thumb.dataset && thumb.dataset.name) {
+                failedThumbnailNames.add(thumb.dataset.name);
+            }
+        }
+    );
+}
+
+function thumbnailFailureEvidence() {
+    const names = Array.from(failedThumbnailNames).sort();
+    return {
+        count: names.length,
+        sample: names.slice(0, thumbnailFailureSampleLimit)
+    };
+}
+
 function viewportSettled() {
     const grid = typeof document.getElementById === 'function'
         ? document.getElementById('grid')
@@ -1350,10 +1409,11 @@ function viewportSettled() {
     if (grid && grid.dataset && /^-?\d+(?:\.\d+)?$/.test(grid.dataset.virtualScrollTop || '')) {
         const reconciledTop = Number(grid.dataset.virtualScrollTop);
         if (Math.abs(reconciledTop - content.scrollTop) > 2) {
-            return {settled: false, visible: 0, loaded: 0};
+            return {settled: false, visible: 0, loaded: 0, failed: 0};
         }
     }
-    Array.from(document.querySelectorAll('#grid .thumb:not(.loading-placeholder)')).forEach(
+    const thumbs = Array.from(document.querySelectorAll('#grid .thumb:not(.loading-placeholder)'));
+    thumbs.forEach(
         function(thumb) {
             if (thumb.dataset && thumb.dataset.name) {
                 canObserveNames = true;
@@ -1382,14 +1442,20 @@ function viewportSettled() {
         const rect = thumb.getBoundingClientRect();
         return rect.bottom > 0 && rect.top < window.innerHeight;
     });
+    recordFailedThumbnails();
     if (visible.length === 0 && visiblePlaceholders.length === 0) {
-        return {settled: true, visible: 0, loaded: 0};
+        return {settled: true, visible: 0, loaded: 0, failed: 0};
     }
     const loaded = visible.filter(thumbnailMatchesDesired).length;
+    const failed = visible.filter(thumbnailFailed).length;
+    const terminal = visible.filter(function(img) {
+        return thumbnailMatchesDesired(img) || thumbnailFailed(img);
+    }).length;
     return {
-        settled: visiblePlaceholders.length === 0 && loaded === visible.length,
+        settled: visiblePlaceholders.length === 0 && terminal === visible.length,
         visible: visible.length + visiblePlaceholders.length,
-        loaded: loaded
+        loaded: loaded,
+        failed: failed
     };
 }
 
@@ -1432,6 +1498,7 @@ function recordRegion(now, state) {
         scrollPosition: content.scrollTop,
         visibleCount: state.visible,
         visibleLoaded: state.loaded,
+        visibleFailed: state.failed,
         settled: state.settled,
         regionElapsedMs: Math.round(now - regionStartTime)
     });
@@ -1541,6 +1608,8 @@ function finish(ready, frameCapReached, stagnationReason, unsettledReason) {
         partialScrollGuardInstalled = false;
     }
     const unsettled = visitedRegions.filter(function(r) { return !r.settled; }).length;
+    recordFailedThumbnails();
+    const failureEvidence = thumbnailFailureEvidence();
     done({
         available: true,
         ready: ready,
@@ -1553,6 +1622,8 @@ function finish(ready, frameCapReached, stagnationReason, unsettledReason) {
         canonicalCount: canonicalCount(),
         traversedItemCount: canObserveNames ? visitedNames.size : null,
         loadedCount: loadedImgCount(),
+        thumbnailFailureCount: failureEvidence.count,
+        thumbnailFailureSample: failureEvidence.sample,
         growthEvents: growthEvents,
         regionsVisited: visitedRegions.length,
         visitedRegions: visitedRegions,
@@ -1642,6 +1713,14 @@ def _dynamic_traversal_warnings(result: dict[str, Any], context: str = "") -> li
     unsettled = int(result.get("unsettledCount", 0))
     if unsettled > 0:
         warnings.append(f"Dynamic traversal had {unsettled} unsettled region(s) for {context}")
+    failure_count = int(result.get("thumbnailFailureCount", 0) or 0)
+    if failure_count > 0:
+        sample = result.get("thumbnailFailureSample") or []
+        sample_text = f" (sample: {', '.join(str(name) for name in sample)})" if sample else ""
+        warnings.append(
+            f"Dynamic traversal encountered {failure_count} terminal thumbnail failure(s)"
+            f" for {context}{sample_text}"
+        )
     return warnings
 
 
@@ -1658,6 +1737,14 @@ def _build_checkpoint_warnings(checkpoint_name: str, readiness: dict[str, Any]) 
         warnings.append(f"Checkpoint '{checkpoint_name}' was unavailable: {reason}")
         return warnings
     state = readiness.get("state", {})
+    failure_count = int(state.get("thumbnail_failure_count", 0) or 0)
+    if failure_count > 0:
+        sample = state.get("thumbnail_failure_sample") or []
+        sample_text = f" (sample: {', '.join(str(name) for name in sample)})" if sample else ""
+        warnings.append(
+            f"Checkpoint '{checkpoint_name}' encountered {failure_count}"
+            f" terminal thumbnail failure(s){sample_text}"
+        )
     unsettled = int(state.get("unsettled_region_count", 0))
     if unsettled > 0:
         warnings.append(
@@ -1716,6 +1803,7 @@ def _select_and_traverse(driver: Any, batch: str, count: int, timeout: float) ->
 
     # Capture loaded count from dynamic result for state reporting
     loaded_after = int(dynamic_result.get("loadedCount", 0)) if traversal_available else 0
+    viewport_state = viewport_result.get("state", {}) if viewport_available else {}
 
     # Restore scrollTop=0 so subsequent phases start at top
     driver.execute_script("var c=document.querySelector('.content');if(c)c.scrollTop=0;")
@@ -1726,6 +1814,18 @@ def _select_and_traverse(driver: Any, batch: str, count: int, timeout: float) ->
         warnings.append(f"Viewport settle unavailable for batch {batch}")
     elif not viewport_ready:
         warnings.append(f"Viewport did not settle within timeout for batch {batch}")
+    viewport_failure_count = int(viewport_state.get("thumbnailFailureCount", 0) or 0)
+    if viewport_failure_count > 0:
+        viewport_sample = viewport_state.get("thumbnailFailureSample") or []
+        sample_text = (
+            f" (sample: {', '.join(str(name) for name in viewport_sample)})"
+            if viewport_sample
+            else ""
+        )
+        warnings.append(
+            f"Viewport settle encountered {viewport_failure_count} terminal thumbnail failure(s)"
+            f" for batch {batch}{sample_text}"
+        )
     warnings.extend(_dynamic_traversal_warnings(dynamic_result, f"batch {batch}"))
 
     overall_ready = _vp_ok and traversal_ready and traversal_available
@@ -1785,6 +1885,22 @@ def _select_and_traverse(driver: Any, batch: str, count: int, timeout: float) ->
             "visibleLoaded": int(viewport_result.get("state", {}).get("visibleLoaded", 0))
             if viewport_available
             else 0,
+            "visible_failed": int(viewport_state.get("visibleFailed", 0) or 0),
+            "thumbnail_failure_count": int(
+                dynamic_result.get(
+                    "thumbnailFailureCount", viewport_state.get("thumbnailFailureCount", 0)
+                )
+                or 0
+            ),
+            "thumbnail_failure_sample": sorted(
+                str(name)
+                for name in (
+                    dynamic_result.get(
+                        "thumbnailFailureSample", viewport_state.get("thumbnailFailureSample", [])
+                    )
+                    or []
+                )
+            )[:25],
             "traversal_ready": traversal_ready,
             "regions_visited": (
                 int(dynamic_result.get("regionsVisited", 0)) if traversal_available else 0
@@ -2079,10 +2195,18 @@ def _prepare_checkpoint_cold_phase(
         _reason = "Viewport did not settle within timeout"
     else:
         _reason = None
+    viewport_state = dict(viewport_result.get("state", {}))
+    viewport_state["thumbnail_failure_count"] = int(
+        viewport_state.get("thumbnailFailureCount", 0) or 0
+    )
+    viewport_state["thumbnail_failure_sample"] = sorted(
+        str(name) for name in (viewport_state.get("thumbnailFailureSample", []) or [])
+    )[:25]
+    viewport_state["visible_failed"] = int(viewport_state.get("visibleFailed", 0) or 0)
     viewport_readiness = {
         "ready": _viewport_ready,
         "elapsed_ms": round(float(viewport_result.get("elapsedMs", 0)), 3),
-        "state": viewport_result.get("state", {}),
+        "state": viewport_state,
         "available": viewport_available,
         "reason": _reason,
     }
@@ -2128,6 +2252,10 @@ def _prepare_checkpoint_cold_phase(
         "target_boundary": partial_traversal.get("targetBoundary"),
         "target_boundary_visited": partial_traversal.get("targetBoundaryVisited", False),
         "final_bottom_visited": partial_traversal.get("finalBottomVisited", False),
+        "thumbnail_failure_count": int(partial_traversal.get("thumbnailFailureCount", 0) or 0),
+        "thumbnail_failure_sample": sorted(
+            str(name) for name in (partial_traversal.get("thumbnailFailureSample", []) or [])
+        )[:25],
     }
     cp2_readiness = {
         "ready": partial_ready,
@@ -2179,6 +2307,10 @@ def _prepare_checkpoint_cold_phase(
         "target_boundary": full_traversal.get("targetBoundary"),
         "target_boundary_visited": full_traversal.get("targetBoundaryVisited", False),
         "final_bottom_visited": full_traversal.get("finalBottomVisited", False),
+        "thumbnail_failure_count": int(full_traversal.get("thumbnailFailureCount", 0) or 0),
+        "thumbnail_failure_sample": sorted(
+            str(name) for name in (full_traversal.get("thumbnailFailureSample", []) or [])
+        )[:25],
     }
     cp3_readiness = {
         "ready": full_ready,
@@ -2225,6 +2357,8 @@ def _prepare_checkpoint_cold_phase(
     canonical_count = int(
         full_traversal.get("canonicalCount", full_traversal.get("renderedCount", 0))
     )
+    completion_count = int(traversed_count if traversed_count is not None else canonical_count)
+    thumbnail_failure_count = int(full_traversal.get("thumbnailFailureCount", 0) or 0)
     final_readiness = {
         "ready": full_ready,
         "available": bool(full_traversal.get("available", False)),
@@ -2233,11 +2367,15 @@ def _prepare_checkpoint_cold_phase(
             round(_first_viewport_ms, 3) if _first_viewport_ms is not None else None
         ),
         "state": {
-            "loaded": int(traversed_count if traversed_count is not None else canonical_count),
+            "loaded": max(0, completion_count - thumbnail_failure_count),
             "count": spec.size,
             "rendered_count": int(full_traversal.get("renderedCount", 0)),
             "canonical_count": canonical_count,
             "traversed_item_count": traversed_count,
+            "thumbnail_failure_count": thumbnail_failure_count,
+            "thumbnail_failure_sample": sorted(
+                str(name) for name in (full_traversal.get("thumbnailFailureSample", []) or [])
+            )[:25],
         },
         "reason": cp3_readiness["reason"],
         "warnings": _dynamic_traversal_warnings(full_traversal, f"batch {spec.primary_batch}"),

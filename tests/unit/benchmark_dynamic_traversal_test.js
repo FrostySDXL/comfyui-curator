@@ -140,22 +140,39 @@ function runAsyncScript(script, options) {
     };
 
     function images() {
-        return Array.from({ length: state.renderedCount }, (_, index) => ({
-            classList: {
-                contains(name) {
-                    if (name !== "loaded" || !state.loaded.has(index)) return false;
-                    if (options.unsettledAtOrAfter !== undefined && content.scrollTop >= options.unsettledAtOrAfter) {
-                        const firstVisible = Math.floor(content.scrollTop / state.rowHeight);
-                        if (index === firstVisible) return false;
-                    }
-                    return true;
+        return Array.from({ length: state.renderedCount }, (_, index) => {
+            const failed = (options.failedIndexes || []).includes(index);
+            const thumb = {
+                dataset: { name: `item-${String(index).padStart(4, "0")}` },
+                classList: {
+                    contains(name) {
+                        return name === "thumbnail-failed" && failed;
+                    },
                 },
-            },
-            getBoundingClientRect() {
-                const top = index * state.rowHeight - content.scrollTop;
-                return { top, bottom: top + state.rowHeight };
-            },
-        }));
+            };
+            const image = {
+                dataset: {},
+                classList: {
+                    contains(name) {
+                        if (name !== "loaded" || failed || !state.loaded.has(index)) return false;
+                        if (options.unsettledAtOrAfter !== undefined && content.scrollTop >= options.unsettledAtOrAfter) {
+                            const firstVisible = Math.floor(content.scrollTop / state.rowHeight);
+                            if (index === firstVisible) return false;
+                        }
+                        return true;
+                    },
+                },
+                closest() {
+                    return thumb;
+                },
+                getBoundingClientRect() {
+                    const top = index * state.rowHeight - content.scrollTop;
+                    return { top, bottom: top + state.rowHeight };
+                },
+            };
+            thumb.querySelector = () => image;
+            return image;
+        });
     }
 
     const document = {
@@ -167,7 +184,11 @@ function runAsyncScript(script, options) {
             }
             if (selector.endsWith(" img")) return allImages;
             if (selector === "#grid .thumb:not(.loading-placeholder)") {
-                return allImages.map((image) => ({ querySelector: () => image }));
+                return allImages.map((image) => ({
+                    dataset: image.closest().dataset,
+                    classList: image.closest().classList,
+                    querySelector: () => image,
+                }));
             }
             return [];
         },
@@ -358,6 +379,43 @@ function testFinalViewportMustSettle() {
 
 testFinalViewportMustSettle();
 
+function testTerminalThumbnailFailuresSettleDynamicTraversalButRemainEvidence() {
+    const { result } = runAsyncScript(extractRawString("DYNAMIC_TRAVERSAL_GRID"), {
+        expectedCount: 20,
+        targetCount: 20,
+        renderedCount: 20,
+        clientHeight: 500,
+        mode: "full",
+        failedIndexes: [3],
+    });
+
+    equal(result.ready, true, "a stable terminal thumbnail failure must not block traversal");
+    equal(result.loadedCount, 19, "loaded count must exclude terminal thumbnail failures");
+    equal(result.thumbnailFailureCount, 1, "dynamic traversal must report distinct terminal failures");
+    equal(result.thumbnailFailureSample[0], "item-0003", "failure sample must retain the failed item identity");
+    equal(result.unsettledCount, 0, "terminal failure must not be recorded as an unsettled region");
+}
+
+testTerminalThumbnailFailuresSettleDynamicTraversalButRemainEvidence();
+
+function testTerminalThumbnailFailureSampleIsBoundedAndSorted() {
+    const { result } = runAsyncScript(extractRawString("DYNAMIC_TRAVERSAL_GRID"), {
+        expectedCount: 40,
+        targetCount: 40,
+        renderedCount: 40,
+        clientHeight: 500,
+        mode: "full",
+        failedIndexes: Array.from({ length: 30 }, (_, index) => index),
+    });
+
+    equal(result.thumbnailFailureCount, 30, "failure count must retain all distinct terminal failures");
+    equal(result.thumbnailFailureSample.length, 25, "failure sample must use the documented bound");
+    equal(result.thumbnailFailureSample[0], "item-0000", "failure sample must be deterministic and sorted");
+    equal(result.thumbnailFailureSample[24], "item-0024", "failure sample must stop at the bound");
+}
+
+testTerminalThumbnailFailureSampleIsBoundedAndSorted();
+
 function testNoGrowthTerminatesWithStagnation() {
     const { result } = runAsyncScript(extractRawString("DYNAMIC_TRAVERSAL_GRID"), {
         expectedCount: 40,
@@ -437,6 +495,7 @@ function runViewport(options) {
         renderedCount: options.renderedCount,
         clientHeight: 500,
         initialLoadedCount: options.initialLoadedCount,
+        failedIndexes: options.failedIndexes,
         unsettledAtOrAfter: options.unsettled ? 0 : undefined,
         scriptArguments: [options.expectedCount, 150],
     }).result;
@@ -465,4 +524,20 @@ function testViewportSettleRejectsEmptyAndVisibleUnsettledStates() {
 }
 
 testViewportSettleRejectsEmptyAndVisibleUnsettledStates();
+
+function testViewportSettleTreatsTerminalThumbnailFailuresAsSettled() {
+    const result = runViewport({
+        expectedCount: 20,
+        renderedCount: 20,
+        initialLoadedCount: 20,
+        failedIndexes: [0],
+    });
+
+    equal(result.ready, true, "initial viewport should settle when visible failures are terminal");
+    equal(result.state.visibleLoaded, 4, "initial viewport loaded count must exclude failures");
+    equal(result.state.visibleFailed, 1, "initial viewport must report visible terminal failures");
+    equal(result.state.thumbnailFailureCount, 1, "initial viewport must serialize terminal failure evidence");
+}
+
+testViewportSettleTreatsTerminalThumbnailFailuresAsSettled();
 console.log(`benchmark dynamic traversal: ${assertionCount} assertions passed`);

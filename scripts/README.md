@@ -230,6 +230,12 @@ indexed items visited, and the exact current bottom. The live DOM remains
 bounded and is reported separately as `live_thumbnail_count`; a value over 500
 is a warning. The terminal viewport itself must
 be settled; prior settled regions cannot satisfy completion on its behalf.
+Stable `.thumbnail-failed` tiles are terminal for viewport settlement, but are
+not counted as loaded. Traversal and checkpoint state report the distinct
+`thumbnail_failure_count` plus a deterministic filename sample capped at 25;
+any failure emits an explicit warning, so a traversal with terminal failures is
+never silently clean. Exact canonical-count, distinct-visited-name,
+boundary, final-bottom, placeholder, and frame-cap gates are unchanged.
 
 Cold companion, warm reload, and A-B-A selections all use full dynamic
 traversal. Helper-level traversal and cold checkpoint capture restore

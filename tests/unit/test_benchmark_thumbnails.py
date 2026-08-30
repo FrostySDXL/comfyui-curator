@@ -882,6 +882,41 @@ def test_unsettled_reason_is_preserved_in_checkpoint_and_final_readiness(monkeyp
     assert any(expected_reason in warning for warning in final_readiness["warnings"])
 
 
+def test_terminal_thumbnail_failures_are_serialized_and_warned(monkeypatch, tmp_path):
+    """Terminal thumbnail failures remain separate from loaded counts and noisy."""
+    benchmark = load_benchmark_module()
+    spec = benchmark.build_fixture_specs("run-terminal-failures", [50], ["firefox"])[0]
+    runtime = benchmark.RuntimeContext(
+        origin="http://127.0.0.1:8188",
+        page_url="http://127.0.0.1:8188/curator",
+        paths=benchmark.runtime_paths("native"),
+        batch_root=Path(tmp_path),
+        active_batch=None,
+    )
+    (Path(tmp_path) / spec.primary_batch / ".thumbs").mkdir(parents=True)
+    driver, deps, _hooks = _shared_benchmark_driver(benchmark, spec, traversal="terminal_failures")
+    monkeypatch.setattr(benchmark, "_install_instrumentation", lambda *_args: None)
+    session = type("FakeSession", (), {"switch": lambda _self, _batch: None})()
+
+    checkpoints, _, final_readiness, checkpoint_warnings = benchmark._prepare_checkpoint_cold_phase(
+        driver, deps, session, runtime, spec, timeout=0.5
+    )
+
+    for checkpoint in checkpoints[1:]:
+        state = checkpoint["readiness"]["state"]
+        assert state["loaded"] == 18
+        assert state["thumbnail_failure_count"] == 2
+        assert state["thumbnail_failure_sample"] == ["item-0003", "item-0017"]
+    final_state = final_readiness["state"]
+    assert final_state["loaded"] == spec.size - 2, (
+        "final aggregate loaded count must not use the live virtual-window loadedCount"
+    )
+    assert final_state["thumbnail_failure_count"] == 2
+    assert final_state["thumbnail_failure_sample"] == ["item-0003", "item-0017"]
+    assert any("thumbnail failure" in warning.lower() for warning in checkpoint_warnings)
+    assert any("thumbnail failure" in warning.lower() for warning in final_readiness["warnings"])
+
+
 def test_checkpoint_data_appears_in_full_report_serialization():
     benchmark = load_benchmark_module()
     phase = benchmark._phase("cold_initial_load", "cold", {"dummy": True}, [])
@@ -1227,6 +1262,8 @@ def _shared_benchmark_driver(
                 target_count = int(args[1]) if len(args) > 1 else expected_count
                 mode = str(args[3]) if len(args) > 3 else "full"
                 events.append(("dynamic_traversal", expected_count, target_count, mode, traversal))
+                thumbnail_failure_count = 0
+                thumbnail_failure_sample = []
                 if traversal == "success":
                     rendered = target_count
                     ready = True
@@ -1248,6 +1285,16 @@ def _shared_benchmark_driver(
                     stagnation_reason = None
                     unsettled = 0
                     frame_capped = False
+                elif traversal == "terminal_failures":
+                    rendered = target_count
+                    ready = True
+                    bottom_visited = True
+                    unsettled = 0
+                    stagnation_reason = None
+                    frame_capped = False
+                    thumbnail_failure_count = 2
+                    thumbnail_failure_sample = ["item-0003", "item-0017"]
+                    growth_events = []
                 elif traversal in ("unsettled",):
                     rendered = target_count
                     ready = False
@@ -1313,7 +1360,13 @@ def _shared_benchmark_driver(
                     "expectedCount": expected_count,
                     "targetCount": target_count,
                     "renderedCount": rendered,
-                    "loadedCount": rendered,
+                    "loadedCount": (
+                        18
+                        if traversal == "terminal_failures"
+                        else rendered - thumbnail_failure_count
+                    ),
+                    "thumbnailFailureCount": thumbnail_failure_count,
+                    "thumbnailFailureSample": thumbnail_failure_sample,
                     "growthEvents": growth_events,
                     "regionsVisited": 5,
                     "visitedRegions": [
