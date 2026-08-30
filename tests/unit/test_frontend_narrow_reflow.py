@@ -7,6 +7,10 @@ from tests.unit.frontend_source import extract_function_body
 
 RESPONSIVE_CSS = Path("static/css/responsive.css")
 AI_SIDEBAR_JS = Path("static/js/ai-sidebar.js")
+ACTIVITY_CSS = Path("static/css/activity-center.css")
+LIGHTBOX_CSS = Path("static/css/lightbox.css")
+MODALS_CSS = Path("static/css/modals.css")
+PROMPTS_CSS = Path("static/css/prompts.css")
 
 
 def _narrow_block() -> str:
@@ -63,3 +67,35 @@ def test_inspector_overlay_defaults_closed_on_narrow_viewports() -> None:
     assert "aiSidebarOpen = false;" in handler
     assert "syncAiSidebarUi(false)" in handler
     assert "localStorage.setItem" not in handler
+
+
+def test_narrow_overlays_and_library_search_keep_content_reachable() -> None:
+    activity = ACTIVITY_CSS.read_text(encoding="utf-8")
+    assert "width: min(390px, calc(100vw - 28px));" in activity
+    assert "max-height: min(600px, calc(100vh - 78px));" in activity
+    assert ".activity-center-list" in activity
+    assert "overflow-y: auto;" in _rule_body(activity, ".activity-center-list")
+
+    modals = MODALS_CSS.read_text(encoding="utf-8")
+    history = _rule_body(modals, ".move-history-content")
+    assert "width: min(680px, calc(100vw - 32px));" in history
+    assert "max-height: calc(100vh - 40px);" in history
+    assert "overflow: hidden;" in history
+    assert "overflow-y: auto;" in _rule_body(modals, ".move-history-list")
+
+    prompts = PROMPTS_CSS.read_text(encoding="utf-8")
+    narrow_prompts = prompts.split("@media (max-width: 760px)", 1)[1]
+    assert "width: min(100vw - 16px, 680px);" in narrow_prompts
+    assert (
+        ".prompts-workbench-body { grid-template-columns: minmax(0, 1fr); overflow-y: auto; }"
+        in narrow_prompts
+    )
+    assert ".prompts-workbench-footer { flex-wrap: wrap; }" in narrow_prompts
+
+    lightbox = LIGHTBOX_CSS.read_text(encoding="utf-8")
+    panel = _rule_body(
+        lightbox,
+        ".lightbox-metadata-panel,\n        .lightbox-ai-panel",
+    )
+    assert "max-height: calc(100vh - 180px);" in panel
+    assert "overflow-y: auto;" in panel
