@@ -29,6 +29,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from ai_curate.models import CurationRun, ImageResult, JobState, RunTotals  # noqa: E402
+from image_curator import batch_store  # noqa: E402
 from image_curator import prompt_history  # noqa: E402
 from image_curator import search_index  # noqa: E402
 
@@ -527,8 +528,10 @@ def _generate_paging_batch(
     seed: int,
     pool: dict[tuple[object, ...], bytes],
 ) -> int:
-    inbox = batches_dir / BATCH_PAGING / "inbox"
-    inbox.mkdir(parents=True, exist_ok=True)
+    batch_dir = batches_dir / BATCH_PAGING
+    for folder in batch_store.BATCH_FOLDERS:
+        (batch_dir / folder).mkdir(parents=True, exist_ok=True)
+    inbox = batch_dir / "inbox"
     for index in range(large_count):
         group = index % 6
         name = f"eval_page_{index + 1:06d}.png"

@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from image_curator import batch_store
+
 SMALL_COUNT = 120
 IMAGE_RE = re.compile(r"eval_cull_\d{4}\.(png|jpg|webp|gif)$")
 
@@ -67,6 +69,15 @@ def test_fixture_builds_documented_layout(tmp_path):
     assert (inbox / "eval_cull_zero.png").is_file()
     assert len(list((culling / "public").glob("*.png"))) == fixture.PUBLIC_COUNT
     assert not (tmp_path / "batches" / "eval-paging").exists()
+
+
+def test_full_fixture_creates_all_configured_batch_folders(tmp_path):
+    fixture = load_fixture_module()
+    fixture.create_fixture(tmp_path, small_count=SMALL_COUNT, large_count=1)
+
+    for batch in (fixture.BATCH_CULLING, fixture.BATCH_PAGING):
+        batch_dir = tmp_path / "batches" / batch
+        assert all((batch_dir / folder).is_dir() for folder in batch_store.BATCH_FOLDERS)
 
 
 def test_json_payload_shapes(tmp_path):
