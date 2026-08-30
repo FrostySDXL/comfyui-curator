@@ -633,26 +633,46 @@ async function importAll() {
                 });
                 if (resp.ok) {
                     const data = await resp.json();
-                    activityComplete(activityId, 'completed', {
-                        completed: data.count || 0,
-                        total: pendingTotal || data.count || 0,
-                        result: `Imported ${data.count || 0} media files`,
-                        detail: 'Import finished',
+                    const importedCount = Math.max(0, Number(data.count) || 0);
+                    const failedCount = Math.max(0, Number(data.failed_count) || 0);
+                    const renamedCount = Math.max(0, Number(data.renamed_count) || 0);
+                    const pendingCount = Math.max(0, Number(data.pending_count) || 0);
+                    const importStatus = failedCount > 0 || pendingCount > 0 ? 'partial' : 'completed';
+                    const resultParts = [`Imported ${importedCount} media files`];
+                    if (renamedCount > 0) resultParts.push(`${renamedCount} renamed for collisions`);
+                    if (failedCount > 0) resultParts.push(`${failedCount} failed`);
+                    if (pendingCount > 0) resultParts.push(`${pendingCount} still pending`);
+                    const importResult = resultParts.join(' · ');
+                    activityComplete(activityId, importStatus, {
+                        completed: importedCount,
+                        total: pendingTotal || importedCount + failedCount,
+                        result: importResult,
+                        detail: importStatus === 'partial' ? 'Import partially completed' : 'Import finished',
                     });
-                    showToast(`Imported ${data.count} media files`);
-                    updatePendingImportUi(0, batch);
+                    showToast(importResult);
+                    updatePendingImportUi(pendingCount, batch);
                     await loadBatches();
                     if (currentBatch === batch && currentFolder === 'inbox')
                         await selectFolder(batch, 'inbox');
                 } else {
-                    activityComplete(activityId, 'failed', {error: 'Import failed', detail: 'The import request was rejected'});
-                    showToast('Import failed');
+                    const data = await resp.json().catch(() => ({}));
+                    const errorMessage = data.error || 'Import failed';
+                    activityComplete(activityId, 'failed', {error: errorMessage, detail: errorMessage});
+                    showToast(errorMessage);
                 }
             } catch (error) {
-                activityComplete(activityId, 'failed', {error: 'Import failed', detail: 'Status could not be confirmed'});
-                throw error;
+                const networkDetail = error instanceof Error && error.message
+                    ? String(error.message).slice(0, 160)
+                    : 'Status could not be confirmed';
+                const networkError = `Import failed: ${networkDetail}`;
+                activityComplete(activityId, 'failed', {error: networkError, detail: networkError});
+                showToast(networkError);
             } finally {
                 importInFlight = false;
+                updatePendingImportUi(
+                    document.getElementById('pending-count')?.textContent,
+                    document.getElementById('active-batch-select')?.value || batch
+                );
                 await pollImportAvailability();
             }
         }

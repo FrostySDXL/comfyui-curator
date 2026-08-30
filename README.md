@@ -43,7 +43,9 @@ before manual selection. Single-user, local-first, filesystem-backed.
   its query/scope/tab, or navigating away; late results do not reclaim the view.
 - **Import from ComfyUI** -- one-click **Import All** moves available outputs
   and adjacent JSON sidecars into the selected batch inbox. A lightweight
-  one-second status check enables the always-visible control when media arrives.
+  one-second status check enables the always-visible control when safe regular
+  media files arrive. Collision-safe renames and partial failures are reported
+  in Activity, and files that could not be moved remain pending for retry.
 - **AI-assisted scoring (optional)** -- sends images to a local vision LLM
   to check for prompt elements and quality baselines. The unified right
   inspector layers Overview, Metadata, and AI Evidence; its AI Evidence view

@@ -96,6 +96,124 @@ def test_batch_store_imports_pending_images(tmp_path):
     assert (output_dir / "skip.txt").exists()
 
 
+def test_import_all_pending_detailed_reports_failures_collisions_and_remaining_media(
+    tmp_path, monkeypatch
+):
+    batches_dir = tmp_path / "batches"
+    output_dir = tmp_path / "comfyui-outputs"
+    output_dir.mkdir()
+    batch_store.create_batch(batches_dir, "alpha")
+    inbox = batches_dir / "alpha" / "inbox"
+    (inbox / "duplicate.png").write_bytes(b"existing")
+    (output_dir / "duplicate.png").write_bytes(b"new")
+    (output_dir / "good.jpg").write_bytes(b"good")
+    (output_dir / "failed.webp").write_bytes(b"failed")
+    (output_dir / "ignored.txt").write_text("ignored", encoding="utf-8")
+    (output_dir / "nested").mkdir()
+
+    original_move = batch_store.move_image
+
+    def fail_one(src, dst, **kwargs):
+        if Path(src).name == "failed.webp":
+            return False
+        return original_move(src, dst, **kwargs)
+
+    monkeypatch.setattr(batch_store, "move_image", fail_one)
+
+    result = batch_store.import_all_pending_detailed(output_dir, batches_dir, "alpha")
+
+    assert result.imported_count == 2
+    assert result.failed_count == 1
+    assert result.renamed_count == 1
+    assert result.pending_count == 1
+    assert result.status == "partial"
+
+
+def test_import_detailed_rejects_missing_batch_before_source_mutation(tmp_path):
+    output_dir = tmp_path / "comfyui-outputs"
+    output_dir.mkdir()
+    pending = output_dir / "pending.png"
+    pending.write_bytes(b"pending")
+
+    with pytest.raises(ValueError, match="Invalid import destination"):
+        batch_store.import_all_pending_detailed(output_dir, tmp_path / "batches", "missing")
+
+    assert pending.exists()
+    assert not (tmp_path / "batches" / "missing").exists()
+
+
+def test_import_detailed_rejects_inbox_outside_root_before_source_mutation(tmp_path, monkeypatch):
+    batches_dir = tmp_path / "batches"
+    output_dir = tmp_path / "comfyui-outputs"
+    output_dir.mkdir()
+    batch_store.create_batch(batches_dir, "alpha")
+    pending = output_dir / "pending.png"
+    pending.write_bytes(b"pending")
+    inbox = batches_dir / "alpha" / "inbox"
+    outside = tmp_path / "outside-inbox"
+    outside.mkdir()
+    real_resolve = Path.resolve
+
+    def resolve(path, *args, **kwargs):
+        if path == inbox:
+            return outside
+        return real_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", resolve)
+
+    with pytest.raises(ValueError, match="Invalid import destination"):
+        batch_store.import_all_pending_detailed(output_dir, batches_dir, "alpha")
+
+    assert pending.exists()
+    assert not list(outside.iterdir())
+
+
+def test_import_detailed_allows_configured_root_symlink(tmp_path):
+    real_root = tmp_path / "real-batches"
+    configured_root = tmp_path / "configured-batches"
+    output_dir = tmp_path / "comfyui-outputs"
+    real_root.mkdir()
+    output_dir.mkdir()
+    try:
+        configured_root.symlink_to(real_root, target_is_directory=True)
+    except (NotImplementedError, OSError):
+        pytest.skip("symlink creation unavailable")
+    batch_store.create_batch(real_root, "alpha")
+    (output_dir / "pending.png").write_bytes(b"pending")
+
+    result = batch_store.import_all_pending_detailed(output_dir, configured_root, "alpha")
+
+    assert result.imported_count == 1
+    assert (real_root / "alpha" / "inbox" / "pending.png").exists()
+
+
+def test_get_pending_count_ignores_directories_symlinks_and_stat_errors(tmp_path, monkeypatch):
+    output_dir = tmp_path / "comfyui-outputs"
+    output_dir.mkdir()
+    (output_dir / "good.png").write_bytes(b"good")
+    (output_dir / "nested").mkdir()
+    linked = output_dir / "linked.png"
+    linked.write_bytes(b"linked")
+    real_is_symlink = Path.is_symlink
+
+    def is_symlink(path):
+        if path == linked:
+            return True
+        return real_is_symlink(path)
+
+    monkeypatch.setattr(Path, "is_symlink", is_symlink)
+    real_is_file = Path.is_file
+
+    def is_file(path):
+        if path.name == "good.png":
+            raise OSError("vanished")
+        return real_is_file(path)
+
+    monkeypatch.setattr(Path, "is_file", is_file)
+
+    assert batch_store.get_pending_count(output_dir) == 0
+
+
 def test_import_renames_media_when_its_json_sidecar_destination_collides(tmp_path):
     batches_dir = tmp_path / "batches"
     output_dir = tmp_path / "incoming"
@@ -111,6 +229,35 @@ def test_import_renames_media_when_its_json_sidecar_destination_collides(tmp_pat
     assert (inbox / "favorite_1.png").read_bytes() == b"image"
     assert (inbox / "favorite_1.json").read_text(encoding="utf-8") == '{"rating": 5}'
     assert (inbox / "favorite.json").read_text(encoding="utf-8") == '{"existing": true}'
+
+
+def test_import_detailed_counts_media_sidecar_failure_as_failed_and_pending(tmp_path, monkeypatch):
+    batches_dir = tmp_path / "batches"
+    output_dir = tmp_path / "incoming"
+    output_dir.mkdir()
+    batch_store.create_batch(batches_dir, "alpha")
+    media = output_dir / "clip.mp4"
+    sidecar = output_dir / "clip.mp4.json"
+    media.write_bytes(b"video")
+    sidecar.write_text('{"source": "test"}', encoding="utf-8")
+    original_move = batch_store.shutil.move
+
+    def fail_sidecar(src, dst):
+        if Path(src) == sidecar:
+            raise OSError("simulated sidecar failure")
+        return original_move(src, dst)
+
+    monkeypatch.setattr(batch_store.shutil, "move", fail_sidecar)
+
+    result = batch_store.import_all_pending_detailed(output_dir, batches_dir, "alpha")
+
+    assert result.imported_count == 0
+    assert result.failed_count == 1
+    assert result.renamed_count == 0
+    assert result.pending_count == 1
+    assert result.status == "partial"
+    assert media.exists()
+    assert sidecar.exists()
 
 
 def test_batch_store_import_all_pending_continues_after_move_failure(tmp_path, monkeypatch):

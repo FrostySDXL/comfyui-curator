@@ -9,8 +9,9 @@ import logging
 import os
 import random
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Iterator
 
 from .sidecar_metadata import find_json_sidecar, sidecar_destination
 
@@ -36,6 +37,30 @@ MEDIA_MIME_TYPES = {
 # Compatibility boundary used by vision scoring and public-image preparation.
 IMAGE_EXTENSIONS = STILL_IMAGE_EXTENSIONS
 BATCH_FOLDERS = ("inbox", "shortlisted", "finals", "rejects")
+
+
+@dataclass(frozen=True)
+class ImportResult:
+    """Outcome of an import attempt, including work left in the source."""
+
+    imported_count: int
+    failed_count: int
+    renamed_count: int
+    pending_count: int
+
+    @property
+    def status(self) -> str:
+        return "partial" if self.failed_count or self.pending_count else "completed"
+
+    def as_dict(self) -> dict[str, int | str]:
+        """Return the stable adapter response fields."""
+        return {
+            "count": self.imported_count,
+            "failed_count": self.failed_count,
+            "renamed_count": self.renamed_count,
+            "pending_count": self.pending_count,
+            "status": self.status,
+        }
 
 
 def media_kind(path_or_name: str | Path) -> str | None:
@@ -341,10 +366,25 @@ def get_all_batch_metadata(batches_dir: Path) -> dict[str, dict[str, float]]:
 
 def get_pending_count(comfyui_output: Path) -> int:
     """Return supported image count waiting in the ComfyUI output directory."""
+    return sum(1 for _ in _iter_pending_media(comfyui_output))
+
+
+def _iter_pending_media(comfyui_output: Path) -> Iterator[Path]:
+    """Yield regular, non-symlinked supported media at the source root."""
     comfyui_output = Path(comfyui_output)
-    if not comfyui_output.exists():
-        return 0
-    return len([f for f in comfyui_output.iterdir() if _is_viewable_media(f)])
+    try:
+        if not comfyui_output.is_dir():
+            return
+        entries = list(comfyui_output.iterdir())
+    except OSError:
+        return
+    for path in entries:
+        try:
+            if path.is_symlink() or not path.is_file() or not _is_viewable_media(path):
+                continue
+        except OSError:
+            continue
+        yield path
 
 
 def _collision_safe_name(dest_dir: Path, name: str, source_path: Path | None = None) -> str:
@@ -494,26 +534,60 @@ def move_images(source_dir: Path, names: list[str], dest_dir: Path) -> tuple[int
     return moved, skipped, moved_names
 
 
-def import_all_pending(comfyui_output: Path, batches_dir: Path, batch_name: str) -> int:
-    """Move all pending supported images into a batch inbox."""
+def _resolve_import_destination(batches_dir: Path, batch_name: str) -> Path:
+    """Resolve an existing, contained, non-symlinked batch inbox safely."""
+    try:
+        root = Path(batches_dir)
+        trusted_root = root.resolve(strict=True)
+        inbox = get_batch_folder(root, batch_name, "inbox")
+        batch_dir = inbox.parent
+        if batch_dir.is_symlink() or not batch_dir.is_dir():
+            raise ValueError
+        real_batch = batch_dir.resolve(strict=True)
+        real_batch.relative_to(trusted_root)
+        if inbox.is_symlink() or not inbox.is_dir():
+            raise ValueError
+        real_inbox = inbox.resolve(strict=True)
+        real_inbox.relative_to(trusted_root)
+        real_inbox.relative_to(real_batch)
+        return real_inbox
+    except (OSError, TypeError, ValueError) as exc:
+        raise ValueError("Invalid import destination") from exc
+
+
+def import_all_pending_detailed(
+    comfyui_output: Path, batches_dir: Path, batch_name: str
+) -> ImportResult:
+    """Move all pending supported media into a batch inbox and report the outcome."""
     comfyui_output = Path(comfyui_output)
-    if not comfyui_output.exists():
-        return 0
+    dest_inbox = _resolve_import_destination(batches_dir, batch_name)
 
-    dest_inbox = get_batch_folder(batches_dir, batch_name, "inbox")
-    dest_inbox.mkdir(parents=True, exist_ok=True)
-
-    count = 0
-    for path in comfyui_output.iterdir():
+    imported_count = 0
+    failed_count = 0
+    renamed_count = 0
+    for path in _iter_pending_media(comfyui_output):
         try:
-            is_symlink = path.is_symlink()
-        except OSError:
-            continue
-        if not is_symlink and _is_viewable_media(path):
             safe_name = _collision_safe_name(dest_inbox, path.name, path)
-            dst = dest_inbox / safe_name
-            if move_image(path, dst):
-                count += 1
-            else:
-                logger.warning("Failed to import %s", path.name)
-    return count
+        except OSError:
+            failed_count += 1
+            logger.warning("Failed to inspect import destination for %s", path.name)
+            continue
+        dst = dest_inbox / safe_name
+        if move_image(path, dst):
+            imported_count += 1
+            if safe_name != path.name:
+                renamed_count += 1
+        else:
+            failed_count += 1
+            logger.warning("Failed to import %s", path.name)
+    return ImportResult(
+        imported_count=imported_count,
+        failed_count=failed_count,
+        renamed_count=renamed_count,
+        pending_count=get_pending_count(comfyui_output),
+    )
+
+
+def import_all_pending(comfyui_output: Path, batches_dir: Path, batch_name: str) -> int:
+    """Compatibility wrapper returning only the imported media count."""
+    return import_all_pending_detailed(comfyui_output, batches_dir, batch_name).imported_count

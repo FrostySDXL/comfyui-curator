@@ -184,6 +184,11 @@ def import_all_pending(batch_name):
     return batch_store.import_all_pending(COMFYUI_OUTPUT, BATCHES_DIR, batch_name)
 
 
+def import_all_pending_detailed(batch_name):
+    """Import available media and retain the detailed operator-facing outcome."""
+    return batch_store.import_all_pending_detailed(COMFYUI_OUTPUT, BATCHES_DIR, batch_name)
+
+
 @app.route("/")
 def index():
     return render_template(
@@ -262,10 +267,25 @@ def api_import_all():
     batch = data.get("batch", "")
     if not batch:
         return jsonify({"error": "Batch required"}), 400
-    count = import_all_pending(batch)
-    if count:
+    batch_name, err = _require_batch(batch)
+    if err:
+        return jsonify(err[0]), err[1]
+    try:
+        batch_path = BATCHES_DIR / batch_name
+        if batch_path.is_symlink() or not batch_path.is_dir():
+            return jsonify({"error": "Invalid import destination"}), 400
+        inbox = get_batch_folder(batch_name, "inbox")
+        if inbox.is_symlink() or not inbox.is_dir():
+            return jsonify({"error": "Invalid import destination"}), 400
+        _, path_error = _safe_path(BATCHES_DIR, batch_name, "inbox")
+        if path_error:
+            return jsonify({"error": "Invalid import destination"}), 400
+    except (OSError, TypeError, ValueError):
+        return jsonify({"error": "Invalid import destination"}), 400
+    result = import_all_pending_detailed(batch_name)
+    if result.imported_count:
         _folder_index.refresh(batch, "inbox")
-    return jsonify({"success": True, "count": count})
+    return jsonify({"success": True, **result.as_dict()})
 
 
 @app.route("/api/images/<batch>/<folder>")

@@ -1164,7 +1164,14 @@ def test_native_import_all_contract_uses_configured_source(tmp_path, monkeypatch
         )
         assert await _invoke(router, "POST", route, {"batch": "alpha"}) == (
             200,
-            {"success": True, "count": 1},
+            {
+                "success": True,
+                "count": 1,
+                "failed_count": 0,
+                "renamed_count": 0,
+                "pending_count": 0,
+                "status": "completed",
+            },
         )
         assert (settings.batch_root / "alpha" / "inbox" / "one.png").read_bytes() == b"one"
         assert (settings.import_source / "skip.txt").exists()

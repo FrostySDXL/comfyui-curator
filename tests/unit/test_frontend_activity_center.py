@@ -90,6 +90,33 @@ def test_activity_adapters_cover_import_indexes_public_export_and_ai_cancel() ->
     assert "No active work · ${records.length} recent" in js
 
 
+def test_import_activity_uses_backend_outcome_and_preserves_pending_count() -> None:
+    js = read_frontend_js()
+    import_body = extract_function_body(js, "async function importAll()")
+
+    assert "data.failed_count" in import_body
+    assert "data.renamed_count" in import_body
+    assert "data.pending_count" in import_body
+    assert "activityComplete(activityId, importStatus" in import_body
+    assert "updatePendingImportUi(pendingCount, batch)" in import_body
+    assert "data.error || 'Import failed'" in import_body
+    assert "throw error" not in import_body
+
+
+def test_import_finally_repaints_button_before_offline_poll() -> None:
+    js = read_frontend_js()
+    import_body = extract_function_body(js, "async function importAll()")
+    finally_body = import_body[import_body.rfind("finally {") :]
+
+    clear_index = finally_body.index("importInFlight = false;")
+    repaint_index = finally_body.index("updatePendingImportUi(")
+    poll_index = finally_body.index("pollImportAvailability()")
+
+    assert clear_index < repaint_index < poll_index
+    assert "document.getElementById('pending-count')?.textContent" in finally_body
+    assert "document.getElementById('active-batch-select')?.value" in finally_body
+
+
 def test_activity_center_is_loaded_before_runtime_bootstrap_in_both_templates() -> None:
     index = INDEX_HTML.read_text(encoding="utf-8")
     curator = CURATOR_HTML.read_text(encoding="utf-8")

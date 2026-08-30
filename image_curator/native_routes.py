@@ -301,15 +301,15 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             service.resolve_content_directory(batch, "inbox")
         except ValueError:
             return web.json_response({"error": "Invalid import destination"}, status=400)
-        count = await asyncio.to_thread(
-            batch_store.import_all_pending,
+        result = await asyncio.to_thread(
+            batch_store.import_all_pending_detailed,
             service.settings.import_source,
             service.settings.batch_root,
             batch,
         )
-        if count:
+        if result.imported_count:
             service.folder_index.refresh(batch, "inbox")
-        return web.json_response({"success": True, "count": count})
+        return web.json_response({"success": True, **result.as_dict()})
 
     async def get_images(request):
         batch = request.match_info["batch"]
