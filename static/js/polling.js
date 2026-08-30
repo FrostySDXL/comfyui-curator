@@ -18,7 +18,7 @@ async function pollForChanges() {
             if (!currentBatch || isVirtualCollectionView() || isPublicView() || !currentFolder || serverSelection || selectedImages.size > 0 || isInteractionBusy()) return;
             const transitionToken = viewTransitionToken;
             const scopeKey = getViewScopeKey();
-            if (CURATOR_NATIVE && folderSnapshot) {
+            if (folderSnapshot) {
                 const [snapshotResp, runResp] = await Promise.all([
                     apiPollFolderSnapshot(
                         currentBatch, currentFolder, _folderTransportSort(), currentOrder, folderSnapshot.revision,

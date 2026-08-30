@@ -525,7 +525,14 @@ async function loadCurrentFolderImages(options = {}) {
             });
             setGridLoadingStatus(true, 'Loading images…');
             try {
-                if (CURATOR_NATIVE) {
+                /* Standalone large folders use the revisioned paged path so batch
+                   switches and background polls avoid full-listing refetches.
+                   Small folders keep the legacy single-fetch path. Native always
+                   uses the paged path. */
+                const folderCountHint = allCounts[batch]?.[folder];
+                const usePagedFolder = CURATOR_NATIVE
+                    || (typeof folderCountHint === 'number' && folderCountHint >= PAGED_FOLDER_THRESHOLD);
+                if (usePagedFolder) {
                     const content = document.querySelector('.content');
                     const priorScrollTop = content ? content.scrollTop : 0;
                     const snapshot = await _waitForFolderSnapshot(batch, folder, requestToken);

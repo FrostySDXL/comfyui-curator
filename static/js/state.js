@@ -61,6 +61,7 @@
         let folderPageInflight = new Map();
         let pagedFolderMode = false;
         const FOLDER_PAGE_SIZE = 256;
+        const PAGED_FOLDER_THRESHOLD = 2000;
         let currentIndex = 0;
         let allCounts = {};
         let currentSort = 'date';

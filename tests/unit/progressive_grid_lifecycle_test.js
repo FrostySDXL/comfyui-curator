@@ -456,6 +456,7 @@ function createHarness(options = {}) {
         let allCounts = {};
         let folderRequestToken = 0;
         const CURATOR_NATIVE = false;
+        const PAGED_FOLDER_THRESHOLD = 2000;
         function getImageIdentityKey(img, sourceOverride = null) {
             if (!img || !img.name) return '';
             const source = sourceOverride || {batch: currentBatch, folder: currentFolder};
