@@ -854,6 +854,34 @@ def test_traversal_checkpoint_readiness(
         assert r3.get("reason") is not None, "cp3 unavailable must have reason"
 
 
+def test_unsettled_reason_is_preserved_in_checkpoint_and_final_readiness(monkeypatch, tmp_path):
+    """The precise dynamic settle failure must survive checkpoint serialization."""
+    benchmark = load_benchmark_module()
+    spec = benchmark.build_fixture_specs("run-unsettled-reason", [50], ["firefox"])[0]
+    runtime = benchmark.RuntimeContext(
+        origin="http://127.0.0.1:8188",
+        page_url="http://127.0.0.1:8188/curator",
+        paths=benchmark.runtime_paths("native"),
+        batch_root=Path(tmp_path),
+        active_batch=None,
+    )
+    (Path(tmp_path) / spec.primary_batch / ".thumbs").mkdir(parents=True)
+    driver, deps, _hooks = _shared_benchmark_driver(benchmark, spec, traversal="unsettled")
+    monkeypatch.setattr(benchmark, "_install_instrumentation", lambda *_args: None)
+    session = type("FakeSession", (), {"switch": lambda _self, _batch: None})()
+
+    checkpoints, _, final_readiness, checkpoint_warnings = benchmark._prepare_checkpoint_cold_phase(
+        driver, deps, session, runtime, spec, timeout=0.5
+    )
+
+    expected_reason = "Visible images did not settle"
+    assert expected_reason in checkpoints[1]["readiness"]["reason"]
+    assert expected_reason in checkpoints[2]["readiness"]["reason"]
+    assert expected_reason in final_readiness["reason"]
+    assert any(expected_reason in warning for warning in checkpoint_warnings)
+    assert any(expected_reason in warning for warning in final_readiness["warnings"])
+
+
 def test_checkpoint_data_appears_in_full_report_serialization():
     benchmark = load_benchmark_module()
     phase = benchmark._phase("cold_initial_load", "cold", {"dummy": True}, [])

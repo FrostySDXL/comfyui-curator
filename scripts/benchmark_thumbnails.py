@@ -2136,6 +2136,7 @@ def _prepare_checkpoint_cold_phase(
         "available": partial_traversal.get("available", False),
         "reason": (
             partial_traversal.get("stagnationReason")
+            or partial_traversal.get("unsettledReason")
             or partial_traversal.get("reason")
             or (None if partial_ready else "partial dynamic traversal did not reach target")
         ),
@@ -2186,6 +2187,7 @@ def _prepare_checkpoint_cold_phase(
         "available": full_traversal.get("available", False),
         "reason": (
             full_traversal.get("stagnationReason")
+            or full_traversal.get("unsettledReason")
             or full_traversal.get("reason")
             or (None if full_ready else "full dynamic traversal did not reach target")
         ),
