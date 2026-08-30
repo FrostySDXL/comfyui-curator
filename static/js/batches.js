@@ -488,6 +488,10 @@ function updateFolderTabs() {
         }
 
 function selectBatch(batch) {
+            const searchModal = document.getElementById('prompts-modal');
+            if (searchModal?.classList.contains('active') && typeof hidePromptsModal === 'function') {
+                hidePromptsModal();
+            }
             if (isWorkspaceSearchView()) {
                 deactivateWorkspaceSearchFilter();
                 workspaceSearchReturnContext = null;
@@ -519,6 +523,7 @@ function selectBatch(batch) {
                 beginViewTransition({clearImages: true, closeLightbox: true});
                 resetAiBatchState(false);
                 showGridLoadingPlaceholders(batch, 'inbox');
+                _focusSelectedWorkspaceControl('inbox');
             }
             showAiCuratePanel();
             selectFolder(batch, 'inbox');
@@ -560,6 +565,12 @@ async function selectFolder(batch, folder) {
             showGridLoadingPlaceholders(batch, folder);
             updateFolderTabs();
             await loadCurrentFolderImages();
+        }
+
+function _focusSelectedWorkspaceControl(folder) {
+            const target = [...document.querySelectorAll('.folder-tab')]
+                .find(tab => tab.dataset.folder === folder);
+            if (target && typeof target.focus === 'function') target.focus({preventScroll: true});
         }
 
 function setBatchSort(sort) {

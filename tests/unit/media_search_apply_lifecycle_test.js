@@ -157,6 +157,82 @@ async function testClearRestoresLegacyAndPagedAnchors() {
     assert.deepEqual(paged.restored, [paged.anchor], "paged Clear must restore its captured grid anchor");
 }
 
+async function testClearReturnsFocusToRestoredFolderControl() {
+    const fixture = makeContext();
+    const clearButton = fixture.context.document.getElementById("workspace-search-filter-clear");
+    const folderTab = makeNode();
+    folderTab.dataset = {folder: "inbox"};
+    folderTab.focus = () => { fixture.context.document.activeElement = folderTab; };
+    fixture.context.document.activeElement = clearButton;
+    fixture.context.document.querySelectorAll = selector => selector === ".folder-tab" ? [folderTab] : [];
+    fixture.context.selectFolder = async () => {};
+    vm.runInContext(
+        "workspaceSearchFilter = {query: 'needle'}; workspaceSearchReturnContext = {batch: 'batch-a', folder: 'inbox'};",
+        fixture.context,
+    );
+
+    await fixture.context.clearWorkspaceSearchFilter();
+
+    assert.equal(fixture.context.document.activeElement, folderTab,
+        "Clear must leave focus on the restored folder control instead of the hidden filter bar");
+}
+
+async function testEditDoesNotStealFocusAfterSearchModalCloses() {
+    const fixture = makeContext();
+    const input = fixture.context.document.getElementById("media-search-input");
+    input.focus = () => { fixture.context.document.activeElement = input; };
+    input.select = () => {};
+    const modal = fixture.context.document.getElementById("prompts-modal");
+    const show = deferred();
+    fixture.context.showPromptsModal = () => show.promise;
+    fixture.context.document.activeElement = fixture.context.document.getElementById("workspace-search-filter-edit");
+    vm.runInContext("workspaceSearchFilter = {query: 'needle', scope: 'folder'};", fixture.context);
+
+    const edit = fixture.context.editWorkspaceSearchFilter();
+    modal.classList.remove("active");
+    show.resolve();
+    await edit;
+
+    assert.notEqual(fixture.context.document.activeElement, input,
+        "a closed Search modal must not reclaim focus after delayed Edit setup");
+}
+
+function testBatchSwitchMovesFocusToNewWorkspaceControl() {
+    const fixture = makeContext();
+    const batchesSource = fs.readFileSync("static/js/batches.js", "utf8");
+    const modal = fixture.context.document.getElementById("prompts-modal");
+    let modalHidden = false;
+    fixture.context.hidePromptsModal = () => {
+        modalHidden = true;
+        modal.classList.remove("active");
+    };
+    const folderTab = makeNode();
+    folderTab.dataset = {folder: "inbox"};
+    folderTab.focus = () => { fixture.context.document.activeElement = folderTab; };
+    const batchName = makeNode();
+    batchName.dataset = {batch: "batch-b"};
+    fixture.context.document.querySelectorAll = selector => {
+        if (selector === ".folder-tab") return [folderTab];
+        if (selector === ".batch-name") return [batchName];
+        return [];
+    };
+    vm.runInContext([
+        extractFunction(batchesSource, "function selectBatch("),
+        extractFunction(batchesSource, "function _focusSelectedWorkspaceControl("),
+        "saveBatchState = () => {}; updateAutoImportQuickAction = () => {};",
+        "showGridLoadingPlaceholders = () => {}; showAiCuratePanel = () => {};",
+        "selectFolder = () => {}; loadUniversalFavorites = () => {}; loadAllPublic = () => {};",
+        "currentBatch = 'batch-a'; currentFolder = 'inbox';",
+    ].join("\n"), fixture.context);
+
+    fixture.context.selectBatch("batch-b");
+
+    assert.equal(fixture.context.document.activeElement, folderTab,
+        "switching batches must focus a control in the newly active workspace");
+    assert.equal(modalHidden, true,
+        "switching batches must close an active Search modal before moving workspace focus");
+}
+
 async function testMediaSearchBuildCancellationStopsQueuedBatches() {
     const fixture = makeContext();
     let registration = null;
@@ -352,6 +428,9 @@ async function main() {
     assert.equal(vm.runInContext("images[0].name", overlap.context), "second.png", "newer apply wins the overlap");
     assert.equal(overlap.context.document.getElementById("media-search-apply-btn").disabled, false, "newer apply re-enables its button");
     await testClearRestoresLegacyAndPagedAnchors();
+    await testClearReturnsFocusToRestoredFolderControl();
+    await testEditDoesNotStealFocusAfterSearchModalCloses();
+    testBatchSwitchMovesFocusToNewWorkspaceControl();
     await testMediaSearchBuildCancellationStopsQueuedBatches();
     console.log("media search apply lifecycle checks passed");
 }

@@ -9,6 +9,7 @@ INDEX_HTML = Path("templates/index.html")
 API_JS = Path("static/js/api.js")
 PROMPTS_JS = Path("static/js/prompts.js")
 EVENTS_JS = Path("static/js/events.js")
+BATCHES_JS = Path("static/js/batches.js")
 
 
 def test_media_search_apply_lifecycle_vm_regression():
@@ -204,6 +205,25 @@ def test_media_search_clear_invokes_restore_anchor_helper():
     clear_filter = extract_function_body(prompts, "async function clearWorkspaceSearchFilter()")
 
     assert "_restoreWorkspaceSearchReturnAnchor(context)" in clear_filter
+
+
+def test_media_search_clear_and_batch_switch_restore_useful_focus():
+    prompts = PROMPTS_JS.read_text(encoding="utf-8")
+    batches = BATCHES_JS.read_text(encoding="utf-8")
+
+    clear_filter = extract_function_body(prompts, "async function clearWorkspaceSearchFilter()")
+    edit_filter = extract_function_body(prompts, "async function editWorkspaceSearchFilter()")
+    focus_return = extract_function_body(prompts, "function _focusWorkspaceSearchReturnControl(")
+    select_batch = extract_function_body(batches, "function selectBatch(")
+    focus_batch = extract_function_body(batches, "function _focusSelectedWorkspaceControl(")
+
+    assert "_focusWorkspaceSearchReturnControl(context)" in clear_filter
+    assert "modal.classList.contains('active')" in edit_filter
+    assert "folder-tab" in focus_return
+    assert "preventScroll: true" in focus_return
+    assert "hidePromptsModal()" in select_batch
+    assert "_focusSelectedWorkspaceControl('inbox')" in select_batch
+    assert "folder-tab" in focus_batch
 
 
 def test_media_search_restore_anchor_resolves_paged_anchors():

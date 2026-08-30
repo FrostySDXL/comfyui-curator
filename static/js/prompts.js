@@ -1028,6 +1028,18 @@
             }
         }
 
+        function _focusWorkspaceSearchReturnControl(context) {
+            const folderTab = context?.folder
+                ? [...document.querySelectorAll('.folder-tab')]
+                    .find(tab => tab.dataset.folder === context.folder)
+                : null;
+            const target = folderTab
+                || document.querySelector('#workspace-toolbar button')
+                || document.querySelector('#prompts-btn')
+                || document.querySelector('#batch-search');
+            if (target && typeof target.focus === 'function') target.focus({preventScroll: true});
+        }
+
         async function clearWorkspaceSearchFilter() {
             const context = workspaceSearchReturnContext;
             deactivateWorkspaceSearchFilter();
@@ -1038,6 +1050,7 @@
                 images = [];
                 updateImageCountLabel();
                 updateGrid();
+                _focusWorkspaceSearchReturnControl(context);
                 return;
             }
             if (context.batch === '__favorites__') {
@@ -1052,6 +1065,7 @@
             if (typeof _restoreWorkspaceSearchReturnAnchor === 'function') {
                 _restoreWorkspaceSearchReturnAnchor(context);
             }
+            _focusWorkspaceSearchReturnControl(context);
         }
 
         async function editWorkspaceSearchFilter() {
@@ -1062,6 +1076,8 @@
             if (scope) scope.value = workspaceSearchFilter.scope;
             setLibrarySearchTab('images');
             await showPromptsModal();
+            const modal = document.getElementById('prompts-modal');
+            if (!modal || !modal.classList.contains('active')) return;
             input?.focus();
             input?.select();
         }
