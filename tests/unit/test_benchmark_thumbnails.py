@@ -342,6 +342,55 @@ def test_resource_metrics_keep_unavailable_values_truthful():
     }
 
 
+def test_resource_metrics_report_unique_duplicates_and_known_batch_counts():
+    benchmark = load_benchmark_module()
+    entries = [
+        {
+            "name": "http://localhost/curator/thumb/primary/inbox/a.png",
+            "duration": 12.5,
+            "transferSize": 100,
+            "encodedBodySize": 2048,
+        },
+        {
+            "name": "http://localhost/curator/thumb/primary/inbox/a.png",
+            "duration": 1.5,
+            "transferSize": 0,
+            "encodedBodySize": 2048,
+        },
+        {
+            "name": "http://localhost/curator/thumb/companion/inbox/b.png",
+            "duration": 2,
+            "transferSize": 0,
+            "encodedBodySize": 1024,
+        },
+        {
+            "name": "http://localhost/curator/thumb/primary/inbox/c.png",
+            "duration": 3,
+            "transferSize": 0,
+            "encodedBodySize": 0,
+        },
+    ]
+
+    metrics = benchmark.summarize_thumbnail_resources(
+        entries,
+        "/curator/thumb/",
+        batch_labels={"primary": "primary", "companion": "companion"},
+    )
+
+    assert metrics["entry_count"] == 4
+    assert metrics["request_count"] == 4
+    assert metrics["unique_url_count"] == 3
+    assert metrics["duplicate_entry_count"] == 1
+    assert metrics["candidate_cache_hits"] == 2
+    assert metrics["candidate_cache_misses"] == 2
+    assert "application fetch" in metrics["methodology"]
+    assert "not necessarily server wire requests" in metrics["methodology"]
+    assert metrics["batch_metrics"] == {
+        "primary": {"entry_count": 3, "unique_url_count": 2, "duplicate_entry_count": 1},
+        "companion": {"entry_count": 1, "unique_url_count": 1, "duplicate_entry_count": 0},
+    }
+
+
 def test_instrumentation_js_contracts():
     """INSTALL_INSTRUMENTATION, PAGE_METRICS, BLOB_BYTES, and BLOB_METHODOLOGY
     must satisfy blob-wrapping, main-realm bridge, and snapshot contracts."""
@@ -920,6 +969,7 @@ def test_summary_renders_each_phase_once_without_duplicate_or_swap():
     # Checkpoint section rendered
     assert "## Checkpoints" in summary
     assert "first_viewport_settled" in summary
+    assert "not necessarily server wire requests" in summary
 
 
 @pytest.mark.parametrize(

@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 from urllib.request import Request, urlopen
 
 from PIL import Image, ImageDraw, PngImagePlugin
@@ -293,8 +293,35 @@ def remove_owned_batch(batch_root: Path, batch_path: Path, run_id: str, batch: s
     shutil.rmtree(resolved_batch)
 
 
+def _resource_entry_counts(entries: list[dict[str, Any]]) -> dict[str, int]:
+    names = [str(entry.get("name", "")) for entry in entries]
+    unique_count = len(set(names))
+    return {
+        "entry_count": len(entries),
+        "unique_url_count": unique_count,
+        "duplicate_entry_count": len(entries) - unique_count,
+    }
+
+
+def _resource_batch_label(
+    entry: dict[str, Any], thumbnail_prefix: str, batch_labels: dict[str, str]
+) -> str | None:
+    path = urlsplit(str(entry.get("name", ""))).path
+    prefix = "/" + thumbnail_prefix.strip("/") + "/"
+    if not path.startswith(prefix):
+        return None
+    encoded_batch = path[len(prefix) :].split("/", 1)[0]
+    batch_name = unquote(encoded_batch)
+    for label, expected_batch in batch_labels.items():
+        if batch_name == expected_batch:
+            return label
+    return None
+
+
 def summarize_thumbnail_resources(
-    entries: list[dict[str, Any]], thumbnail_prefix: str
+    entries: list[dict[str, Any]],
+    thumbnail_prefix: str,
+    batch_labels: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     thumbnail_entries = [
         entry for entry in entries if thumbnail_prefix in str(entry.get("name", ""))
@@ -314,12 +341,16 @@ def summarize_thumbnail_resources(
         "reason": None,
         "methodology": "transferSize == 0 and encodedBodySize > 0",
     }
+    candidate_hits: int | None = None
+    candidate_misses: int | None = None
     if byte_sizes_available:
         hits = 0
         for encoded, transfer in zip(encoded_values, transfer_values, strict=True):
             if isinstance(encoded, (int, float)) and isinstance(transfer, (int, float)):
                 if transfer == 0 and encoded > 0:
                     hits += 1
+        candidate_hits = hits
+        candidate_misses = len(thumbnail_entries) - hits
         heuristic["value"] = {
             "candidate_hits": hits,
             "candidate_misses": len(thumbnail_entries) - hits,
@@ -329,8 +360,11 @@ def summarize_thumbnail_resources(
         heuristic["reason"] = (
             "Resource Timing byte sizes were unavailable for one or more thumbnails"
         )
-    return {
+    metrics: dict[str, Any] = {
+        **_resource_entry_counts(thumbnail_entries),
         "request_count": len(thumbnail_entries),
+        "candidate_cache_hits": candidate_hits,
+        "candidate_cache_misses": candidate_misses,
         "duration_ms": round(
             sum(float(entry.get("duration") or 0) for entry in thumbnail_entries), 3
         ),
@@ -345,8 +379,25 @@ def summarize_thumbnail_resources(
             else None
         ),
         "cache_hit_heuristic": heuristic,
-        "methodology": "Resource Timing entries whose URL contains the runtime thumbnail prefix",
+        "methodology": (
+            "Resource Timing entries are application fetch observations whose URL contains "
+            "the runtime thumbnail prefix; entries are not necessarily server wire requests. "
+            "Unique and duplicate counts use exact URL strings; cache hits are a transfer-size "
+            "heuristic."
+        ),
     }
+    metrics["batch_metrics"] = {}
+    if batch_labels:
+        grouped: dict[str, list[dict[str, Any]]] = {label: [] for label in batch_labels}
+        for entry in thumbnail_entries:
+            label = _resource_batch_label(entry, thumbnail_prefix, batch_labels)
+            if label is not None:
+                grouped[label].append(entry)
+        metrics["batch_metrics"] = {
+            label: _resource_entry_counts(grouped_entries)
+            for label, grouped_entries in grouped.items()
+        }
+    return metrics
 
 
 def unavailable(reason: str, methodology: str | None = None) -> dict[str, Any]:
@@ -476,6 +527,7 @@ def render_markdown_summary(report: dict[str, Any]) -> str:
             "",
             "## Method Notes",
             "",
+            "- Thumbnail request_count is the total Resource Timing entry count (application fetch observations), not necessarily server wire requests; unique_url_count and duplicate_entry_count use exact URL strings.",
             "- Cache hits are a Resource Timing heuristic, not a browser cache guarantee.",
             "- Blob bytes come from page-realm create/revoke events published through a JSON DOM bridge.",
             "- Process memory is browser-process RSS/working set measured through psutil.",
@@ -1808,10 +1860,13 @@ def _phase_metrics(
     batch: str,
     readiness: dict[str, Any] | None = None,
     frame_data: dict[str, Any] | None = None,
+    batch_labels: dict[str, str] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     entries = driver.execute_script(RESOURCE_ENTRIES)
     page = driver.execute_script(PAGE_METRICS)
-    resources = summarize_thumbnail_resources(entries, runtime.paths.thumbnail_prefix)
+    resources = summarize_thumbnail_resources(
+        entries, runtime.paths.thumbnail_prefix, batch_labels=batch_labels
+    )
     blob_raw = driver.execute_async_script(BLOB_BYTES)
     if blob_raw.get("available"):
         blob_bytes = available(
@@ -2266,6 +2321,7 @@ def benchmark_case(
             spec.browser,
             spec.primary_batch,
             readiness,
+            batch_labels={"primary": spec.primary_batch},
         )
         if metrics["thumbnail_resources"]["request_count"] < spec.size:
             warnings.append(
@@ -2293,6 +2349,7 @@ def benchmark_case(
             spec.browser,
             spec.primary_batch,
             frame_data=scroll_data,
+            batch_labels={"primary": spec.primary_batch},
         )
         if scroll_data.get("frameCapReached"):
             warnings.append("Controlled scroll reached its frame cap")
@@ -2313,6 +2370,7 @@ def benchmark_case(
             spec.browser,
             spec.primary_batch,
             readiness,
+            batch_labels={"primary": spec.primary_batch},
         )
         phases.append(_phase("warm_reload", "warm", metrics, warnings))
 
@@ -2332,6 +2390,10 @@ def benchmark_case(
             spec.browser,
             spec.primary_batch,
             primary_ready,
+            batch_labels={
+                "primary": spec.primary_batch,
+                "companion": spec.companion_batch,
+            },
         )
         if not companion_ready["ready"]:
             warnings.append("Companion batch did not become ready during A -> B -> A switch")
@@ -2353,6 +2415,7 @@ def benchmark_case(
             spec.browser,
             spec.primary_batch,
             frame_data=width_data,
+            batch_labels={"primary": spec.primary_batch},
         )
         if width_data.get("available") and not width_data.get("restored"):
             warnings.append("Sidebar widths did not restore to their pre-phase values")

@@ -269,4 +269,15 @@ bridge state makes blob and long-task metrics unavailable with a reason rather
 than failing the benchmark. Other unsupported metrics likewise remain
 null/unavailable and are never silently substituted.
 
+The JSON `thumbnail_resources` metric preserves `request_count` as the total
+Resource Timing entry count and also records `entry_count`,
+`unique_url_count`, `duplicate_entry_count`, `candidate_cache_hits`, and
+`candidate_cache_misses`. These are application-fetch observations: a
+Resource Timing entry may be served from the browser HTTP cache and is not
+necessarily a server wire request. Unique and duplicate counts use exact URL
+strings without serializing the URL list. When fixture batch names are known,
+`batch_metrics` splits entry, unique, and duplicate counts for the primary and
+companion batches. Use server logs or transferred bytes for wire-work claims;
+use the Resource Timing counts to describe browser/application work.
+
 See root `AGENTS.md` for project-wide rules, verification standards, and overall philosophy.
