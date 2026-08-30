@@ -95,6 +95,68 @@ function extractFunction(sourceText, signature) {
     throw new Error(`unterminated ${signature}`);
 }
 
+async function testClearRestoresLegacyAndPagedAnchors() {
+    async function prepareContext() {
+        const fixture = makeContext();
+        const anchor = {key: "anchor.png", offset: 13};
+        const restored = [];
+        fixture.context._captureGridIdentityAnchor = () => anchor;
+        fixture.context._restoreGridIdentityAnchor = value => {
+            restored.push(value);
+            return true;
+        };
+        fixture.context.apiSearchMedia = () => Promise.resolve({
+            ok: true,
+            json: async () => ({
+                items: [{name: "match.png", batch: "batch-a", folder: "inbox"}],
+                total: 1,
+            }),
+        });
+        fixture.context.fetch = () => Promise.resolve({
+            ok: true,
+            json: async () => ({favorites: []}),
+        });
+        fixture.context.selectFolder = async (batch, folder) => {
+            vm.runInContext(
+                `currentBatch = ${JSON.stringify(batch)}; currentFolder = ${JSON.stringify(folder)};`,
+                fixture.context,
+            );
+        };
+        await fixture.context.applyMediaSearchToWorkspace();
+        return {fixture, anchor, restored};
+    }
+
+    const legacy = await prepareContext();
+    vm.runInContext("pagedFolderMode = false; folderSnapshot = null;", legacy.fixture.context);
+    await legacy.fixture.context.clearWorkspaceSearchFilter();
+    assert.deepEqual(legacy.restored, [legacy.anchor], "legacy Clear must restore its captured grid anchor");
+
+    const paged = await prepareContext();
+    const pageCalls = [];
+    const lookupCalls = [];
+    paged.fixture.context._folderTransportSort = () => "date";
+    paged.fixture.context.apiGetFolderItemIndex = (...args) => {
+        lookupCalls.push(args);
+        return Promise.resolve({ok: true, json: async () => ({index: 256})});
+    };
+    paged.fixture.context.ensureFolderPageForIndex = async index => {
+        pageCalls.push(index);
+    };
+    vm.runInContext(
+        "pagedFolderMode = true; folderSnapshot = {revision: 'revision-1', count: 30000};",
+        paged.fixture.context,
+    );
+    await paged.fixture.context.clearWorkspaceSearchFilter();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(lookupCalls.length, 1, "paged Clear must perform one O(1) anchor lookup");
+    assert.equal(lookupCalls[0][0], "batch-a");
+    assert.equal(lookupCalls[0][1], "inbox");
+    assert.equal(lookupCalls[0][4], "revision-1");
+    assert.equal(lookupCalls[0][5], paged.anchor.key);
+    assert.deepEqual(pageCalls, [256], "paged Clear must load the anchor page before restoring scroll");
+    assert.deepEqual(paged.restored, [paged.anchor], "paged Clear must restore its captured grid anchor");
+}
+
 async function main() {
     const folderContext = makeContext();
     const folderTabs = folderContext.context.document.getElementById("folder-tabs");
@@ -257,6 +319,7 @@ async function main() {
     assert.equal(vm.runInContext("workspaceSearchFilter.query", overlap.context), "second", "newer apply remains current");
     assert.equal(vm.runInContext("images[0].name", overlap.context), "second.png", "newer apply wins the overlap");
     assert.equal(overlap.context.document.getElementById("media-search-apply-btn").disabled, false, "newer apply re-enables its button");
+    await testClearRestoresLegacyAndPagedAnchors();
     console.log("media search apply lifecycle checks passed");
 }
 
