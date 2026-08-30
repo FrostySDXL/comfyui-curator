@@ -1,4 +1,5 @@
 import threading
+import time
 
 import pytest
 from PIL import Image
@@ -129,6 +130,36 @@ def test_serve_thumbnail_missing_file(client, app_module):
     response = client.get("/thumb/batch/inbox/nonexistent.png")
 
     assert response.status_code == 404
+
+
+@pytest.mark.component
+def test_serve_thumbnail_applies_configured_delay(client, app_module, monkeypatch):
+    app_module.create_batch("batch")
+    _write_test_png(app_module.BATCHES_DIR / "batch" / "inbox" / "test.png")
+    monkeypatch.setenv("IMAGE_CURATOR_THUMBNAIL_DELAY_MS", "150")
+
+    started = time.perf_counter()
+    response = client.get("/thumb/batch/inbox/test.png")
+    elapsed = time.perf_counter() - started
+
+    assert response.status_code == 200
+    assert elapsed >= 0.15
+
+
+@pytest.mark.component
+def test_serve_thumbnail_does_not_sleep_when_delay_unset(client, app_module, monkeypatch):
+    app_module.create_batch("batch")
+    _write_test_png(app_module.BATCHES_DIR / "batch" / "inbox" / "test.png")
+    monkeypatch.delenv("IMAGE_CURATOR_THUMBNAIL_DELAY_MS", raising=False)
+
+    client.get("/thumb/batch/inbox/test.png")  # warm the cache before timing
+
+    started = time.perf_counter()
+    response = client.get("/thumb/batch/inbox/test.png")
+    elapsed = time.perf_counter() - started
+
+    assert response.status_code == 200
+    assert elapsed < 0.14
 
 
 @pytest.mark.component

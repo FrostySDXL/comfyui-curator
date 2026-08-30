@@ -26,6 +26,7 @@ from .media import (
     media_cache_is_fresh,
     remove_cached_media_derivatives,
     thumbnail_cache_path,
+    thumbnail_delay_seconds,
     thumbnail_is_fresh,
 )
 from .native_settings import NativeConfigError, NativeCuratorSettings, SettingsConflictError
@@ -411,6 +412,9 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             kind = batch_store.media_kind(source)
             if kind is None:
                 return web.json_response({"error": "Invalid file type"}, status=400)
+            delay = thumbnail_delay_seconds()
+            if delay > 0:
+                await asyncio.sleep(delay)
             fresh = (
                 await asyncio.to_thread(thumbnail_is_fresh, cache, source, THUMB_SIZE)
                 if kind in {"image", "animated_image"}

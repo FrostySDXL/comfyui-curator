@@ -32,6 +32,7 @@ from image_curator.media import (
     media_cache_is_fresh,
     remove_cached_media_derivatives,
     thumbnail_cache_path,
+    thumbnail_delay_seconds,
     thumbnail_is_fresh,
 )
 from image_curator.folder_index import (
@@ -802,6 +803,10 @@ def serve_thumbnail(batch, folder, filename):
     kind = batch_store.media_kind(filepath)
     if kind is None:
         return jsonify({"error": "Invalid file type"}), 400
+
+    delay = thumbnail_delay_seconds()
+    if delay > 0:
+        time.sleep(delay)
 
     cache_path = thumbnail_cache_path(BATCHES_DIR, batch_name, folder, filename)
 

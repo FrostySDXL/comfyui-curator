@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from image_curator.media import (
@@ -8,6 +9,7 @@ from image_curator.media import (
     generate_thumbnail,
     hover_preview_cache_path,
     thumbnail_cache_path,
+    thumbnail_delay_seconds,
     thumbnail_is_fresh,
 )
 
@@ -158,3 +160,26 @@ def test_hover_preview_cache_path_is_extension_safe(tmp_path):
 
     assert gif != mp4
     assert gif.name == "inbox__sample--gif.mp4"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("", 0.0),
+        ("250", 0.25),
+        ("0", 0.0),
+        ("-5", 0.0),
+        ("abc", 0.0),
+        ("250.5", 0.0),
+    ],
+)
+def test_thumbnail_delay_seconds(monkeypatch, raw, expected):
+    monkeypatch.setenv("IMAGE_CURATOR_THUMBNAIL_DELAY_MS", raw)
+
+    assert thumbnail_delay_seconds() == expected
+
+
+def test_thumbnail_delay_seconds_unset_is_zero(monkeypatch):
+    monkeypatch.delenv("IMAGE_CURATOR_THUMBNAIL_DELAY_MS", raising=False)
+
+    assert thumbnail_delay_seconds() == 0.0

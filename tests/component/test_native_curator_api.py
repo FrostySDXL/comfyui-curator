@@ -3,6 +3,7 @@ import importlib.util
 import json
 import sys
 import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -684,6 +685,42 @@ def test_native_thumbnail_returns_non_ok_for_corrupt_image(tmp_path, monkeypatch
         assert payload == {"error": "Failed to generate thumbnail"}
         cache = settings.batch_root / "alpha" / ".thumbs" / "inbox__corrupt--png.webp"
         assert not cache.exists()
+
+    asyncio.run(scenario())
+
+
+def test_native_thumbnail_applies_configured_delay(tmp_path, monkeypatch):
+    from PIL import Image
+
+    from image_curator import batch_store
+
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        batch_store.create_batch(settings.batch_root, "alpha")
+        source = settings.batch_root / "alpha" / "inbox" / "sample.png"
+        Image.new("RGB", (2, 2), color="blue").save(source)
+        router = _Router()
+        native_routes.register_native_routes(
+            SimpleNamespace(router=router), native_routes.NativeCuratorService(settings)
+        )
+        monkeypatch.setenv("IMAGE_CURATOR_THUMBNAIL_DELAY_MS", "150")
+
+        started = time.perf_counter()
+        response = await _invoke_response(
+            router,
+            "GET",
+            "/curator/thumb/{batch}/{folder}/{name}",
+            {"batch": "alpha", "folder": "inbox", "name": "sample.png"},
+        )
+        elapsed = time.perf_counter() - started
+
+        assert response.status == 200
+        assert elapsed >= 0.15
 
     asyncio.run(scenario())
 

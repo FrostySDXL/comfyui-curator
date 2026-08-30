@@ -51,6 +51,20 @@ def remove_cached_media_derivatives(
             continue
 
 
+def thumbnail_delay_seconds() -> float:
+    """Optional artificial thumbnail-serving delay for degraded-condition benchmarks.
+
+    Reads ``IMAGE_CURATOR_THUMBNAIL_DELAY_MS`` as integer milliseconds.
+    Unset, invalid, or non-positive values disable the delay.
+    """
+    raw = os.environ.get("IMAGE_CURATOR_THUMBNAIL_DELAY_MS", "")
+    try:
+        delay_ms = int(raw)
+    except (TypeError, ValueError):
+        return 0.0
+    return delay_ms / 1000 if delay_ms > 0 else 0.0
+
+
 def media_cache_is_fresh(cache_path: Path, source_path: Path) -> bool:
     """Return whether a regular cached derivative is at least as new as its source."""
     try:
