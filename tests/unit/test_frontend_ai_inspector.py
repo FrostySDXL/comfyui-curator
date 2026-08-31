@@ -1,6 +1,9 @@
 import json
+import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 from tests.unit.frontend_source import extract_function_body, read_frontend_css, read_frontend_js
 
@@ -335,10 +338,36 @@ def test_ai_score_flow_is_guided_and_exposes_the_element_cap_before_submit() -> 
     assert "const AI_ELEMENT_CAP = 12;" in js
     assert "function aiUpdateScoreSummary()" in js
     assert "manualElements.length + qualityFlags.length" in js
-    assert "Only the first ${AI_ELEMENT_CAP} checks will be scored." in js
+    assert "totalChecks > AI_ELEMENT_CAP" in js
+    assert "Only the first ${AI_ELEMENT_CAP} checks will be scored." not in js
+    assert "Up to 12 total checks will be scored." in score_markup
     assert ".ai-score-step" in css
     assert ".ai-score-summary" in css
     assert ".ai-element-cap-status.limit-exceeded" in css
+
+
+def test_ai_submit_job_guards_over_cap_before_fetch() -> None:
+    js = read_frontend_js()
+    submit = extract_function_body(js, "async function aiSubmitJob()")
+
+    assert "const totalChecks = elements.length + qualityFlags.length;" in submit
+    assert "totalChecks > AI_ELEMENT_CAP" in submit
+    assert "showToast" in submit
+    assert submit.index("totalChecks > AI_ELEMENT_CAP") < submit.index("fetch(")
+
+
+def test_ai_submit_job_node_cap_lifecycle_passes() -> None:
+    """Run the AI cap behavior against the real ai-job.js source in Node."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node executable not found")
+    result = subprocess.run(
+        [node, "tests/unit/ai_job_cap_test.js"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
 
 
 def test_ai_score_checklist_updates_have_one_live_announcement_region() -> None:

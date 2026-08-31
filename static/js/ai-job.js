@@ -29,7 +29,7 @@ function aiUpdateScoreSummary() {
             if (manualElements.length === 0) {
                 capStatus.textContent = `Add at least one element check. The total run limit is ${AI_ELEMENT_CAP}.`;
             } else if (totalChecks > AI_ELEMENT_CAP) {
-                capStatus.textContent = `${totalChecks} checks configured. Only the first ${AI_ELEMENT_CAP} checks will be scored.`;
+                capStatus.textContent = `${totalChecks} checks configured. Remove ${totalChecks - AI_ELEMENT_CAP} to submit; maximum ${AI_ELEMENT_CAP} checks.`;
             } else if (totalChecks > 0) {
                 capStatus.textContent = `${totalChecks} of ${AI_ELEMENT_CAP} checks configured.`;
             } else {
@@ -42,12 +42,12 @@ function aiUpdateScoreSummary() {
             const topN = document.getElementById('ai-top-n').value || '15';
             const destination = document.getElementById('ai-dest-folder').value;
             const scopeLine = createTextElement('div', 'ai-score-summary-primary', `Score ${source} with ${model || 'a configured model'}.`);
-            const checksLine = createTextElement('div', '', `${totalChecks} checks configured; ${Math.min(totalChecks, AI_ELEMENT_CAP)} will be scored.`);
+            const checksLine = createTextElement('div', '', `${totalChecks} checks configured; maximum ${AI_ELEMENT_CAP}.`);
             const outcomeLine = createTextElement('div', '', moveEnabled
                 ? `After scoring, move the top ${topN} to ${destination}.`
                 : 'Results will be saved. Files will not be moved.');
             summary.replaceChildren(scopeLine, checksLine, outcomeLine);
-            submitBtn.disabled = !currentBatch || manualElements.length === 0 || !model;
+            submitBtn.disabled = !currentBatch || manualElements.length === 0 || !model || totalChecks > AI_ELEMENT_CAP;
         }
 
 async function aiPreviewElements() {
@@ -112,6 +112,11 @@ async function aiSubmitJob() {
             const moveEnabled = document.getElementById('ai-move-toggle').checked;
             const destFolder = document.getElementById('ai-dest-folder').value;
             const qualityFlags = aiCollectQualityFlags();
+            const totalChecks = elements.length + qualityFlags.length;
+            if (totalChecks > AI_ELEMENT_CAP) {
+                showToast(`Reduce checks to ${AI_ELEMENT_CAP} or fewer before submitting`);
+                return;
+            }
 
             const body = {
                 batch: currentBatch,
