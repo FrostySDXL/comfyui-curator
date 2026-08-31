@@ -6,6 +6,7 @@ import json
 import hashlib
 import re
 import threading
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -23,8 +24,10 @@ SIDECAR_SEARCH_MAX_DEPTH = 8
 SIDECAR_SEARCH_MAX_VALUES = 1000
 SIDECAR_SEARCH_MAX_CHARS = 64 * 1024
 SIDECAR_SUMMARY_STRING_MAX_CHARS = 4096
+SEARCH_INDEX_CACHE_MAX_ENTRIES = 32
 
 _LOCK = threading.RLock()
+_INDEX_CACHE: OrderedDict[tuple[str, int, int, int], dict[str, Any]] = OrderedDict()
 _SEPARATOR_RE = re.compile(r"[_\-]+")
 _CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
@@ -228,6 +231,49 @@ def _source_state(batches_dir: Path, batch: str, *, cancel_check=None) -> dict[s
     return state
 
 
+def _compact_source_state(batches_dir: Path, batch: str) -> dict[str, dict[str, int]]:
+    """Read stage metadata without enumerating the media in each stage."""
+    root, batch_dir, resolved_batch = _resolved_batch(batches_dir, batch)
+    state: dict[str, dict[str, int]] = {}
+    for folder in batch_store.BATCH_FOLDERS:
+        stage = _safe_stage(root, batch_dir, resolved_batch, folder)
+        state[folder] = {"mtime_ns": stage.stat().st_mtime_ns}
+    return state
+
+
+def _source_state_matches(index_state: Any, live_state: Any) -> bool:
+    if not isinstance(index_state, dict) or not isinstance(live_state, dict):
+        return False
+    for folder in batch_store.BATCH_FOLDERS:
+        cached_stage = index_state.get(folder)
+        live_stage = live_state.get(folder)
+        if not isinstance(cached_stage, dict) or not isinstance(live_stage, dict):
+            return False
+        if cached_stage.get("mtime_ns") != live_stage.get("mtime_ns"):
+            return False
+    return True
+
+
+def _cache_key(path: Path, stat_result) -> tuple[str, int, int, int]:
+    return (str(path.resolve()), stat_result.st_ino, stat_result.st_size, stat_result.st_mtime_ns)
+
+
+def _cache_put(key: tuple[str, int, int, int], index: dict[str, Any]) -> None:
+    with _LOCK:
+        _INDEX_CACHE[key] = index
+        _INDEX_CACHE.move_to_end(key)
+        while len(_INDEX_CACHE) > SEARCH_INDEX_CACHE_MAX_ENTRIES:
+            _INDEX_CACHE.popitem(last=False)
+
+
+def _cache_remove_path(path: Path) -> None:
+    identity = str(path.resolve())
+    with _LOCK:
+        for key in list(_INDEX_CACHE):
+            if key[0] == identity:
+                del _INDEX_CACHE[key]
+
+
 def _save_index(
     batches_dir: Path, batch: str, index: dict[str, Any], *, temp_path: Path | None = None
 ) -> None:
@@ -243,6 +289,8 @@ def _save_index(
             raise ValueError("Unsafe search index path")
         tmp_path.write_text(json.dumps(index, ensure_ascii=False), encoding="utf-8")
         tmp_path.replace(path)
+        _cache_remove_path(path)
+        _cache_put(_cache_key(path, path.stat()), index)
 
 
 def build_search_index(
@@ -320,14 +368,29 @@ def load_search_index(batches_dir: Path, batch: str) -> dict[str, Any] | None:
         root, _batch_dir, resolved_batch = _resolved_batch(batches_dir, batch)
         path = _cache_path(batches_dir, batch)
         if not path.is_file() or not _safe_cache_target(root, resolved_batch, path):
+            _cache_remove_path(path)
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        stat_result = path.stat()
+        key = _cache_key(path, stat_result)
+        with _LOCK:
+            cached = _INDEX_CACHE.get(key)
+            if cached is not None:
+                _INDEX_CACHE.move_to_end(key)
+                return cached
+            data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
         return None
     if not isinstance(data, dict) or data.get("version") != SEARCH_INDEX_VERSION:
         return None
     if data.get("batch") != batch or not isinstance(data.get("items"), list):
         return None
+    source_state = data.get("source_state")
+    if not isinstance(source_state, dict):
+        return None
+    for folder in batch_store.BATCH_FOLDERS:
+        stage_state = source_state.get(folder)
+        if not isinstance(stage_state, dict) or not isinstance(stage_state.get("mtime_ns"), int):
+            return None
     for item in data["items"]:
         if not isinstance(item, dict):
             return None
@@ -344,6 +407,8 @@ def load_search_index(batches_dir: Path, batch: str) -> dict[str, Any] | None:
             item.get("_search_fields"), dict
         ):
             return None
+    with _LOCK:
+        _cache_put(key, data)
     return data
 
 
@@ -396,9 +461,11 @@ def query_search_indices(
     ]
     index_statuses: list[dict[str, Any]] = []
     stale_by_batch: dict[str, bool] = {}
+    searchable_by_batch: dict[str, bool] = {}
     for batch_name, index in loaded_indexes:
         if index is None:
             stale_by_batch[batch_name] = False
+            searchable_by_batch[batch_name] = False
             index_statuses.append(
                 {
                     "batch": batch_name,
@@ -409,10 +476,15 @@ def query_search_indices(
             )
             continue
         try:
-            stale = index.get("source_state") != _source_state(batches_dir, batch_name)
+            stale = not _source_state_matches(
+                index.get("source_state"), _compact_source_state(batches_dir, batch_name)
+            )
+            searchable = True
         except (OSError, ValueError):
             stale = True
+            searchable = False
         stale_by_batch[batch_name] = stale
+        searchable_by_batch[batch_name] = searchable
         index_statuses.append(
             {
                 "batch": batch_name,
@@ -463,8 +535,8 @@ def query_search_indices(
         stale = stale_by_batch[batch_name]
         if stale:
             stale_batches.append(batch_name)
-            if snapshot is None:
-                continue
+        if not searchable_by_batch[batch_name]:
+            continue
         indexed_batches.append(batch_name)
         for item in index["items"]:
             if folder and item.get("folder") != folder:

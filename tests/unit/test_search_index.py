@@ -4,6 +4,7 @@ from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
 from image_curator import batch_store
+from image_curator import search_index
 from image_curator.search_index import build_search_index, query_search_indices
 
 
@@ -94,11 +95,93 @@ def test_search_index_marks_batch_stale_after_media_move(tmp_path):
     assert batch_store.move_image(source, batches_dir / "moving" / "shortlisted" / "subject.jpg")
     result = query_search_indices(batches_dir, "winter", batch="moving")
 
-    assert result["items"] == []
+    assert [item["name"] for item in result["items"]] == ["subject.jpg"]
     assert result["stale_batches"] == ["moving"]
     assert result["missing_batches"] == []
     assert result["index_statuses"][0]["status"] == "stale"
     assert result["index_statuses"][0]["item_count"] == 1
+
+
+def test_search_index_query_freshness_does_not_enumerate_media(tmp_path, monkeypatch):
+    batches_dir = tmp_path / "batches"
+    batch_store.create_batch(batches_dir, "large")
+    media = batches_dir / "large" / "inbox" / "subject.jpg"
+    media.write_bytes(b"image")
+    build_search_index(batches_dir, "large")
+
+    def fail_get_images(*_args, **_kwargs):
+        raise AssertionError("query freshness must not enumerate media")
+
+    monkeypatch.setattr(batch_store, "get_images", fail_get_images)
+    result = query_search_indices(batches_dir, "subject", batch="large")
+
+    assert result["total"] == 1
+    assert result["index_statuses"][0]["status"] == "ready"
+
+
+def test_search_index_reuses_parsed_cache_between_queries(tmp_path, monkeypatch):
+    batches_dir = tmp_path / "batches"
+    batch_store.create_batch(batches_dir, "cached")
+    (batches_dir / "cached" / "inbox" / "subject.jpg").write_bytes(b"image")
+    build_search_index(batches_dir, "cached")
+    query_search_indices(batches_dir, "subject", batch="cached")
+
+    original_loads = search_index.json.loads
+
+    def fail_loads(*_args, **_kwargs):
+        raise AssertionError("valid cached index should not be reparsed")
+
+    monkeypatch.setattr(search_index.json, "loads", fail_loads)
+    result = query_search_indices(batches_dir, "subject", batch="cached")
+
+    assert result["total"] == 1
+    monkeypatch.setattr(search_index.json, "loads", original_loads)
+
+
+def test_search_index_does_not_query_cached_items_when_stage_becomes_unsafe(tmp_path):
+    batches_dir = tmp_path / "batches"
+    batch_store.create_batch(batches_dir, "unsafe-query")
+    inbox = batches_dir / "unsafe-query" / "inbox"
+    (inbox / "subject.jpg").write_bytes(b"image")
+    build_search_index(batches_dir, "unsafe-query")
+
+    (inbox / "subject.jpg").unlink()
+    inbox.rmdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    try:
+        inbox.symlink_to(outside, target_is_directory=True)
+    except (NotImplementedError, OSError):
+        return
+
+    result = query_search_indices(batches_dir, "subject", batch="unsafe-query")
+
+    assert result["items"] == []
+    assert result["stale_batches"] == ["unsafe-query"]
+
+
+def test_search_index_treats_malformed_source_state_as_missing(tmp_path):
+    batches_dir = tmp_path / "batches"
+    batch_store.create_batch(batches_dir, "malformed-state")
+    (batches_dir / "malformed-state" / "inbox" / "subject.jpg").write_bytes(b"image")
+    built = build_search_index(batches_dir, "malformed-state")
+    cache = batches_dir / "malformed-state" / "search-index.json"
+    cache.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "batch": "malformed-state",
+                "source_state": {},
+                "items": built["items"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = query_search_indices(batches_dir, "subject", batch="malformed-state")
+
+    assert result["items"] == []
+    assert result["missing_batches"] == ["malformed-state"]
 
 
 def test_search_index_reports_not_built_batches(tmp_path):
