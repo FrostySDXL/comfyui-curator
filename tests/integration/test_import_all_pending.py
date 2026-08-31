@@ -97,3 +97,21 @@ def test_import_all_reports_partial_move_outcome(client, app_module, make_file, 
         "pending_count": 1,
         "status": "partial",
     }
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("error_type", [ValueError, OSError])
+def test_import_all_maps_post_validation_failures_to_bad_request(
+    client, app_module, monkeypatch, error_type
+):
+    app_module.create_batch("alpha")
+
+    def fail_after_validation(batch_name):
+        raise error_type("import destination changed")
+
+    monkeypatch.setattr(app_module, "import_all_pending_detailed", fail_after_validation)
+
+    response = client.post("/api/import-all", json={"batch": "alpha"})
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "import destination changed"}

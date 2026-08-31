@@ -282,7 +282,10 @@ def api_import_all():
             return jsonify({"error": "Invalid import destination"}), 400
     except (OSError, TypeError, ValueError):
         return jsonify({"error": "Invalid import destination"}), 400
-    result = import_all_pending_detailed(batch_name)
+    try:
+        result = import_all_pending_detailed(batch_name)
+    except (OSError, ValueError) as exc:
+        return jsonify({"error": str(exc) or "Invalid import destination"}), 400
     if result.imported_count:
         _folder_index.refresh(batch, "inbox")
     return jsonify({"success": True, **result.as_dict()})
