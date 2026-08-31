@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from image_curator.prompt_history import (
     load_prompt_index,
     prompt_index_is_stale,
 )
+from image_curator import prompt_history
 
 
 def make_batch(batches_dir, batch="alpha"):
@@ -55,6 +57,121 @@ def test_build_index_collects_png_metadata_and_sorts_by_count(tmp_path):
     assert index["image_count"] == 2
     assert index["prompt_count"] == 2
     assert [entry["count"] for entry in index["prompts"]] == [1, 1]
+
+
+def test_build_index_reuses_unchanged_png_without_extracting(tmp_path, monkeypatch):
+    make_batch(tmp_path)
+    write_png(tmp_path / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")
+
+    build_prompt_index(tmp_path, "alpha")
+
+    def fail_extract(*_args, **_kwargs):
+        raise AssertionError("unchanged PNG should be reused from the prior index")
+
+    monkeypatch.setattr(prompt_history, "extract_png_metadata", fail_extract)
+    rebuilt = build_prompt_index(tmp_path, "alpha")
+
+    assert rebuilt["image_count"] == 1
+    assert rebuilt["reused_count"] == 1
+    assert rebuilt["scanned_count"] == 0
+
+
+def test_build_index_scans_only_png_with_changed_metadata(tmp_path, monkeypatch):
+    make_batch(tmp_path)
+    first = tmp_path / "alpha" / "inbox" / "one.png"
+    second = tmp_path / "alpha" / "inbox" / "two.png"
+    write_png(first, "cat\nSteps: 1")
+    write_png(second, "dog\nSteps: 1")
+    build_prompt_index(tmp_path, "alpha")
+
+    calls = []
+    original_extract = prompt_history.extract_png_metadata
+
+    def counted_extract(path):
+        calls.append(path.name)
+        return original_extract(path)
+
+    monkeypatch.setattr(prompt_history, "extract_png_metadata", counted_extract)
+    write_png(first, "changed cat\nSteps: 1")
+    rebuilt = build_prompt_index(tmp_path, "alpha")
+
+    assert calls == ["one.png"]
+    assert rebuilt["reused_count"] == 1
+    assert rebuilt["scanned_count"] == 1
+    assert any(entry["prompt"] == "changed cat" for entry in rebuilt["prompts"])
+
+
+def test_build_index_reuses_pngs_with_identical_stat_tuples(tmp_path, monkeypatch):
+    make_batch(tmp_path)
+    for number in range(3):
+        path = tmp_path / "alpha" / "inbox" / f"same-{number}.png"
+        write_png(path, "same\nSteps: 1")
+        os.utime(path, ns=(1_700_000_000_000_000_000, 1_700_000_000_000_000_000))
+    build_prompt_index(tmp_path, "alpha")
+
+    def fail_extract(*_args, **_kwargs):
+        raise AssertionError("unique filenames should disambiguate unchanged PNGs")
+
+    monkeypatch.setattr(prompt_history, "extract_png_metadata", fail_extract)
+    rebuilt = build_prompt_index(tmp_path, "alpha")
+
+    assert rebuilt["reused_count"] == 3
+    assert rebuilt["scanned_count"] == 0
+
+
+def test_build_index_manifest_does_not_rescan_through_path_iterdir(tmp_path, monkeypatch):
+    make_batch(tmp_path)
+    write_png(tmp_path / "alpha" / "inbox" / "subject.png", "subject\nSteps: 1")
+
+    def fail_iterdir(*_args, **_kwargs):
+        raise AssertionError("incremental prompt manifest should use scandir")
+
+    monkeypatch.setattr(Path, "iterdir", fail_iterdir)
+    built = build_prompt_index(tmp_path, "alpha")
+
+    assert built["image_count"] == 1
+
+
+def test_build_index_reuses_move_and_removes_deleted_png(tmp_path, monkeypatch):
+    make_batch(tmp_path)
+    moved = tmp_path / "alpha" / "inbox" / "moved.png"
+    deleted = tmp_path / "alpha" / "inbox" / "deleted.png"
+    write_png(moved, "move\nSteps: 1")
+    write_png(deleted, "delete\nSteps: 1")
+    build_prompt_index(tmp_path, "alpha")
+    shutil.move(moved, tmp_path / "alpha" / "shortlisted" / moved.name)
+    deleted.unlink()
+
+    def fail_extract(*_args, **_kwargs):
+        raise AssertionError("moved unchanged PNG should be reused")
+
+    monkeypatch.setattr(prompt_history, "extract_png_metadata", fail_extract)
+    rebuilt = build_prompt_index(tmp_path, "alpha")
+
+    assert rebuilt["image_count"] == 1
+    assert rebuilt["prompts"][0]["images"] == [{"filename": "moved.png", "folder": "shortlisted"}]
+    assert rebuilt["reused_count"] == 1
+
+
+def test_build_index_legacy_cache_upgrades_after_full_scan(tmp_path, monkeypatch):
+    make_batch(tmp_path)
+    image = tmp_path / "alpha" / "inbox" / "legacy.png"
+    write_png(image, "legacy\nSteps: 1")
+    built = build_prompt_index(tmp_path, "alpha")
+    legacy = {key: value for key, value in built.items() if key != "files"}
+    (tmp_path / "alpha" / "prompt-history.json").write_text(json.dumps(legacy), encoding="utf-8")
+    calls = []
+    original_extract = prompt_history.extract_png_metadata
+    monkeypatch.setattr(
+        prompt_history,
+        "extract_png_metadata",
+        lambda path: (calls.append(path.name), original_extract(path))[1],
+    )
+
+    rebuilt = build_prompt_index(tmp_path, "alpha")
+
+    assert calls == ["legacy.png"]
+    assert rebuilt["files"][0]["fingerprint"]
 
 
 def test_build_index_ignores_non_png_typed_media(tmp_path):

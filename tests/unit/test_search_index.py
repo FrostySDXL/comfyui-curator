@@ -1,4 +1,5 @@
 import json
+import os
 
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
@@ -50,6 +51,197 @@ def test_search_index_matches_nested_sidecar_keys_and_values(tmp_path):
             "item_count": 1,
         }
     ]
+
+
+def test_search_index_rebuild_reuses_unchanged_media_without_extracting(tmp_path, monkeypatch):
+    batches_dir = tmp_path / "batches"
+    batch_store.create_batch(batches_dir, "incremental")
+    media = batches_dir / "incremental" / "inbox" / "subject.jpg"
+    media.write_bytes(b"image")
+
+    build_search_index(batches_dir, "incremental")
+
+    def fail_extract(*_args, **_kwargs):
+        raise AssertionError("unchanged media should be reused from the prior index")
+
+    monkeypatch.setattr(search_index, "extract_media_metadata", fail_extract)
+    rebuilt = build_search_index(batches_dir, "incremental")
+
+    assert rebuilt["item_count"] == 1
+    assert rebuilt["reused_count"] == 1
+    assert rebuilt["scanned_count"] == 0
+
+
+def test_search_index_manifest_does_not_rescan_through_batch_store(tmp_path, monkeypatch):
+    batches_dir = tmp_path / "batches"
+    batch_store.create_batch(batches_dir, "fast-manifest")
+    (batches_dir / "fast-manifest" / "inbox" / "subject.jpg").write_bytes(b"image")
+
+    def fail_get_images(*_args, **_kwargs):
+        raise AssertionError("incremental manifest should use one scandir pass per stage")
+
+    monkeypatch.setattr(batch_store, "get_images", fail_get_images)
+    built = build_search_index(batches_dir, "fast-manifest")
+
+    assert built["item_count"] == 1
+
+
+def test_search_index_reuses_files_with_identical_stat_tuples(tmp_path, monkeypatch):
+    batches_dir = tmp_path / "batches"
+    batch_store.create_batch(batches_dir, "fast-identical-stats")
+    inbox = batches_dir / "fast-identical-stats" / "inbox"
+    for number in range(3):
+        path = inbox / f"same-{number}.jpg"
+        path.write_bytes(b"same")
+        os.utime(path, ns=(1_700_000_000_000_000_000, 1_700_000_000_000_000_000))
+    build_search_index(batches_dir, "fast-identical-stats")
+
+    def fail_extract(*_args, **_kwargs):
+        raise AssertionError("unique filenames should disambiguate unchanged files")
+
+    monkeypatch.setattr(search_index, "extract_media_metadata", fail_extract)
+    rebuilt = build_search_index(batches_dir, "fast-identical-stats")
+
+    assert rebuilt["reused_count"] == 3
+    assert rebuilt["scanned_count"] == 0
+
+
+def test_search_index_case_folded_sidecar_changes_invalidate_reuse(tmp_path, monkeypatch):
+    batches_dir = tmp_path / "batches"
+    batch_store.create_batch(batches_dir, "case-sidecar")
+    media = batches_dir / "case-sidecar" / "inbox" / "asset.jpg"
+    media.write_bytes(b"image")
+    sidecar = media.with_name("ASSET.JPG.JSON")
+    sidecar.write_text(json.dumps({"tags": "old"}), encoding="utf-8")
+    monkeypatch.setattr(search_index.os.path, "normcase", lambda value: str(value).casefold())
+    candidate = media.with_name("asset.jpg.json")
+    monkeypatch.setattr(search_index, "json_sidecar_candidates", lambda _path: (candidate,))
+
+    calls = []
+
+    def fake_extract(path):
+        calls.append(path.name)
+        return {
+            "has_png_metadata": False,
+            "parameters": {},
+            "loras": [],
+            "sidecar": {"error": None, "data": {"tags": sidecar.read_text()}},
+        }
+
+    monkeypatch.setattr(search_index, "extract_media_metadata", fake_extract)
+    build_search_index(batches_dir, "case-sidecar")
+
+    calls.clear()
+    sidecar.write_text(json.dumps({"tags": "new"}), encoding="utf-8")
+    build_search_index(batches_dir, "case-sidecar")
+
+    assert calls == ["asset.jpg"]
+
+
+def test_search_index_rebuild_scans_only_media_with_changed_sidecar(tmp_path, monkeypatch):
+    batches_dir = tmp_path / "batches"
+    batch_store.create_batch(batches_dir, "incremental-sidecar")
+    inbox = batches_dir / "incremental-sidecar" / "inbox"
+    first = inbox / "first.jpg"
+    second = inbox / "second.jpg"
+    first.write_bytes(b"one")
+    second.write_bytes(b"two")
+    sidecar = first.with_name("first.jpg.json")
+    sidecar.write_text(json.dumps({"tags": "old"}), encoding="utf-8")
+    build_search_index(batches_dir, "incremental-sidecar")
+
+    calls = []
+    original_extract = search_index.extract_media_metadata
+
+    def counted_extract(path):
+        calls.append(path.name)
+        return original_extract(path)
+
+    monkeypatch.setattr(search_index, "extract_media_metadata", counted_extract)
+    sidecar.write_text(json.dumps({"tags": "new"}), encoding="utf-8")
+    rebuilt = build_search_index(batches_dir, "incremental-sidecar")
+
+    assert calls == ["first.jpg"]
+    assert rebuilt["reused_count"] == 1
+    assert rebuilt["scanned_count"] == 1
+    assert query_search_indices(batches_dir, "new", batch="incremental-sidecar")["total"] == 1
+
+
+def test_search_index_rebuild_reuses_move_and_removes_deleted_media(tmp_path, monkeypatch):
+    batches_dir = tmp_path / "batches"
+    batch_store.create_batch(batches_dir, "incremental-move")
+    inbox = batches_dir / "incremental-move" / "inbox"
+    moved = inbox / "moved.jpg"
+    deleted = inbox / "deleted.jpg"
+    moved.write_bytes(b"move")
+    deleted.write_bytes(b"delete")
+    build_search_index(batches_dir, "incremental-move")
+    assert batch_store.move_image(
+        moved, batches_dir / "incremental-move" / "shortlisted" / moved.name
+    )
+    deleted.unlink()
+
+    def fail_extract(*_args, **_kwargs):
+        raise AssertionError("moved unchanged media should be reused")
+
+    monkeypatch.setattr(search_index, "extract_media_metadata", fail_extract)
+    rebuilt = build_search_index(batches_dir, "incremental-move")
+
+    assert rebuilt["item_count"] == 1
+    assert rebuilt["items"][0]["name"] == "moved.jpg"
+    assert rebuilt["items"][0]["folder"] == "shortlisted"
+    assert rebuilt["reused_count"] == 1
+    assert query_search_indices(batches_dir, "moved", batch="incremental-move")["total"] == 1
+    assert query_search_indices(batches_dir, "deleted", batch="incremental-move")["total"] == 0
+
+
+def test_search_index_legacy_cache_upgrades_after_full_scan(tmp_path, monkeypatch):
+    batches_dir = tmp_path / "batches"
+    batch_store.create_batch(batches_dir, "incremental-legacy")
+    media = batches_dir / "incremental-legacy" / "inbox" / "legacy.jpg"
+    media.write_bytes(b"legacy")
+    built = build_search_index(batches_dir, "incremental-legacy")
+    legacy = dict(built)
+    legacy["items"] = [
+        {key: value for key, value in item.items() if key != "fingerprint"}
+        for item in built["items"]
+    ]
+    (batches_dir / "incremental-legacy" / "search-index.json").write_text(
+        json.dumps(legacy), encoding="utf-8"
+    )
+    search_index._INDEX_CACHE.clear()
+    calls = []
+    original_extract = search_index.extract_media_metadata
+    monkeypatch.setattr(
+        search_index,
+        "extract_media_metadata",
+        lambda path: (calls.append(path.name), original_extract(path))[1],
+    )
+
+    rebuilt = build_search_index(batches_dir, "incremental-legacy")
+
+    assert calls == ["legacy.jpg"]
+    assert rebuilt["items"][0]["fingerprint"]
+
+
+def test_search_index_does_not_commit_when_source_changes_at_commit(tmp_path):
+    batches_dir = tmp_path / "batches"
+    batch_store.create_batch(batches_dir, "incremental-race")
+    media = batches_dir / "incremental-race" / "inbox" / "race.jpg"
+    media.write_bytes(b"before")
+    original = build_search_index(batches_dir, "incremental-race")
+
+    def mutate_source():
+        media.write_bytes(b"after")
+
+    import pytest
+
+    with pytest.raises(ValueError, match="source changed"):
+        build_search_index(batches_dir, "incremental-race", commit_check=mutate_source)
+    assert (
+        search_index.load_search_index(batches_dir, "incremental-race")["built_at"]
+        == original["built_at"]
+    )
 
 
 def test_search_index_matches_png_generation_fields_and_loras(tmp_path):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
 import re
 import threading
 from collections import OrderedDict
@@ -12,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from . import batch_store
-from .sidecar_metadata import extract_media_metadata
+from .sidecar_metadata import extract_media_metadata, json_sidecar_candidates
 
 
 SEARCH_INDEX_FILENAME = "search-index.json"
@@ -151,8 +152,96 @@ def _flatten_sidecar(value: Any) -> tuple[str, dict[str, Any]]:
     return " ".join(parts), summary
 
 
-def _build_item(batch: str, folder: str, path: Path) -> dict[str, Any]:
+def _stat_fingerprint(stat_result, *, name: str | None = None) -> dict[str, int | str]:
+    fingerprint: dict[str, int | str] = {
+        "device": int(stat_result.st_dev),
+        "inode": int(stat_result.st_ino),
+        "size": int(stat_result.st_size),
+        "mtime_ns": int(stat_result.st_mtime_ns),
+    }
+    if name is not None:
+        fingerprint["name"] = name
+    return fingerprint
+
+
+def _file_fingerprint(path: Path) -> dict[str, Any]:
+    """Return the identity and metadata fingerprint used for safe reuse."""
+    media_stat = path.stat()
+    sidecar_fingerprint: dict[str, Any] | None = None
+    for candidate in json_sidecar_candidates(path):
+        try:
+            if candidate.is_symlink():
+                # inspect_json_sidecar treats the preferred symlink as an error;
+                # retain that fact so a later rebuild cannot reuse old metadata.
+                sidecar_fingerprint = {"symlink": True}
+                break
+            if candidate.is_file():
+                sidecar_stat = candidate.stat()
+                sidecar_fingerprint = _stat_fingerprint(sidecar_stat)
+                break
+        except OSError:
+            continue
+    return {"media": _stat_fingerprint(media_stat, name=path.name), "sidecar": sidecar_fingerprint}
+
+
+def _entry_fingerprint(
+    entry: os.DirEntry[str], entries_by_name: dict[str, os.DirEntry[str]]
+) -> dict[str, Any]:
+    """Build a fingerprint from one scandir result and its adjacent sidecar."""
+    media_stat = entry.stat(follow_symlinks=False)
+    sidecar_fingerprint: dict[str, Any] | None = None
+    media_path = Path(entry.path)
+    for candidate in json_sidecar_candidates(media_path):
+        sidecar_entry = entries_by_name.get(os.path.normcase(candidate.name))
+        if sidecar_entry is None:
+            continue
+        try:
+            if sidecar_entry.is_symlink():
+                sidecar_fingerprint = {"symlink": True}
+                break
+            if sidecar_entry.is_file(follow_symlinks=False):
+                sidecar_fingerprint = _stat_fingerprint(sidecar_entry.stat(follow_symlinks=False))
+                break
+        except OSError:
+            continue
+    return {
+        "media": _stat_fingerprint(media_stat, name=entry.name),
+        "sidecar": sidecar_fingerprint,
+    }
+
+
+def _fingerprint_key(fingerprint: Any) -> str | None:
+    if not isinstance(fingerprint, dict):
+        return None
+    media = fingerprint.get("media")
+    if (
+        not isinstance(media, dict)
+        or not isinstance(media.get("name"), str)
+        or not all(
+            isinstance(media.get(key), int) for key in ("device", "inode", "size", "mtime_ns")
+        )
+    ):
+        return None
+    sidecar = fingerprint.get("sidecar")
+    if sidecar is not None:
+        if not isinstance(sidecar, dict):
+            return None
+        if sidecar.get("symlink") is not True and not all(
+            isinstance(sidecar.get(key), int) for key in ("device", "inode", "size", "mtime_ns")
+        ):
+            return None
+    return json.dumps(fingerprint, sort_keys=True, separators=(",", ":"))
+
+
+def _build_item(
+    batch: str,
+    folder: str,
+    path: Path,
+    *,
+    fingerprint: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     stat = path.stat()
+    fingerprint = fingerprint or _file_fingerprint(path)
     metadata = extract_media_metadata(path)
     sidecar = metadata.get("sidecar") or {}
     sidecar_text = ""
@@ -191,6 +280,7 @@ def _build_item(batch: str, folder: str, path: Path) -> dict[str, Any]:
         "name": path.name,
         "size": stat.st_size,
         "mtime": stat.st_mtime_ns,
+        "fingerprint": fingerprint,
         "media_kind": batch_store.media_kind(path),
         "mime": batch_store.media_mime(path),
         "metadata_sources": sources,
@@ -254,6 +344,58 @@ def _source_state_matches(index_state: Any, live_state: Any) -> bool:
     return True
 
 
+def _enumerate_manifest(
+    batches_dir: Path, batch: str, *, cancel_check=None
+) -> tuple[list[tuple[str, Path, dict[str, Any]]], dict[str, dict[str, int]]]:
+    """Enumerate safe media and fingerprints, plus stage state for one snapshot."""
+    root, batch_dir, resolved_batch = _resolved_batch(batches_dir, batch)
+    records: list[tuple[str, Path, dict[str, Any]]] = []
+    state: dict[str, dict[str, int]] = {}
+    for folder in batch_store.BATCH_FOLDERS:
+        _check_cancelled(cancel_check)
+        stage = _safe_stage(root, batch_dir, resolved_batch, folder)
+        try:
+            with os.scandir(stage) as iterator:
+                entries_by_name: dict[str, os.DirEntry[str]] = {}
+                for entry in iterator:
+                    _check_cancelled(cancel_check)
+                    entries_by_name.setdefault(os.path.normcase(entry.name), entry)
+        except OSError:
+            raise ValueError("Unsafe search index path") from None
+        media_entries = []
+        for entry in entries_by_name.values():
+            try:
+                if entry.is_symlink() or not entry.is_file(follow_symlinks=False):
+                    continue
+                if Path(entry.name).suffix.lower() not in batch_store.VIEWABLE_MEDIA_EXTENSIONS:
+                    continue
+                media_entries.append(entry)
+            except OSError:
+                continue
+        media_entries.sort(key=lambda entry: entry.name.lower())
+        state[folder] = {"mtime_ns": stage.stat().st_mtime_ns, "item_count": 0}
+        for entry in media_entries:
+            _check_cancelled(cancel_check)
+            try:
+                path = stage / entry.name
+                fingerprint = _entry_fingerprint(entry, entries_by_name)
+            except OSError:
+                continue
+            records.append((folder, path, fingerprint))
+            state[folder]["item_count"] += 1
+    return records, state
+
+
+def _manifest_signature(
+    records: list[tuple[str, Path, dict[str, Any]]], state: dict[str, dict[str, int]]
+) -> tuple[tuple[tuple[str, dict[str, int]], ...], tuple[tuple[str, str, str], ...]]:
+    files = tuple(
+        (folder, path.name, _fingerprint_key(fingerprint) or "")
+        for folder, path, fingerprint in records
+    )
+    return (tuple(sorted(state.items())), tuple(sorted(files)))
+
+
 def _cache_key(path: Path, stat_result) -> tuple[str, int, int, int]:
     return (str(path.resolve()), stat_result.st_ino, stat_result.st_size, stat_result.st_mtime_ns)
 
@@ -303,49 +445,81 @@ def build_search_index(
     temp_path: Path | None = None,
 ) -> dict[str, Any]:
     """Build and atomically persist one batch's media metadata search index."""
-    root, batch_dir, resolved_batch = _resolved_batch(batches_dir, batch)
-    paths_by_folder: list[tuple[str, list[Path]]] = []
-    for folder in batch_store.BATCH_FOLDERS:
-        _check_cancelled(cancel_check)
-        stage = _safe_stage(root, batch_dir, resolved_batch, folder)
-        paths_by_folder.append(
-            (
-                folder,
-                batch_store.get_images(
-                    stage,
-                    sort_by="name",
-                    order="asc",
-                    cancel_check=lambda: _check_cancelled(cancel_check),
-                ),
-            )
-        )
-    total = sum(len(paths) for _folder, paths in paths_by_folder)
+    initial_records, initial_state = _enumerate_manifest(
+        batches_dir, batch, cancel_check=cancel_check
+    )
+    prior = load_search_index(batches_dir, batch)
+    prior_by_fingerprint: dict[str, list[dict[str, Any]]] = {}
+    if prior is not None:
+        for item in prior.get("items", []):
+            key = _fingerprint_key(item.get("fingerprint"))
+            if key is not None:
+                prior_by_fingerprint.setdefault(key, []).append(item)
+    current_counts: dict[str, int] = {}
+    for _folder, _path, fingerprint in initial_records:
+        key = _fingerprint_key(fingerprint)
+        if key is not None:
+            current_counts[key] = current_counts.get(key, 0) + 1
+
+    total = len(initial_records)
     if progress_callback is not None:
         progress_callback(0, total)
     items: list[dict[str, Any]] = []
-    for folder, paths in paths_by_folder:
+    reused_count = 0
+    scanned_count = 0
+    for folder, path, fingerprint in initial_records:
         _check_cancelled(cancel_check)
-        stage = _safe_stage(root, batch_dir, resolved_batch, folder)
-        for path in paths:
-            _check_cancelled(cancel_check)
+        key = _fingerprint_key(fingerprint)
+        candidates = prior_by_fingerprint.get(key, []) if key is not None else []
+        if key is not None and len(candidates) == 1 and current_counts.get(key) == 1:
+            item = dict(candidates[0])
+            item["batch"] = batch
+            item["folder"] = folder
+            item["name"] = path.name
+            item["size"] = fingerprint["media"]["size"]
+            item["mtime"] = fingerprint["media"]["mtime_ns"]
+            item["media_kind"] = batch_store.media_kind(path)
+            item["mime"] = batch_store.media_mime(path)
+            item["fingerprint"] = fingerprint
+            fields = dict(item.get("_search_fields") or {})
+            fields["filename"] = path.name
+            item["_search_fields"] = fields
+            item["_search_text"] = _normalize(" ".join(fields.values()))
+            items.append(item)
+            reused_count += 1
+        else:
             try:
-                if path.is_symlink() or path.resolve().parent != stage:
-                    raise ValueError("Unsafe search index path")
-                items.append(_build_item(batch, folder, path))
+                item = _build_item(batch, folder, path)
             except OSError:
-                continue
-            if progress_callback is not None:
-                progress_callback(len(items), total)
+                raise ValueError("Search index source changed during build") from None
+            item["fingerprint"] = fingerprint
+            items.append(item)
+            scanned_count += 1
+        if progress_callback is not None:
+            progress_callback(len(items), total)
+    _check_cancelled(cancel_check)
+    if commit_check is not None:
+        commit_check()
+    final_records, final_state = _enumerate_manifest(batches_dir, batch, cancel_check=cancel_check)
+    if _manifest_signature(initial_records, initial_state) != _manifest_signature(
+        final_records, final_state
+    ):
+        raise ValueError("Search index source changed during build")
     _check_cancelled(cancel_check)
     index = {
         "version": SEARCH_INDEX_VERSION,
         "built_at": datetime.now(timezone.utc).isoformat(),
         "batch": batch,
         "item_count": len(items),
-        "source_state": _source_state(batches_dir, batch, cancel_check=cancel_check),
+        "source_state": final_state,
         "items": items,
+        "reused_count": reused_count,
+        "scanned_count": scanned_count,
+        "changed_count": scanned_count,
     }
     _check_cancelled(cancel_check)
+    # Re-run the caller's commit gate after the final source snapshot.  This
+    # keeps the save boundary explicit for job cancellation and shutdown.
     if commit_check is not None:
         commit_check()
     _save_index(batches_dir, batch, index, temp_path=temp_path)
@@ -359,6 +533,9 @@ def summarize_search_index(index: dict[str, Any]) -> dict[str, Any]:
         "built_at": index.get("built_at"),
         "batch": index.get("batch"),
         "item_count": index.get("item_count", 0),
+        "reused_count": index.get("reused_count", 0),
+        "scanned_count": index.get("scanned_count", 0),
+        "changed_count": index.get("changed_count", 0),
     }
 
 

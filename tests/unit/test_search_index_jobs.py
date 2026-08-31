@@ -256,19 +256,14 @@ def test_cancellation_is_checked_during_initial_enumeration(tmp_path, monkeypatc
     batches = tmp_path / "batches"
     batch_store.create_batch(batches, "alpha")
     cancelled = threading.Event()
-    saw_cancel_check = []
 
-    def get_images(directory, sort_by="date", order="desc", *, cancel_check=None):
-        saw_cancel_check.append(cancel_check)
+    def cancel_check():
         cancelled.set()
-        if cancel_check is not None and cancel_check():
-            raise SearchIndexBuildCancelled
-        return []
+        return True
 
-    monkeypatch.setattr(search_index_jobs.search_index.batch_store, "get_images", get_images)
     with pytest.raises(SearchIndexBuildCancelled):
-        build_search_index(batches, "alpha", cancel_check=cancelled.is_set)
-    assert saw_cancel_check and all(callback is not None for callback in saw_cancel_check)
+        build_search_index(batches, "alpha", cancel_check=cancel_check)
+    assert cancelled.is_set()
 
 
 def test_terminal_jobs_are_retained_within_bounded_history(tmp_path, monkeypatch):
