@@ -504,6 +504,80 @@ function testPendingOpenCancelViaEscapePreservesNormalGridState() {
         "lightbox stays inactive after pending cancellation");
 }
 
+async function testInitialOpenTimeoutCleansUpAndIgnoresLateCompletion() {
+    const {context, elements, imageUrls, loaders} = createRuntime();
+    const timers = [];
+    const cleared = [];
+    const toasts = [];
+    context.setTimeout = (callback, delay) => {
+        timers.push({callback, delay});
+        return timers.length;
+    };
+    context.clearTimeout = id => { cleared.push(id); };
+    context.showToast = message => { toasts.push(message); };
+
+    context.closeLightbox();
+    context.openLightbox(1);
+
+    check(timers.length === 1, "initial open arms one named timeout");
+    if (!timers.length) return;
+    check(timers[0].delay > 0, "initial open timeout is bounded");
+    timers[0].callback();
+    await flushPromises();
+
+    check(vm.runInContext("isLightboxOpenPending()", context) === false,
+        "initial-open timeout clears pending ownership");
+    check(!elements.lightbox.classList.contains("active"),
+        "initial-open timeout leaves the lightbox inactive");
+    check(cleared.length >= 1, "initial-open timeout cleanup clears its timer");
+    check(toasts.some(message => /timed out/i.test(message)),
+        "initial-open timeout shows a truthful timeout toast");
+
+    const lateLoader = loaderFor(loaders, imageUrls[1]);
+    await finishLoader(lateLoader);
+    if (elements["lightbox-img"].onload) elements["lightbox-img"].onload();
+    check(!elements.lightbox.classList.contains("active"),
+        "late initial-open completion cannot activate a timed-out session");
+    check(elements["lightbox-img"].src === "",
+        "late initial-open completion cannot assign the timed-out image");
+}
+
+async function testNavigationTimeoutPreservesCommittedImageAndMetadata() {
+    const {context, elements, imageUrls, loaders} = createRuntime();
+    const timers = [];
+    const cleared = [];
+    const toasts = [];
+    context.setTimeout = (callback, delay) => {
+        timers.push({callback, delay});
+        return timers.length;
+    };
+    context.clearTimeout = id => { cleared.push(id); };
+    context.showToast = message => { toasts.push(message); };
+    const infoUpdatesBefore = elements["lightbox-info"].replaceChildrenCount;
+
+    context.navigate(1);
+    check(timers.length === 1 && timers[0]?.delay > 0,
+        "navigation arms one bounded timeout");
+    if (!timers.length) return;
+    timers[0].callback();
+    await flushPromises();
+
+    check(elements["lightbox-img"].src === imageUrls[0],
+        "navigation timeout preserves the committed visible image");
+    check(context.currentIndex === 0,
+        "navigation timeout restores the committed index");
+    check(elements["lightbox-info"].replaceChildrenCount === infoUpdatesBefore,
+        "navigation timeout does not publish target metadata");
+    check(cleared.length >= 1, "navigation timeout cleanup clears its timer");
+    check(toasts.some(message => /timed out/i.test(message)),
+        "navigation timeout shows a truthful timeout toast");
+
+    const lateLoader = loaderFor(loaders, imageUrls[1]);
+    await finishLoader(lateLoader);
+    check(elements["lightbox-img"].src === imageUrls[0],
+        "late navigation completion cannot replace the committed image");
+}
+
 function testCloseRestoresRecycledVirtualThumbByIdentity() {
     const {context} = createRuntime();
     const origin = createElement();
@@ -816,6 +890,8 @@ function testTypedAudioCloseReleasesPlayerAndArtwork() {
     testIsLightboxOpenPendingReturnsFalseWhenNoPendingOpen();
     testIsLightboxOpenPendingReturnsTrueWhenPendingOpenExists();
     testPendingOpenCancelViaEscapePreservesNormalGridState();
+    await testInitialOpenTimeoutCleansUpAndIgnoresLateCompletion();
+    await testNavigationTimeoutPreservesCommittedImageAndMetadata();
     testCloseRestoresRecycledVirtualThumbByIdentity();
     testCloseFallsBackToBatchSearchWhenOriginIsUnavailable();
     testTypedVideoNavigationReleasesPlayerResource();

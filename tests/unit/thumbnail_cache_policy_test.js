@@ -1703,6 +1703,71 @@ function test40_deterministic_ABA_scan_resistance() {
         'T40g7: resident stays resident after cache hit (got ' + _getEntryResident(pickKey) + ')');
 }
 
+function test41_thumbnail_fetch_timeout_aborts_releases_slot_and_marks_retryable() {
+    _resetCacheState();
+    var timeout = null;
+    var clearCount = 0;
+    var abortCount = 0;
+    var previousSetTimeout = ctx.setTimeout;
+    var previousClearTimeout = ctx.clearTimeout;
+    var previousAbortController = ctx.AbortController;
+    var previousFetch = ctx.fetch;
+    ctx.setTimeout = function(callback, delay) {
+        timeout = { callback: callback, delay: delay };
+        return 1;
+    };
+    ctx.clearTimeout = function() { clearCount++; };
+    ctx.AbortController = function() {
+        this.signal = {};
+        this.abort = function() { abortCount++; };
+    };
+    ctx.fetch = function(_imageSrc, options) {
+        assert(options && options.signal, 'T41a: thumbnail fetch receives an AbortSignal');
+        return new Promise(function() {});
+    };
+
+    var thumb = makeImageEl();
+    var errorPanel = {
+        hidden: true,
+        replaceChildren: function() {},
+        append: function() {}
+    };
+    thumb.dataset.thumbnailErrorCacheKey = '';
+    thumb.closest = function() { return thumb._parent; };
+    thumb._parent = {
+        isConnected: true,
+        dataset: { name: 'stuck.png', mediaKind: 'image' },
+        classList: {
+            _failed: false,
+            add: function(name) { if (name === 'thumbnail-failed') this._failed = true; },
+            remove: function(name) { if (name === 'thumbnail-failed') this._failed = false; },
+            contains: function(name) { return name === 'thumbnail-failed' && this._failed; }
+        },
+        querySelector: function() { return errorPanel; }
+    };
+    thumb.dataset.thumbnailCacheKey = 'timeout-key';
+    thumb.dataset.thumbnailSource = '/thumb/stuck.png';
+
+    var pending = setThumbnailImageSrc(thumb, '/thumb/stuck.png', 'timeout-key', {priority: 0});
+    assert(timeout && timeout.delay > 0, 'T41b: thumbnail fetch arms a bounded timeout');
+    if (timeout) timeout.callback();
+    return pending.then(function() {
+        assert(false, 'T41c: timed-out thumbnail rejects instead of falling back to a hanging image');
+    }, function(error) {
+        assert(error && error.name === 'ThumbnailFetchTimeoutError', 'T41c: timeout rejects with a named error');
+        assert(abortCount === 1, 'T41d: timeout aborts the fetch controller');
+        assert(thumbnailBlobInflight.size === 0, 'T41e: timeout releases the inflight thumbnail slot');
+        assert(clearCount >= 1, 'T41f: timeout cleanup clears the timer');
+        assert(thumb._parent.classList.contains('thumbnail-failed'), 'T41g: timeout marks the tile as failed');
+        assert(!thumb._parent.querySelector().hidden, 'T41h: timeout exposes the retryable error tile');
+    }).finally(function() {
+        ctx.setTimeout = previousSetTimeout;
+        ctx.clearTimeout = previousClearTimeout;
+        ctx.AbortController = previousAbortController;
+        ctx.fetch = previousFetch;
+    });
+}
+
 /* ── Run all tests asynchronously ──────────────────────────────────────── */
 
 var syncTests = [
@@ -1749,7 +1814,8 @@ var asyncTests = [
     test03_lru_touch_in_resolve_thumbnail_blob_url,
     test21_inflight_promotion_e2e,
     test23_lru_touch_does_not_revoke,
-    test28_exactly_one_lru_bump_on_hit_with_meta
+    test28_exactly_one_lru_bump_on_hit_with_meta,
+    test41_thumbnail_fetch_timeout_aborts_releases_slot_and_marks_retryable
 ];
 
 try {

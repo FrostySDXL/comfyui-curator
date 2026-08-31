@@ -306,6 +306,8 @@
             _evictIfNeeded(cacheKey);
         }
 
+        const THUMBNAIL_BLOB_FETCH_TIMEOUT_MS = 10000;
+
         async function resolveThumbnailBlobUrl(imageSrc, cacheKey, meta) {
             const cachedBlobUrl = thumbnailBlobUrlCache.get(cacheKey);
             if (cachedBlobUrl) {
@@ -321,11 +323,27 @@
 
             if (meta) _mergeInflightMetadata(cacheKey, meta);
 
-            const request = fetch(imageSrc, {cache: 'force-cache'})
+            const controller = typeof AbortController === 'function' ? new AbortController() : null;
+            let timedOut = false;
+            let timeoutId = null;
+            const fetchOptions = {cache: 'force-cache'};
+            if (controller) fetchOptions.signal = controller.signal;
+            const responsePromise = fetch(imageSrc, fetchOptions)
                 .then(resp => {
                     if (!resp.ok) throw new Error(`thumbnail request failed (${resp.status})`);
                     return resp.blob();
-                })
+                });
+            const timeoutPromise = new Promise((_, reject) => {
+                timeoutId = setTimeout(() => {
+                    timedOut = true;
+                    if (controller) controller.abort();
+                    const error = new Error(`thumbnail request timed out after ${THUMBNAIL_BLOB_FETCH_TIMEOUT_MS}ms`);
+                    error.name = 'ThumbnailFetchTimeoutError';
+                    reject(error);
+                }, THUMBNAIL_BLOB_FETCH_TIMEOUT_MS);
+                if (timeoutId && typeof timeoutId.unref === 'function') timeoutId.unref();
+            });
+            const request = Promise.race([responsePromise, timeoutPromise])
                 .then(blob => {
                     const blobUrl = URL.createObjectURL(blob);
                     const mergedMeta = _takeInflightMetadata(cacheKey);
@@ -333,11 +351,16 @@
                     return blobUrl;
                 })
                 .catch(error => {
+                    if (timedOut || error?.name === 'ThumbnailFetchTimeoutError') {
+                        _takeInflightMetadata(cacheKey);
+                        throw error;
+                    }
                     console.warn(`Thumbnail blob cache fallback for ${imageSrc}:`, error);
                     _takeInflightMetadata(cacheKey);
                     return imageSrc;
                 })
                 .finally(() => {
+                    if (timeoutId !== null) clearTimeout(timeoutId);
                     thumbnailBlobInflight.delete(cacheKey);
                 });
             thumbnailBlobInflight.set(cacheKey, request);
@@ -373,6 +396,13 @@
                 if (imageEl.getAttribute('src') !== resolvedSrc) {
                     imageEl.setAttribute('src', resolvedSrc);
                 }
+            }).catch(error => {
+                if (error?.name === 'ThumbnailFetchTimeoutError'
+                    && imageEl.dataset.thumbnailCacheKey === cacheKey
+                    && typeof markThumbnailError === 'function') {
+                    markThumbnailError(imageEl);
+                }
+                throw error;
             });
         }
 

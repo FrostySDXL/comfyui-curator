@@ -3,12 +3,15 @@
  * Later-file globals called at runtime: loadLightboxMetadata, renderLightboxMetadataPanel, toggleLightboxMetadata from metadata.js.
  */
 let lightboxZoom = 1;
+const LIGHTBOX_IMAGE_LOAD_TIMEOUT_MS = 15000;
 const _prefetchRegistry = new Map();
 const _pendingCompareLoaders = [null, null];
 let _pendingSingleImageLoader = null;
+let _pendingSingleImageLoad = null;
 let _pendingLightboxOpen = null;
 let lightboxOpenToken = 0;
 let lightboxImageToken = 0;
+let lightboxCommittedIndex = 0;
 let lightboxAiOpen = false;
 let lightboxBaseWidth = 0;
 let lightboxBaseHeight = 0;
@@ -174,6 +177,7 @@ function openLightbox(index) {
             lightboxStickyCandidatePane = 1;
             lightboxCompareItems = [];
             currentIndex = index;
+            lightboxCommittedIndex = index;
             syncLightboxModeUi();
             _prepareLightboxOpen();
         }
@@ -220,7 +224,7 @@ function _prepareLightboxOpen() {
             const source = getImageBatchAndFolder(img);
             const newSrc = ccImageUrl(source.batch, source.folder, img.name);
             const loaderEntry = _createLightboxImageLoader(newSrc);
-            const pending = {entry: loaderEntry, token: openToken, visibleAssigned: false};
+            const pending = {entry: loaderEntry, token: openToken, visibleAssigned: false, timeoutId: null};
             _pendingLightboxOpen = pending;
 
             function isCurrentOpen() {
@@ -229,6 +233,7 @@ function _prepareLightboxOpen() {
             function failOpen(error) {
                 if (!isCurrentOpen()) return;
                 _pendingLightboxOpen = null;
+                _clearLightboxLoaderTimeout(pending);
                 el.onload = null;
                 el.onerror = null;
                 el.src = '';
@@ -237,8 +242,12 @@ function _prepareLightboxOpen() {
                 currentLightboxDimensions = {w: null, h: null};
                 _disposeLightboxImageLoader(loaderEntry);
                 console.warn(`Unable to open lightbox image ${img.name}:`, error);
-                showToast('Unable to open image');
+                showToast(error && error.name === 'LightboxImageLoadTimeoutError'
+                    ? 'Unable to open image (timed out)'
+                    : 'Unable to open image');
             }
+
+            _armLightboxLoaderTimeout(pending, failOpen);
 
             loaderEntry.ready.then(function() {
                 if (_pendingLightboxOpen !== pending || openToken !== lightboxOpenToken || lightboxCompareMode) return;
@@ -259,7 +268,9 @@ function _prepareLightboxOpen() {
                     }
                     resetLightboxZoom();
                     _pendingLightboxOpen = null;
+                    _clearLightboxLoaderTimeout(pending);
                     _disposeLightboxImageLoader(loaderEntry);
+                    lightboxCommittedIndex = currentIndex;
                     updateLightboxInfo(img, currentLightboxDimensions.w, currentLightboxDimensions.h);
                     if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(img);
                     lightbox.inert = false;
@@ -1238,24 +1249,15 @@ function showCurrentImage() {
             if (img.media_kind === 'video' || img.media_kind === 'audio') {
                 ++lightboxImageToken;
                 ++lightboxMetadataRequestToken;
+                lightboxCommittedIndex = currentIndex;
                 _showTypedLightboxMedia(img);
                 return;
             }
             stopLightboxMediaResources();
             document.getElementById('lightbox').classList.remove('typed-media');
             document.getElementById('lightbox-img').hidden = false;
-            if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(img);
             const imageToken = ++lightboxImageToken;
-            const metadataToken = ++lightboxMetadataRequestToken;
-            currentLightboxMetadata = null;
-            currentLightboxMetadataError = null;
-            currentLightboxMetadataLoading = false;
-            currentLightboxDimensions = {w: null, h: null};
-            lightboxBaseWidth = 0;
-            lightboxBaseHeight = 0;
-            resetLightboxPanelScroll();
-            renderLightboxMetadataPanel();
-            resetLightboxZoom();
+            const previousIndex = lightboxCommittedIndex;
             const el = document.getElementById('lightbox-img');
             el.draggable = false;
             el.onload = null;
@@ -1267,39 +1269,64 @@ function showCurrentImage() {
             const newSrc = ccImageUrl(source.batch, source.folder, img.name);
             const loaderEntry = _prefetchRegistry.get(newSrc) || _createLightboxImageLoader(newSrc);
             _prefetchRegistry.delete(newSrc);
-            const pending = {entry: loaderEntry, token: imageToken};
+            const pending = {entry: loaderEntry, token: imageToken, previousIndex, previousSrc: el.src, timeoutId: null};
             _pendingSingleImageLoader = pending;
+            function failNavigation(error) {
+                if (_pendingSingleImageLoader !== pending && _pendingSingleImageLoad !== pending) return;
+                if (imageToken !== lightboxImageToken) return;
+                _pendingSingleImageLoader = null;
+                _pendingSingleImageLoad = null;
+                _clearLightboxLoaderTimeout(pending);
+                el.onload = null;
+                el.onerror = null;
+                el.src = pending.previousSrc || '';
+                _disposeLightboxImageLoader(loaderEntry);
+                currentIndex = pending.previousIndex;
+                showToast(error && error.name === 'LightboxImageLoadTimeoutError'
+                    ? 'Unable to navigate to image (timed out)'
+                    : 'Unable to navigate to image');
+            }
+            _armLightboxLoaderTimeout(pending, failNavigation);
             loaderEntry.ready.then(function() {
                 const lightbox = document.getElementById('lightbox');
                 if (_pendingSingleImageLoader !== pending || imageToken !== lightboxImageToken ||
                     !lightbox || !lightbox.classList.contains('active') || lightboxCompareMode) return;
                 _pendingSingleImageLoader = null;
+                _pendingSingleImageLoad = pending;
                 loaderEntry.img.onload = null;
                 loaderEntry.img.onerror = null;
                 el.onload = function() {
                     if (imageToken !== lightboxImageToken) return;
                     el.onload = null;
                     el.onerror = null;
+                    resetLightboxZoom();
                     captureLightboxBaseSize();
+                    _pendingSingleImageLoad = null;
+                    _clearLightboxLoaderTimeout(pending);
+                    lightboxCommittedIndex = currentIndex;
+                    currentLightboxDimensions = {
+                        w: loaderEntry.img.naturalWidth,
+                        h: loaderEntry.img.naturalHeight,
+                    };
+                    updateLightboxInfo(img, currentLightboxDimensions.w, currentLightboxDimensions.h);
+                    if (typeof aiSetInspectedImage === 'function') aiSetInspectedImage(img);
+                    const metadataToken = ++lightboxMetadataRequestToken;
+                    currentLightboxMetadata = null;
+                    currentLightboxMetadataError = null;
+                    currentLightboxMetadataLoading = false;
+                    loadLightboxMetadata(img, metadataToken);
+                    renderLightboxMetadataPanel();
+                    renderLightboxAiPanel();
+                    if (typeof syncLightboxPublicActions === 'function') syncLightboxPublicActions();
                 };
                 el.onerror = function() {
-                    if (imageToken !== lightboxImageToken) return;
-                    el.onload = null;
-                    el.onerror = null;
+                    failNavigation(new Error('visible image load failed'));
                 };
                 el.src = newSrc;
-                currentLightboxDimensions = {
-                    w: loaderEntry.img.naturalWidth,
-                    h: loaderEntry.img.naturalHeight,
-                };
-                updateLightboxInfo(img, currentLightboxDimensions.w, currentLightboxDimensions.h);
                 _prefetchAdjacentImages(imageToken);
-            }).catch(function() {
-                if (_pendingSingleImageLoader === pending) _pendingSingleImageLoader = null;
+            }).catch(function(error) {
+                failNavigation(error);
             });
-            loadLightboxMetadata(img, metadataToken);
-            renderLightboxAiPanel();
-            if (typeof syncLightboxPublicActions === 'function') syncLightboxPublicActions();
         }
 
 function toggleLightboxAiPanel() {
@@ -1522,10 +1549,31 @@ function _disposeLightboxImageLoader(entry) {
             entry.img.src = '';
         }
 
+function _clearLightboxLoaderTimeout(pending) {
+            if (!pending || pending.timeoutId === null) return;
+            clearTimeout(pending.timeoutId);
+            pending.timeoutId = null;
+}
+
+function _armLightboxLoaderTimeout(pending, onTimeout) {
+            if (!pending) return;
+            pending.timeoutId = setTimeout(function() {
+                const timeoutId = pending.timeoutId;
+                pending.timeoutId = null;
+                clearTimeout(timeoutId);
+                const error = new Error('lightbox image load timed out');
+                error.name = 'LightboxImageLoadTimeoutError';
+                onTimeout(error);
+            }, LIGHTBOX_IMAGE_LOAD_TIMEOUT_MS);
+            if (pending.timeoutId && typeof pending.timeoutId.unref === 'function') pending.timeoutId.unref();
+        }
+
 function _cancelSingleImageLoader() {
-            const pending = _pendingSingleImageLoader;
+            const pending = _pendingSingleImageLoader || _pendingSingleImageLoad;
             if (!pending) return;
             _pendingSingleImageLoader = null;
+            _pendingSingleImageLoad = null;
+            _clearLightboxLoaderTimeout(pending);
             _disposeLightboxImageLoader(pending.entry);
         }
 
@@ -1533,6 +1581,7 @@ function _cancelPendingLightboxOpen() {
             const pending = _pendingLightboxOpen;
             if (!pending) return;
             _pendingLightboxOpen = null;
+            _clearLightboxLoaderTimeout(pending);
             const el = document.getElementById('lightbox-img');
             if (el) {
                 el.onload = null;
