@@ -94,4 +94,4 @@ def test_standalone_paged_folders_use_revision_poll() -> None:
     assert "apiPollFolderSnapshot(" in body
     assert "if (CURATOR_NATIVE && folderSnapshot)" not in body
     assert "/api/images/${currentBatch}/${currentFolder}" in body
-    assert "if (!CURATOR_NATIVE) await loadBatches();" in body
+    assert "if (!CURATOR_NATIVE) await loadBatches({background: true});" in body

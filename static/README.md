@@ -271,6 +271,14 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
   favorites-only, and available AI display/filter controls.
 - The batch sidebar shows folder count breakdowns, AI-run indicators, a pinned
   All Favorites collection, and an All Public generated-output collection.
+- When batches are collapsed, the left-edge tab supports delayed hover or explicit
+  click/tap/keyboard activation for compact navigation. Peek reuses the same sidebar,
+  search, and batch rows without changing the saved open state or workspace width.
+  Pointer leave has a grace period; focus inside keeps it open. Escape, outside
+  pointer/focus, selection, drag, lightbox/modal opening, or window blur dismisses it.
+  Show/Hide Batches and batch-search shortcuts retain their full-sidebar semantics.
+  Background responses and AI enrichment avoid repainting an active peek; keyed row
+  reconciliation also preserves focus and click targets for foreground search loads.
 - AI badges and score filtering reset when switching to a batch with no active
   run.
 - The AI review inspector shows selected-image details, multi-select summaries,

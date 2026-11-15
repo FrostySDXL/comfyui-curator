@@ -5,7 +5,8 @@ function isInteractionBusy() {
             return document.getElementById('lightbox').classList.contains('active')
                 || isDraggingImages
                 || isSidebarResizing
-                || isAiSidebarResizing;
+                || isAiSidebarResizing
+                || (typeof isBatchSidebarPeeking === 'function' && isBatchSidebarPeeking());
         }
 
 function buildImageSignature(list) {
@@ -14,7 +15,7 @@ function buildImageSignature(list) {
 
 async function pollForChanges() {
             if (isInteractionBusy()) return;
-            if (!CURATOR_NATIVE) await loadBatches();
+            if (!CURATOR_NATIVE) await loadBatches({background: true});
             if (!currentBatch || isVirtualCollectionView() || isPublicView() || !currentFolder || serverSelection || selectedImages.size > 0 || isInteractionBusy()) return;
             const transitionToken = viewTransitionToken;
             const scopeKey = getViewScopeKey();

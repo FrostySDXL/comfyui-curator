@@ -73,7 +73,7 @@ async function pollImportAvailability() {
 
 async function pollNativeBatchSummaries() {
             if (!CURATOR_NATIVE || isInteractionBusy()) return;
-            await loadBatches();
+            await loadBatches({background: true});
         }
 
 function saveBatchState() {
@@ -124,13 +124,15 @@ function clearBatchSearch() {
             input.focus();
         }
 
-async function loadBatches() {
+async function loadBatches({background = false} = {}) {
             const resp = await fetch(ccApiPath('/api/batches')).catch(err => {
                 console.warn('loadBatches fetch failed', err);
                 return null;
             });
             if (!resp || !resp.ok) return;
             const data = await resp.json();
+            // A hover/focus interaction may have started while this poll was in flight.
+            if (background && isInteractionBusy()) return;
             const batches = data.batches;
             const activeBatch = data.active_batch;
             allCounts = data.counts;
@@ -225,7 +227,10 @@ async function loadBatches() {
             const uncachedBatches = filteredBatches.filter(b => !(b in aiBatchRunCounts));
             if (uncachedBatches.length > 0) {
                 aiLoadBatchRunCounts(uncachedBatches).then(() => {
-                    if (batchSort === 'ai') loadBatches();
+                    // Never replace a row under an active peek (pointerdown/click
+                    // and keyboard focus must keep the same navigation target).
+                    if (typeof isBatchSidebarPeeking === 'function' && isBatchSidebarPeeking()) return;
+                    if (batchSort === 'ai') loadBatches({background: true});
                     else renderBatchList(filteredBatches);
                 });
             }
@@ -249,6 +254,49 @@ function formatBatchBreakdown(counts) {
                 `${safeCounts.rejects || 0} rejects`,
             ].join(' · ');
         }
+
+// Retain row identity across search/count/AI responses, including responses that
+// started before a peek opened. Replacing the list can swallow a pending click
+// or detach keyboard focus; polling guards alone cannot cover foreground loads.
+function reconcileBatchList(list, fragment) {
+    const active = document.activeElement;
+    const hadFocus = list.contains(active);
+    const scrollTop = list.scrollTop;
+    const existing = new Map([...list.children].map(item => [item.querySelector('.batch-name')?.dataset.batch, item]));
+    const desired = [...fragment.children].map(item => {
+        const fresh = item.querySelector('.batch-name');
+        const retained = fresh && existing.get(fresh.dataset.batch);
+        if (!retained) return item;
+        const row = retained.querySelector('.batch-name');
+        row.className = fresh.className;
+        for (const selector of ['.batch-count', '.batch-breakdown']) {
+            const oldPart = row.querySelector(selector);
+            const newPart = fresh.querySelector(selector);
+            if (oldPart && newPart) {
+                if (oldPart.textContent !== newPart.textContent) oldPart.textContent = newPart.textContent;
+                oldPart.title = newPart.title;
+            }
+        }
+        const oldDot = row.querySelector('.batch-ai-dot');
+        const newDot = fresh.querySelector('.batch-ai-dot');
+        if (oldDot && !newDot) oldDot.remove();
+        if (!oldDot && newDot) row.querySelector('.batch-meta').prepend(newDot);
+        return retained;
+    });
+    const keep = new Set(desired);
+    for (const item of [...list.children]) if (!keep.has(item)) item.remove();
+    desired.forEach((item, index) => {
+        if (list.children[index] !== item) list.insertBefore(item, list.children[index] || null);
+    });
+    if (hadFocus) {
+        if (list.contains(active)) {
+            if (document.activeElement !== active) active.focus({preventScroll: true});
+        } else {
+            document.getElementById('batch-search')?.focus({preventScroll: true});
+        }
+    }
+    list.scrollTop = scrollTop;
+}
 
 function renderBatchList(filteredBatches) {
             const list = document.getElementById('batch-list');
@@ -316,7 +364,7 @@ function renderBatchList(filteredBatches) {
                 empty.setAttribute('aria-label', 'no batches found');
                 empty.textContent = 'No batches match';
                 fragment.appendChild(empty);
-                list.replaceChildren(fragment);
+                reconcileBatchList(list, fragment);
                 return;
             }
             filteredBatches.forEach(batch => {
@@ -366,7 +414,7 @@ function renderBatchList(filteredBatches) {
                 li.appendChild(div);
                 fragment.appendChild(li);
             });
-            list.replaceChildren(fragment);
+            reconcileBatchList(list, fragment);
         }
 
 function _populateCustomDropdown(filter = '') {
@@ -510,6 +558,7 @@ function updateFolderTabs() {
         }
 
 function selectBatch(batch) {
+            if (typeof dismissBatchSidebarPeek === 'function') dismissBatchSidebarPeek();
             const searchModal = document.getElementById('prompts-modal');
             if (searchModal?.classList.contains('active') && typeof hidePromptsModal === 'function') {
                 hidePromptsModal();

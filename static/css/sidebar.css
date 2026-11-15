@@ -8,10 +8,70 @@
             flex-shrink: 0;
             transition: width 0.2s ease;
         }
+        /* The same navigation becomes a compact overlay; layout/storage stay collapsed. */
         .sidebar.collapsed {
-            width: 0;
-            border-right: none;
+            position: fixed;
+            inset: 0 auto 0 0;
+            width: min(300px, calc(100vw - 36px));
+            z-index: 80;
+            border-right: 1px solid var(--border-subtle);
+            box-shadow: 10px 0 28px rgba(0, 0, 0, .4);
+            transform: translateX(-100%);
+            visibility: hidden;
+            pointer-events: none;
             overflow: hidden;
+            transition: transform .18s ease, visibility .18s;
+        }
+        .sidebar.collapsed.peek-open {
+            transform: translateX(0);
+            visibility: visible;
+            pointer-events: auto;
+        }
+        .sidebar.collapsed .batch-sort-group,
+        .sidebar.collapsed .sidebar-subtitle,
+        .sidebar.collapsed .batch-count-label,
+        .sidebar.collapsed .sidebar-action-row,
+        .sidebar.collapsed .batch-breakdown,
+        .sidebar.collapsed .batch-ai-dot { display: none; }
+        .sidebar.collapsed .sidebar-library-header { padding-right: 36px; min-height: 32px; }
+        .batch-peek-close { display: none; }
+        .sidebar.collapsed .batch-peek-close {
+            display: block;
+            position: absolute;
+            top: 7px;
+            right: 8px;
+            z-index: 3;
+            width: 36px;
+            height: 36px;
+            border: 0;
+            border-radius: 5px;
+            color: var(--text-secondary);
+            background: var(--surface-2);
+            font-size: 22px;
+            cursor: pointer;
+        }
+        .batch-peek-trigger {
+            position: fixed;
+            left: 0;
+            top: 40%;
+            z-index: 79;
+            width: 20px;
+            height: 84px;
+            border: 1px solid var(--border-subtle);
+            border-left: 0;
+            border-radius: 0 6px 6px 0;
+            background: var(--surface-2);
+            color: var(--text-secondary);
+            font-size: 24px;
+            cursor: pointer;
+        }
+        .batch-peek-trigger[hidden] { display: none; }
+        @media (pointer: coarse) {
+            .batch-peek-trigger { width: 28px; min-height: 88px; }
+            .sidebar.collapsed .batch-name { min-height: 44px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .sidebar.collapsed { transition: none; }
         }
         .sidebar-resizer {
             width: 8px;
@@ -151,6 +211,7 @@
             overflow: hidden;
             background: var(--surface-1);
         }
+        .sidebar.collapsed .sidebar-batches { padding: 12px; }
         .batch-controls {
             position: sticky;
             top: 0;

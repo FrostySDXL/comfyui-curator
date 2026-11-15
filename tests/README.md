@@ -90,6 +90,14 @@ and late preview JSON. It also executes Clear filter through the real
 `selectFolder()` and batch-Public loader to verify restored scope and folder
 rail visibility. Browser timing and layout still require manual checks.
 
+`batch_sidebar_peek_lifecycle_test.js` executes the real sidebar, batches, and
+polling scripts with deterministic DOM/timer doubles. Its existing-unit-layer
+pytest wrapper `test_frontend_batch_peek.py` checks hover grace, keyboard focus and
+Escape, touch activation, storage separation, full-sidebar reopening, overlay and
+drag suppression, delayed polling/AI commits, and keyed row identity/focus across
+foreground search responses. Actual pointer geometry and CSS transitions still
+need browser smoke checks.
+
 ## Key Files & Responsibilities
 
 | File | Subject Under Test | Key Patterns |

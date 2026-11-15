@@ -17,7 +17,9 @@
     <link rel="stylesheet" href="/curator_static/css/responsive.css">
 </head>
 <body>
-    <div class="sidebar" id="batch-sidebar">
+    <button id="batch-peek-trigger" class="batch-peek-trigger" type="button" aria-label="Peek at batches" aria-controls="batch-sidebar" aria-expanded="false" title="Peek at batches (hover or click)" hidden>›</button>
+    <div class="sidebar" id="batch-sidebar" role="navigation" aria-label="Batches">
+        <button id="batch-peek-close" class="batch-peek-close" type="button" aria-label="Dismiss batch peek" title="Dismiss (Escape)">×</button>
         <div class="sidebar-section sidebar-batches">
             <div class="batch-controls">
                 <div class="sidebar-library-header">
@@ -34,7 +36,7 @@
                 </div>
                 <div id="batch-count-label" class="batch-count-label">Batches 0 (0 shown)</div>
                 <div class="batch-search-wrap">
-                    <input id="batch-search" class="batch-search" type="text" placeholder="Search batches..." autocomplete="off">
+                    <input id="batch-search" class="batch-search" type="text" aria-label="Search batches" placeholder="Search batches..." autocomplete="off">
                     <button id="batch-search-clear" class="batch-search-clear" aria-label="Clear batch search" title="Clear">x</button>
                 </div>
             </div>
@@ -696,6 +698,7 @@
                     <li><strong>Browse</strong> opens images on ordinary click; <strong>Select</strong> toggles them.</li>
                     <li><strong>Ctrl/Cmd+click</strong> selects disjoint images; <strong>Shift+click</strong> adds a range. Shift takes precedence when both are held.</li>
                     <li><strong>View</strong> contains density, favorites-only, and available AI display filters.</li>
+                    <li>With batches hidden, hover over the left-edge tab or click/tap it for compact batch navigation. Escape, outside click, or selecting a batch dismisses the peek without changing the saved sidebar state. Keyboard focus keeps it open until you leave; Show Batches and batch-search shortcuts still reopen the full sidebar.</li>
                     <li><strong>Inbox</strong> holds new images for review.</li>
                     <li>Move keepers to <strong>Shortlisted</strong> or <strong>Finals</strong>; move rejects to <strong>Rejects</strong>.</li>
                     <li>Use favorites, Prompt History, and metadata as review aids. The lightbox detects adjacent <code>asset.ext.json</code> or <code>asset.json</code> sidecars and structures recognized external-favorites fields and tags.</li>
