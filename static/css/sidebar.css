@@ -27,13 +27,11 @@
             visibility: visible;
             pointer-events: auto;
         }
-        .sidebar.collapsed .batch-sort-group,
         .sidebar.collapsed .sidebar-subtitle,
         .sidebar.collapsed .batch-count-label,
         .sidebar.collapsed .sidebar-action-row,
         .sidebar.collapsed .batch-breakdown,
         .sidebar.collapsed .batch-ai-dot { display: none; }
-        .sidebar.collapsed .sidebar-library-header { padding-right: 36px; min-height: 32px; }
         .batch-peek-close { display: none; }
         .sidebar.collapsed .batch-peek-close {
             display: block;
@@ -276,6 +274,23 @@
         .batch-sort-btn:hover { color: var(--text-primary); background: var(--surface-raised); }
         .batch-sort-btn.active { color: var(--button-accent-text); background: var(--button-accent-fill); }
         .batch-sort-btn:focus-visible { position: relative; z-index: 1; }
+        /* Keep the shared sort buttons below the title, clear of the peek Close. */
+        .sidebar.collapsed .sidebar-library-header {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 6px;
+        }
+        .sidebar.collapsed .sidebar-title-group {
+            min-height: 32px;
+            padding-right: 40px;
+            justify-content: center;
+        }
+        .sidebar.collapsed .batch-sort-group { width: 100%; }
+        .sidebar.collapsed .batch-sort-btn {
+            flex: 1 1 auto;
+            min-width: 0;
+            padding: 0 6px;
+        }
         .batch-count-label {
             font-size: 11px;
             color: #999;

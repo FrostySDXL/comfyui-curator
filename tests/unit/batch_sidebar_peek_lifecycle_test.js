@@ -52,7 +52,7 @@ class Element {
         this.parentNode = null;
     }
     addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
-    fire(type, extra = {}) { for (const fn of this.listeners[type] || []) fn({target: this, ...extra}); }
+    fire(type, extra = {}) { for (const fn of this.listeners[type] || []) fn.call(this, {target: this, ...extra}); }
     setAttribute(key, value) { this.attrs[key] = value; }
     contains(el) { return el === this || this.children.some(c => c.contains(el)); }
     focus() { document.activeElement = this; dispatch('focusin', {target: this}); }
@@ -249,6 +249,64 @@ async function main() {
     assert.equal(document.activeElement, one, 'foreground response keeps row keyboard focus');
     run('renderBatchList(["two"])');
     assert.equal(document.activeElement, elements['batch-search'], 'filtered-out focused batch returns focus to search');
+    // Bind the real shared sort click handlers, not a peek-specific implementation.
+    const sorts = ['alpha', 'count', 'recent', 'ai'].map(sort => {
+        const button = new Element();
+        button.dataset.bsort = sort;
+        sidebar.appendChild(button);
+        return button;
+    });
+    const getById = document.getElementById;
+    const query = document.querySelector;
+    const queryAll = document.querySelectorAll;
+    document.getElementById = () => null;
+    document.querySelector = () => null;
+    document.querySelectorAll = selector => selector === '.batch-sort-btn' ? sorts : [];
+    context.aiUpdateScoreSummary = () => {};
+    load('static/js/events.js');
+    run('_bindDelegatedEvents()');
+    document.getElementById = getById;
+    document.querySelector = query;
+    document.querySelectorAll = selector => selector === '.batch-sort-btn' ? sorts : queryAll(selector);
+    context.BATCH_SORT_KEY = 'sort';
+    context.aiBatchRunCounts = {one: 4, two: 3, three: 1};
+    context.fetch = async () => ({ok: true, json: async () => ({
+        batches: ['one', 'three', 'two'], active_batch: '',
+        counts: {one: {inbox: 1}, two: {inbox: 9}, three: {inbox: 3}},
+        batch_meta: {one: {modified_at: 10}, two: {modified_at: 20}, three: {modified_at: 30}},
+    })});
+    run('_lastBatchListKey = "one,three,two"; savedLoadBatches = loadBatches; loadBatches = () => (sortRefresh = savedLoadBatches())');
+    const expectedOrders = {
+        alpha: ['one', 'three', 'two'], count: ['two', 'three', 'one'],
+        recent: ['three', 'two', 'one'], ai: ['one', 'two', 'three'],
+    };
+    for (const button of sorts) {
+        // Native <button> keyboard activation dispatches the same click with detail=0;
+        // the DOM double verifies that path/focus, not browser default key synthesis.
+        button.focus();
+        button.fire('click', {detail: button.dataset.bsort === 'recent' ? 0 : 1});
+        await run('sortRefresh');
+        const sort = button.dataset.bsort;
+        assert.equal(run('batchSort'), sort);
+        assert.equal(stored.get('sort'), sort, 'peek uses the normal persisted sort preference');
+        assert.equal(sorts.filter(b => b.classes.has('active')).length, 1);
+        assert.equal(button.classes.has('active'), true);
+        const actualOrder = list.children.slice(2).map(item => item.querySelector('.batch-name').dataset.batch);
+        assert.deepEqual(actualOrder, expectedOrders[sort]);
+        sidebar.fire('pointerleave');
+        tick(280);
+        assert.equal(document.activeElement, button, 'refresh keeps the shared sort button focused');
+        assert.equal(run('isBatchSidebarPeeking()'), true, 'sorting and keyboard focus retain peek');
+        assert.equal(run('sidebarOpen'), false);
+        assert.equal(stored.get('open'), 'false', 'sort never reopens or persists the full sidebar');
+    }
+    // Pointer-only sorting also retains the peek without borrowing keyboard focus.
+    outside.focus();
+    run('openBatchSidebarPeek()');
+    sorts[0].fire('click', {detail: 1});
+    await run('sortRefresh');
+    assert.equal(run('isBatchSidebarPeeking()'), true);
+    assert.equal(document.activeElement, outside);
     console.log('batch sidebar peek lifecycle checks passed');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -95,7 +95,10 @@ polling scripts with deterministic DOM/timer doubles. Its existing-unit-layer
 pytest wrapper `test_frontend_batch_peek.py` checks hover grace, keyboard focus and
 Escape, touch activation, storage separation, full-sidebar reopening, overlay and
 drag suppression, delayed polling/AI commits, and keyed row identity/focus across
-foreground search responses. Actual pointer geometry and CSS transitions still
+foreground search responses. It also binds the real shared sort controls and
+checks all four sort orders, active-button/persistence updates, keyboard-origin
+click/focus retention, and sorting without reopening the full sidebar. Actual
+pointer geometry, native keyboard click synthesis, and CSS transitions still
 need browser smoke checks.
 
 ## Key Files & Responsibilities

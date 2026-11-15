@@ -273,7 +273,9 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
   All Favorites collection, and an All Public generated-output collection.
 - When batches are collapsed, the left-edge tab supports delayed hover or explicit
   click/tap/keyboard activation for compact navigation. Peek reuses the same sidebar,
-  search, and batch rows without changing the saved open state or workspace width.
+  search, batch rows, and the same A–Z / # / Recent / AI sort buttons without
+  changing the saved open state or workspace width. Sorting in peek updates the
+  shared sort preference and active button while keeping the peek open.
   Pointer leave has a grace period; focus inside keeps it open. Escape, outside
   pointer/focus, selection, drag, lightbox/modal opening, or window blur dismisses it.
   Show/Hide Batches and batch-search shortcuts retain their full-sidebar semantics.
