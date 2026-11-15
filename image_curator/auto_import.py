@@ -9,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from . import batch_store
+from .move_history import _root_lock
 from .sidecar_metadata import find_json_sidecar
 
 logger = logging.getLogger(__name__)
@@ -129,9 +130,12 @@ class AutoImport:
                         except OSError:
                             return False
 
-                    result = batch_store.import_all_pending_detailed(
-                        source, root, batch, names=stable, ready=ready
-                    )
+                    # Review moves and undo use the same canonical-root lock.
+                    # Keep collision selection and transfer in that critical section.
+                    with _root_lock(root):
+                        result = batch_store.import_all_pending_detailed(
+                            source, root, batch, names=stable, ready=ready
+                        )
                     if result.imported_count:
                         self.refresh(batch)
                     self._set_error(
@@ -149,9 +153,14 @@ class AutoImport:
 
     def manual(self, batch: str):
         with self.lock:
+            if self.stop_event.is_set():
+                raise ValueError("Import service is shutting down.")
             source, root, _, _ = self.paths()
             _validate_source(source, root)
-            result = batch_store.import_all_pending_detailed(source, root, batch)
+            with _root_lock(root):
+                if self.stop_event.is_set():
+                    raise ValueError("Import service is shutting down.")
+                result = batch_store.import_all_pending_detailed(source, root, batch)
             if result.imported_count:
                 self.refresh(batch)
             return result

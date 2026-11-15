@@ -90,7 +90,9 @@ def test_standalone_paged_folders_use_revision_poll() -> None:
     assert "const usesPagedFolderTransport = Boolean(folderSnapshot)" in body
     assert "folderCountHint >= PAGED_FOLDER_THRESHOLD" in body
     assert "if (usesPagedFolderTransport) {" in body
-    assert "if (!folderSnapshot) return;" in body
+    assert "if (!folderSnapshot) {" in body
+    assert "importRefresh && typeof importSnapshotLoad" in body
+    assert "mayCommit: owned" in body
     assert "apiPollFolderSnapshot(" in body
     assert "if (CURATOR_NATIVE && folderSnapshot)" not in body
     assert "/api/images/${currentBatch}/${currentFolder}" in body

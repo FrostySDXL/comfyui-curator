@@ -30,6 +30,7 @@ from __future__ import annotations
 import enum
 import logging
 import threading
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -90,6 +91,7 @@ class NativeAiLifecycle:
         # Submission state is guarded by _state_lock so startup, submission,
         # worker registration, and shutdown form one atomic state machine.
         self._accepting_submissions = False
+        self._settings_revision = 0
 
         # All non-daemon worker threads that are active (set of (thread, run_id)).
         self._workers: set[tuple[threading.Thread, str]] = set()
@@ -148,12 +150,26 @@ class NativeAiLifecycle:
             return self._submit_job_locked(params)
 
     def submit_validated(self, validate):
-        """Validate against the current settings and submit under one gate."""
-        with self._state_lock:
-            params, error = validate(self.settings)
-            if error:
-                return None, error
-            return self._submit_job_locked(params), None
+        """Validate a settings snapshot without holding the shutdown gate."""
+        while True:
+            with self._state_lock:
+                if not self._accepting_submissions:
+                    raise LifecycleShutdownError(
+                        "AI curation is shutting down; no new jobs accepted"
+                    )
+                settings = replace(self.settings)
+                revision = self._settings_revision
+            params, error = validate(settings)
+            with self._state_lock:
+                if not self._accepting_submissions:
+                    raise LifecycleShutdownError(
+                        "AI curation is shutting down; no new jobs accepted"
+                    )
+                if revision != self._settings_revision:
+                    continue
+                if error:
+                    return None, error
+                return self._submit_job_locked(params), None
 
     def _submit_job_locked(self, params: dict[str, Any]) -> CurationRun:
         if not self._accepting_submissions:
@@ -182,6 +198,7 @@ class NativeAiLifecycle:
         with self._state_lock:
             if self.has_active_jobs():
                 raise SettingsConflictError("AI work is active")
+            self._settings_revision += 1
             self._storage = RunStorage(batches_dir=self.settings.batch_root)
             self._client = VisionClient(
                 base_url=self.settings.llm_base_url,
@@ -209,6 +226,7 @@ class NativeAiLifecycle:
             if self._queue is not None:
                 queue = QueueManager(storage=storage, on_promote=self._on_job_promoted)
             payload = self.settings.update(data)
+            self._settings_revision += 1
             self._storage = storage
             self._client = client
             self._queue = queue

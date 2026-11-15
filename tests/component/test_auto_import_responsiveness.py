@@ -62,10 +62,10 @@ def test_ai_validation_and_submission_pin_settings_during_root_switch(tmp_path, 
     original = service.batches_payload
     monkeypatch.setattr(lifecycle, "_launch_worker", lambda run_id: None)
 
-    def slow_validation():
+    def slow_validation(snapshot):
         entered.set()
         assert release.wait(3)
-        return original()
+        return original(snapshot)
 
     monkeypatch.setattr(service, "batches_payload", slow_validation)
     outcomes = []
@@ -94,15 +94,14 @@ def test_ai_validation_and_submission_pin_settings_during_root_switch(tmp_path, 
         changer = threading.Thread(target=change_settings)
         changer.start()
         try:
-            await asyncio.sleep(0.05)
-            assert changer.is_alive()
+            await asyncio.to_thread(changer.join, 2)
+            assert outcomes == ["changed"]
         finally:
             release.set()
         status, _ = await task
         changer.join(3)
-        assert status == 201
-        assert outcomes == ["conflict"]
-        assert settings.batch_root == tmp_path / "batches"
+        assert status == 400
+        assert settings.batch_root == other_root
 
     try:
         asyncio.run(scenario())
@@ -176,3 +175,88 @@ def test_status_does_not_wait_for_import_lock(tmp_path, monkeypatch):
             service.close()
 
     asyncio.run(scenario())
+
+
+def test_shutdown_defers_cleanup_while_manual_import_is_running(tmp_path, monkeypatch):
+    import pytest
+
+    from image_curator import batch_store
+    from image_curator.native_settings import NativeCuratorSettings
+
+    native_routes = _load_native_routes(monkeypatch)
+    root, source = tmp_path / "batches", tmp_path / "output"
+    batch_store.create_batch(root, "one")
+    source.mkdir()
+    (source / "a.png").write_bytes(b"media")
+    service = native_routes.NativeCuratorService(
+        NativeCuratorSettings(batch_root=root, import_source=source, state_file=tmp_path / "state")
+    )
+    entered, release, cleaned = threading.Event(), threading.Event(), threading.Event()
+    original = batch_store.import_all_pending_detailed
+
+    def slow(*args, **kwargs):
+        entered.set()
+        assert release.wait(3)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(batch_store, "import_all_pending_detailed", slow)
+    service.folder_index.close = MagicMock(side_effect=cleaned.set)
+    service.search_index_jobs.close = MagicMock()
+    refreshes = []
+
+    def record_refresh(*_args):
+        refreshes.append(cleaned.is_set())
+
+    service.folder_index.refresh = record_refresh
+    importer = threading.Thread(target=service.auto_import.manual, args=("one",))
+    importer.start()
+    assert entered.wait(2)
+    try:
+        service.close()
+        service.close()
+        assert not cleaned.is_set()
+    finally:
+        release.set()
+        importer.join(3)
+    assert cleaned.wait(2)
+    assert refreshes == [False]
+    service.folder_index.close.assert_called_once()
+    service.search_index_jobs.close.assert_called_once()
+    with pytest.raises(ValueError, match="shutting down"):
+        service.auto_import.manual("one")
+
+
+def test_shutdown_does_not_block_event_loop_during_validation(tmp_path, monkeypatch):
+    router, service, lifecycle = _make_router_and_lifecycle(tmp_path, monkeypatch)
+    entered, release = threading.Event(), threading.Event()
+    original = service.batches_payload
+
+    def slow(snapshot):
+        entered.set()
+        assert release.wait(3)
+        return original(snapshot)
+
+    monkeypatch.setattr(service, "batches_payload", slow)
+
+    async def scenario():
+        task = asyncio.create_task(
+            _invoke(
+                router,
+                "POST",
+                "/api/curator/ai-curate/jobs",
+                {"batch": "test-batch", "elements": ["test"], "model": "vl-scorer"},
+            )
+        )
+        assert await asyncio.to_thread(entered.wait, 2)
+        try:
+            await asyncio.wait_for(lifecycle.shutdown(None), 1)
+        finally:
+            release.set()
+        status, _ = await task
+        assert status == 503
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        release.set()
+        service.close()

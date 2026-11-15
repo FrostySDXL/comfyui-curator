@@ -1,4 +1,8 @@
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from tests.unit.frontend_source import extract_function_body, read_frontend_css, read_frontend_js
 
@@ -52,3 +56,10 @@ def test_bootstrap_polls_import_status_and_native_batch_summaries_separately() -
     assert "}, 1000);" in js
     assert "pollNativeBatchSummaries" in js
     assert "}, 10000);" in js
+
+
+def test_shuffle_import_refresh_executes_real_scripts() -> None:
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node is unavailable")
+    subprocess.run([node, "tests/unit/shuffle_import_refresh_test.js"], check=True, timeout=15)

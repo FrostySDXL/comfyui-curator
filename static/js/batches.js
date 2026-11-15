@@ -14,6 +14,9 @@ let lastAutoImportFailureKey = '';
 let importStatusPollInFlight = false;
 let autoImportEnabled = false;
 let autoImportPaused = false;
+// Explicit imports need one deferred refresh after interactions finish.
+let pendingImportRefresh = null;
+let importSnapshotLoad = null;
 
 function updateAutoImportQuickAction(activeBatch) {
             const button = document.getElementById('set-auto-import-btn');
@@ -716,6 +719,10 @@ async function importAll() {
                     });
                     showToast(importResult);
                     updatePendingImportUi(pendingCount, batch);
+                    if (importedCount && !CURATOR_NATIVE && !folderSnapshot
+                        && currentBatch === batch && currentFolder === 'inbox') {
+                        pendingImportRefresh = {batch};
+                    }
                     await loadBatches();
                     if (currentBatch === batch && currentFolder === 'inbox' && !isInteractionBusy())
                         await pollForChanges();

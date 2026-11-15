@@ -15,7 +15,7 @@
 - **AI score integration:** Overlay badges, score gradient coloring, explicit score-cutoff preview/apply/clear, filter/sort by score, accessible Inspect / Score / Runs tabs, contextual image and batch inspection, bounded partial-failure evidence, guided scoring with a visible 12-check cap, and truthful job/history states.
 - **Public output workflow:** selected-image export modal, batch Public folder view, virtual All Public view, and derivative-only public copy/move/delete actions.
 - **Activity Center:** One header disclosure aggregates import, folder snapshot/thumbnail, prompt and media index, public export, and AI scoring work with truthful lifecycle states plus supported retry/cancel actions.
-- **Background polling:** interaction-aware 5-second content polling, a lightweight 1-second import-readiness poll, and 10-second native batch-summary refreshes.
+- **Background polling:** interaction-aware 5-second content polling, a lightweight 1-second import-readiness poll, and 10-second native batch-summary refreshes. A standalone manual import that crosses the paging threshold adopts the snapshot's canonical order; a Shuffle view can therefore reorder once at that transition. Below the threshold, imported items append without reshuffling existing items.
 - **Local storage persistence:** Sidebar widths, open states, last batch/folder, grid density, and batch sort.
 - **Native settings modal:** Native-only editable paths, public-export enablement,
   model/endpoint/timeout controls, and secret replace/clear controls backed by

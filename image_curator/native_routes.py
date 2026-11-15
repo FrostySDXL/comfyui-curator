@@ -65,12 +65,12 @@ class NativeCuratorService:
         """Resolve the store from current settings (settings can be replaced at runtime)."""
         return MoveHistory(self.settings.batch_root)
 
-    def batch_exists(self, batch: str) -> bool:
+    def batch_exists(self, batch: str, root: Path | None = None) -> bool:
         try:
             batch_store._validate_name(batch, "batch name")
         except (TypeError, ValueError):
             return False
-        path = self.settings.batch_root / batch
+        path = (root if root is not None else self.settings.batch_root) / batch
         return path.is_dir() and not path.is_symlink()
 
     def close(self) -> None:
@@ -86,15 +86,20 @@ class NativeCuratorService:
                 self.folder_index.close()
                 self.search_index_jobs.close()
 
-        if self.auto_import.close():
-            cleanup()
+        stopped = self.auto_import.close()
+        if stopped and self.auto_import.lock.acquire(blocking=False):
+            try:
+                cleanup()
+            finally:
+                self.auto_import.lock.release()
         else:
             threading.Thread(target=cleanup, name="curator-import-cleanup", daemon=True).start()
 
-    def resolve_content_directory(self, batch: str, folder: str):
-        root = self.settings.batch_root.resolve()
-        batch_path = self.settings.batch_root / batch
-        if not self.batch_exists(batch) or batch_path.is_symlink():
+    def resolve_content_directory(self, batch: str, folder: str, batches_root: Path | None = None):
+        batches_root = batches_root if batches_root is not None else self.settings.batch_root
+        root = batches_root.resolve()
+        batch_path = batches_root / batch
+        if not self.batch_exists(batch, batches_root) or batch_path.is_symlink():
             raise ValueError("Invalid path")
         real_batch = batch_path.resolve()
         try:
@@ -112,17 +117,18 @@ class NativeCuratorService:
             raise ValueError("Invalid path") from exc
         return real_content
 
-    def batch_summary_safe(self, batch: str) -> bool:
+    def batch_summary_safe(self, batch: str, batches_root: Path | None = None) -> bool:
         """Return whether shared summary helpers can inspect this batch safely."""
+        batches_root = batches_root if batches_root is not None else self.settings.batch_root
         try:
             for folder in batch_store.BATCH_FOLDERS:
-                self.resolve_content_directory(batch, folder)
+                self.resolve_content_directory(batch, folder, batches_root)
         except ValueError:
             return False
 
-        root = self.settings.batch_root.resolve()
-        real_batch = (self.settings.batch_root / batch).resolve()
-        ai_dir = self.settings.batch_root / batch / "ai-curate"
+        root = batches_root.resolve()
+        real_batch = (batches_root / batch).resolve()
+        ai_dir = batches_root / batch / "ai-curate"
         if ai_dir.is_symlink():
             return False
         if ai_dir.exists():
@@ -183,18 +189,19 @@ class NativeCuratorService:
             raise ValueError("Invalid preview cache path") from exc
         return real_cache
 
-    def batches_payload(self) -> dict[str, Any]:
-        root = self.settings.batch_root
+    def batches_payload(self, settings=None) -> dict[str, Any]:
+        settings = settings or self.settings
+        root = settings.batch_root
         batches = [
-            batch for batch in batch_store.get_batches(root) if self.batch_summary_safe(batch)
+            batch for batch in batch_store.get_batches(root) if self.batch_summary_safe(batch, root)
         ]
-        state_batch = batch_store.load_state(self.settings.state_file).get("active_batch")
+        state_batch = batch_store.load_state(settings.state_file).get("active_batch")
         return {
             "batches": batches,
             "active_batch": state_batch if state_batch in batches else None,
             "counts": {batch: batch_store.get_batch_counts(root, batch) for batch in batches},
             "batch_meta": {batch: batch_store.get_batch_metadata(root, batch) for batch in batches},
-            "pending_count": batch_store.get_pending_count(self.settings.import_source),
+            "pending_count": batch_store.get_pending_count(settings.import_source),
         }
 
     def import_status_payload(self) -> dict[str, Any]:

@@ -86,7 +86,7 @@ def register_native_ai_routes(app, service, lifecycle) -> None:
         def validate(settings):
             params, error = validate_ai_curate_request(
                 data,
-                get_batches=lambda: [b for b in service.batches_payload()["batches"]],
+                get_batches=lambda: [b for b in service.batches_payload(settings)["batches"]],
                 default_model=settings.default_model,
                 default_top_n=DEFAULT_TOP_N,
                 top_n_cap=TOP_N_CAP,

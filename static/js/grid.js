@@ -556,6 +556,8 @@ async function loadCurrentFolderImages(options = {}) {
                 return;
             }
             const requestToken = ++folderRequestToken;
+            const requestOwned = () => requestToken === folderRequestToken
+                && (!options.mayCommit || options.mayCommit());
             const batch = currentBatch;
             const folder = currentFolder;
             const activityGroup = `folder-view:${batch}:${folder}`;
@@ -565,6 +567,17 @@ async function loadCurrentFolderImages(options = {}) {
             _folderViewBaseTotal = null;
             _folderViewReadyDetail = '';
             _folderViewActivityId = activityId;
+            const failLoad = (error, detail) => {
+                if (!options.mayCommit) return failFolderLoad(requestToken, activityId, error, detail);
+                if (requestToken === folderRequestToken) setGridLoadingStatus(false);
+                activityRemove(activityId);
+            };
+            const abandonIfUnowned = () => {
+                if (requestOwned()) return false;
+                if (requestToken === folderRequestToken) setGridLoadingStatus(false);
+                activityRemove(activityId);
+                return true;
+            };
             activityRegister({
                 id: activityId,
                 group: activityGroup,
@@ -588,8 +601,9 @@ async function loadCurrentFolderImages(options = {}) {
                     const content = document.querySelector('.content');
                     const priorScrollTop = content ? content.scrollTop : 0;
                     const snapshot = await _waitForFolderSnapshot(batch, folder, requestToken);
-                    if (!snapshot || requestToken !== folderRequestToken) {
-                        failFolderLoad(requestToken, activityId, 'Folder snapshot unavailable', 'Try opening the folder again');
+                    if (abandonIfUnowned()) return;
+                    if (!snapshot) {
+                        failLoad('Folder snapshot unavailable', 'Try opening the folder again');
                         return;
                     }
                     const snapshotIsLarge = CURATOR_NATIVE
@@ -603,23 +617,18 @@ async function loadCurrentFolderImages(options = {}) {
                         completed: 0,
                         detail: 'Snapshot ready · loading visible thumbnails…',
                     });
-                    if (requestToken !== folderRequestToken) {
-                        activityRemove(activityId);
-                        return;
-                    }
+                    if (abandonIfUnowned()) return;
                     if (requiresMaterializedNativeFolder()) {
-                        resetPagedFolderState();
-                        folderSnapshot = snapshot;
                         const resp = await fetch(ccApiPath(`/api/images/${batch}/${folder}?sort=${_folderTransportSort()}&order=${currentOrder}`));
+                        if (abandonIfUnowned()) return;
                         if (!resp.ok) {
-                            failFolderLoad(requestToken, activityId, 'Folder image load failed', 'Try opening the folder again');
+                            failLoad('Folder image load failed', 'Try opening the folder again');
                             return;
                         }
                         const nextImages = await resp.json();
-                        if (requestToken !== folderRequestToken) {
-                            activityRemove(activityId);
-                            return;
-                        }
+                        if (abandonIfUnowned()) return;
+                        resetPagedFolderState();
+                        folderSnapshot = snapshot;
                         images = nextImages;
                         displayIndexByName = new Map(images.map((img, index) => [img.name, index]));
                         updateImageCountLabel();
@@ -630,7 +639,33 @@ async function loadCurrentFolderImages(options = {}) {
                         } else {
                             _completeFolderViewActivity(activityId, nextImages.length, snapshot.count, 'Folder ready · thumbnails loaded on demand');
                         }
-                        return;
+                        return requestOwned();
+                    }
+                    if (options.mayCommit) {
+                        // Build the first page before replacing the live legacy view.
+                        // A failed or superseded background transition leaves it intact.
+                        let page = {revision: snapshot.revision, items: []};
+                        if (snapshot.count) {
+                            const response = await apiGetFolderPage(batch, folder, _folderTransportSort(), currentOrder, snapshot.revision, 0, FOLDER_PAGE_SIZE, folderShuffleSeed);
+                            if (abandonIfUnowned()) return;
+                            if (!response.ok) { failLoad('Visible folder page failed', 'Try opening the folder again'); return; }
+                            page = await response.json();
+                            if (abandonIfUnowned()) return;
+                            if (page.revision !== snapshot.revision || !page.items?.length) { failLoad('Visible folder page failed', 'Try opening the folder again'); return; }
+                        }
+                        folderSnapshot = snapshot;
+                        pagedFolderMode = true;
+                        folderPageInflight.clear();
+                        images = new Array(snapshot.count);
+                        currentDisplayImages = images;
+                        displayIndexByName.clear();
+                        page.items.forEach(item => { images[item.index] = item; displayIndexByName.set(item.name, item.index); });
+                        updateImageCountLabel();
+                        updateGrid();
+                        updatePagedLoadStatus();
+                        if (options.preserveScroll && content) content.scrollTop = priorScrollTop;
+                        _completeFolderViewActivity(activityId, Math.min(FOLDER_PAGE_SIZE, snapshot.count), snapshot.count, 'Folder ready · more thumbnails load as needed');
+                        return true;
                     }
                     folderSnapshot = snapshot;
                     pagedFolderMode = true;
@@ -648,14 +683,14 @@ async function loadCurrentFolderImages(options = {}) {
                     } else if (firstImage || snapshot.count === 0) {
                         _completeFolderViewActivity(activityId, Math.min(FOLDER_PAGE_SIZE, snapshot.count), snapshot.count, 'Folder ready · more thumbnails load as needed');
                     } else {
-                        failFolderLoad(requestToken, activityId, 'Visible folder page failed', 'Try opening the folder again');
+                        failLoad('Visible folder page failed', 'Try opening the folder again');
                     }
-                    return;
+                    return requestOwned() && Boolean(firstImage || snapshot.count === 0);
                 }
                 await _loadLegacyFolderImages(batch, folder, requestToken, activityId);
             } catch (error) {
                 console.warn('loadCurrentFolderImages failed:', error);
-                failFolderLoad(requestToken, activityId, 'Folder image load failed', 'Try opening the folder again');
+                failLoad('Folder image load failed', 'Try opening the folder again');
             }
         }
 
