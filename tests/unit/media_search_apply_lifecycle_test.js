@@ -71,6 +71,9 @@ function makeContext() {
     };
     vm.createContext(context);
     vm.runInContext(fs.readFileSync("static/js/state.js", "utf8"), context, {filename: "state.js"});
+    vm.runInContext(extractFunction(
+        fs.readFileSync("static/js/batches.js", "utf8"), "function updateAutoImportQuickAction("
+    ), context, {filename: "batches.js:quick-action"});
     vm.runInContext(fs.readFileSync("static/js/prompts.js", "utf8"), context, {filename: "prompts.js"});
     vm.runInContext([
         "currentBatch = 'batch-a'; currentFolder = 'inbox';",
@@ -387,6 +390,9 @@ async function main() {
     assert.equal(vm.runInContext("images.length", success.context), 1, "successful apply installs returned items");
     assert.equal(vm.runInContext("images[0].favorite", success.context), true, "successful apply maps favorite status");
     assert.equal(successApplyButton.disabled, false, "successful apply restores its button");
+    const quickAction = success.context.document.getElementById("set-auto-import-btn");
+    assert(quickAction.classList.contains("hidden"), "search results hide the real-batch import shortcut");
+    assert.equal(quickAction.disabled, true, "search results cannot become an import destination");
 
     const edited = makeContext();
     const editedSearch = deferred();

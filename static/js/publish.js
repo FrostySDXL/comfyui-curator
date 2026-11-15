@@ -739,6 +739,7 @@ async function loadBatchPublic(batch) {
             const priorScope = getViewScopeKey();
             currentBatch = batch;
             currentFolder = 'public';
+            updateAutoImportQuickAction(document.getElementById('active-batch-select').value || null);
             saveBatchState();
             const scopeChanged = priorScope !== getViewScopeKey();
             if (scopeChanged) beginViewTransition({clearImages: true, closeLightbox: true});

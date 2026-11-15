@@ -34,9 +34,10 @@ select.options = [{value: '', textContent: '-- Select batch --'}, {value: 'alpha
 Object.defineProperty(select, 'selectedIndex', {get() { return this.options.findIndex(option => option.value === this.value); }});
 const modal = new Element('settings-modal'); modal.classList.add('modal'); modal.classList.add('active');
 const lightbox = new Element('lightbox');
+const quickAction = new Element('set-auto-import-btn', 'BUTTON');
 const elements = {'active-batch-input': input, 'active-batch-custom': wrapper,
     'active-batch-dropdown': dropdown, 'active-batch-arrow': arrow, 'active-batch-select': select,
-    'settings-modal': modal, 'lightbox': lightbox, 'lightbox-image-wrap': new Element('image-wrap'),
+    'settings-modal': modal, 'set-auto-import-btn': quickAction, 'lightbox': lightbox, 'lightbox-image-wrap': new Element('image-wrap'),
     'lightbox-compare': new Element('compare'), 'batch-search': new Element('batch-search')};
 const document = {
     body: new Element('body'), activeElement: null, listeners: {},
@@ -57,6 +58,10 @@ const context = vm.createContext({document, console, setTimeout, clearTimeout,
     hideNewBatchModal: noop, hideDeleteModal: noop, hidePublishModal: noop, hidePublicDestinationModal: noop,
     hidePublicDeleteModal: noop, hideHelpModal: noop, hidePromptsModal: noop,
 });
+vm.runInContext(`let currentBatch = 'alpha', currentFolder = 'inbox';
+    const CURATOR_NATIVE = true;
+    function isVirtualCollectionView() { return ['__favorites__', '__public__', '__search__'].includes(currentBatch); }
+    function isPublicView() { return currentBatch === '__public__' || currentFolder === 'public'; }`, context);
 for (const path of ['static/js/batches.js', 'static/js/combobox.js', 'static/js/keyboard.js']) {
     vm.runInContext(fs.readFileSync(path, 'utf8'), context, {filename: path});
 }
@@ -77,6 +82,28 @@ assert(mouse.defaultPrevented);
 assert.strictEqual(document.activeElement, input, 'mouse selection must retain modal focus');
 assert(!wrapper.classList.contains('open'));
 assert.equal(context.savedDestination, 'alpha');
+vm.runInContext("autoImportEnabled = true; updateAutoImportQuickAction('alpha')", context);
+assert.equal(quickAction.textContent, 'Auto-import active');
+assert.equal(quickAction.disabled, true);
+assert(!quickAction.classList.contains('hidden'), 'real review batch shows the shortcut');
+vm.runInContext("autoImportPaused = true; updateAutoImportQuickAction('alpha')", context);
+assert.equal(quickAction.textContent, 'Import destination', 'paused import is not called active');
+vm.runInContext("autoImportPaused = false; currentBatch = 'beta'; updateAutoImportQuickAction('alpha')", context);
+assert.equal(quickAction.textContent, 'Set as Auto-import');
+assert.equal(quickAction.disabled, false, 'another real batch can become the destination');
+assert.equal(context.savedDestination, 'alpha', 'browsing never changes the import destination');
+vm.runInContext("setCurrentBatchAsAutoImport()", context);
+assert.equal(context.savedDestination, 'beta', 'explicit button selects current real batch');
+for (const batch of ['__favorites__', '__public__', '__search__']) {
+    vm.runInContext(`currentBatch = '${batch}'; currentFolder = null; updateAutoImportQuickAction('alpha'); setCurrentBatchAsAutoImport()`, context);
+    assert(quickAction.classList.contains('hidden'), `quick action hidden for ${batch}`);
+    assert.equal(context.savedDestination, 'beta', 'virtual collection must not retarget imports');
+}
+vm.runInContext("currentBatch = 'alpha'; currentFolder = 'public'; updateAutoImportQuickAction('alpha'); setCurrentBatchAsAutoImport()", context);
+assert(quickAction.classList.contains('hidden'), 'quick action hidden for batch public view');
+assert.equal(context.savedDestination, 'beta');
+vm.runInContext("currentFolder = 'inbox'; autoImportEnabled = false; updateAutoImportQuickAction('alpha')", context);
+assert.equal(quickAction.textContent, 'Import destination', 'disabled automatic import is not called active');
 input.fire('click', {});
 assert(wrapper.classList.contains('open'), 'focused input can reopen its list');
 dropdown.children[0].classList.add('focus');

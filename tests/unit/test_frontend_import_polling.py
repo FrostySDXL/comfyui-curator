@@ -29,7 +29,11 @@ def test_import_controls_share_existing_header_and_destination_lives_in_settings
     assert 'id="pending-count"' in header
     assert 'class="help-btn import-btn"' in header
     assert 'id="active-batch-input"' not in header
-    assert 'id="set-auto-import-btn"' not in html
+    assert 'id="set-auto-import-btn" class="help-btn hidden"' in header
+    assert header.index('id="pending-info"') < header.index('class="help-btn import-btn"')
+    assert header.index('class="help-btn import-btn"') < header.index(
+        'id="batch-sidebar-toggle-btn"'
+    )
     assert 'class="import-workspace"' not in html
     assert 'id="active-batch-input"' in settings
     assert 'id="active-batch-select"' in settings
@@ -37,6 +41,8 @@ def test_import_controls_share_existing_header_and_destination_lives_in_settings
     assert ".header-import-status" in css
     assert ".header .import-btn:disabled" in css
     assert ".set-auto-import-btn" not in css
+    for source in ("static/js/favorites.js", "static/js/publish.js"):
+        assert "updateAutoImportQuickAction(" in Path(source).read_text(encoding="utf-8")
 
 
 def test_bootstrap_polls_import_status_and_native_batch_summaries_separately() -> None:

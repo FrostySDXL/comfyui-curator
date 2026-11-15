@@ -12,6 +12,27 @@ let _lastBatchListKey = null;
 let importInFlight = false;
 let lastAutoImportFailureKey = '';
 let importStatusPollInFlight = false;
+let autoImportEnabled = false;
+let autoImportPaused = false;
+
+function updateAutoImportQuickAction(activeBatch) {
+            const button = document.getElementById('set-auto-import-btn');
+            if (!button) return;
+            const realReviewBatch = Boolean(currentBatch) && !isVirtualCollectionView() && !isPublicView();
+            button.classList.toggle('hidden', !realReviewBatch);
+            button.disabled = !realReviewBatch || activeBatch === currentBatch;
+            if (!realReviewBatch) return;
+            if (activeBatch === currentBatch) {
+                button.textContent = CURATOR_NATIVE && autoImportEnabled && !autoImportPaused ? 'Auto-import active' : 'Import destination';
+            } else {
+                button.textContent = CURATOR_NATIVE ? 'Set as Auto-import' : 'Set as import destination';
+            }
+        }
+
+async function setCurrentBatchAsAutoImport() {
+            if (!currentBatch || isVirtualCollectionView() || isPublicView()) return;
+            await setActiveBatch(currentBatch);
+        }
 
 function updatePendingImportUi(pendingCount, activeBatch) {
             const count = document.getElementById('pending-count');
@@ -32,6 +53,9 @@ async function pollImportAvailability() {
                 if (!resp || !resp.ok) return;
                 const data = await resp.json();
                 updatePendingImportUi(data.pending_count, data.active_batch);
+                autoImportEnabled = CURATOR_NATIVE && data.auto_import_enabled === true;
+                autoImportPaused = CURATOR_NATIVE && data.auto_import_paused === true;
+                updateAutoImportQuickAction(data.active_batch);
                 const status = document.getElementById('auto-import-status');
                 if (CURATOR_NATIVE && status) {
                     status.classList.remove('hidden');
@@ -154,6 +178,7 @@ async function loadBatches() {
             select.value = selectedAutoImportBatch || '';
             _syncCustomSelectDisplay();
             if (pendingActiveBatchSelection === activeBatch) pendingActiveBatchSelection = null;
+            updateAutoImportQuickAction(selectedAutoImportBatch);
 
             // Sort batches based on current batch sort
             const sortedBatches = [...batches];
@@ -541,6 +566,7 @@ async function selectFolder(batch, folder) {
             const priorScope = getViewScopeKey();
             currentBatch = batch;
             currentFolder = folder;
+            updateAutoImportQuickAction(document.getElementById('active-batch-select').value || null);
             saveBatchState();
             if (priorScope !== getViewScopeKey()) {
                 beginViewTransition({clearImages: true, closeLightbox: true});
@@ -580,6 +606,7 @@ async function setActiveBatch(batch) {
             pendingActiveBatchSelection = batch || null;
             const select = document.getElementById('active-batch-select');
             if (select) { select.value = batch || ''; _syncCustomSelectDisplay(); }
+            updateAutoImportQuickAction(batch || null);
             const resp = await fetch(ccApiPath('/api/active-batch'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},

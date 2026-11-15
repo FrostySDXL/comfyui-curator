@@ -10,8 +10,8 @@
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding-left: 10px;
-            border-left: 1px solid var(--border-subtle);
+            padding-right: 10px;
+            border-right: 1px solid var(--border-subtle);
             color: var(--text-secondary);
             font-size: 12px;
             white-space: nowrap;

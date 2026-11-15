@@ -907,6 +907,7 @@
                 resetPagedFolderState();
                 currentBatch = '__search__';
                 currentFolder = null;
+                updateAutoImportQuickAction(document.getElementById('active-batch-select')?.value || null);
                 images = (data.items || []).map(item => ({
                     ...item,
                     modified_at: item.mtime || 0,
@@ -1043,6 +1044,7 @@
             if (!context?.batch) {
                 currentBatch = null;
                 currentFolder = null;
+                updateAutoImportQuickAction(document.getElementById('active-batch-select')?.value || null);
                 images = [];
                 updateImageCountLabel();
                 updateGrid();

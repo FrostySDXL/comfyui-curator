@@ -53,6 +53,9 @@
                 <h1><span id="current-path">Select a batch</span><span id="img-count" class="img-count"></span></h1>
             </div>
             <div class="header-actions">
+                <span id="pending-info" class="header-import-status" role="status"><span id="auto-import-status" class="hidden">Auto-import Off</span> <span><span id="pending-count">0</span> pending</span></span>
+                <button class="help-btn import-btn" type="button" disabled>Import All</button>
+                <button id="set-auto-import-btn" class="help-btn hidden" type="button">Set as Auto-import</button>
                 <button id="batch-sidebar-toggle-btn" class="batch-sidebar-toggle-btn" type="button">Hide Batches</button>
                 <button id="ai-sidebar-toggle-btn" class="ai-sidebar-toggle-btn hidden" type="button">Hide Inspector</button>
                 <button id="activity-center-toggle" class="help-btn activity-center-toggle" type="button" aria-expanded="false" aria-controls="activity-center-panel">Activity <span id="activity-center-badge" class="activity-center-badge" aria-label="0 active activities">0</span></button>
@@ -60,8 +63,6 @@
                 <button id="help-btn" class="help-btn" type="button">Help</button>
                 <button id="prompts-btn" class="help-btn" type="button">Search</button>
                 <button id="settings-btn" class="help-btn" type="button">Settings</button>
-                <span id="pending-info" class="header-import-status" role="status"><span id="auto-import-status" class="hidden">Auto-import Off</span> <span><span id="pending-count">0</span> pending</span></span>
-                <button class="help-btn import-btn" type="button" disabled>Import All</button>
             </div>
         </div>
 
