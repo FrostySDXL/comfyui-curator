@@ -18,24 +18,6 @@
 </head>
 <body>
     <div class="sidebar" id="batch-sidebar">
-        <div class="sidebar-section active-batch">
-            <h2>Auto-import</h2>
-            <select id="active-batch-select" aria-label="Select active batch for auto-import" hidden>
-                <option value="">-- Select batch --</option>
-            </select>
-            <div class="custom-select" id="active-batch-custom">
-                <input class="custom-select-input" id="active-batch-input" type="text"
-                       placeholder="Select batch..." autocomplete="off" spellcheck="false"
-                       aria-label="Select active batch for auto-import"
-                       aria-haspopup="listbox" aria-expanded="false" aria-autocomplete="list">
-                <span class="custom-select-arrow" id="active-batch-arrow">&#9662;</span>
-                <ul class="custom-select-dropdown" id="active-batch-dropdown" role="listbox" tabindex="-1"></ul>
-            </div>
-            <div id="pending-info" class="pending-bar hidden">
-                <span><span id="pending-count">0</span> pending</span>
-                <button class="import-btn">Import All</button>
-            </div>
-        </div>
         <div class="sidebar-section sidebar-batches">
             <div class="batch-controls">
                 <div class="sidebar-library-header">
@@ -95,6 +77,18 @@
                 <div class="activity-center-empty">No recent background work.</div>
             </div>
         </section>
+
+        <div class="import-workspace" aria-label="Import output">
+            <label for="active-batch-input">Import destination</label>
+            <select id="active-batch-select" aria-label="Import destination batch" hidden><option value="">-- Select batch --</option></select>
+            <div class="custom-select" id="active-batch-custom">
+                <input class="custom-select-input" id="active-batch-input" type="text" placeholder="Select batch..." autocomplete="off" spellcheck="false" aria-label="Import destination batch" aria-haspopup="listbox" aria-expanded="false" aria-autocomplete="list">
+                <span class="custom-select-arrow" id="active-batch-arrow">&#9662;</span>
+                <ul class="custom-select-dropdown" id="active-batch-dropdown" role="listbox" tabindex="-1"></ul>
+            </div>
+            <span id="auto-import-status" class="hidden" role="status">Auto-import Off</span>
+            <div id="pending-info" class="pending-bar"><span><span id="pending-count">0</span> pending</span><button class="import-btn">Import All</button></div>
+        </div>
 
         <div class="workspace-frame">
             <nav class="workspace-stage-rail" aria-label="Batch folders">
@@ -906,6 +900,7 @@
                 <div class="settings-grid">
                     <label class="settings-field">Batch root<input id="settings-batch-root" type="text" autocomplete="off"></label>
                     <label class="settings-field">Import source<input id="settings-import-source" type="text" autocomplete="off"></label>
+                    <label class="settings-inline-check"><input id="settings-auto-import-enabled" type="checkbox"> Enable auto-import</label>
                     <div class="settings-field settings-field-wide">
                         <div class="settings-label-row">
                             <label for="settings-public-root">Public export root</label>

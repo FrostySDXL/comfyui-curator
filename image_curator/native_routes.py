@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from pathlib import Path
 from typing import Any
 
 from aiohttp import web
 
 from . import batch_store, prompt_history, publish, search_index
-from .search_index_jobs import ActiveSearchIndexJob, SearchIndexJobManager
+from .auto_import import AutoImport
 from .favorites import (
     get_batch_favorite_filenames,
     resolve_universal_favorites,
@@ -30,10 +31,11 @@ from .media import (
     thumbnail_delay_seconds,
     thumbnail_is_fresh,
 )
+from .move_history import MAX_OPERATIONS, RETENTION_DAYS, MoveHistory
 from .native_settings import NativeConfigError, NativeCuratorSettings, SettingsConflictError
+from .search_index_jobs import ActiveSearchIndexJob, SearchIndexJobManager
 from .sidecar_metadata import delete_json_sidecar, extract_media_metadata
 from .web_validation import safe_path
-from .move_history import MAX_OPERATIONS, RETENTION_DAYS, MoveHistory
 
 THUMB_SIZE = (320, 320)
 CACHE_HEADERS = {"Cache-Control": "public, max-age=3600, immutable"}
@@ -44,8 +46,19 @@ class NativeCuratorService:
 
     def __init__(self, settings: NativeCuratorSettings) -> None:
         self.settings = settings
+        self._close_lock = threading.Lock()
+        self._close_started = False
         self.folder_index = FolderIndexService()
         self.search_index_jobs = SearchIndexJobManager(lambda: self.settings.batch_root)
+        self.auto_import = AutoImport(
+            lambda: (
+                self.settings.import_source,
+                self.settings.batch_root,
+                self.settings.state_file,
+                self.settings.auto_import_enabled,
+            ),
+            lambda batch: self.folder_index.refresh(batch, "inbox"),
+        )
 
     @property
     def move_history(self) -> MoveHistory:
@@ -61,8 +74,22 @@ class NativeCuratorService:
         return path.is_dir() and not path.is_symlink()
 
     def close(self) -> None:
-        self.folder_index.close()
-        self.search_index_jobs.close()
+        with self._close_lock:
+            if self._close_started:
+                return
+            self._close_started = True
+
+        def cleanup():
+            if self.auto_import.thread:
+                self.auto_import.thread.join()
+            with self.auto_import.lock:
+                self.folder_index.close()
+                self.search_index_jobs.close()
+
+        if self.auto_import.close():
+            cleanup()
+        else:
+            threading.Thread(target=cleanup, name="curator-import-cleanup", daemon=True).start()
 
     def resolve_content_directory(self, batch: str, folder: str):
         root = self.settings.batch_root.resolve()
@@ -176,6 +203,7 @@ class NativeCuratorService:
         return {
             "active_batch": state_batch if state_batch and self.batch_exists(state_batch) else None,
             "pending_count": batch_store.get_pending_count(self.settings.import_source),
+            **self.auto_import.status(),
         }
 
     def resolve_favorite_image(self, batch: str, filename: str):
@@ -213,7 +241,7 @@ class NativeCuratorService:
 async def _json_body(request) -> dict[str, Any]:
     try:
         data = await request.json()
-    except Exception:
+    except Exception:  # noqa: BLE001 - preserve the adapter's JSON error boundary
         return {}
     return data if isinstance(data, dict) else {}
 
@@ -226,22 +254,39 @@ def _string_field(data: dict[str, Any], key: str) -> str | None:
 def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -> None:
     """Register namespaced native foundation routes on an aiohttp application."""
 
-    async def get_settings(_request):
-        return web.json_response(service.settings.editable_payload())
+    def read_settings():
+        with service.auto_import.lock:
+            return service.settings.editable_payload()
 
-    async def post_settings(request):
-        try:
-            data = await request.json()
-        except Exception:
-            return web.json_response({"error": "Invalid JSON body"}, status=400)
-        if not isinstance(data, dict):
-            return web.json_response({"error": "Settings body must be an object"}, status=400)
-        try:
-            payload = (
+    def update_settings(data):
+        with service.auto_import.lock:
+            return (
                 lifecycle.update_settings(data)
                 if lifecycle is not None
                 else service.settings.update(data)
             )
+
+    def update_destination(batch):
+        with service.auto_import.lock:
+            if batch and not service.batch_exists(batch):
+                return False
+            state = batch_store.load_state(service.settings.state_file)
+            state["active_batch"] = batch or None
+            batch_store.save_state(service.settings.state_file, state)
+            return True
+
+    async def get_settings(_request):
+        return web.json_response(await asyncio.to_thread(read_settings))
+
+    async def post_settings(request):
+        try:
+            data = await request.json()
+        except Exception:  # noqa: BLE001 - preserve the adapter's JSON error boundary
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+        if not isinstance(data, dict):
+            return web.json_response({"error": "Settings body must be an object"}, status=400)
+        try:
+            payload = await asyncio.to_thread(update_settings, data)
             return web.json_response({"success": True, **payload})
         except NativeConfigError as exc:
             return web.json_response({"error": str(exc)}, status=400)
@@ -249,7 +294,7 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             return web.json_response(
                 {"error": "Settings cannot change while AI work is active"}, status=409
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - preserve the adapter's JSON error boundary
             return web.json_response({"error": "Could not update settings"}, status=500)
 
     async def get_batches(_request):
@@ -281,11 +326,8 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
         batch = _string_field(data, "batch")
         if batch is None:
             return web.json_response({"error": "Invalid batch name"}, status=400)
-        if batch and not service.batch_exists(batch):
+        if not await asyncio.to_thread(update_destination, batch):
             return web.json_response({"error": "Batch does not exist"}, status=400)
-        state = batch_store.load_state(service.settings.state_file)
-        state["active_batch"] = batch or None
-        batch_store.save_state(service.settings.state_file, state)
         return web.json_response({"success": True})
 
     async def import_all(request):
@@ -301,14 +343,12 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             service.resolve_content_directory(batch, "inbox")
         except ValueError:
             return web.json_response({"error": "Invalid import destination"}, status=400)
-        result = await asyncio.to_thread(
-            batch_store.import_all_pending_detailed,
-            service.settings.import_source,
-            service.settings.batch_root,
-            batch,
-        )
-        if result.imported_count:
-            service.folder_index.refresh(batch, "inbox")
+        try:
+            result = await asyncio.to_thread(service.auto_import.manual, batch)
+        except (OSError, ValueError) as exc:
+            return web.json_response(
+                {"error": str(exc) or "Invalid import destination"}, status=400
+            )
         return web.json_response({"success": True, **result.as_dict()})
 
     async def get_images(request):
@@ -435,7 +475,7 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
                     return web.json_response({"error": "Failed to generate thumbnail"}, status=500)
         except ValueError:
             return web.json_response({"error": "Invalid thumbnail cache path"}, status=400)
-        except Exception:
+        except Exception:  # noqa: BLE001 - preserve the adapter's JSON error boundary
             return web.json_response({"error": "Failed to generate thumbnail"}, status=500)
         return web.FileResponse(
             cache,
@@ -1075,7 +1115,7 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             )
         except ValueError:
             return web.json_response({"error": "Unsafe prompt history path"}, status=400)
-        except Exception:
+        except Exception:  # noqa: BLE001 - preserve the adapter's JSON error boundary
             return web.json_response({"error": "Prompt history build failed"}, status=500)
 
     async def get_prompt_index(request):
@@ -1122,7 +1162,7 @@ def register_native_routes(app, service: NativeCuratorService, lifecycle=None) -
             return web.json_response(search_index.summarize_search_index(result))
         except ValueError:
             return web.json_response({"error": "Unsafe search index path"}, status=400)
-        except Exception:
+        except Exception:  # noqa: BLE001 - preserve the adapter's JSON error boundary
             return web.json_response({"error": "Search index build failed"}, status=500)
 
     async def start_media_search_index_job(request):

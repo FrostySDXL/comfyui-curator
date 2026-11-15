@@ -6,8 +6,13 @@ def test_lightweight_import_status_poll_updates_visible_disabled_control() -> No
     update = extract_function_body(js, "function updatePendingImportUi(pendingCount, activeBatch)")
     poll = extract_function_body(js, "async function pollImportAvailability()")
 
-    assert "pendingInfo.style.display = activeBatch ? 'flex' : 'none'" in update
-    assert "importBtn.disabled = importInFlight || normalizedCount < 1" in update
+    assert "pendingInfo.style.display = 'flex'" in update
+    assert "importBtn.disabled = importInFlight || normalizedCount < 1 || !activeBatch" in update
+    assert "data.auto_import_enabled" in poll
+    assert "data.auto_import_error" in poll
+    assert "data.auto_import_failure" in poll
+    assert "failureKey !== lastAutoImportFailureKey" in poll
+    assert "failure.paused ? 'failed' : 'partial'" in poll
     assert "ccApiPath('/api/import-status')" in poll
     assert "updatePendingImportUi(data.pending_count, data.active_batch)" in poll
 

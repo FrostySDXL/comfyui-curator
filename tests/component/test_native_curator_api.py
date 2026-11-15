@@ -95,6 +95,47 @@ def _editable_request(settings, **changes):
     return payload
 
 
+def test_settings_and_destination_wait_off_event_loop(tmp_path, monkeypatch):
+    async def scenario():
+        native_routes = _load_native_routes(monkeypatch)
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "state.json",
+        )
+        service = native_routes.NativeCuratorService(settings)
+        router = _Router()
+        native_routes.register_native_routes(SimpleNamespace(router=router), service)
+        locked, release = threading.Event(), threading.Event()
+
+        def hold_lock():
+            with service.auto_import.lock:
+                locked.set()
+                release.wait(3)
+
+        holder = threading.Thread(target=hold_lock)
+        holder.start()
+        assert locked.wait(2)
+        tasks = [
+            asyncio.create_task(
+                _invoke(router, "POST", "/api/curator/active-batch", {"batch": ""})
+            ),
+            asyncio.create_task(
+                _invoke(router, "POST", "/api/curator/settings", _editable_request(settings))
+            ),
+        ]
+        try:
+            await asyncio.wait_for(asyncio.sleep(0.05), timeout=1)
+            assert all(not task.done() for task in tasks)
+        finally:
+            release.set()
+            await asyncio.gather(*tasks)
+            holder.join(3)
+            service.close()
+
+    asyncio.run(scenario())
+
+
 def test_native_v2_folder_snapshot_pages_poll_and_stale_revision(tmp_path, monkeypatch):
     from image_curator import batch_store
 
@@ -336,6 +377,7 @@ def test_native_settings_and_batch_state_contracts(tmp_path, monkeypatch):
         assert payload == {
             "batch_root": str(settings.batch_root),
             "import_source": str(settings.import_source),
+            "auto_import_enabled": False,
             "public_export_enabled": False,
             "public_export_root": "",
             "llm_base_url": "http://localhost:8080",
@@ -373,7 +415,14 @@ def test_native_settings_and_batch_state_contracts(tmp_path, monkeypatch):
         (settings.import_source / "waiting.gif").write_bytes(b"gif")
         status, payload = await _invoke(router, "GET", "/api/curator/import-status")
         assert status == 200
-        assert payload == {"active_batch": "alpha", "pending_count": 1}
+        assert payload == {
+            "active_batch": "alpha",
+            "pending_count": 1,
+            "auto_import_enabled": False,
+            "auto_import_error": "",
+            "auto_import_paused": False,
+            "auto_import_failure": None,
+        }
 
     asyncio.run(scenario())
 
@@ -2701,6 +2750,7 @@ def test_native_post_favorite_rejects_symlinked_file_no_mutation(tmp_path, monke
 
 def test_native_publish_export_creates_public_copy_and_preserves_original(tmp_path, monkeypatch):
     from PIL import Image
+
     from image_curator import batch_store
 
     async def scenario():
@@ -2743,6 +2793,7 @@ def test_native_publish_export_creates_public_copy_and_preserves_original(tmp_pa
 
 def test_native_get_all_public_returns_wrapped_list(tmp_path, monkeypatch):
     from PIL import Image
+
     from image_curator import batch_store
 
     async def scenario():
@@ -2781,6 +2832,7 @@ def test_native_get_all_public_returns_wrapped_list(tmp_path, monkeypatch):
 
 def test_native_get_batch_public_returns_flat_array(tmp_path, monkeypatch):
     from PIL import Image
+
     from image_curator import batch_store
 
     async def scenario():
@@ -2993,6 +3045,7 @@ def test_native_public_destinations_rejects_without_export_root(tmp_path, monkey
 
 def test_native_public_copy_route_copies_derivative(tmp_path, monkeypatch):
     from PIL import Image
+
     from image_curator import batch_store
 
     async def scenario():
@@ -3039,6 +3092,7 @@ def test_native_public_copy_route_copies_derivative(tmp_path, monkeypatch):
 
 def test_native_public_move_route_moves_derivative_only(tmp_path, monkeypatch):
     from PIL import Image
+
     from image_curator import batch_store
 
     async def scenario():
@@ -3082,6 +3136,7 @@ def test_native_public_move_route_moves_derivative_only(tmp_path, monkeypatch):
 
 def test_native_public_delete_route_removes_derivative(tmp_path, monkeypatch):
     from PIL import Image
+
     from image_curator import batch_store
 
     async def scenario():
@@ -3119,6 +3174,7 @@ def test_native_public_delete_route_removes_derivative(tmp_path, monkeypatch):
 
 def test_native_public_copy_rejects_without_export_root(tmp_path, monkeypatch):
     from PIL import Image
+
     from image_curator import batch_store
 
     async def scenario():

@@ -6,6 +6,18 @@
             min-width: 0;
             overflow: hidden;
         }
+        .import-workspace {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 6px 18px;
+            border-bottom: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            font-size: var(--type-label);
+        }
+        .import-workspace .custom-select { width: 220px; }
+        .import-workspace .pending-bar { margin-top: 0; }
         .workspace-frame {
             flex: 1;
             display: flex;

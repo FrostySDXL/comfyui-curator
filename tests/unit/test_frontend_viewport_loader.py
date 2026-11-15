@@ -8,7 +8,6 @@ import pytest
 
 from tests.unit.frontend_source import extract_function_body, read_frontend_js
 
-
 # ── loader file ordering ──────────────────────────────────────────────────
 
 
@@ -16,9 +15,9 @@ def test_viewport_loader_script_is_in_ordered_list():
     """viewport-loader.js is loaded after grid.js in the ordered JS list."""
     from tests.unit.frontend_source import JS_FILES
 
-    paths = [str(p) for p in JS_FILES]
-    grid_idx = paths.index("static\\js\\grid.js")
-    vl_idx = paths.index("static\\js\\viewport-loader.js")
+    paths = [p.as_posix() for p in JS_FILES]
+    grid_idx = paths.index("static/js/grid.js")
+    vl_idx = paths.index("static/js/viewport-loader.js")
     assert vl_idx > grid_idx, "viewport-loader.js must load after grid.js"
 
 
@@ -502,6 +501,7 @@ def test_viewport_loader_node_lifecycle():
     try:
         result = subprocess.run(
             [node_exe, script_path],
+            check=False,
             capture_output=True,
             text=True,
             timeout=30,

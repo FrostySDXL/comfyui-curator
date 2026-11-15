@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import os
 import json
+import os
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -70,6 +70,7 @@ class NativeConfigStore:
             expected = {
                 "batch_root": str,
                 "import_source": str,
+                "auto_import_enabled": bool,
                 "public_export_enabled": bool,
                 "public_export_root": str,
                 "llm_base_url": str,
@@ -194,6 +195,7 @@ class NativeCuratorSettings:
     request_timeout: int = 120
     config_store: NativeConfigStore | None = None
     config_error: bool = False
+    auto_import_enabled: bool = False
 
     @classmethod
     def from_host_paths(
@@ -249,6 +251,7 @@ class NativeCuratorSettings:
             ),
             config_store=store,
             config_error=config_error,
+            auto_import_enabled=config.get("auto_import_enabled") is True and not config_error,
         )
 
     def public_payload(self) -> dict[str, object]:
@@ -263,6 +266,7 @@ class NativeCuratorSettings:
         return {
             "batch_root": str(self.batch_root),
             "import_source": str(self.import_source),
+            "auto_import_enabled": self.auto_import_enabled,
             "public_export_enabled": self.public_export_root is not None,
             "public_export_root": str(self.public_export_root or ""),
             "llm_base_url": self.llm_base_url,
@@ -282,6 +286,7 @@ class NativeCuratorSettings:
         allowed = {
             "batch_root",
             "import_source",
+            "auto_import_enabled",
             "public_export_enabled",
             "public_export_root",
             "llm_base_url",
@@ -303,6 +308,8 @@ class NativeCuratorSettings:
         ):
             if key in data and not isinstance(data[key], str):
                 raise NativeConfigError(f"{key} must be a string")
+        if not isinstance(data.get("auto_import_enabled", self.auto_import_enabled), bool):
+            raise NativeConfigError("auto_import_enabled must be a boolean")
         if not isinstance(data.get("public_export_enabled"), bool):
             raise NativeConfigError("public_export_enabled must be a boolean")
         if not isinstance(data.get("clear_api_key", False), bool):
@@ -341,6 +348,7 @@ class NativeCuratorSettings:
         persisted = {
             "batch_root": str(paths["batch_root"]),
             "import_source": str(paths["import_source"]),
+            "auto_import_enabled": data.get("auto_import_enabled", self.auto_import_enabled),
             "public_export_enabled": export_enabled,
             "public_export_root": str(export) if export_enabled else "",
             "llm_base_url": url,
@@ -356,6 +364,7 @@ class NativeCuratorSettings:
             self.config_store.save(persisted)
         self.batch_root = paths["batch_root"]
         self.import_source = paths["import_source"]
+        self.auto_import_enabled = bool(data.get("auto_import_enabled", self.auto_import_enabled))
         self.public_export_root = export if export_enabled else None
         self.llm_base_url, self.available_models, self.default_model = url, models, default
         self.request_timeout, self.api_key = timeout, resolved_key

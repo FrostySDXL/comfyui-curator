@@ -10,6 +10,8 @@ let pendingActiveBatchSelection = null;
 let _initialLoadDone = false;
 let _lastBatchListKey = null;
 let importInFlight = false;
+let lastAutoImportFailureKey = '';
+let importStatusPollInFlight = false;
 
 function updatePendingImportUi(pendingCount, activeBatch) {
             const pendingInfo = document.getElementById('pending-info');
@@ -17,18 +19,33 @@ function updatePendingImportUi(pendingCount, activeBatch) {
             const importBtn = document.querySelector('.import-btn');
             const normalizedCount = Math.max(0, Number(pendingCount) || 0);
             if (count) count.textContent = normalizedCount;
-            if (pendingInfo) pendingInfo.style.display = activeBatch ? 'flex' : 'none';
+            if (pendingInfo) pendingInfo.style.display = 'flex';
             if (importBtn) {
-                importBtn.disabled = importInFlight || normalizedCount < 1;
+                importBtn.disabled = importInFlight || normalizedCount < 1 || !activeBatch;
                 importBtn.textContent = importInFlight ? 'Importing…' : 'Import All';
             }
         }
 
 async function pollImportAvailability() {
+            if (importStatusPollInFlight) return;
+            importStatusPollInFlight = true;
+            try {
             const resp = await fetch(ccApiPath('/api/import-status')).catch(() => null);
             if (!resp || !resp.ok) return;
             const data = await resp.json();
             updatePendingImportUi(data.pending_count, data.active_batch);
+            const status = document.getElementById('auto-import-status');
+            if (CURATOR_NATIVE && status) {
+                status.classList.remove('hidden');
+                status.textContent = data.auto_import_error ? `Auto-import ${data.auto_import_paused ? 'paused' : 'retrying'}: ${data.auto_import_error}` : `Auto-import ${data.auto_import_enabled ? 'On' : 'Off'}`;
+                const failure = data.auto_import_failure;
+                const failureKey = failure ? `${failure.id}:${failure.message}` : '';
+                if (failureKey && failureKey !== lastAutoImportFailureKey) {
+                    lastAutoImportFailureKey = failureKey;
+                    activityRegister({id: 'auto-import-failure', kind: 'import', title: 'Auto-import', status: failure.paused ? 'failed' : 'partial', detail: String(failure.message).slice(0, 240)});
+                }
+            }
+            } finally { importStatusPollInFlight = false; }
         }
 
 async function pollNativeBatchSummaries() {
@@ -64,10 +81,10 @@ function updateAutoImportQuickAction(activeBatch) {
             }
             quickBtn.style.display = 'inline-block';
             if (activeBatch === currentBatch) {
-                quickBtn.textContent = 'Auto-import active';
+                quickBtn.textContent = 'Import destination';
                 quickBtn.disabled = true;
             } else {
-                quickBtn.textContent = 'Set as Auto-import';
+                quickBtn.textContent = 'Set as import destination';
                 quickBtn.disabled = false;
             }
         }
@@ -597,7 +614,7 @@ async function setActiveBatch(batch) {
                 body: JSON.stringify({batch: batch})
             });
             if (resp.ok) {
-                showToast(batch ? `Auto-importing to: ${batch}` : 'Auto-import disabled');
+                showToast(batch ? `Import destination: ${batch}` : 'Import destination cleared');
             } else {
                 const data = await resp.json().catch(() => ({}));
                 showToast(data.error || 'Failed to set active batch');
@@ -652,8 +669,8 @@ async function importAll() {
                     showToast(importResult);
                     updatePendingImportUi(pendingCount, batch);
                     await loadBatches();
-                    if (currentBatch === batch && currentFolder === 'inbox')
-                        await selectFolder(batch, 'inbox');
+                    if (currentBatch === batch && currentFolder === 'inbox' && !isInteractionBusy())
+                        await pollForChanges();
                 } else {
                     const data = await resp.json().catch(() => ({}));
                     const errorMessage = data.error || 'Import failed';

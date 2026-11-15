@@ -9,9 +9,9 @@ import logging
 import os
 import random
 import shutil
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator
 
 from .sidecar_metadata import find_json_sidecar, sidecar_destination
 
@@ -556,7 +556,12 @@ def _resolve_import_destination(batches_dir: Path, batch_name: str) -> Path:
 
 
 def import_all_pending_detailed(
-    comfyui_output: Path, batches_dir: Path, batch_name: str
+    comfyui_output: Path,
+    batches_dir: Path,
+    batch_name: str,
+    *,
+    names: set[str] | None = None,
+    ready: Callable[[Path], bool] | None = None,
 ) -> ImportResult:
     """Move all pending supported media into a batch inbox and report the outcome."""
     comfyui_output = Path(comfyui_output)
@@ -566,6 +571,8 @@ def import_all_pending_detailed(
     failed_count = 0
     renamed_count = 0
     for path in _iter_pending_media(comfyui_output):
+        if names is not None and path.name not in names:
+            continue
         try:
             safe_name = _collision_safe_name(dest_inbox, path.name, path)
         except OSError:
@@ -573,6 +580,8 @@ def import_all_pending_detailed(
             logger.warning("Failed to inspect import destination for %s", path.name)
             continue
         dst = dest_inbox / safe_name
+        if ready is not None and not ready(path):
+            continue
         if move_image(path, dst):
             imported_count += 1
             if safe_name != path.name:

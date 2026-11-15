@@ -135,9 +135,9 @@ class NativeAiLifecycle:
     def submit_job(self, params: dict[str, Any]) -> CurationRun:
         """Validate submission gate, submit to queue, and launch worker if needed.
 
-        This is the **single entry point** that route handlers must use to
-        start a new curation job.  It replaces calling ``queue.submit()``
-        + ``_on_job_promoted()`` directly.
+        Callers with prevalidated parameters use this entry point; route handlers
+        use ``submit_validated`` to pin settings through validation and enqueue.
+        Neither caller invokes ``queue.submit()`` or ``_on_job_promoted()`` directly.
 
         Raises:
             LifecycleShutdownError: if the lifecycle has started shutdown.
@@ -145,23 +145,28 @@ class NativeAiLifecycle:
                 or the configured list is empty.
         """
         with self._state_lock:
-            if not self._accepting_submissions:
-                raise LifecycleShutdownError("AI curation is shutting down; no new jobs accepted")
-            if self._queue is None:
-                raise LifecycleShutdownError("AI queue not available")
+            return self._submit_job_locked(params)
 
-            # --- model invariant: must be in configured list ---
-            model = str(params.get("model", "")).strip()
-            allowed = list(self.settings.available_models)
-            if not allowed or model not in allowed:
-                raise ModelNotAllowedError("model is not configured")
+    def submit_validated(self, validate):
+        """Validate against the current settings and submit under one gate."""
+        with self._state_lock:
+            params, error = validate(self.settings)
+            if error:
+                return None, error
+            return self._submit_job_locked(params), None
 
-            run = self._queue.submit(params)
-            # Register and start the worker before releasing the lifecycle gate,
-            # preventing shutdown from interleaving between submit and launch.
-            if run.status == JobState.RUNNING:
-                self._launch_worker(run.run_id)
-
+    def _submit_job_locked(self, params: dict[str, Any]) -> CurationRun:
+        if not self._accepting_submissions:
+            raise LifecycleShutdownError("AI curation is shutting down; no new jobs accepted")
+        if self._queue is None:
+            raise LifecycleShutdownError("AI queue not available")
+        model = str(params.get("model", "")).strip()
+        allowed = list(self.settings.available_models)
+        if not allowed or model not in allowed:
+            raise ModelNotAllowedError("model is not configured")
+        run = self._queue.submit(params)
+        if run.status == JobState.RUNNING:
+            self._launch_worker(run.run_id)
         return run
 
     def has_active_jobs(self) -> bool:

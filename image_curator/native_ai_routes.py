@@ -7,32 +7,33 @@ NativeAiLifecycle and batch lookups from NativeCuratorService.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 from aiohttp import web
 
 if __package__ and "." in __package__:
+    from ..ai_curate.config import (
+        ALLOWED_DEST_FOLDERS,
+        ALLOWED_SOURCE_FOLDERS,
+        DEFAULT_TOP_N,
+        ELEMENT_CAP,
+        TOP_N_CAP,
+    )
     from ..ai_curate.elements import build_element_list, extract_elements
     from ..ai_curate.job_validation import validate_ai_curate_request
-    from ..ai_curate.config import (
-        DEFAULT_TOP_N,
-        TOP_N_CAP,
-        ELEMENT_CAP,
-        ALLOWED_SOURCE_FOLDERS,
-        ALLOWED_DEST_FOLDERS,
-    )
     from ..ai_curate.native_lifecycle import LifecycleShutdownError, ModelNotAllowedError
 else:
+    from ai_curate.config import (
+        ALLOWED_DEST_FOLDERS,
+        ALLOWED_SOURCE_FOLDERS,
+        DEFAULT_TOP_N,
+        ELEMENT_CAP,
+        TOP_N_CAP,
+    )
     from ai_curate.elements import build_element_list, extract_elements
     from ai_curate.job_validation import validate_ai_curate_request
-    from ai_curate.config import (
-        DEFAULT_TOP_N,
-        TOP_N_CAP,
-        ELEMENT_CAP,
-        ALLOWED_SOURCE_FOLDERS,
-        ALLOWED_DEST_FOLDERS,
-    )
     from ai_curate.native_lifecycle import LifecycleShutdownError, ModelNotAllowedError
 
 logger = logging.getLogger(__name__)
@@ -42,7 +43,7 @@ async def _json_body(request) -> dict[str, Any]:
     """Parse request body as JSON dict, returning {} for malformed payloads."""
     try:
         data = await request.json()
-    except Exception:
+    except Exception:  # noqa: BLE001 - preserve malformed request fallback
         return {}
     return data if isinstance(data, dict) else {}
 
@@ -81,37 +82,38 @@ def register_native_ai_routes(app, service, lifecycle) -> None:
 
     # ---- jobs ----
 
-    async def submit_job(request):
-        data = await _json_body(request)
-        default_model = lifecycle.settings.default_model
-        allowed = list(lifecycle.settings.available_models)
-        params, error = validate_ai_curate_request(
-            data,
-            get_batches=lambda: [b for b in service.batches_payload()["batches"]],
-            default_model=default_model,
-            default_top_n=DEFAULT_TOP_N,
-            top_n_cap=TOP_N_CAP,
-            element_cap=ELEMENT_CAP,
-            allowed_source_folders=ALLOWED_SOURCE_FOLDERS,
-            allowed_dest_folders=ALLOWED_DEST_FOLDERS,
-            allowed_models=allowed,
-        )
-        if error:
-            return web.json_response(error[0], status=error[1])
-
-        if lifecycle.queue is None:
-            return web.json_response({"error": "AI queue not available"}, status=503)
+    def submit_job_sync(data):
+        def validate(settings):
+            params, error = validate_ai_curate_request(
+                data,
+                get_batches=lambda: [b for b in service.batches_payload()["batches"]],
+                default_model=settings.default_model,
+                default_top_n=DEFAULT_TOP_N,
+                top_n_cap=TOP_N_CAP,
+                element_cap=ELEMENT_CAP,
+                allowed_source_folders=ALLOWED_SOURCE_FOLDERS,
+                allowed_dest_folders=ALLOWED_DEST_FOLDERS,
+                allowed_models=list(settings.available_models),
+            )
+            if not error and lifecycle.queue is None:
+                return None, ({"error": "AI queue not available"}, 503)
+            return params, error
 
         try:
-            run = lifecycle.submit_job(params)
+            run, error = lifecycle.submit_validated(validate)
+            if error:
+                return error[0], error[1]
         except LifecycleShutdownError:
-            return web.json_response(
-                {"error": "AI curation is shutting down; no new jobs accepted"}, status=503
-            )
+            return {"error": "AI curation is shutting down; no new jobs accepted"}, 503
         except ModelNotAllowedError:
-            return web.json_response({"error": "model is not configured"}, status=400)
+            return {"error": "model is not configured"}, 400
 
-        return web.json_response(run.to_dict(), status=201)
+        return run.to_dict(), 201
+
+    async def submit_job(request):
+        data = await _json_body(request)
+        result, status = await asyncio.to_thread(submit_job_sync, data)
+        return web.json_response(result, status=status)
 
     async def list_jobs(request):
         if lifecycle.queue is None:
@@ -241,7 +243,7 @@ def register_native_ai_routes(app, service, lifecycle) -> None:
                 break
             try:
                 run = storage.load_run(batch, run_id)
-            except Exception:
+            except Exception:  # noqa: BLE001, S112 - omit unreadable history entries
                 continue
             if run is None or not run.elements:
                 continue

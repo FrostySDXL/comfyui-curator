@@ -59,7 +59,7 @@ def test_visible_active_batch_combobox_has_an_accessible_name() -> None:
     html = read_index_html()
     input_tag = html.split('id="active-batch-input"', 1)[1].split(">", 1)[0]
 
-    assert 'aria-label="Select active batch for auto-import"' in input_tag
+    assert 'aria-label="Import destination batch"' in input_tag
 
 
 def test_all_favorites_entry_reads_as_pinned_collection() -> None:

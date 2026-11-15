@@ -1,21 +1,26 @@
 """Route registration for the Curator native ComfyUI extension."""
 
+import asyncio
 from pathlib import Path
 
+# The host import must precede aiohttp for the standalone entrypoint's fallback.
+# isort: off
 from server import PromptServer
 from aiohttp import web
+
+# isort: on
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 if __package__ and "." in __package__:
-    from ..image_curator.native_routes import NativeCuratorService, register_native_routes
-    from ..image_curator.native_ai_routes import register_native_ai_routes
-    from ..image_curator.native_settings import NativeCuratorSettings
     from ..ai_curate.native_lifecycle import NativeAiLifecycle
+    from ..image_curator.native_ai_routes import register_native_ai_routes
+    from ..image_curator.native_routes import NativeCuratorService, register_native_routes
+    from ..image_curator.native_settings import NativeCuratorSettings
 else:
-    from image_curator.native_routes import NativeCuratorService, register_native_routes
-    from image_curator.native_ai_routes import register_native_ai_routes
-    from image_curator.native_settings import NativeCuratorSettings
     from ai_curate.native_lifecycle import NativeAiLifecycle
+    from image_curator.native_ai_routes import register_native_ai_routes
+    from image_curator.native_routes import NativeCuratorService, register_native_routes
+    from image_curator.native_settings import NativeCuratorSettings
 
 
 class CuratorManager:
@@ -77,10 +82,15 @@ class CuratorManager:
         # itself idempotent), so we never get duplicate on_startup/on_shutdown
         # callbacks. The caller (__init__.py) invokes add_routes() exactly once.
         app.on_startup.append(ai_lifecycle.startup)
+
+        async def start_auto_import(_app):
+            service.auto_import.start()
+
+        app.on_startup.append(start_auto_import)
         app.on_shutdown.append(ai_lifecycle.shutdown)
 
         async def close_curator_service(_app):
-            service.close()
+            await asyncio.to_thread(service.close)
 
         app.on_shutdown.append(close_curator_service)
         register_native_ai_routes(app, service, ai_lifecycle)

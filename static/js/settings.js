@@ -17,6 +17,7 @@ function _renderNativeSettings(data) {
     _settingsValue('settings-save-btn').textContent = invalidConfig ? 'Replace Invalid Settings' : 'Save Settings';
     _settingsValue('settings-batch-root').value = data.batch_root || '';
     _settingsValue('settings-import-source').value = data.import_source || '';
+    _settingsValue('settings-auto-import-enabled').checked = data.auto_import_enabled === true;
     _settingsValue('settings-public-enabled').checked = data.public_export_enabled === true;
     _settingsValue('settings-public-root').value = data.public_export_root || '';
     _settingsValue('settings-llm-url').value = data.llm_base_url || '';
@@ -55,6 +56,7 @@ async function saveNativeSettings() {
     const body = {
         batch_root: _settingsValue('settings-batch-root').value.trim(),
         import_source: _settingsValue('settings-import-source').value.trim(),
+        auto_import_enabled: _settingsValue('settings-auto-import-enabled').checked,
         public_export_enabled: _settingsValue('settings-public-enabled').checked,
         public_export_root: _settingsValue('settings-public-root').value.trim(),
         llm_base_url: _settingsValue('settings-llm-url').value.trim(),
