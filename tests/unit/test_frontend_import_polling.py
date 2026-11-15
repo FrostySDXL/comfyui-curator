@@ -1,4 +1,6 @@
-from tests.unit.frontend_source import extract_function_body, read_frontend_js
+from pathlib import Path
+
+from tests.unit.frontend_source import extract_function_body, read_frontend_css, read_frontend_js
 
 
 def test_lightweight_import_status_poll_updates_visible_disabled_control() -> None:
@@ -6,7 +8,6 @@ def test_lightweight_import_status_poll_updates_visible_disabled_control() -> No
     update = extract_function_body(js, "function updatePendingImportUi(pendingCount, activeBatch)")
     poll = extract_function_body(js, "async function pollImportAvailability()")
 
-    assert "pendingInfo.style.display = 'flex'" in update
     assert "importBtn.disabled = importInFlight || normalizedCount < 1 || !activeBatch" in update
     assert "data.auto_import_enabled" in poll
     assert "data.auto_import_error" in poll
@@ -15,6 +16,27 @@ def test_lightweight_import_status_poll_updates_visible_disabled_control() -> No
     assert "failure.paused ? 'failed' : 'partial'" in poll
     assert "ccApiPath('/api/import-status')" in poll
     assert "updatePendingImportUi(data.pending_count, data.active_batch)" in poll
+
+
+def test_import_controls_share_existing_header_and_destination_lives_in_settings() -> None:
+    html = Path("templates/index.html").read_text(encoding="utf-8")
+    css = read_frontend_css()
+    header = html.split('<div class="header">', 1)[1].split(
+        '<section id="activity-center-panel"', 1
+    )[0]
+    settings = html.split('id="settings-modal"', 1)[1].split("<!-- Toast -->", 1)[0]
+    assert 'id="auto-import-status"' in header
+    assert 'id="pending-count"' in header
+    assert 'class="help-btn import-btn"' in header
+    assert 'id="active-batch-input"' not in header
+    assert 'id="set-auto-import-btn"' not in html
+    assert 'class="import-workspace"' not in html
+    assert 'id="active-batch-input"' in settings
+    assert 'id="active-batch-select"' in settings
+    assert "Destination changes save immediately" in settings
+    assert ".header-import-status" in css
+    assert ".header .import-btn:disabled" in css
+    assert ".set-auto-import-btn" not in css
 
 
 def test_bootstrap_polls_import_status_and_native_batch_summaries_separately() -> None:

@@ -1,13 +1,16 @@
 /* Ordered classic script.
  * Defines: active-batch custom combobox keyboard and outside-click binding.
  */
-// Keyboard navigation + live-filter (input-based, no stopPropagation needed
-// because the document keyboard handler already skips INPUT elements)
+// Keyboard navigation + live-filter; an open list owns its first Escape.
 function _bindCustomSelectKeys() {
             const input = document.getElementById('active-batch-input');
             if (!input) return;
 
             input.addEventListener('focus', () => {
+                _openCustomDropdown();
+            });
+
+            input.addEventListener('click', () => {
                 _openCustomDropdown();
             });
 
@@ -31,15 +34,24 @@ function _bindCustomSelectKeys() {
             });
 
             input.addEventListener('input', () => {
+                const query = input.value;
                 if (!document.getElementById('active-batch-custom').classList.contains('open')) {
                     _openCustomDropdown();
+                    input.value = query;
                 }
-                _populateCustomDropdown(input.value);
+                _populateCustomDropdown(query);
             });
 
             input.addEventListener('keydown', (e) => {
                 const wrapper = document.getElementById('active-batch-custom');
-                if (!wrapper || !wrapper.classList.contains('open')) return;
+                if (!wrapper) return;
+                if (!wrapper.classList.contains('open')) {
+                    if (e.key !== 'ArrowDown') return;
+                    e.preventDefault();
+                    _openCustomDropdown();
+                    _customSelectMoveFocus(1);
+                    return;
+                }
                 switch (e.key) {
                     case 'ArrowDown':
                         e.preventDefault();
@@ -58,6 +70,8 @@ function _bindCustomSelectKeys() {
                         }
                         break;
                     case 'Escape':
+                        e.preventDefault();
+                        e.stopPropagation();
                         _closeCustomDropdown(true);
                         break;
                 }

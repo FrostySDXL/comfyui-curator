@@ -59,8 +59,9 @@
                 <button id="move-history-btn" class="help-btn" type="button" aria-expanded="false" aria-controls="move-history-modal">Undo / History <span id="move-history-badge" class="activity-center-badge" aria-label="0 undoable moves">0</span></button>
                 <button id="help-btn" class="help-btn" type="button">Help</button>
                 <button id="prompts-btn" class="help-btn" type="button">Search</button>
-                <button id="settings-btn" class="help-btn hidden" type="button">Settings</button>
-                <button id="set-auto-import-btn" class="set-auto-import-btn hidden" type="button">Set as Auto-import</button>
+                <button id="settings-btn" class="help-btn" type="button">Settings</button>
+                <span id="pending-info" class="header-import-status" role="status"><span id="auto-import-status" class="hidden">Auto-import Off</span> <span><span id="pending-count">0</span> pending</span></span>
+                <button class="help-btn import-btn" type="button" disabled>Import All</button>
             </div>
         </div>
 
@@ -77,18 +78,6 @@
                 <div class="activity-center-empty">No recent background work.</div>
             </div>
         </section>
-
-        <div class="import-workspace" aria-label="Import output">
-            <label for="active-batch-input">Import destination</label>
-            <select id="active-batch-select" aria-label="Import destination batch" hidden><option value="">-- Select batch --</option></select>
-            <div class="custom-select" id="active-batch-custom">
-                <input class="custom-select-input" id="active-batch-input" type="text" placeholder="Select batch..." autocomplete="off" spellcheck="false" aria-label="Import destination batch" aria-haspopup="listbox" aria-expanded="false" aria-autocomplete="list">
-                <span class="custom-select-arrow" id="active-batch-arrow">&#9662;</span>
-                <ul class="custom-select-dropdown" id="active-batch-dropdown" role="listbox" tabindex="-1"></ul>
-            </div>
-            <span id="auto-import-status" class="hidden" role="status">Auto-import Off</span>
-            <div id="pending-info" class="pending-bar"><span><span id="pending-count">0</span> pending</span><button class="import-btn">Import All</button></div>
-        </div>
 
         <div class="workspace-frame">
             <nav class="workspace-stage-rail" aria-label="Batch folders">
@@ -891,11 +880,22 @@
         <div class="modal-content settings-modal-content">
             <div class="settings-heading"><h3 id="settings-modal-title">Curator Settings</h3><button id="settings-close-btn" type="button" aria-label="Close settings">&times;</button></div>
             <div id="settings-error" class="settings-error hidden" role="alert"></div>
-            <div id="settings-config-warning" class="settings-config-warning hidden" role="alert">Stored settings could not be loaded. Review these fallback values carefully; saving replaces the invalid file.</div>
-            <div id="settings-path-scope-note" class="settings-path-scope-note">
+            <div id="settings-config-warning" class="settings-config-warning native-settings-only hidden" role="alert">Stored settings could not be loaded. Review these fallback values carefully; saving replaces the invalid file.</div>
+            <div id="settings-path-scope-note" class="settings-path-scope-note native-settings-only">
                 Paths are resolved inside the ComfyUI process. In Docker, a host directory must be exposed at the configured container path with a Docker volume or bind mount.
             </div>
-            <section class="settings-section" aria-labelledby="settings-storage-heading">
+            <section class="settings-section" aria-labelledby="settings-import-heading">
+                <h4 id="settings-import-heading">Import destination</h4>
+                <label class="settings-field" for="active-batch-input">Destination batch</label>
+                <select id="active-batch-select" aria-label="Import destination batch" hidden><option value="">-- Select batch --</option></select>
+                <div class="custom-select" id="active-batch-custom">
+                    <input class="custom-select-input" id="active-batch-input" type="text" placeholder="Select batch..." autocomplete="off" spellcheck="false" aria-label="Import destination batch" aria-haspopup="listbox" aria-expanded="false" aria-autocomplete="list">
+                    <span class="custom-select-arrow" id="active-batch-arrow">&#9662;</span>
+                    <ul class="custom-select-dropdown" id="active-batch-dropdown" role="listbox" tabindex="-1"></ul>
+                </div>
+                <p class="settings-field-hint">Destination changes save immediately and do not change the batch being reviewed.</p>
+            </section>
+            <section class="settings-section native-settings-only" aria-labelledby="settings-storage-heading">
                 <h4 id="settings-storage-heading">Storage</h4>
                 <div class="settings-grid">
                     <label class="settings-field">Batch root<input id="settings-batch-root" type="text" autocomplete="off"></label>
@@ -910,7 +910,7 @@
                     </div>
                 </div>
             </section>
-            <section class="settings-section" aria-labelledby="settings-ai-heading">
+            <section class="settings-section native-settings-only" aria-labelledby="settings-ai-heading">
                 <h4 id="settings-ai-heading">AI connection</h4>
                 <div class="settings-grid">
                     <label class="settings-field">LLM base URL
@@ -922,7 +922,7 @@
                     <label class="settings-field">Request timeout (seconds)<input id="settings-timeout" type="number" min="1" max="3600"></label>
                 </div>
             </section>
-            <section class="settings-section" aria-labelledby="settings-credentials-heading">
+            <section class="settings-section native-settings-only" aria-labelledby="settings-credentials-heading">
                 <h4 id="settings-credentials-heading">Credentials</h4>
                 <div class="settings-field">
                     <div class="settings-label-row"><label for="settings-api-key">Replace API key</label><span id="settings-api-key-set" class="settings-secret-status">Not set</span></div>

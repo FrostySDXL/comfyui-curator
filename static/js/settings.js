@@ -4,6 +4,8 @@ let nativeSettings = null;
 function _settingsValue(id) { return document.getElementById(id); }
 
 function hideSettingsModal() {
+    _closeCustomDropdown(true);
+    _syncCustomSelectDisplay();
     document.getElementById('settings-modal').classList.remove('active');
     _settingsValue('settings-api-key').value = '';
     _settingsValue('settings-clear-api-key').checked = false;
@@ -40,12 +42,17 @@ function _renderNativeSettings(data) {
 }
 
 async function showSettingsModal() {
-    if (!CURATOR_NATIVE) return;
     const modal = document.getElementById('settings-modal');
+    modal.querySelectorAll('.native-settings-only').forEach(el => {
+        if (!CURATOR_NATIVE) el.classList.add('hidden');
+    });
+    _settingsValue('settings-save-btn').classList.toggle('hidden', !CURATOR_NATIVE);
+    modal.querySelector('.modal-buttons .cancel').textContent = CURATOR_NATIVE ? 'Cancel' : 'Close';
     const error = _settingsValue('settings-error');
     error.classList.add('hidden');
     modal.classList.add('active');
     _trapFocus(modal);
+    if (!CURATOR_NATIVE) return;
     try { _renderNativeSettings(await apiGetNativeSettings()); }
     catch { error.textContent = 'Could not load settings.'; error.classList.remove('hidden'); }
 }

@@ -600,6 +600,8 @@
             color: #888;
         }
         .settings-modal-content { width: min(680px, calc(100vw - 40px)); max-height: 88vh; overflow-y: auto; }
+        .settings-modal-content .custom-select-input { margin: 6px 0 0; padding: 9px 34px 9px 10px; }
+        .settings-modal-content .custom-select-arrow { top: calc(50% + 3px); }
         .settings-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
         .settings-heading h3 { margin-bottom: 0; }
         .settings-heading button { border: 0; background: transparent; color: #aaa; font-size: 24px; cursor: pointer; }

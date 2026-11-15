@@ -76,9 +76,6 @@ function _bindDelegatedEvents() {
             const settingsBtn = document.getElementById('settings-btn');
             if (settingsBtn) settingsBtn.addEventListener('click', showSettingsModal);
 
-            const autoImportBtn = document.getElementById('set-auto-import-btn');
-            if (autoImportBtn) autoImportBtn.addEventListener('click', setCurrentBatchAsAutoImport);
-
             // Sort controls
             document.querySelectorAll('.sort-btn:not(.batch-sort-btn)').forEach(btn => {
                 btn.addEventListener('click', function() { setSort(this.dataset.sort); });

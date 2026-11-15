@@ -14,12 +14,10 @@ let lastAutoImportFailureKey = '';
 let importStatusPollInFlight = false;
 
 function updatePendingImportUi(pendingCount, activeBatch) {
-            const pendingInfo = document.getElementById('pending-info');
             const count = document.getElementById('pending-count');
             const importBtn = document.querySelector('.import-btn');
             const normalizedCount = Math.max(0, Number(pendingCount) || 0);
             if (count) count.textContent = normalizedCount;
-            if (pendingInfo) pendingInfo.style.display = 'flex';
             if (importBtn) {
                 importBtn.disabled = importInFlight || normalizedCount < 1 || !activeBatch;
                 importBtn.textContent = importInFlight ? 'Importing…' : 'Import All';
@@ -30,21 +28,22 @@ async function pollImportAvailability() {
             if (importStatusPollInFlight) return;
             importStatusPollInFlight = true;
             try {
-            const resp = await fetch(ccApiPath('/api/import-status')).catch(() => null);
-            if (!resp || !resp.ok) return;
-            const data = await resp.json();
-            updatePendingImportUi(data.pending_count, data.active_batch);
-            const status = document.getElementById('auto-import-status');
-            if (CURATOR_NATIVE && status) {
-                status.classList.remove('hidden');
-                status.textContent = data.auto_import_error ? `Auto-import ${data.auto_import_paused ? 'paused' : 'retrying'}: ${data.auto_import_error}` : `Auto-import ${data.auto_import_enabled ? 'On' : 'Off'}`;
-                const failure = data.auto_import_failure;
-                const failureKey = failure ? `${failure.id}:${failure.message}` : '';
-                if (failureKey && failureKey !== lastAutoImportFailureKey) {
-                    lastAutoImportFailureKey = failureKey;
-                    activityRegister({id: 'auto-import-failure', kind: 'import', title: 'Auto-import', status: failure.paused ? 'failed' : 'partial', detail: String(failure.message).slice(0, 240)});
+                const resp = await fetch(ccApiPath('/api/import-status')).catch(() => null);
+                if (!resp || !resp.ok) return;
+                const data = await resp.json();
+                updatePendingImportUi(data.pending_count, data.active_batch);
+                const status = document.getElementById('auto-import-status');
+                if (CURATOR_NATIVE && status) {
+                    status.classList.remove('hidden');
+                    status.textContent = `Auto-import ${data.auto_import_enabled ? 'On' : 'Off'}${data.auto_import_error ? (data.auto_import_paused ? ' (paused)' : ' (retrying)') : ''}`;
+                    status.title = data.auto_import_error || '';
+                    const failure = data.auto_import_failure;
+                    const failureKey = failure ? `${failure.id}:${failure.message}` : '';
+                    if (failureKey && failureKey !== lastAutoImportFailureKey) {
+                        lastAutoImportFailureKey = failureKey;
+                        activityRegister({id: 'auto-import-failure', kind: 'import', title: 'Auto-import', status: failure.paused ? 'failed' : 'partial', detail: String(failure.message).slice(0, 240)});
+                    }
                 }
-            }
             } finally { importStatusPollInFlight = false; }
         }
 
@@ -69,29 +68,6 @@ function restoreBatchState(batches) {
                 return true;
             }
             return false;
-        }
-
-function updateAutoImportQuickAction(activeBatch) {
-            const quickBtn = document.getElementById('set-auto-import-btn');
-            if (!quickBtn) return;
-            if (!currentBatch) {
-                quickBtn.style.display = 'none';
-                quickBtn.disabled = true;
-                return;
-            }
-            quickBtn.style.display = 'inline-block';
-            if (activeBatch === currentBatch) {
-                quickBtn.textContent = 'Import destination';
-                quickBtn.disabled = true;
-            } else {
-                quickBtn.textContent = 'Set as import destination';
-                quickBtn.disabled = false;
-            }
-        }
-
-async function setCurrentBatchAsAutoImport() {
-            if (!currentBatch) return;
-            await setActiveBatch(currentBatch);
         }
 
 function normalizeBatchFilterQuery(value) {
@@ -178,7 +154,6 @@ async function loadBatches() {
             select.value = selectedAutoImportBatch || '';
             _syncCustomSelectDisplay();
             if (pendingActiveBatchSelection === activeBatch) pendingActiveBatchSelection = null;
-            updateAutoImportQuickAction(selectedAutoImportBatch);
 
             // Sort batches based on current batch sort
             const sortedBatches = [...batches];
@@ -440,7 +415,6 @@ function _commitCustomSelectSelection(value) {
             if (input) {
                 input.value = selectedOpt ? selectedOpt.textContent : '';
                 input.placeholder = selectedOpt ? '' : 'Select batch...';
-                input.blur(); // release focus after selection
             }
             _customSelectPrevValue = ''; // selection committed, no restore needed
             _closeCustomDropdown();
@@ -536,7 +510,6 @@ function selectBatch(batch) {
             const batchChanged = currentBatch !== batch;
             currentBatch = batch;
             saveBatchState();
-            updateAutoImportQuickAction(document.getElementById('active-batch-select').value || null);
             document.querySelectorAll('.batch-name').forEach(el =>
                 el.classList.toggle('selected', el.dataset.batch === batch));
             document.getElementById('folder-tabs').classList.add('visible');
@@ -583,7 +556,6 @@ async function selectFolder(batch, folder) {
             pathSpan.textContent = batch;
             pathEl.appendChild(pathSpan);
             pathEl.appendChild(document.createTextNode(' / ' + folder));
-            updateAutoImportQuickAction(document.getElementById('active-batch-select').value || null);
 
             showGridLoadingPlaceholders(batch, folder);
             updateFolderTabs();

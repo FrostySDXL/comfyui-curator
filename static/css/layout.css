@@ -6,18 +6,17 @@
             min-width: 0;
             overflow: hidden;
         }
-        .import-workspace {
-            display: flex;
+        .header-import-status {
+            display: inline-flex;
             align-items: center;
-            flex-wrap: wrap;
-            gap: 8px;
-            padding: 6px 18px;
-            border-bottom: 1px solid var(--border-subtle);
+            gap: 6px;
+            padding-left: 10px;
+            border-left: 1px solid var(--border-subtle);
             color: var(--text-secondary);
-            font-size: var(--type-label);
+            font-size: 12px;
+            white-space: nowrap;
         }
-        .import-workspace .custom-select { width: 220px; }
-        .import-workspace .pending-bar { margin-top: 0; }
+        .header .import-btn:disabled { opacity: 0.55; cursor: not-allowed; }
         .workspace-frame {
             flex: 1;
             display: flex;
@@ -596,25 +595,6 @@
             gap: 12px;
         }
         .view-menu-field .ai-select { min-width: 120px; }
-
-        .set-auto-import-btn {
-            padding: 6px 10px;
-            border: 1px solid #2d5f34;
-            background: #1e3321;
-            color: #a7d7af;
-            border-radius: 4px;
-            font-size: 12px;
-            cursor: pointer;
-            white-space: nowrap;
-        }
-        .set-auto-import-btn:hover {
-            background: #26452b;
-            border-color: #3c7744;
-        }
-        .set-auto-import-btn:disabled {
-            opacity: 0.6;
-            cursor: default;
-        }
 
         .ai-sidebar-toggle-btn {
             padding: 6px 10px;
