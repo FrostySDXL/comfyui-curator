@@ -4,6 +4,7 @@ import json
 import re
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -72,34 +73,81 @@ class TestPageBootAssets:
 # Page handler context
 # ---------------------------------------------------------------------------
 
+_MISSING = object()
+
+
+@contextmanager
+def _isolated_module_cache():
+    """Restore ``sys.modules`` and package attributes after host-module mocks.
+
+    Replacing ``sys.modules["server"]`` (or importing ``py.curator_manager``)
+    also creates/replaces entries and parent-package attributes. Popping the
+    host modules alone is not enough: newly imported backend modules can keep
+    a mocked ``aiohttp``/``server`` and a package attribute can point at a
+    module that is no longer in ``sys.modules``.
+    """
+
+    before_modules = dict(sys.modules)
+    before_package_attrs = {
+        name: dict(vars(module))
+        for name, module in before_modules.items()
+        if getattr(module, "__path__", None) is not None
+    }
+    try:
+        yield
+    finally:
+        for name in tuple(sys.modules):
+            if name not in before_modules:
+                sys.modules.pop(name, None)
+        for name, module in before_modules.items():
+            if sys.modules.get(name) is not module:
+                sys.modules[name] = module
+        for name, attrs in before_package_attrs.items():
+            module = sys.modules.get(name)
+            if module is None:
+                continue
+            for attr, value in attrs.items():
+                if getattr(module, attr, _MISSING) is not value:
+                    setattr(module, attr, value)
+            for attr in tuple(vars(module)):
+                if attr not in attrs:
+                    delattr(module, attr)
+
 
 class TestCuratorManagerPageHandlerContext:
-    def _setup_mocks(self, tmp_path, monkeypatch):
-        for mod in ("server", "aiohttp", "aiohttp.web", "jinja2", "folder_paths"):
-            sys.modules.pop(mod, None)
+    @pytest.fixture(autouse=True)
+    def _restore_module_cache(self):
+        with _isolated_module_cache():
+            yield
 
+    def _setup_mocks(self, tmp_path, monkeypatch):
         mock_web = MagicMock()
         mock_web.json_response = MagicMock()
         mock_web.Response = MagicMock(return_value=MagicMock(status=200))
         mock_aiohttp = MagicMock()
         mock_aiohttp.web = mock_web
-        sys.modules["aiohttp"] = mock_aiohttp
-        sys.modules["aiohttp.web"] = mock_web
 
         mock_server = MagicMock()
         mock_ps = MagicMock()
         mock_ps.instance.app = MagicMock()
         mock_ps.instance.app.router = MagicMock()
         mock_server.PromptServer = mock_ps
-        sys.modules["server"] = mock_server
 
         mock_jinja2 = MagicMock()
-        sys.modules["jinja2"] = mock_jinja2
 
         mock_folder_paths = MagicMock()
         mock_folder_paths.get_system_user_directory.return_value = str(tmp_path / "system")
         mock_folder_paths.get_output_directory.return_value = str(tmp_path / "output")
-        sys.modules["folder_paths"] = mock_folder_paths
+
+        mock_modules = {
+            "aiohttp": mock_aiohttp,
+            "aiohttp.web": mock_web,
+            "server": mock_server,
+            "jinja2": mock_jinja2,
+            "folder_paths": mock_folder_paths,
+        }
+        for name, module in mock_modules.items():
+            monkeypatch.setitem(sys.modules, name, module)
 
         import importlib.util
 
@@ -107,6 +155,7 @@ class TestCuratorManagerPageHandlerContext:
             "py.curator_manager", REPO_ROOT / "py" / "curator_manager.py"
         )
         cm = importlib.util.module_from_spec(spec)
+        monkeypatch.setitem(sys.modules, "py.curator_manager", cm)
         spec.loader.exec_module(cm)
 
         from image_curator.native_settings import NativeCuratorSettings
@@ -157,6 +206,20 @@ class TestCuratorManagerPageHandlerContext:
         source = (REPO_ROOT / "py" / "curator_manager.py").read_text(encoding="utf-8")
         assert "ai_curate.config" not in source
         assert "load_dotenv" not in source
+
+    def test_previous_page_handler_test_restored_host_modules(self):
+        """Order proof: runs after the mocked page-handler test's teardown."""
+        for name in ("server", "aiohttp", "aiohttp.web", "jinja2", "folder_paths"):
+            assert not isinstance(sys.modules.get(name), MagicMock), f"leaked mock: {name}"
+
+        image_curator = sys.modules.get("image_curator")
+        native_routes = sys.modules.get("image_curator.native_routes", _MISSING)
+        if image_curator is not None and native_routes is not _MISSING:
+            assert getattr(image_curator, "native_routes", _MISSING) is native_routes
+
+        from tests.unit.test_comfyui_extension import _load_root_init_standalone
+
+        assert _load_root_init_standalone().CuratorManager is None
 
 
 # ---------------------------------------------------------------------------

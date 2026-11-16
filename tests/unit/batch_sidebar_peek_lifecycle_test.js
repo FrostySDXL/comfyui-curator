@@ -169,7 +169,6 @@ let jsonStarted;
 const jsonReady = new Promise(resolve => { jsonStarted = resolve; });
 context.ccApiPath = x => x;
 context.fetch = async () => ({ok: true, json: () => new Promise(resolve => { releaseJson = resolve; jsonStarted(); })});
-context.CURATOR_NATIVE = false;
 context.isWorkspaceSearchView = () => false;
 context.BATCH_STATE_KEY = 'batch';
 context.FOLDER_STATE_KEY = 'folder';

@@ -112,7 +112,7 @@ Executable lifecycle harnesses run real scripts under Node with DOM/transport do
 ## Gotchas & Common Pitfalls
 
 - **`client` is a real HTTP client, not Flask's test client:** responses expose `.status_code`, `.get_json()`/`.json`, `.data`, `.text`, `.mimetype`, and case-insensitive headers; use `json_body=` and `query_string=` keyword arguments.
-- **aiohttp is a development dependency:** install `requirements-dev.txt` (or the dev lock) to run real native HTTP tests outside ComfyUI. Production uses ComfyUI's host-provided aiohttp; isolated environments without it skip the real HTTP fixtures and media-contract module before importing native adapters.
+- **aiohttp is a development dependency:** install `requirements-dev.txt` (or the dev lock) to run real native HTTP tests outside ComfyUI. `requirements-dev.txt` includes `requirements-dev.in`, so it also installs `aiohttp`; do not add packages directly to the convenience file. Production uses ComfyUI's host-provided aiohttp; isolated environments without it skip the real HTTP fixtures and media-contract module before importing native adapters.
 - **AI jobs stay deterministic:** `ai_lifecycle` disables `_launch_worker`, so submitted jobs remain running/queued until tests inspect them.
 - **Settings are live:** route handlers read `service.settings` per request, so mutating `native_settings` affects subsequent HTTP calls.
 - **Hermetic module state:** some tests mock `sys.modules` for ComfyUI host modules. Prefer subprocess probes (as the no-Flask test does) when checking real import availability.

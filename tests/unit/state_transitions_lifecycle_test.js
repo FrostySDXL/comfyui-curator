@@ -27,6 +27,7 @@ function extractFunction(sourceText, signature) {
 
 const source = [
     "static/js/state.js",
+    "static/js/api.js",
     "static/js/ai-state.js",
     "static/js/ai-panel.js",
     "static/js/ai-inspector.js",
@@ -37,6 +38,7 @@ const pollingSource = fs.readFileSync("static/js/polling.js", "utf8");
 
 const context = {
     console,
+    URLSearchParams,
     window: {},
     localStorage: {getItem() { return null; }, setItem() {}},
     document: {
@@ -138,35 +140,95 @@ await favoriteLoad;
 assert.equal(vm.runInContext("images.length", context), 0, "stale virtual response does not replace current view");
 
 // Poll results must be ignored when interaction/scope changes during awaits.
+context.pollRequests = [];
+context.pollFolderLoads = [];
+context.pollRunRefreshes = [];
+context.pollGridUpdates = 0;
 vm.runInContext([
     "loadBatches = async () => {}; aiLatestRun = null; aiShowOverlays = false; aiFilterMode = 'all';",
-    "aiCompareRunId = 'latest'; aiRefreshRunData = async () => {}; updateGrid = () => {}; showCurrentImage = () => {};",
-    "buildImageSignature = (list) => list.map(img => img.name).join('|');",
+    "aiCompareRunId = 'latest'; aiRefreshRunData = async (runs) => { pollRunRefreshes.push(runs); };",
+    "loadCurrentFolderImages = async (options) => { pollFolderLoads.push(options); images = [{name: 'fresh.png'}]; };",
+    "updateGrid = () => { pollGridUpdates += 1; };",
+    "_folderTransportSort = () => 'date';",
+    "folderSnapshot = {revision: 'revision-1', count: 1}; pagedFolderMode = true;",
     extractFunction(pollingSource, "async function pollForChanges()"),
-    "currentBatch = 'batch-c'; currentFolder = 'inbox'; images = [{name: 'keep.png'}];",
 ].join("\n"), context);
-const pollImages = deferred();
-const pollRuns = deferred();
-context.fetch = (url) => url.includes("/runs") ? pollRuns.promise : pollImages.promise;
-const pollLoad = context.pollForChanges();
+
+function pollFetch(snapshotResponse, runResponse) {
+    return (url) => {
+        context.pollRequests.push(String(url));
+        return String(url).includes("/runs") ? runResponse.promise : snapshotResponse.promise;
+    };
+}
+
+function resetPollState(batch) {
+    context.pollRequests.length = 0;
+    context.pollFolderLoads.length = 0;
+    context.pollRunRefreshes.length = 0;
+    context.pollGridUpdates = 0;
+    vm.runInContext(
+        `currentBatch = ${JSON.stringify(batch)}; currentFolder = 'inbox'; images = [{name: 'keep.png'}]; aiLatestRun = null;`,
+        context,
+    );
+}
+
+// Positive control: a valid changed snapshot poll applies the reload and runs.
+resetPollState("batch-poll-ok");
+const okSnapshot = deferred();
+const okRuns = deferred();
+context.fetch = pollFetch(okSnapshot, okRuns);
+const okPoll = context.pollForChanges();
+await Promise.resolve();
+okSnapshot.resolve({ok: true, json: async () => ({status: 'ready', changed: true})});
+okRuns.resolve({ok: true, json: async () => ({runs: [{run_id: 'run-new'}]})});
+await okPoll;
+assert.equal(context.pollRequests.length, 2, "a valid poll must issue snapshot and run-history requests");
+assert(
+    context.pollRequests.some((url) => url.includes("/api/curator/v2/folders/batch-poll-ok/inbox/poll?")
+        && url.includes("revision=revision-1")),
+    "poll must use the native revision endpoint with the active revision",
+);
+assert(
+    context.pollRequests.some((url) => url.includes("/api/curator/ai-curate/batches/batch-poll-ok/runs")),
+    "poll must request run history",
+);
+assert.equal(context.pollFolderLoads.length, 1, "changed snapshot must reload the folder view");
+assert.equal(context.pollFolderLoads[0].preserveScroll, true, "poll reload must preserve scroll");
+assert.equal(vm.runInContext("images[0].name", context), "fresh.png", "valid poll applies changed images");
+assert.equal(context.pollRunRefreshes.length, 1, "new run id must refresh run data");
+assert.equal(context.pollRunRefreshes[0][0].run_id, "run-new");
+
+// A scope transition after transport completes must suppress the changed snapshot.
+resetPollState("batch-poll-stale");
+const staleSnapshot = deferred();
+const staleRuns = deferred();
+context.fetch = pollFetch(staleSnapshot, staleRuns);
+const stalePoll = context.pollForChanges();
 await Promise.resolve();
 context.beginViewTransition({clearImages: true});
-pollImages.resolve({ok: true, json: async () => [{name: 'stale.png'}]});
-pollRuns.resolve({ok: true, json: async () => ({runs: []})});
-await pollLoad;
+staleSnapshot.resolve({ok: true, json: async () => ({status: 'ready', changed: true})});
+staleRuns.resolve({ok: true, json: async () => ({runs: [{run_id: 'stale-run'}]})});
+await stalePoll;
+assert.equal(context.pollRequests.length, 2, "stale poll still completed both requests");
+assert.equal(context.pollFolderLoads.length, 0, "stale scope must not reload images");
+assert.equal(context.pollRunRefreshes.length, 0, "stale scope must not apply run history");
 assert.equal(vm.runInContext("images.length", context), 0, "stale polling response does not repopulate a new view");
 
 // A user interaction beginning after transport completes still blocks apply.
-vm.runInContext("currentBatch = 'batch-d'; currentFolder = 'inbox'; images = [{name: 'keep.png'}]; let busy = false; isInteractionBusy = () => busy;", context);
-const busyImages = deferred();
+resetPollState("batch-poll-busy");
+vm.runInContext("let pollBusy = false; isInteractionBusy = () => pollBusy;", context);
+const busySnapshot = deferred();
 const busyRuns = deferred();
-context.fetch = (url) => url.includes("/runs") ? busyRuns.promise : busyImages.promise;
-const busyLoad = context.pollForChanges();
+context.fetch = pollFetch(busySnapshot, busyRuns);
+const busyPoll = context.pollForChanges();
 await Promise.resolve();
-vm.runInContext("busy = true", context);
-busyImages.resolve({ok: true, json: async () => [{name: 'busy-stale.png'}]});
-busyRuns.resolve({ok: true, json: async () => ({runs: []})});
-await busyLoad;
+vm.runInContext("pollBusy = true", context);
+busySnapshot.resolve({ok: true, json: async () => ({status: 'ready', changed: true})});
+busyRuns.resolve({ok: true, json: async () => ({runs: [{run_id: 'busy-run'}]})});
+await busyPoll;
+assert.equal(context.pollRequests.length, 2, "busy poll still completed both requests");
+assert.equal(context.pollFolderLoads.length, 0, "busy interaction must not reload images");
+assert.equal(context.pollRunRefreshes.length, 0, "busy interaction must not apply run history");
 assert.equal(vm.runInContext("images[0].name", context), "keep.png", "busy interaction blocks polling image apply");
 
 console.log("state transition lifecycle checks passed");

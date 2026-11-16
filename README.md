@@ -128,7 +128,10 @@ Runtime dependencies are Jinja2 (renders the native page), Pillow (metadata,
 derivatives, and cache generation), and python-dotenv (CLI `.env` loading);
 `aiohttp` and ComfyUI's host modules come from ComfyUI itself. `requirements.txt`
 is the convenience install file; use `requirements-lock.txt` when you need the
-pinned dependency set.
+pinned dependency set. For development, install `requirements-dev.txt`: it
+includes `requirements-dev.in`, which adds `aiohttp` for the real native HTTP
+tests plus pytest, Ruff, and mypy. `requirements-dev-lock.txt` is the
+reproducible dev build resolved on the minimum supported Python 3.10.
 
 FFmpeg is optional but recommended for GIF/MP4 hover previews and embedded
 MP3/MP4 artwork extraction. Install `ffmpeg` on `PATH`, or set

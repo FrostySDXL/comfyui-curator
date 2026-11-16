@@ -41,7 +41,6 @@ global.URL = {
 };
 
 global.window = {
-    CURATOR_NATIVE: false,
     addEventListener: function(_event, _fn) {
         /* noop for beforeunload */
     },
@@ -94,7 +93,6 @@ global.IntersectionObserver = function() {
 };
 
 /* ── State.js globals needed by grid.js ────────────────────────────────── */
-global.CURATOR_NATIVE = false;
 global.ccApiPath = function(p) { return p; };
 global.ccThumbUrl = function(batch, folder, name) {
     return '/thumb/' + encodeURIComponent(batch) + '/' + encodeURIComponent(folder) + '/' + encodeURIComponent(name);

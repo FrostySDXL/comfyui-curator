@@ -1,5 +1,5 @@
--r requirements.in
-pytest>=8.0,<9.0
-pytest-mock>=3.14,<4.0
-ruff>=0.8,<1.0
-mypy>=1.0,<2.0
+# Convenience install file for pip install -r.
+# Development constraints live in requirements-dev.in; this file includes them
+# directly so a fresh documented install gets aiohttp and the full test toolchain.
+# For pip-compile output (transitive deps with == pins), use requirements-dev-lock.txt.
+-r requirements-dev.in

@@ -59,7 +59,6 @@ const context = vm.createContext({document, console, setTimeout, clearTimeout,
     hidePublicDeleteModal: noop, hideHelpModal: noop, hidePromptsModal: noop,
 });
 vm.runInContext(`let currentBatch = 'alpha', currentFolder = 'inbox';
-    const CURATOR_NATIVE = true;
     function isVirtualCollectionView() { return ['__favorites__', '__public__', '__search__'].includes(currentBatch); }
     function isPublicView() { return currentBatch === '__public__' || currentFolder === 'public'; }`, context);
 for (const path of ['static/js/batches.js', 'static/js/combobox.js', 'static/js/keyboard.js']) {

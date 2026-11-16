@@ -96,11 +96,33 @@ Edit `requirements.in` (runtime) or `requirements-dev.in` (dev tools), then rege
 ```bash
 pip install pip-tools
 pip-compile --no-upgrade --output-file=requirements-lock.txt requirements.in
-pip-compile --no-upgrade --output-file=requirements-dev-lock.txt requirements-dev.in
+python3.10 -m venv /tmp/curator-lock310
+/tmp/curator-lock310/bin/pip install pip-tools
+/tmp/curator-lock310/bin/pip-compile --no-upgrade --output-file=requirements-dev-lock.txt requirements-dev.in
 ```
 
-The `-lock.txt` files are the reproducible pinned builds; `requirements.txt` and
-`requirements-dev.txt` are hand-maintained convenience install files.
+The `-lock.txt` files are the reproducible pinned builds. `requirements.txt` and
+`requirements-dev.txt` are convenience install files that only include their
+`.in` source files: `requirements.txt` includes `requirements.in`, and
+`requirements-dev.txt` includes `requirements-dev.in`. Do not list packages in
+them, or a fresh documented dev install can silently omit `aiohttp` and skip the
+real native HTTP tests. `tests/unit/test_dependency_files.py` enforces the
+include chain and verifies the locks cover every declared direct requirement.
+
+The dev lock is resolved with the minimum supported interpreter, Python 3.10,
+because pip-tools 7.6.2's `pip-compile` has no `--python-version` or
+`--python-executable` option. Resolving under an actual 3.10 interpreter applies
+`Requires-Python` filtering honestly: for example, multidict 7.2.1 requires
+Python >= 3.11, so the 3.10 resolution keeps a compatible multidict pin. Compile
+in place so `--no-upgrade` can seed from the existing output pins; do not delete
+the lock first. The resulting pins also install on newer Python 3.x runtimes,
+where the 3.10-only backports (`async-timeout`, `exceptiongroup`, `tomli`) are
+inert. Verify the dev lock on 3.10 before committing:
+
+```bash
+/path/to/python3.10 -m pip install --dry-run --ignore-installed \
+    --only-binary=:all: -r requirements-dev-lock.txt
+```
 
 Runtime dependencies are deliberately small: Jinja2 (the native page renderer),
 Pillow (metadata, derivatives, and cache generation), and python-dotenv (CLI
