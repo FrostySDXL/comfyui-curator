@@ -1,15 +1,15 @@
 # ai_curate -- Guidance
 
-**One-sentence purpose:** Shared AI curation backend providing Flask API routes, vision-LLM scoring, job queuing, and run-history persistence for both the web app and the CLI.
+**One-sentence purpose:** Shared AI curation backend providing native AI routes, vision-LLM scoring, job queuing, and run-history persistence for the ComfyUI extension and the CLI.
 
-**Role in the Project:** Called by `app.py` (Flask, async via `QueueManager`) and `curate.py` (CLI, synchronous in-process). This module owns the complete AI pipeline from element extraction through scoring to on-disk run history.
+**Role in the Project:** Called by the native aiohttp adapters through `native_lifecycle.py` (async via `QueueManager`) and by `curate.py` (CLI, synchronous in-process). This module owns the complete AI pipeline from element extraction through scoring to on-disk run history.
 
 ## What This Module Does
 
 - Extracts or accepts scoring elements from operator prompts.
 - Calls an OpenAI-compatible `/v1/chat/completions` endpoint with base64-encoded images.
 - Parses YES/NO responses into per-image scores and missing-element details.
-- Exposes focused Flask Blueprint routes for AI curation API requests, backed by app-injected queue/storage/lifecycle dependencies.
+- Exposes native AI curation routes through `image_curator/native_ai_routes.py`, backed by the lifecycle-owned queue/storage dependencies.
 - Validates web job submissions and queues scoring jobs FIFO with a single-worker constraint, cancel support, and partial-move audit trails.
 - Persists completed runs as JSON files under `<batch>/ai-curate/runs/` with a `latest.json` pointer.
 
@@ -33,12 +33,12 @@ config.py ──(constants)──> job_validation.py ──(web payload validati
                     └──── storage.py ┘
                     (JSON persistence)
 
-routes.py ──(Flask Blueprint)──> app.py-injected queue/storage/lifecycle helpers
+native_ai_routes.py ──(aiohttp)──> NativeAiLifecycle-owned queue/storage helpers
 ```
 
 - **config.py** is the dependency root -- most other modules import constants from it (`elements.py` is the exception; it uses only locally-defined quality checks).
 - **client.py** uses raw `urllib`, not `requests`, to avoid an external dependency.
-- **routes.py**, **job_validation.py**, **queue.py**, and **worker.py** are used by `app.py` (Flask). `curate.py` calls `scoring.py` + `storage.py` directly.
+- **job_validation.py**, **queue.py**, **worker.py**, and **native_lifecycle.py** are used by the native adapters. `curate.py` calls `scoring.py` + `storage.py` directly. The old Flask Blueprint (`routes.py`) was removed with standalone mode.
 - **models.py** defines the serializable data types shared by all modules.
 
 ### Core Abstractions
@@ -56,7 +56,7 @@ routes.py ──(Flask Blueprint)──> app.py-injected queue/storage/lifecycle
 ## Constraints & Hard Rules
 
 - **Never:** Call `_promote_next` without holding `_lock`. All public mutation methods (`submit`, `cancel`, `complete_job`, `fail_job`, `finalize_cancelled`) acquire the lock internally -- do not pre-acquire or you will deadlock.
-- **Import ordering:** `load_dotenv()` must run before `ai_curate` imports -- see root `AGENTS.md` Gotchas for details.
+- **Import ordering:** `curate.py` must call `load_dotenv()` before importing `ai_curate` modules -- see root `AGENTS.md` Gotchas. Native mode never loads `.env`; ComfyUI's process environment is the only fallback source.
 - **Always:** Pass `cancel_check` callable into `score_images` so scoring loops are interruptible.
 - **Always:** Use `RunStorage` for persistence -- never write run files directly.
 - **Style:** All I/O-adjacent methods use `try/except` and return structured error results rather than raising exceptions.
@@ -76,8 +76,7 @@ routes.py ──(Flask Blueprint)──> app.py-injected queue/storage/lifecycle
 | `scoring.py` | `find_images()` (enumerate by extension), `build_scoring_prompt()` (fill template), `score_images()` (main loop with cancel check and progress callback). |
 | `queue.py` | `QueueManager`: `submit`, `cancel`, `complete_job`, `fail_job`, `finalize_cancelled`, `prune`, `is_cancel_requested`, `_promote_next`. FIFO deque, single running job, thread-safe. |
 | `storage.py` | `RunStorage`: `save_run`, `load_run`, `list_runs`, `load_latest`. Atomic writes (`.tmp` + `os.replace`), thread-safe via `RLock`, path-traversal validation, filesystem containment (symlink rejection, resolved path escapes, non-regular file rejection, no-mutation-on-failure). |
-| `routes.py` | `create_ai_curate_blueprint()` and `AiCurateRouteContext`; owns `/api/ai-curate/*` Flask routes while app lifecycle globals stay in `app.py`. |
-| `job_validation.py` | `validate_ai_curate_request()` validates AI job payloads. Production Flask and native submissions accept only configured model names and reject submissions when no models are configured. The native lifecycle also enforces this invariant before queue submission. |
+| `job_validation.py` | `validate_ai_curate_request()` validates AI job payloads. Native submissions accept only configured model names and reject submissions when no models are configured; the native lifecycle enforces the same invariant before queue submission. |
 | `worker.py` | `run_scoring_worker_inner()` orchestrates element expansion, image enumeration, scoring, cancellation, optional top-N moves, and queue completion with injected dependencies. |
 | `native_lifecycle.py` | `NativeAiLifecycle`: ComfyUI-native AI lifecycle manager with candidate-first transactional reconfiguration, submission gate, worker tracking, and batch-folder containment. |
 
@@ -85,9 +84,9 @@ routes.py ──(Flask Blueprint)──> app.py-injected queue/storage/lifecycle
 
 - Start with `config.py` to understand what env vars drive behavior, then trace the pipeline forward.
 - When changing scoring logic: `elements.py` (what is checked) -> `client.py` (how the LLM is called) -> `scoring.py` (how results are collected).
-- When changing Flask AI routes: `routes.py` plus the `AiCurateRouteContext` registration in `app.py`.
-- When changing Flask AI job submission validation: `job_validation.py` plus the `_validate_ai_curate_request` wrapper in `app.py`.
-- When changing Flask AI worker orchestration: `worker.py` plus the `_run_scoring_worker_inner` wrapper in `app.py`.
+- When changing native AI routes: `image_curator/native_ai_routes.py` plus `native_lifecycle.py`.
+- When changing AI job submission validation: `job_validation.py` plus the native adapter.
+- When changing AI worker orchestration: `worker.py` plus `native_lifecycle.py`.
 - When changing job lifecycle: `models.py` (state definitions) -> `queue.py` (state transitions) -> `storage.py` (persistence).
 - The `QUALITY_CHECKS` dict (keys: "anatomy", "artifacts") is separate from `QUALITY_ELEMENTS` tuple for backward compat -- `build_element_list` uses the dict path for web UI, the tuple for CLI legacy.
 - Cancelled runs are normally ephemeral (not persisted). The exception is partial-move audit trails (if files were moved before cancellation landed).
@@ -102,6 +101,6 @@ routes.py ──(Flask Blueprint)──> app.py-injected queue/storage/lifecycle
 - **`QUALITY_ELEMENTS` tuple vs `QUALITY_CHECKS` dict:** The tuple is a flat list for CLI backward compatibility. The dict is keyed for web UI quality-flag selection. `build_element_list(quality_flags=None)` appends all quality elements (CLI path); `build_element_list(quality_flags=["anatomy"])` appends only selected checks (web UI path).
 - **`latest.json` is a pointer, not the data:** It contains only `{"run_id": "..."}`. The full run data is in `runs/<run_id>.json`.
 
-**Completion Standard:** For any task in this directory, include files changed, commands run (unit tests for the touched module), and any downstream impacts on `app.py` or `curate.py` callers.
+**Completion Standard:** For any task in this directory, include files changed, commands run (unit tests for the touched module), and any downstream impacts on the native adapters or `curate.py` callers.
 
 See root `AGENTS.md` for project-wide rules, verification standards, and overall philosophy.

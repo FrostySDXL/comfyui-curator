@@ -43,16 +43,10 @@ function _renderNativeSettings(data) {
 
 async function showSettingsModal() {
     const modal = document.getElementById('settings-modal');
-    modal.querySelectorAll('.native-settings-only').forEach(el => {
-        if (!CURATOR_NATIVE) el.classList.add('hidden');
-    });
-    _settingsValue('settings-save-btn').classList.toggle('hidden', !CURATOR_NATIVE);
-    modal.querySelector('.modal-buttons .cancel').textContent = CURATOR_NATIVE ? 'Cancel' : 'Close';
     const error = _settingsValue('settings-error');
     error.classList.add('hidden');
     modal.classList.add('active');
     _trapFocus(modal);
-    if (!CURATOR_NATIVE) return;
     try { _renderNativeSettings(await apiGetNativeSettings()); }
     catch { error.textContent = 'Could not load settings.'; error.classList.remove('hidden'); }
 }
@@ -84,4 +78,4 @@ async function saveNativeSettings() {
     } catch (e) { error.textContent = e.message; error.classList.remove('hidden'); }
 }
 
-if (CURATOR_NATIVE) document.getElementById('settings-btn').classList.remove('hidden');
+document.getElementById('settings-btn').classList.remove('hidden');

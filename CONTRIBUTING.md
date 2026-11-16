@@ -1,6 +1,6 @@
 # CONTRIBUTING.md
 
-**Last Updated:** 2026-08-27
+**Last Updated:** 2026-11-15
 
 This repository is operator-maintained. Keep changes minimal, explicit, and easy to verify.
 
@@ -12,17 +12,17 @@ This repository is operator-maintained. Keep changes minimal, explicit, and easy
 ## Working rules
 
 - Always use a virtual environment (`.venv/`); never install dependencies globally.
-- Prefer small, responsibility-based modules over growing `app.py` indefinitely
-- Treat batch folder layout, API JSON, and CLI flags as internal contracts that still require coordinated updates
+- Prefer small, responsibility-based modules over large entrypoints or new monoliths
+- Treat batch folder layout, native API JSON, and CLI flags as internal contracts that still require coordinated updates
 - Keep AI scoring advisory by default; manual curation remains authoritative
 - Do not commit runtime state, generated artifacts, or copied virtual environments
 
 ## Where changes go
 
-- Flask routes / web entrypoint: `app.py`
+- Native web routes: `py/curator_manager.py`, `image_curator/native_routes.py`, `image_curator/native_ai_routes.py`
 - Shared non-AI backend logic: `image_curator/`
 - Shared AI curation logic: `ai_curate/`
-- HTML templates: `templates/` (`index.html` for standalone Flask; `curator.html` for native ComfyUI extension)
+- HTML template: `templates/curator.html` (the only page template)
 - Frontend behavior and styling: `static/js/`, `static/css/`
 - Manual review-move recovery: `image_curator/move_history.py`, both web route
   adapters, and `static/js/moves.js`. Keep persistence, partial recovery,
@@ -32,18 +32,16 @@ This repository is operator-maintained. Keep changes minimal, explicit, and easy
   `static/js/moves.js`. Preserve their ordered classic-script load relationship.
 - Native ComfyUI extension: `__init__.py` (entrypoint), `py/curator_manager.py` (registration), `image_curator/native_settings.py` and `image_curator/native_routes.py` (foundation services/routes), `web/comfyui/` (frontend button)
 - Tests: `tests/unit/`, `tests/component/`, `tests/integration/`
-- Internal repo guidance: `README.md`, `AGENTS.md`, `CONTRIBUTING.md`
+- Internal repo guidance: `README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `MIGRATION.md`
 
-When changing `templates/index.html`, run
-`.venv\Scripts\python.exe scripts\generate_curator_template.py --write` and
-commit the resulting `templates/curator.html` alongside it. The generator's
-`--check` mode is read-only and runs in the verification runner.
+`templates/curator.html` is the only page template; edit it directly. There is
+no second template and no generator step to keep synchronized.
 
 Avoid adding new production modules at repo root unless they are explicit entrypoints. Prefer `image_curator/`, `ai_curate/`, or another responsibility-based package with docs and tests.
 
 ### CSS file map
 
-The browser loads split CSS files directly from `templates/index.html`. Edit the
+The browser loads split CSS files directly from `templates/curator.html`. Edit the
 focused file for the affected surface. See `static/README.md` for the
 authoritative CSS file map and frontend asset guidance.
 
@@ -57,7 +55,7 @@ Use the shared runner when possible so local verification matches repo expectati
 python scripts/run_all.py
 ```
 
-The shared runner includes a CSS asset check that verifies split CSS files exist and match the stylesheet order in `templates/index.html` (and by extension `templates/curator.html`, which must stay synchronized).
+The shared runner includes a CSS asset check that verifies split CSS files exist and match the `/curator_static/css/...` stylesheet order in `templates/curator.html`.
 
 During edit loops, use:
 
@@ -85,9 +83,9 @@ which adds `mypy` to the default plan:
 python scripts/run_all.py --full
 ```
 
-`--full` runs the same checks as the default mode plus `mypy` against
-`app.py`, `curate.py`, `image_curator/`, `ai_curate/`, `tests/`, and
-`scripts/`. It is the only mode that surfaces type errors before a CI
+`--full` runs the same checks as the default mode plus `mypy` against the native
+entrypoints (`__init__.py`, `py/`), `curate.py`, `image_curator/`, `ai_curate/`,
+`tests/`, and `scripts/`. It is the only mode that surfaces type errors before a CI
 gate catches them. Keep the default mode green for fast edit loops, and
 run `--full` before opening a PR.
 
@@ -97,18 +95,26 @@ Edit `requirements.in` (runtime) or `requirements-dev.in` (dev tools), then rege
 
 ```bash
 pip install pip-tools
-pip-compile --output-file=requirements-lock.txt requirements.in
-pip-compile --output-file=requirements-dev-lock.txt requirements-dev.in
+pip-compile --no-upgrade --output-file=requirements-lock.txt requirements.in
+pip-compile --no-upgrade --output-file=requirements-dev-lock.txt requirements-dev.in
 ```
 
 The `-lock.txt` files are the reproducible pinned builds; `requirements.txt` and
 `requirements-dev.txt` are hand-maintained convenience install files.
 
+Runtime dependencies are deliberately small: Jinja2 (the native page renderer),
+Pillow (metadata, derivatives, and cache generation), and python-dotenv (CLI
+`.env` loading). Flask went away with standalone mode; `aiohttp` and ComfyUI's
+`server` / `folder_paths` modules come from ComfyUI instead of being pinned here.
+Keep `--no-upgrade` when regenerating: the dev lock deliberately stays on the
+toolchain the repo was verified with (for example Ruff 0.15.15), because a newer
+Ruff's expanded default rule set reports unrelated findings.
+
 ### Fast local checks
 
 ```bash
-python -m ruff format --check app.py image_curator ai_curate curate.py tests scripts
-python -m compileall app.py image_curator ai_curate curate.py
+python -m ruff format --check __init__.py curate.py image_curator ai_curate py tests scripts
+python -m compileall __init__.py curate.py image_curator ai_curate py
 ```
 
 ### Python tests
@@ -122,7 +128,7 @@ python -m pytest tests/integration
 ### Native extension tests
 
 ```bash
-python -m pytest tests/unit/test_native_curator_settings.py tests/component/test_native_curator_api.py tests/component/test_native_ai_curate_api.py tests/unit/test_comfyui_extension.py tests/unit/test_comfyui_static_ui.py -v
+python -m pytest tests/unit/test_native_curator_settings.py tests/component/test_native_curator_api.py tests/component/test_native_ai_curate_api.py tests/unit/test_comfyui_extension.py tests/unit/test_comfyui_static_ui.py tests/unit/test_native_no_flask_import.py -v
 ```
 
 A manual ComfyUI smoke test is required to claim native extension readiness:
@@ -146,7 +152,7 @@ tar -tf node.zip
 
 Inspect the archive and confirm it includes the root `__init__.py`, backend
 packages, templates, static assets, ComfyUI web extension, branding assets,
-requirements, README, and license. Publishing is a separate irreversible step:
+requirements, README, MIGRATION.md, and license. Publishing is a separate irreversible step:
 do not run `comfy node publish` without explicit release approval, and bump the
 semantic version before every published release.
 
@@ -164,10 +170,10 @@ Also update the runner tests in `tests/unit/test_run_all_script.py` so the expec
 
 ### Manual checks for UI/API work
 
-- For a disposable local browser fixture, see `scripts/README.md`. It creates
-  ignored sample batches and prints shell-specific environment variables plus
-  an `app.py` launch command.
-- Start the app locally
+- For disposable fixture batches, see `scripts/README.md`. It creates ignored
+  sample batches and prints the fixture paths plus optional
+  `IMAGE_CURATOR_BATCHES` / `IMAGE_CURATOR_COMFYUI` native fallbacks.
+- Start ComfyUI locally and open `/curator`
 - Load at least one test batch
 - Verify changed UI controls render and behave correctly
 - Verify any changed API route returns expected JSON
@@ -183,7 +189,7 @@ Also update the runner tests in `tests/unit/test_run_all_script.py` so the expec
 
 ### If changing API routes
 
-- Read `app.py`
+- Read the native adapters (`py/curator_manager.py`, `image_curator/native_routes.py`, `image_curator/native_ai_routes.py`)
 - Check matching frontend calls in the relevant ordered `static/js/*.js` file
 - Add or update integration tests
 - Update `README.md` or `AGENTS.md` if the contract shape changes
@@ -196,16 +202,15 @@ Also update the runner tests in `tests/unit/test_run_all_script.py` so the expec
 
 ### If changing filesystem layout or batch behavior
 
-- Verify all path assumptions in `app.py` and any scoring/storage module
-- Check service/operator assumptions in `image-curator.service.example`
-- Document the change in `README.md` and `AGENTS.md`
+- Verify all path assumptions in the native adapters and any scoring/storage module
+- Document the change in `README.md` and `AGENTS.md`; add operator migration notes to `MIGRATION.md` when data locations or persistence change
 
 ### If changing documented features or repo structure
 
 - Update `README.md` when operator-visible behavior, compatibility surfaces, ownership boundaries, or cleanup guidance changes
 - Check `AGENTS.md`, this file, and the in-app Help modal for duplicated commands, paths, shortcuts, or compatibility surfaces
 - If verification expectations change, update `scripts/run_all.py`, `tests/unit/test_run_all_script.py`, README verification notes, and this file together
-- If `templates/index.html` changes, run `.venv\Scripts\python.exe scripts\generate_curator_template.py --write` and commit both templates
+- `templates/curator.html` is the only page template; there is no generation step
 
 ## Completion standard
 

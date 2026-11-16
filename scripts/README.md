@@ -2,7 +2,7 @@
 
 **One-sentence purpose:** Local development, maintenance, and verification scripts for the project.
 
-**Role in the Project:** Provides the `run_all.py` verification runner used as the standard check suite across all modules. Not production runtime -- that belongs in `app.py`, `curate.py`, or `ai_curate/`.
+**Role in the Project:** Provides the `run_all.py` verification runner used as the standard check suite across all modules. Not production runtime -- that belongs in the native extension (`__init__.py`, `py/curator_manager.py`), `curate.py`, or the shared packages.
 
 ## Verification runner
 
@@ -21,56 +21,41 @@ Common modes:
 - `python scripts/run_all.py --skip-js` — skip JavaScript syntax and duplicate-declaration checks only when Node is unavailable and the change is not frontend-related
 - `python scripts/run_all.py --quiet` — suppress per-check command echo (useful for log sharing)
 
+The runner lints and compiles the shared packages, the CLI, the native
+extension (`__init__.py`, `py/`), tests, and scripts. There is no template
+generator or template-parity check; `templates/curator.html` is the sole page
+template and CSS order is validated against it directly.
+
 When adding new test layers or verification tools, update `run_all.py`, its unit tests, and the verification docs in the same change.
 
 The JavaScript checks use the same ordered classic-script list as the browser load order. They run `node --check` for each existing `static/js/*.js` split file and a cross-file duplicate top-level `let`/`const` declaration check so classic scripts do not fail at page load.
 
-## Native template generation
-
-Edit `templates/index.html`, then regenerate the shipped native template and
-commit both files:
-
-```powershell
-.venv\Scripts\python.exe scripts\generate_curator_template.py --write
-```
-
-The read-only `--check` mode is included in every `run_all.py` verification
-mode except `--format`; it never rewrites stale output. The generator replaces
-`/static/` with `/curator_static/` and inserts the native marker before the
-first ordered script. It is never used at application runtime.
-
 ## Local browser fixture
 
 Use `setup_local_browser_fixture.py` to create disposable batches and sample
-PNG files for manual UI testing without touching real curation data:
+PNG files for manual native UI testing without touching real curation data:
 
 ```bash
-python scripts/setup_local_browser_fixture.py
+.venv/bin/python scripts/setup_local_browser_fixture.py
 ```
 
-The fixture creates two batches, sample PNG files with prompt metadata, one
-pending fake ComfyUI import, and an active `manual-test` batch. By default it
-writes under ignored `tmp/local-browser-fixture/`.
+The fixture creates two batches, sample PNG files with prompt metadata, and one
+pending fake ComfyUI import. It does not write a `state.json` active-batch
+pointer: select the `manual-test` batch in the Curator sidebar after pointing
+native Settings at the fixture. By default it writes under ignored
+`tmp/local-browser-fixture/`.
 
-The script prints shell-specific environment variables and an `app.py` launch
-command. On PowerShell, the launch sequence is:
+The script prints the native `/curator` URL (default
+`http://127.0.0.1:8188/curator`), the disposable batch root, and the fake import
+source. In the Curator Settings modal, point the batch root and import source at
+those fixture paths. The printed
+`IMAGE_CURATOR_BATCHES` / `IMAGE_CURATOR_COMFYUI` shell exports are optional
+fallbacks for a fresh native config; native mode reads no fixture state file and
+has no standalone server launch command.
 
-```powershell
-.venv\Scripts\python.exe scripts\setup_local_browser_fixture.py
-
-$env:IMAGE_CURATOR_BATCHES="tmp\local-browser-fixture\batches"
-$env:IMAGE_CURATOR_COMFYUI="tmp\local-browser-fixture\comfyui-outputs"
-$env:IMAGE_CURATOR_STATE="tmp\local-browser-fixture\state.json"
-$env:IMAGE_CURATOR_HOST="127.0.0.1"
-$env:IMAGE_CURATOR_PORT="5000"
-.venv\Scripts\python.exe app.py
-```
-
-Then open `http://127.0.0.1:5000`. Delete `tmp/local-browser-fixture/` when you
-want a clean manual-testing reset.
-
-After launching, see `CONTRIBUTING.md` for the manual UI/API verification
-checklist.
+Delete `tmp/local-browser-fixture/` when you want a clean manual-testing reset.
+After launching ComfyUI, see `CONTRIBUTING.md` for the manual UI/API
+verification checklist.
 
 ## Evaluation fixture
 
@@ -98,10 +83,12 @@ It creates `batches/eval-culling/` (mixed-media inbox with PNG prompt metadata,
 near-duplicate pairs, transport markers, adjacent JSON sidecars, corrupt and
 zero-byte PNGs, favorites, two AI run-history files plus `latest.json`, and
 stale `prompt-history.json` / `search-index.json` indexes), `batches/eval-paging/`
-(the 30,000-file revisioned-paging folder), a root `state.json`, and a
-`fixture-manifest.json` that `--verify` checks against. The script prints the
-PowerShell launch block and a note to point the native settings batch root at
-`<root>/batches`. Output defaults to ignored `tmp/evaluation-fixture/`.
+(the 30,000-file revisioned-paging folder), and a `fixture-manifest.json` that
+`--verify` checks against. The script prints the native `/curator` URL, the
+fixture batch root, and optional environment fallbacks; point the native
+Settings batch root at `<root>/batches`, then select the `eval-culling` batch.
+No fixture state file is written. Output defaults to ignored
+`tmp/evaluation-fixture/`.
 
 ## Thumbnail benchmark harness
 
@@ -117,7 +104,7 @@ Install the optional dependencies in the repository virtual environment:
 .venv\Scripts\python.exe -m pip install -e ".[benchmark]"
 ```
 
-With native ComfyUI running at its default URL, run the headed Firefox suite:
+With ComfyUI running at its default URL, run the headed Firefox suite:
 
 ```powershell
 .venv\Scripts\python.exe scripts\benchmark_thumbnails.py
@@ -143,26 +130,10 @@ driver and may need network access. The defaults use Firefox at
 `C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`. Edge is not
 supported.
 
-Native mode resolves the batch root from the dedicated local settings endpoint
-without printing or saving the settings response. Standalone mode cannot safely
-discover its root, so the running app must already use an explicit temporary
-root beneath `--output-root` and the same path must be passed to the harness:
-
-```powershell
-New-Item -ItemType Directory -Force -Path "tmp\thumbnail-benchmarks" | Out-Null
-$root = (Resolve-Path "tmp\thumbnail-benchmarks").Path
-$batchRoot = Join-Path $root "standalone-batches"
-New-Item -ItemType Directory -Force -Path $batchRoot | Out-Null
-$env:IMAGE_CURATOR_BATCHES=$batchRoot
-$env:IMAGE_CURATOR_STATE=(Join-Path $root "standalone-state.json")
-$env:IMAGE_CURATOR_PORT="5000"
-.venv\Scripts\python.exe app.py
-
-# In a second PowerShell window
-.venv\Scripts\python.exe scripts\benchmark_thumbnails.py --mode standalone `
-  --url http://127.0.0.1:5000 --batch-root tmp\thumbnail-benchmarks\standalone-batches `
-  --sizes 100
-```
+The harness resolves the batch root from the dedicated native settings endpoint
+without printing or saving the settings response. Start ComfyUI with the native
+Curator extension installed, then run the harness against its `/curator` URL.
+There is no standalone mode.
 
 Each browser/size case gets unique A/B batches and deterministic mixed-extension
 aliases covering PNG/JPG/JPEG/WebP/GIF/MP4/MP3 (the sparse non-PNG aliases are

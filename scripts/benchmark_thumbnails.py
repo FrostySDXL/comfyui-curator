@@ -109,46 +109,15 @@ class OptionalDependencies:
     psutil: Any
 
 
-def runtime_paths(mode: str) -> RuntimePaths:
-    if mode == "native":
-        return RuntimePaths(
-            settings="/api/curator/settings",
-            batches="/api/curator/batches",
-            active_batch="/api/curator/active-batch",
-            thumbnail_prefix="/curator/thumb/",
-        )
-    if mode == "standalone":
-        return RuntimePaths(
-            settings=None,
-            batches="/api/batches",
-            active_batch="/api/active-batch",
-            thumbnail_prefix="/thumb/",
-        )
-    raise BenchmarkError(f"Unsupported runtime mode: {mode}")
-
-
-def _resolved_descendant(path: Path, root: Path) -> Path:
-    resolved_root = root.resolve()
-    resolved_path = path.resolve()
-    try:
-        resolved_path.relative_to(resolved_root)
-    except ValueError as exc:
-        raise BenchmarkError(f"Path must be under --output-root: {resolved_path}") from exc
-    if resolved_path == resolved_root:
-        raise BenchmarkError("Batch root must be a child directory under --output-root")
-    return resolved_path
-
-
-def validate_standalone_root(batch_root: Path | None, output_root: Path) -> Path:
-    if batch_root is None:
-        raise BenchmarkError("Standalone mode requires an explicit --batch-root")
-    try:
-        return _resolved_descendant(Path(batch_root), Path(output_root))
-    except BenchmarkError as exc:
-        raise BenchmarkError(
-            "Standalone --batch-root must be under --output-root so it is explicitly temporary "
-            "and benchmark-owned"
-        ) from exc
+def runtime_paths(mode: str = "native") -> RuntimePaths:
+    if mode != "native":
+        raise BenchmarkError(f"Unsupported runtime mode: {mode}")
+    return RuntimePaths(
+        settings="/api/curator/settings",
+        batches="/api/curator/batches",
+        active_batch="/api/curator/active-batch",
+        thumbnail_prefix="/curator/thumb/",
+    )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -156,8 +125,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--browser", choices=("firefox", "chrome", "all"), default="firefox")
     parser.add_argument("--sizes", nargs="+", type=int, default=[100, 500, 2000, 30000])
     parser.add_argument("--url", default=DEFAULT_URL)
-    parser.add_argument("--mode", choices=("native", "standalone"), default="native")
-    parser.add_argument("--batch-root", type=Path)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--keep-fixtures", action="store_true")
@@ -566,7 +533,7 @@ def _request_json(
         raise BenchmarkError(f"Runtime request {path} failed with HTTP {exc.code}") from exc
     except URLError as exc:
         raise BenchmarkError(
-            f"Runtime unavailable at {origin}; start Curator and verify --url/--mode"
+            f"Runtime unavailable at {origin}; start ComfyUI and verify --url"
         ) from exc
     except (OSError, json.JSONDecodeError) as exc:
         raise BenchmarkError(f"Runtime request {path} returned unusable data") from exc
@@ -576,7 +543,7 @@ def _request_json(
 
 
 def resolve_runtime(args: argparse.Namespace) -> RuntimeContext:
-    paths = runtime_paths(args.mode)
+    paths = runtime_paths()
     origin = _origin(args.url)
     batches_payload = _request_json(origin, paths.batches)
     if not isinstance(batches_payload.get("batches"), list):
@@ -584,15 +551,12 @@ def resolve_runtime(args: argparse.Namespace) -> RuntimeContext:
     active_batch = batches_payload.get("active_batch")
     if active_batch is not None and not isinstance(active_batch, str):
         raise BenchmarkError("Runtime batches endpoint returned an invalid active batch")
-    if args.mode == "native":
-        assert paths.settings is not None
-        settings_payload = _request_json(origin, paths.settings)
-        batch_root_value = settings_payload.get("batch_root")
-        if not isinstance(batch_root_value, str) or not batch_root_value:
-            raise BenchmarkError("Native settings endpoint did not provide a usable batch root")
-        batch_root = Path(batch_root_value).resolve()
-    else:
-        batch_root = validate_standalone_root(args.batch_root, args.output_root)
+    assert paths.settings is not None
+    settings_payload = _request_json(origin, paths.settings)
+    batch_root_value = settings_payload.get("batch_root")
+    if not isinstance(batch_root_value, str) or not batch_root_value:
+        raise BenchmarkError("Native settings endpoint did not provide a usable batch root")
+    batch_root = Path(batch_root_value).resolve()
     if not batch_root.is_dir():
         raise BenchmarkError(f"Resolved benchmark batch root does not exist: {batch_root}")
     return RuntimeContext(origin, args.url, paths, batch_root, active_batch)
@@ -2203,9 +2167,10 @@ def _prepare_checkpoint_cold_phase(
         str(name) for name in (viewport_state.get("thumbnailFailureSample", []) or [])
     )[:25]
     viewport_state["visible_failed"] = int(viewport_state.get("visibleFailed", 0) or 0)
+    viewport_elapsed_ms = round(float(viewport_result.get("elapsedMs", 0)), 3)
     viewport_readiness = {
         "ready": _viewport_ready,
-        "elapsed_ms": round(float(viewport_result.get("elapsedMs", 0)), 3),
+        "elapsed_ms": viewport_elapsed_ms,
         "state": viewport_state,
         "available": viewport_available,
         "reason": _reason,
@@ -2221,7 +2186,7 @@ def _prepare_checkpoint_cold_phase(
         frame_data=viewport_result if viewport_available else None,
     )
     # Preserve first-viewport timing, but only when actually ready
-    _first_viewport_ms = round(viewport_readiness["elapsed_ms"], 3) if _viewport_ready else None
+    _first_viewport_ms = viewport_elapsed_ms if _viewport_ready else None
 
     # ---- Checkpoint 2: partial dynamic traversal ----
     partial_target = max(1, int(math.ceil(spec.size * 0.4)))
@@ -2822,7 +2787,7 @@ def run(args: argparse.Namespace) -> int:
             "harness_version": HARNESS_VERSION,
             "run_id": run_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "mode": args.mode,
+            "mode": "native",
             "page_url": runtime.page_url,
             "requested_browsers": browsers,
             "requested_sizes": args.sizes,

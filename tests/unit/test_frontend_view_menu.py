@@ -5,7 +5,7 @@ from tests.unit.frontend_source import extract_function_body, read_frontend_css,
 
 
 def read_index_html() -> str:
-    return Path("templates/index.html").read_text(encoding="utf-8")
+    return Path("templates/curator.html").read_text(encoding="utf-8")
 
 
 def read_curator_html() -> str:
@@ -279,7 +279,9 @@ def test_view_menu_script_order_matches_templates_and_source_reader() -> None:
     html = read_index_html()
     source_reader = Path("tests/unit/frontend_source.py").read_text(encoding="utf-8")
 
-    assert '<script src="/static/js/view-menu.js"></script>' in html
-    assert html.index("/static/js/ai.js") < html.index("/static/js/view-menu.js")
-    assert html.index("/static/js/view-menu.js") < html.index("/static/js/polling.js")
+    assert '<script src="/curator_static/js/view-menu.js"></script>' in html
+    assert html.index("/curator_static/js/ai.js") < html.index("/curator_static/js/view-menu.js")
+    assert html.index("/curator_static/js/view-menu.js") < html.index(
+        "/curator_static/js/polling.js"
+    )
     assert 'Path("static/js/view-menu.js")' in source_reader

@@ -14,14 +14,15 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYTHON_TARGETS = [
-    "app.py",
+    "__init__.py",
     "curate.py",
     "image_curator",
     "ai_curate",
+    "py",
     "tests",
     "scripts",
 ]
-COMPILE_TARGETS = ["app.py", "curate.py", "image_curator", "ai_curate"]
+COMPILE_TARGETS = ["__init__.py", "curate.py", "image_curator", "ai_curate", "py"]
 CSS_FILES = [
     "base.css",
     "sidebar.css",
@@ -121,10 +122,6 @@ def _all_checks() -> dict[str, Check]:
             "css-assets",
             [sys.executable, "scripts/run_all.py", "--check-css-assets"],
         ),
-        "curator-template": Check(
-            "curator-template",
-            [sys.executable, "scripts/generate_curator_template.py", "--check"],
-        ),
         "mypy": Check(
             "mypy",
             _python_module("mypy", "--explicit-package-bases", *PYTHON_TARGETS),
@@ -169,7 +166,6 @@ def build_checks(mode: str = "default", skip_js: bool = False) -> list[Check]:
         "quick": [
             "compileall",
             "css-assets",
-            "curator-template",
             "unit-tests",
             "javascript-syntax",
             "javascript-duplicate-declarations",
@@ -179,7 +175,6 @@ def build_checks(mode: str = "default", skip_js: bool = False) -> list[Check]:
             "ruff-check",
             "compileall",
             "css-assets",
-            "curator-template",
             "unit-tests",
             "component-tests",
             "integration-tests",
@@ -192,7 +187,6 @@ def build_checks(mode: str = "default", skip_js: bool = False) -> list[Check]:
             "ruff-check",
             "compileall",
             "css-assets",
-            "curator-template",
             "unit-tests",
             "component-tests",
             "integration-tests",
@@ -226,14 +220,14 @@ def run_check(check: Check, quiet: bool = False) -> int:
 
 def validate_css_assets() -> int:
     css_dir = REPO_ROOT / "static" / "css"
-    expected_hrefs = [f"/static/css/{name}" for name in CSS_FILES]
+    expected_hrefs = [f"/curator_static/css/{name}" for name in CSS_FILES]
 
     missing = [name for name in CSS_FILES if not (css_dir / name).is_file()]
     if missing:
         print("Missing CSS files: " + ", ".join(missing), flush=True)
         return 1
 
-    template = (REPO_ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    template = (REPO_ROOT / "templates" / "curator.html").read_text(encoding="utf-8")
     hrefs = [
         line.split('href="', 1)[1].split('"', 1)[0]
         for line in template.splitlines()

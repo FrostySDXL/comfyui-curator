@@ -1,5 +1,12 @@
 # Source-of-truth for runtime dependencies (used by pip-compile).
 # Do not edit requirements.txt directly -- edit this file and regenerate.
-Flask>=3.1,<4.0
+#
+# Jinja2 is imported directly by the native ComfyUI page route
+# (py/curator_manager.py) to render templates/curator.html, so it is
+# declared explicitly instead of arriving transitively through Flask.
+#
+# aiohttp, the ComfyUI `server` module, and folder_paths are provided by the
+# host ComfyUI environment and are intentionally not declared here.
+Jinja2>=3.1,<4.0
 Pillow>=10.0,<12.0
 python-dotenv>=1.0,<2.0

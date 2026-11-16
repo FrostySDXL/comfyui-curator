@@ -530,25 +530,6 @@ function createGridErrorState(message = {}) {
             return error;
         }
 
-async function _loadLegacyFolderImages(batch, folder, requestToken, activityId) {
-            resetPagedFolderState();
-            const resp = await fetch(ccApiPath(`/api/images/${batch}/${folder}?sort=${currentSort}&order=${currentOrder}`));
-            if (!resp.ok) {
-                failFolderLoad(requestToken, activityId, 'Folder image load failed', 'Try opening the folder again');
-                return;
-            }
-            const nextImages = await resp.json();
-            if (requestToken !== folderRequestToken) {
-                activityRemove(activityId);
-                return;
-            }
-            images = nextImages;
-            displayIndexByName = new Map(images.map((img, index) => [img.name, index]));
-            updateImageCountLabel();
-            updateGrid();
-            _completeFolderViewActivity(activityId, nextImages.length, nextImages.length, 'Folder ready · thumbnails loaded on demand');
-        }
-
 async function loadCurrentFolderImages(options = {}) {
             if (!currentBatch || !currentFolder) return;
             if (currentFolder === 'public') {
@@ -589,83 +570,57 @@ async function loadCurrentFolderImages(options = {}) {
             });
             setGridLoadingStatus(true, 'Loading images…');
             try {
-                /* Standalone large folders use the revisioned paged path so batch
-                   switches and background polls avoid full-listing refetches.
-                   Small folders keep the legacy single-fetch path. Native always
-                   uses the paged path. */
-                const folderCountHint = allCounts[batch]?.[folder];
-                const usePagedFolder = CURATOR_NATIVE
-                    || typeof folderCountHint !== 'number'
-                    || folderCountHint >= PAGED_FOLDER_THRESHOLD;
-                if (usePagedFolder) {
-                    const content = document.querySelector('.content');
-                    const priorScrollTop = content ? content.scrollTop : 0;
-                    const snapshot = await _waitForFolderSnapshot(batch, folder, requestToken);
+                /* Native folders always use the revisioned paged path: immutable
+                   snapshots plus 256-item pages keep batch switches and background
+                   polls from refetching whole folders. */
+                const content = document.querySelector('.content');
+                const priorScrollTop = content ? content.scrollTop : 0;
+                const snapshot = await _waitForFolderSnapshot(batch, folder, requestToken);
+                if (abandonIfUnowned()) return;
+                if (!snapshot) {
+                    failLoad('Folder snapshot unavailable', 'Try opening the folder again');
+                    return;
+                }
+                activityUpdate(activityId, {
+                    total: snapshot.count,
+                    completed: 0,
+                    detail: 'Snapshot ready · loading visible thumbnails…',
+                });
+                if (abandonIfUnowned()) return;
+                if (requiresMaterializedNativeFolder()) {
+                    const resp = await fetch(ccApiPath(`/api/images/${batch}/${folder}?sort=${_folderTransportSort()}&order=${currentOrder}`));
                     if (abandonIfUnowned()) return;
-                    if (!snapshot) {
-                        failLoad('Folder snapshot unavailable', 'Try opening the folder again');
+                    if (!resp.ok) {
+                        failLoad('Folder image load failed', 'Try opening the folder again');
                         return;
                     }
-                    const snapshotIsLarge = CURATOR_NATIVE
-                        || (typeof folderCountHint === 'number' && folderCountHint >= PAGED_FOLDER_THRESHOLD)
-                        || snapshot.count >= PAGED_FOLDER_THRESHOLD;
-                    if (!snapshotIsLarge) {
-                        return _loadLegacyFolderImages(batch, folder, requestToken, activityId);
-                    }
-                    activityUpdate(activityId, {
-                        total: snapshot.count,
-                        completed: 0,
-                        detail: 'Snapshot ready · loading visible thumbnails…',
-                    });
+                    const nextImages = await resp.json();
                     if (abandonIfUnowned()) return;
-                    if (requiresMaterializedNativeFolder()) {
-                        const resp = await fetch(ccApiPath(`/api/images/${batch}/${folder}?sort=${_folderTransportSort()}&order=${currentOrder}`));
-                        if (abandonIfUnowned()) return;
-                        if (!resp.ok) {
-                            failLoad('Folder image load failed', 'Try opening the folder again');
-                            return;
-                        }
-                        const nextImages = await resp.json();
-                        if (abandonIfUnowned()) return;
-                        resetPagedFolderState();
-                        folderSnapshot = snapshot;
-                        images = nextImages;
-                        displayIndexByName = new Map(images.map((img, index) => [img.name, index]));
-                        updateImageCountLabel();
-                        updateGrid();
-                        if (options.preserveScroll && content) content.scrollTop = priorScrollTop;
-                        if (requestToken !== folderRequestToken) {
-                            activityRemove(activityId);
-                        } else {
-                            _completeFolderViewActivity(activityId, nextImages.length, snapshot.count, 'Folder ready · thumbnails loaded on demand');
-                        }
-                        return requestOwned();
+                    resetPagedFolderState();
+                    folderSnapshot = snapshot;
+                    images = nextImages;
+                    displayIndexByName = new Map(images.map((img, index) => [img.name, index]));
+                    updateImageCountLabel();
+                    updateGrid();
+                    if (options.preserveScroll && content) content.scrollTop = priorScrollTop;
+                    if (requestToken !== folderRequestToken) {
+                        activityRemove(activityId);
+                    } else {
+                        _completeFolderViewActivity(activityId, nextImages.length, snapshot.count, 'Folder ready · thumbnails loaded on demand');
                     }
-                    if (options.mayCommit) {
-                        // Build the first page before replacing the live legacy view.
-                        // A failed or superseded background transition leaves it intact.
-                        let page = {revision: snapshot.revision, items: []};
-                        if (snapshot.count) {
-                            const response = await apiGetFolderPage(batch, folder, _folderTransportSort(), currentOrder, snapshot.revision, 0, FOLDER_PAGE_SIZE, folderShuffleSeed);
-                            if (abandonIfUnowned()) return;
-                            if (!response.ok) { failLoad('Visible folder page failed', 'Try opening the folder again'); return; }
-                            page = await response.json();
-                            if (abandonIfUnowned()) return;
-                            if (page.revision !== snapshot.revision || !page.items?.length) { failLoad('Visible folder page failed', 'Try opening the folder again'); return; }
-                        }
-                        folderSnapshot = snapshot;
-                        pagedFolderMode = true;
-                        folderPageInflight.clear();
-                        images = new Array(snapshot.count);
-                        currentDisplayImages = images;
-                        displayIndexByName.clear();
-                        page.items.forEach(item => { images[item.index] = item; displayIndexByName.set(item.name, item.index); });
-                        updateImageCountLabel();
-                        updateGrid();
-                        updatePagedLoadStatus();
-                        if (options.preserveScroll && content) content.scrollTop = priorScrollTop;
-                        _completeFolderViewActivity(activityId, Math.min(FOLDER_PAGE_SIZE, snapshot.count), snapshot.count, 'Folder ready · more thumbnails load as needed');
-                        return true;
+                    return requestOwned();
+                }
+                if (options.mayCommit) {
+                    // Build the first page before replacing the live view.
+                    // A failed or superseded background transition leaves it intact.
+                    let page = {revision: snapshot.revision, items: []};
+                    if (snapshot.count) {
+                        const response = await apiGetFolderPage(batch, folder, _folderTransportSort(), currentOrder, snapshot.revision, 0, FOLDER_PAGE_SIZE, folderShuffleSeed);
+                        if (abandonIfUnowned()) return;
+                        if (!response.ok) { failLoad('Visible folder page failed', 'Try opening the folder again'); return; }
+                        page = await response.json();
+                        if (abandonIfUnowned()) return;
+                        if (page.revision !== snapshot.revision || !page.items?.length) { failLoad('Visible folder page failed', 'Try opening the folder again'); return; }
                     }
                     folderSnapshot = snapshot;
                     pagedFolderMode = true;
@@ -673,21 +628,33 @@ async function loadCurrentFolderImages(options = {}) {
                     images = new Array(snapshot.count);
                     currentDisplayImages = images;
                     displayIndexByName.clear();
+                    page.items.forEach(item => { images[item.index] = item; displayIndexByName.set(item.name, item.index); });
                     updateImageCountLabel();
                     updateGrid();
                     updatePagedLoadStatus();
                     if (options.preserveScroll && content) content.scrollTop = priorScrollTop;
-                    const firstImage = await ensureFolderPageForIndex(0);
-                    if (requestToken !== folderRequestToken) {
-                        activityRemove(activityId);
-                    } else if (firstImage || snapshot.count === 0) {
-                        _completeFolderViewActivity(activityId, Math.min(FOLDER_PAGE_SIZE, snapshot.count), snapshot.count, 'Folder ready · more thumbnails load as needed');
-                    } else {
-                        failLoad('Visible folder page failed', 'Try opening the folder again');
-                    }
-                    return requestOwned() && Boolean(firstImage || snapshot.count === 0);
+                    _completeFolderViewActivity(activityId, Math.min(FOLDER_PAGE_SIZE, snapshot.count), snapshot.count, 'Folder ready · more thumbnails load as needed');
+                    return true;
                 }
-                await _loadLegacyFolderImages(batch, folder, requestToken, activityId);
+                folderSnapshot = snapshot;
+                pagedFolderMode = true;
+                folderPageInflight.clear();
+                images = new Array(snapshot.count);
+                currentDisplayImages = images;
+                displayIndexByName.clear();
+                updateImageCountLabel();
+                updateGrid();
+                updatePagedLoadStatus();
+                if (options.preserveScroll && content) content.scrollTop = priorScrollTop;
+                const firstImage = await ensureFolderPageForIndex(0);
+                if (requestToken !== folderRequestToken) {
+                    activityRemove(activityId);
+                } else if (firstImage || snapshot.count === 0) {
+                    _completeFolderViewActivity(activityId, Math.min(FOLDER_PAGE_SIZE, snapshot.count), snapshot.count, 'Folder ready · more thumbnails load as needed');
+                } else {
+                    failLoad('Visible folder page failed', 'Try opening the folder again');
+                }
+                return requestOwned() && Boolean(firstImage || snapshot.count === 0);
             } catch (error) {
                 console.warn('loadCurrentFolderImages failed:', error);
                 failLoad('Folder image load failed', 'Try opening the folder again');

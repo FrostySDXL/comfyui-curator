@@ -5,7 +5,7 @@ import shutil
 from tests.unit.frontend_source import extract_function_body
 
 
-INDEX_HTML = Path("templates/index.html")
+CURATOR_HTML = Path("templates/curator.html")
 API_JS = Path("static/js/api.js")
 PROMPTS_JS = Path("static/js/prompts.js")
 EVENTS_JS = Path("static/js/events.js")
@@ -32,7 +32,7 @@ def test_media_search_apply_lifecycle_vm_regression():
 
 
 def _search_modal_markup() -> str:
-    html = INDEX_HTML.read_text(encoding="utf-8")
+    html = CURATOR_HTML.read_text(encoding="utf-8")
     return html.split('id="prompts-modal"', 1)[1].split('id="settings-modal"', 1)[0]
 
 
@@ -101,7 +101,7 @@ def test_media_search_uses_dual_mode_api_wrappers_and_debounced_requests():
 
 def test_media_search_can_apply_and_clear_a_source_safe_workspace_filter():
     markup = _search_modal_markup()
-    html = INDEX_HTML.read_text(encoding="utf-8")
+    html = CURATOR_HTML.read_text(encoding="utf-8")
     state = Path("static/js/state.js").read_text(encoding="utf-8")
     grid = Path("static/js/grid.js").read_text(encoding="utf-8")
     prompts = PROMPTS_JS.read_text(encoding="utf-8")
@@ -266,7 +266,7 @@ def test_editing_workspace_search_can_narrow_from_original_review_context():
 
 
 def test_workspace_filter_bar_exposes_query_scope_and_source_chips():
-    html = INDEX_HTML.read_text(encoding="utf-8")
+    html = CURATOR_HTML.read_text(encoding="utf-8")
     prompts = PROMPTS_JS.read_text(encoding="utf-8")
 
     sync_bar = extract_function_body(prompts, "function syncWorkspaceSearchFilterBar()")

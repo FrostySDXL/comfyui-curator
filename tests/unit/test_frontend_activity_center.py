@@ -7,12 +7,11 @@ import pytest
 from tests.unit.frontend_source import extract_function_body, read_frontend_css, read_frontend_js
 
 
-INDEX_HTML = Path("templates/index.html")
 CURATOR_HTML = Path("templates/curator.html")
 
 
 def test_activity_center_markup_is_shared_and_accessible() -> None:
-    html = INDEX_HTML.read_text(encoding="utf-8")
+    html = CURATOR_HTML.read_text(encoding="utf-8")
 
     assert 'id="activity-center-toggle"' in html
     assert 'aria-controls="activity-center-panel"' in html
@@ -20,24 +19,6 @@ def test_activity_center_markup_is_shared_and_accessible() -> None:
     assert 'role="log"' in html
     assert 'id="activity-center-list"' in html
     assert 'aria-live="polite"' in html
-
-
-def test_native_template_preserves_activity_center_and_mode_transform() -> None:
-    index = INDEX_HTML.read_text(encoding="utf-8")
-    curator = CURATOR_HTML.read_text(encoding="utf-8")
-
-    assert 'id="activity-center-toggle"' in curator
-    assert 'id="activity-center-panel"' in curator
-    assert "/static/js/activity-center.js" not in curator
-    assert "/curator_static/js/activity-center.js" in curator
-    assert "window.CURATOR_NATIVE = true;" in curator
-    transformed = index.replace("/static/", "/curator_static/").splitlines()
-    native = curator.replace(
-        "    <script>window.CURATOR_NATIVE = true;</script>\n", "", 1
-    ).splitlines()
-    assert [line for line in transformed if line.strip()] == [
-        line for line in native if line.strip()
-    ]
 
 
 def test_activity_center_normalizes_truthful_states_and_ages_successes() -> None:
@@ -115,16 +96,6 @@ def test_import_finally_repaints_button_before_offline_poll() -> None:
     assert clear_index < repaint_index < poll_index
     assert "document.getElementById('pending-count')?.textContent" in finally_body
     assert "document.getElementById('active-batch-select')?.value" in finally_body
-
-
-def test_activity_center_is_loaded_before_runtime_bootstrap_in_both_templates() -> None:
-    index = INDEX_HTML.read_text(encoding="utf-8")
-    curator = CURATOR_HTML.read_text(encoding="utf-8")
-
-    for html, prefix in ((index, "/static/"), (curator, "/curator_static/")):
-        activity = html.index(f"{prefix}js/activity-center.js")
-        bootstrap = html.index(f"{prefix}js/bootstrap.js")
-        assert activity < bootstrap
 
 
 def test_async_adapters_cancel_superseded_attempts_without_reusing_ids() -> None:

@@ -58,7 +58,10 @@ before manual selection. Single-user, local-first, filesystem-backed.
 
 ## Quickstart
 
-Two supported installation paths.
+The ComfyUI native extension is the supported web UI. The `curate.py` CLI
+remains for headless scoring. Upgrading an existing standalone installation?
+Follow [MIGRATION.md](MIGRATION.md) -- batches, Undo history, favorites, and AI
+run history stay in place.
 
 ### ComfyUI native extension
 
@@ -92,9 +95,10 @@ managed through the header **Settings** modal inside the Curator page. See
 [Configuration](#configuration) for path defaults, Docker guidance, and
 environment fallbacks.
 
-### Standalone Flask
+### CLI scoring
 
-Requires Python 3.10 or newer.
+`curate.py` runs the same scoring pipeline headlessly from a normal Python
+environment (Python 3.10 or newer) and still loads `.env`.
 
 ```bash
 git clone https://github.com/FrostySDXL/comfyui-curator.git
@@ -108,17 +112,23 @@ source .venv/bin/activate
 
 pip install -r requirements.txt
 
-# Optional: copy .env.example to .env to configure paths and model
-python app.py
+# Optional: copy .env.example to .env to configure the batch root and model
+python curate.py --batch my-batch --prompt "a cat on a rooftop" --dry-run
+python curate.py --batch my-batch --prompt "a cat on a rooftop" --move --dest shortlisted
 ```
 
-Opens at `http://127.0.0.1:5000`. Most users only need
-`IMAGE_CURATOR_BATCHES`: create a batch, then save or copy images into
-`IMAGE_CURATOR_BATCHES/<batch>/inbox/`. If ComfyUI writes somewhere else,
-configure `IMAGE_CURATOR_COMFYUI` as an optional import source.
+The CLI reads `IMAGE_CURATOR_BATCHES` for the batch root and scores images that
+already sit in a batch folder (default `inbox/`); it has no import step, so copy
+or save the files you want scored into `IMAGE_CURATOR_BATCHES/<batch>/inbox/`
+first. Pulling fresh ComfyUI outputs is a native workflow: use **Import All** in
+the Curator page, configured through Settings (with `IMAGE_CURATOR_COMFYUI` as
+its environment fallback).
 
-`requirements.txt` is the convenience install file. Use
-`requirements-lock.txt` when you need the pinned dependency set.
+Runtime dependencies are Jinja2 (renders the native page), Pillow (metadata,
+derivatives, and cache generation), and python-dotenv (CLI `.env` loading);
+`aiohttp` and ComfyUI's host modules come from ComfyUI itself. `requirements.txt`
+is the convenience install file; use `requirements-lock.txt` when you need the
+pinned dependency set.
 
 FFmpeg is optional but recommended for GIF/MP4 hover previews and embedded
 MP3/MP4 artwork extraction. Install `ffmpeg` on `PATH`, or set
@@ -129,17 +139,18 @@ continues.
 
 The repository, Python distribution, Registry package, and expected custom-node
 folder are named `comfyui-curator`. Internal Python modules, environment
-variables, the standalone service template, and existing local configuration
-paths retain their established `image_curator` / `IMAGE_CURATOR_*` /
-`image-curator` names.
+variables, and existing local configuration paths retain their established
+`image_curator` / `IMAGE_CURATOR_*` / `image-curator` names.
 
 ## Configuration
 
-Native ComfyUI mode uses the header **Settings** modal. It persists operational
-settings in the Curator system-user directory as `config.json`; environment
-variables below are fallbacks only when a native value is absent. API keys are
-never returned by the settings API and can be replaced or explicitly cleared.
-Import All remains an explicit operator action.
+Native ComfyUI mode configures everything from the header **Settings** modal. It
+persists operational settings in the Curator system-user directory as
+`config.json`, and saved values take precedence over environment fallbacks and
+ComfyUI-owned defaults. API keys are never returned by the settings API and can
+be replaced or explicitly cleared. Import All remains an explicit operator
+action. The modal shows the effective batch root, import source, and public
+export root, so the resolved paths are never guesswork.
 
 Native path defaults are inside ComfyUI's Curator system-user directory. In a
 Docker deployment, every path in Settings and every path supplied through an
@@ -169,21 +180,30 @@ use `http://host.docker.internal:<port>`; Linux deployments require the
 `host.docker.internal:host-gateway` mapping shown above. Use a Compose service
 name for a model server in another container on the same Docker network.
 
-Copy `.env.example` to `.env`. Key variables:
+Environment variables are fallbacks, not the primary configuration. The native
+extension does not read `.env` files: set these names in ComfyUI's own process
+environment (service unit, container environment, or a shell export before
+launching ComfyUI) to use them as fallbacks. `curate.py` does load `.env`
+through python-dotenv, so a copied `.env` file applies to the CLI only.
+
+Copy `.env.example` to `.env` for CLI runs, or set the same names in ComfyUI's
+environment for native fallbacks. Key variables:
 
 Core path:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `IMAGE_CURATOR_BATCHES` | `~/image-curator/batches` | Main library containing batch folders and their `inbox/`, `shortlisted/`, `finals/`, `rejects/`, and generated `public/` folders |
-| `IMAGE_CURATOR_PUBLIC_EXPORTS` | (unset) | Optional safe root for copying/moving generated public copies to another filesystem location; when unset, external public copy/move actions are disabled |
-| `IMAGE_CURATOR_STATE` | `~/.config/image-curator/state.json` | Runtime state file that remembers the active batch |
+| `IMAGE_CURATOR_BATCHES` | `~/image-curator/batches` (CLI), `<curator system-user dir>/batches` (native fallback) | Main library containing batch folders and their `inbox/`, `shortlisted/`, `finals/`, `rejects/`, and generated `public/` folders |
+| `IMAGE_CURATOR_PUBLIC_EXPORTS` | (unset) | Optional safe root for copying/moving generated public copies to another filesystem location; when unset, native mode falls back to `<curator system-user dir>/public-exports` |
+
+The active batch is stored as `state.json` in the Curator system-user directory
+in native mode; there is no environment override for it.
 
 Optional import source:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `IMAGE_CURATOR_COMFYUI` | `~/image-curator/comfyui-outputs` | Folder to import images from when ComfyUI outputs outside your batch inboxes |
+| `IMAGE_CURATOR_COMFYUI` | ComfyUI's `output` directory (native fallback) | Folder that native **Import All** pulls from when ComfyUI outputs outside your batch inboxes; the CLI does not import |
 
 Other settings:
 
@@ -194,8 +214,10 @@ Other settings:
 | `IMAGE_CURATOR_API_KEY` | (empty) | Bearer token if your LLM requires auth |
 | `IMAGE_CURATOR_TIMEOUT` | `120` | Vision LLM request timeout in seconds |
 | `IMAGE_CURATOR_FFMPEG` | `ffmpeg` | FFmpeg executable used lazily for typed-media posters and hover-preview MP4 proxies |
-| `IMAGE_CURATOR_HOST` | `127.0.0.1` | Bind address |
-| `IMAGE_CURATOR_PORT` | `5000` | Port |
+
+Bind address and port are ComfyUI's own: Curator is served by ComfyUI's HTTP
+server (for example `python main.py --listen 127.0.0.1 --port 8188`), so there
+are no Curator host or port variables.
 
 See `.env.example` for the full commented reference.
 
@@ -203,7 +225,7 @@ See `.env.example` for the full commented reference.
 
 1. Create or select a batch.
 2. Add generated images to `<batch>/inbox/`, or use **Import All** to pull from
-   `IMAGE_CURATOR_COMFYUI`.
+   the configured import source (native: Settings; CLI: `IMAGE_CURATOR_COMFYUI`).
 3. Review images in the grid or lightbox, then move keepers to `shortlisted` or
    `finals` and rejects to `rejects`.
 4. Use Library Search for filename and media-metadata lookup; build Prompt groups
@@ -325,9 +347,11 @@ linked/unlinked Sync Pan/Zoom and an optional A/B Split for still images.
 
 ## Security
 
-Binds to `127.0.0.1` by default. No built-in authentication -- sufficient
-for single-user local use. For remote access, place behind a reverse proxy
-with auth (nginx, Caddy, etc.). Read `SECURITY.md` for related guidance.
+Curator runs inside ComfyUI and is served by ComfyUI's HTTP server, so the bind
+address and port are ComfyUI's own. Curator adds no authentication of its own --
+sufficient for single-user local use. For remote access, put ComfyUI behind a
+reverse proxy with auth (nginx, Caddy, etc.). Read `SECURITY.md` for related
+guidance.
 
 ## ComfyUI extension
 
@@ -338,7 +362,7 @@ The repository includes a native ComfyUI integration:
 - `py/curator_manager.py` -- registers `/curator`, `/curator_static`, health,
   and the namespaced native batch/image foundation.
 - `image_curator/native_settings.py` -- resolves ComfyUI-owned batch, import,
-  state, and persistent native configuration without importing Flask.
+  state, and persistent native configuration without the removed Flask stack.
 - `image_curator/native_routes.py` -- aiohttp adapter for settings, batches,
   active state, manual import, revisioned/paged media lists, metadata, posters,
   previews, range-capable originals,
@@ -350,12 +374,12 @@ The repository includes a native ComfyUI integration:
   single-worker queue and bounded shutdown.
 - `web/comfyui/top_menu_extension.js` -- ComfyUI action-bar button that
   opens `/curator`.
-- `templates/curator.html` -- native page template derived from `index.html`
-  with `/curator_static/` paths and `window.CURATOR_NATIVE = true`.
+- `templates/curator.html` -- the sole page template, served at `/curator` with
+  `/curator_static/` asset paths and rendered server-side with Jinja2
+  (available models and default model).
 - Shared frontend URL helpers (`ccApiPath`, `ccThumbUrl`, `ccImageUrl`, and
-  `ccPreviewUrl` in
-  `static/js/state.js`) switch between `/api`/`/thumb`/`/image` and
-  `/api/curator`/`/curator/thumb`/`/curator/image` based on the native flag.
+  `ccPreviewUrl` in `static/js/state.js`) build the native URLs
+  (`/api/curator`, `/curator/thumb`, `/curator/preview`, `/curator/image`).
 - Selection and compare-candidate ownership lives in the ordered
   `static/js/selection.js` module; `static/js/moves.js` retains drag/drop,
   filesystem moves, undo, and reject deletion. Both modules intentionally
@@ -371,8 +395,7 @@ moves with durable operation-token undo, reject deletion, favorites
 (batch/universal toggles, All Favorites), and public publish/export, listing,
 destination browsing, copy/move/delete, prompt history, media search index/query,
 and AI scoring lifecycle
-are now native. Import All provides the explicit output-import workflow in both
-native and standalone modes.
+are now native. Import All provides the explicit output-import workflow.
 
 ## Limitations
 
@@ -388,6 +411,9 @@ queue FIFO. Designed for single-user operation, not concurrent scoring.
 - **Agent guidance:** `AGENTS.md` -- startup instructions for AI agents
   working in this repo, plus per-directory READMEs in `ai_curate/`,
   `image_curator/`, `static/`, `tests/`, and `scripts/`.
-- **Native template maintenance:** Edit `templates/index.html`, then run
-  `python scripts/generate_curator_template.py --write` and commit both templates.
+- **Upgrading:** `MIGRATION.md` -- standalone Flask removal, preserved library
+  and Undo/History data, and native settings versus CLI environment variables.
+- **Page template:** `templates/curator.html` is the single authoritative
+  template; edit it directly. There is no second template to synchronize and no
+  generator step.
 - **License:** MIT -- see `LICENSE`.

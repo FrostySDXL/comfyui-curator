@@ -6,7 +6,6 @@ from tests.unit.frontend_source import extract_function_body, read_frontend_js
 
 
 ROOT = Path(__file__).parents[2]
-INDEX = ROOT / "templates" / "index.html"
 CURATOR = ROOT / "templates" / "curator.html"
 LIGHTBOX = ROOT / "static" / "js" / "lightbox.js"
 SELECTION = ROOT / "static" / "js" / "selection.js"
@@ -14,7 +13,7 @@ GRID_CSS = ROOT / "static" / "css" / "grid.css"
 
 
 def test_candidate_tray_markup_is_compact_accessible_and_dismissible() -> None:
-    html = INDEX.read_text(encoding="utf-8")
+    html = CURATOR.read_text(encoding="utf-8")
     assert 'id="compare-candidate-tray"' in html
     assert 'role="region"' in html
     assert 'aria-label="Compare candidates"' in html
@@ -85,18 +84,6 @@ def test_candidate_tray_css_is_responsive_and_above_action_bar() -> None:
     assert ".compare-candidate-tray" in css
     assert "var(--action-bar-safe-area" in css
     assert "@media (max-width: 900px)" in css
-
-
-def test_native_template_keeps_candidate_tray_parity() -> None:
-    index = INDEX.read_text(encoding="utf-8")
-    expected = index.replace("/static/", "/curator_static/")
-    marker = '<script src="/curator_static/js/'
-    expected = expected.replace(
-        marker,
-        "<script>window.CURATOR_NATIVE = true;</script>\n    " + marker,
-        1,
-    )
-    assert CURATOR.read_text(encoding="utf-8") == expected
 
 
 def test_tray_launch_uses_explicit_pair_and_restores_focus_to_launch_control() -> None:

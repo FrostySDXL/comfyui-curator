@@ -1,14 +1,15 @@
 # AGENTS.md
 
-**Purpose:** Operator-focused web application for reviewing generated images with optional AI-assisted scoring. **Status:** Actively maintained. **Audience:** AI agents and single-operator maintainers. **Last Updated:** 2026-08-29
+**Purpose:** ComfyUI-native curation workspace plus headless CLI for reviewing generated images with optional AI-assisted scoring. **Status:** Actively maintained. **Audience:** AI agents and single-operator maintainers. **Last Updated:** 2026-11-15
 
 ## Quickstart
 
 - Read `README.md` first.
 - Use the virtual environment at `.venv/`.
-- Entrypoints: `__init__.py` (ComfyUI custom-node), `app.py` (Flask web UI + API), `curate.py` (CLI scoring).
+- Entrypoints: `__init__.py` (ComfyUI custom-node), `py/curator_manager.py` (native page/route registration), `curate.py` (CLI scoring).
 - New non-AI backend logic -> `image_curator/`. New AI logic -> `ai_curate/`.
-- Frontend is `templates/index.html` + ordered vanilla scripts under `static/js/` + split CSS files under `static/css/`.
+- Frontend is `templates/curator.html` + ordered vanilla scripts under `static/js/` + split CSS files under `static/css/`; ComfyUI serves it at `/curator` with assets under `/curator_static/`.
+- Do not reintroduce a standalone web server or Flask: the native aiohttp adapters and the CLI are the only entry surfaces.
 - Verification: `python scripts/run_all.py` (default) or `--quick` for fast loops.
 - Do not commit code that fails `ruff check` or `ruff format --check` on touched paths.
 
@@ -32,7 +33,14 @@
 ## Key Concepts & Data Flows
 
 ```
-app.py (Flask routes) ← standalone, fully supported
+__init__.py (ComfyUI custom node)
+  └── py/curator_manager.py             ← Jinja2 page render, /curator + /curator_static + health registration, native routes, AI lifecycle
+        ├── image_curator/native_settings.py ← locked atomic native config store and persisted/env/default resolution
+        ├── image_curator/native_routes.py   ← aiohttp batch/image/move/delete/favorites/public/prompt-history adapter
+        ├── image_curator/native_ai_routes.py ← aiohttp AI curation route adapter (/api/curator/ai-curate/*) using NativeAiLifecycle
+        └── ai_curate/native_lifecycle.py    ← native AI lifecycle: idempotent startup, submission gate, worker tracking, permanent shutdown
+
+Shared backend (no web framework; imported by the native adapters and the CLI)
   ├── image_curator/batch_store.py  ← filesystem ops (create, list, move, counts, import)
   ├── image_curator/png_metadata.py ← PNG text-chunk extraction (Pillow)
   ├── image_curator/sidecar_metadata.py ← bounded adjacent JSON discovery/display + paired lifecycle helpers
@@ -40,7 +48,7 @@ app.py (Flask routes) ← standalone, fully supported
   ├── image_curator/publish.py      ← public derivative creation/list/copy/move/delete
   ├── image_curator/prompt_history.py ← manual PNG prompt index cache
   ├── image_curator/search_index.py ← rebuildable typed-media + sidecar search cache/query
-  ├── image_curator/search_index_jobs.py ← shared cancellable search-index job lifecycle for Flask/native
+  ├── image_curator/search_index_jobs.py ← shared cancellable search-index job lifecycle
   ├── image_curator/web_validation.py ← route path/batch validation helpers
   ├── image_curator/media.py        ← typed poster/hover-preview cache and fallback helpers
   ├── image_curator/folder_index.py ← immutable background revisions, pages, O(1) lookup
@@ -48,43 +56,32 @@ app.py (Flask routes) ← standalone, fully supported
   ├── ai_curate/config.py           ← env-backed constants, paths, caps
   ├── ai_curate/elements.py         ← prompt parsing + element extraction + quality checklists
   ├── ai_curate/job_validation.py   ← AI curation submit payload validation
-  ├── ai_curate/routes.py           ← AI curation Flask Blueprint routes
   ├── ai_curate/client.py           ← VisionClient (raw urllib -> /v1/chat/completions)
   ├── ai_curate/scoring.py          ← image enumeration + scoring loop
   ├── ai_curate/worker.py           ← scoring worker orchestration core
   ├── ai_curate/queue.py            ← FIFO single-worker job queue (threading)
-  ├── ai_curate/storage.py          ← run history JSON persistence (atomic .tmp writes + filesystem containment)
-  ├── ai_curate/models.py           ← JobState, ImageResult, CurationRun, RunTotals
-  └── ai_curate/native_lifecycle.py ← native AI lifecycle: idempotent startup, submission gate, worker tracking, permanent shutdown
+  └── ai_curate/storage.py          ← run history JSON persistence (atomic .tmp writes + filesystem containment)
+      ai_curate/models.py           ← JobState, ImageResult, CurationRun, RunTotals
 
 curate.py (CLI)
   └── ai_curate/  (same pipeline, no queue — synchronous scoring in-process)
 
-ComfyUI native extension
-  ├── __init__.py                     ← ComfyUI custom-node entrypoint, WEB_DIRECTORY
-  ├── py/curator_manager.py           ← registers native page, static mount, health, foundation routes, and AI lifecycle hooks
-  ├── image_curator/native_settings.py ← locked atomic native config store and persisted/env/default resolution
-  ├── image_curator/native_routes.py  ← aiohttp batch/image/move/delete/favorites/public/prompt-history foundation adapter
-  ├── image_curator/native_ai_routes.py ← aiohttp AI curation route adapter (/api/curator/ai-curate/*) using NativeAiLifecycle
-  ├── web/comfyui/top_menu_extension.js ← action-bar button opening /curator
-  └── templates/curator.html          ← native page template (derived from index.html)
-
-Frontend (shared static/js/*.js + static/css/*.css)
-  ├── templates/index.html  ← standalone page (Flask, /static/ paths)
+Frontend (served at /curator_static from static/)
+  ├── templates/curator.html  ← sole page template (Jinja2-rendered model list, /curator_static/ paths)
   ├── static/js/activity-center.js ← shared background-work state, rendering, retry/cancel hooks, and operation adapters
-  └── templates/curator.html ← native page (ComfyUI, /curator_static/ paths, CURATOR_NATIVE flag)
+  └── web/comfyui/top_menu_extension.js ← action-bar button opening /curator
 ```
 
-- **Single source of truth:** Filesystem under `IMAGE_CURATOR_BATCHES/<batch>/`.
+- **Single source of truth:** Filesystem under `IMAGE_CURATOR_BATCHES/<batch>/` in CLI mode, or the native configured batch root.
 - **Generated public copies:** `<batch>/public/` contains posting derivatives; originals remain in review folders.
 - **AI run history:** `<batch>/ai-curate/runs/<run_id>.json` + `<batch>/ai-curate/latest.json` pointer.
-- **State file:** `IMAGE_CURATOR_STATE` (default `~/.config/image-curator/state.json`). Stores active batch.
+- **Native state:** `<curator system-user dir>/state.json` stores the active batch and sits beside `config.json`; there is no environment override for either location. Old standalone `IMAGE_CURATOR_STATE` paths are not read.
 
 ## Key Files & Responsibilities
 
 | Category | Key Files / Folders | Role |
 |----------|---------------------|------|
-| **Entrypoints** | `app.py` | Flask API + web UI serving + AI worker threads |
+| **Entrypoints** | `__init__.py` | ComfyUI custom-node entrypoint (`NODE_CLASS_MAPPINGS`, `WEB_DIRECTORY`) |
 | | `curate.py` | CLI entrypoint for headless scoring (argparse, no queue) |
 | **Non-AI Backend** | `image_curator/batch_store.py` | Batch creation, folder layout, file moves, counts, import, state persistence |
 | | `image_curator/png_metadata.py` | ComfyUI/A1111 PNG text-chunk extraction (prompt, seed, sampler, CFG, LoRAs, etc.) |
@@ -94,20 +91,19 @@ Frontend (shared static/js/*.js + static/css/*.css)
 | | `image_curator/prompt_history.py` | Manual prompt-history cache builder from PNG metadata |
 | | `image_curator/search_index.py` | Per-batch typed-media search index, bounded JSON sidecar flattening, AND-token query, stale-folder detection |
 | | `image_curator/search_index_jobs.py` | Shared cancellable search-index jobs with one active build per pinned root+batch, atomic cancellation safety, bounded terminal retention, and shutdown joins |
-| | `image_curator/web_validation.py` | Path traversal and existing-batch validation helpers used by app route wrappers |
+| | `image_curator/web_validation.py` | Path traversal and existing-batch validation helpers used by the native adapter |
 | | `image_curator/media.py` | Thumbnail cache key/freshness helpers and WebP generation |
 | | `image_curator/README.md` | Module-scoped agent startup guide (layout, contracts, gotchas) |
-| **Native Extension** | `__init__.py` | ComfyUI custom-node entrypoint; exposes `NODE_CLASS_MAPPINGS`, `WEB_DIRECTORY`, `NODE_DISPLAY_NAME_MAPPINGS`; loads `CuratorManager` via importlib (tolerates missing `server` module for standalone compatibility) |
+| **Native Extension** | `__init__.py` | ComfyUI custom-node entrypoint; exposes `NODE_CLASS_MAPPINGS`, `WEB_DIRECTORY`, `NODE_DISPLAY_NAME_MAPPINGS`; loads `CuratorManager` via importlib (tolerates the missing ComfyUI `server` module so tests and plain imports do not fail) |
 | | `py/curator_manager.py` | Registers `/curator`, `/curator_static`, health, and native foundation routes on `PromptServer`; idempotent `_registered` guard |
-| | `image_curator/native_settings.py`, `image_curator/native_routes.py` | Resolve ComfyUI-owned paths and provide namespaced settings, batch/state/import, image, metadata, thumbnail, original, single-image move, multi-image move, delete-rejects, favorites, public publish/export, listing, destination browsing, copy/move/delete, and prompt history build/rebuild/load/staleness/aggregate routes without Flask lifecycle imports |
+| | `image_curator/native_settings.py`, `image_curator/native_routes.py` | Resolve ComfyUI-owned paths and provide namespaced settings, batch/state/import, image, metadata, thumbnail, original, single-image move, multi-image move, delete-rejects, favorites, public publish/export, listing, destination browsing, copy/move/delete, and prompt history build/rebuild/load/staleness/aggregate routes without the removed Flask stack |
 | | `image_curator/native_ai_routes.py` | Aiohttp route adapters for `/api/curator/ai-curate/*` using `NativeAiLifecycle`; validates, submits, lists, gets, cancels jobs and serves batch run history, latest runs, and element history |
 | | `web/comfyui/top_menu_extension.js` | ComfyUI action-bar button that opens `/curator` in a new tab |
-| | `templates/curator.html` | Native page template derived from `index.html`; `/curator_static/` paths, `window.CURATOR_NATIVE = true`; must stay synchronized with `index.html` |
+| | `templates/curator.html` | Sole page template, served at `/curator` with `/curator_static/` paths; Jinja2 renders the model list |
 | **AI Backend** | `ai_curate/config.py` | Env-backed constants: `BATCHES_DIR`, `COMFYUI_OUTPUT`, `DEFAULT_BASE_URL`, `DEFAULT_TOP_N` (15), `TOP_N_CAP` (100), `ELEMENT_CAP` (12) |
 | | `ai_curate/README.md` | Module-scoped agent startup guide (pipeline, internal contracts, gotchas) |
 | | `ai_curate/elements.py` | Prompt auto-extraction, explicit element building, quality baseline checks |
-| | `ai_curate/routes.py` | Flask Blueprint for `/api/ai-curate/*` routes with app-injected queue/storage/lifecycle dependencies |
-| | `ai_curate/job_validation.py` | Web AI job payload validation with app-injected dependencies |
+| | `ai_curate/job_validation.py` | AI job submit payload validation (configured model names only) shared with the native adapter |
 | | `ai_curate/models.py` | `JobState` enum, `ImageResult` (per-image score), `CurationRun`, `RunTotals` |
 | | `ai_curate/client.py` | `VisionClient`: base64 encode + POST to `/v1/chat/completions` (raw urllib) |
 | | `ai_curate/scoring.py` | `find_images`, `build_scoring_prompt`, `score_images` loop |
@@ -115,38 +111,36 @@ Frontend (shared static/js/*.js + static/css/*.css)
 | | `ai_curate/queue.py` | `QueueManager`: FIFO single-worker job queue with cancel support |
 | | `ai_curate/storage.py` | `RunStorage`: atomic JSON persistence for run history with filesystem containment (symlink rejection, path-escaping prevention, non-regular-file rejection) |
 | | `ai_curate/native_lifecycle.py` | `NativeAiLifecycle`: native AI lifecycle manager with idempotent startup, permanent-shutdown state machine, submission gate, worker thread tracking, public `submit_job()`, and batch-folder containment |
-| **Frontend** | `templates/index.html` | Single-page Flask template (Jinja2, server-injected model list) |
-| | `templates/curator.html` | Native ComfyUI template derived from `index.html` with `/curator_static/` paths and `CURATOR_NATIVE` flag; must stay synchronized with `index.html` |
-| | `static/js/state.js`, `dom-utils.js`, `api.js`, `sidebar.js`, `batches.js`, `grid.js`, `favorites.js`, `publish.js`, `selection.js`, `moves.js`, `lightbox.js`, `metadata.js`, `prompts.js`, `ai-*.js`, `ai.js`, `polling.js`, `modals.js`, `combobox.js`, `keyboard.js`, `events.js`, `bootstrap.js` | Ordered classic browser scripts; vanilla JS, imperative, no framework/build step; `state.js` includes `ccApiPath`/`ccThumbUrl`/`ccImageUrl` helpers for dual-mode (standalone Flask vs native ComfyUI) URL construction |
+| **Frontend** | `templates/curator.html` | Sole page template: `/curator_static/` asset paths, Jinja2-rendered model list, no mode flag |
+| | `static/js/state.js`, `dom-utils.js`, `api.js`, `sidebar.js`, `batches.js`, `grid.js`, `favorites.js`, `publish.js`, `selection.js`, `moves.js`, `lightbox.js`, `metadata.js`, `prompts.js`, `ai-*.js`, `ai.js`, `polling.js`, `modals.js`, `combobox.js`, `keyboard.js`, `events.js`, `bootstrap.js` | Ordered classic browser scripts; vanilla JS, imperative, no framework/build step; `state.js` includes `ccApiPath`/`ccThumbUrl`/`ccImageUrl`/`ccPreviewUrl` helpers that build native URLs |
 | | `static/js/app.js` | Compatibility stub pointing to the split files |
 | | `static/css/base.css`, `sidebar.css`, `layout.css`, `grid.css`, `lightbox.css`, `modals.css`, `prompts.css`, `toast.css`, `ai.css`, `responsive.css` | Browser-loaded split styling in template order (dark theme, flexbox + CSS grid) |
 | | `static/README.md` | Module-scoped agent startup guide (global state, function groups, API calls, gotchas) |
 | **Tests** | `tests/unit/` | Isolated logic plus source-scraping frontend-invariant tests |
-| | `tests/component/` | In-process multi-module (Flask route contracts, AI worker lifecycle) |
-| | `tests/integration/` | Full HTTP + filesystem workflow (Flask test client, real files) |
+| | `tests/component/` | In-process multi-module (native API route contracts, AI worker lifecycle) |
+| | `tests/integration/` | Full HTTP + filesystem workflow (real aiohttp adapter client, real files) |
 | | `tests/README.md` | Module-scoped agent startup guide (layers, fixtures, markers, coverage gaps) |
 | **Scripts** | `scripts/run_all.py` | Multi-tool verification runner (ruff, compileall, pytest, mypy, JS syntax, git diff) |
 | | `scripts/README.md` | Module-scoped agent startup guide (verification modes) |
 | **Config** | `pyproject.toml` | Build system, Comfy Registry package metadata, ruff, and mypy configuration |
 | | `pytest.ini` | Test markers (`unit`, `component`, `integration`) and paths |
 | | `.env.example` | Documented environment variable reference (never read `.env` directly) |
-| **Deployment** | `image-curator.service.example` | Templated systemd unit (use this, not the production service file) |
-| **Guidance** | `README.md`, `CONTRIBUTING.md`, `AGENTS.md` | Operator docs, contributor workflow, agent startup |
+| **Guidance** | `README.md`, `CONTRIBUTING.md`, `AGENTS.md`, `MIGRATION.md` | Operator docs, contributor workflow, agent startup, standalone-to-native migration |
 | **Generated** | `.thumbs/`, `.previews/`, `<batch>/search-index.json`, `<batch>/ai-curate/runs/`, `<batch>/ai-curate/latest.json`, `__pycache__/`, `*.egg-info/` | **Do not edit.** Created at runtime. |
 
 ## Decision Tree
 
 | Task | Read | Verify |
 |------|------|--------|
-| UI layout, shortcuts, lightbox, sidebars | `static/README.md` then `templates/index.html`, relevant `static/js/*.js`, relevant `static/css/*.css` files | Manual browser smoke test; `python scripts/run_all.py --quick` |
-| Flask API or batch filesystem behavior | `image_curator/README.md` then `app.py`, matching frontend calls in relevant `static/js/*.js`, integration/component tests | `python -m pytest tests/integration/ tests/component/ -v` |
+| UI layout, shortcuts, lightbox, sidebars | `static/README.md` then `templates/curator.html`, relevant `static/js/*.js`, relevant `static/css/*.css` files | Manual browser smoke test; `python scripts/run_all.py --quick` |
+| Native API or batch filesystem behavior | `image_curator/README.md` then `image_curator/native_routes.py` and `native_ai_routes.py`, matching frontend calls in relevant `static/js/*.js`, component/integration tests | `python -m pytest tests/component/ tests/integration/ -v` |
 | AI scoring, queueing, run history | `ai_curate/README.md` then `ai_curate/`, `curate.py`, unit tests | `python -m pytest tests/unit/test_client.py tests/unit/test_scoring.py tests/unit/test_queue.py tests/unit/test_storage.py tests/unit/test_elements.py tests/unit/test_models.py tests/unit/test_config.py -v` |
 | PNG metadata extraction | `image_curator/README.md` then `image_curator/png_metadata.py`, unit test | `python -m pytest tests/unit/test_png_metadata.py -v` |
-| Favorites or prompt history | `image_curator/README.md` then `image_curator/favorites.py`, `image_curator/prompt_history.py`, app routes, frontend calls | `python -m pytest tests/unit/test_favorites.py tests/unit/test_prompt_history.py tests/integration/test_favorites_api.py tests/integration/test_prompt_history_api.py -v` |
-| Library/media metadata search | `image_curator/README.md`, `image_curator/search_index.py`, `sidecar_metadata.py`, `static/js/prompts.js`, both route adapters | `python -m pytest tests/unit/test_search_index.py tests/integration/test_search_api.py tests/component/test_native_curator_api.py -v` |
-| Public posting prep | `image_curator/README.md` then `image_curator/publish.py`, app routes, `static/js/publish.js`, public-view frontend paths | `python -m pytest tests/unit/test_publish.py tests/integration/test_publish_api.py tests/unit -k frontend -v` |
-| Docs or repo organization | `README.md`, `CONTRIBUTING.md`, this file | `python scripts/run_all.py --skip-js` |
-| Deployment assumptions | `image-curator.service.example`, `app.py` constants, `ai_curate/config.py` | Review env vars in `.env.example` |
+| Favorites or prompt history | `image_curator/README.md` then `image_curator/favorites.py`, `image_curator/prompt_history.py`, native adapter routes, frontend calls | `python -m pytest tests/unit/test_favorites.py tests/unit/test_prompt_history.py tests/integration/test_favorites_api.py tests/integration/test_prompt_history_api.py -v` |
+| Library/media metadata search | `image_curator/README.md`, `image_curator/search_index.py`, `sidecar_metadata.py`, `static/js/prompts.js`, `image_curator/native_routes.py` | `python -m pytest tests/unit/test_search_index.py tests/integration/test_search_api.py tests/component/test_native_curator_api.py -v` |
+| Public posting prep | `image_curator/README.md` then `image_curator/publish.py`, native adapter routes, `static/js/publish.js`, public-view frontend paths | `python -m pytest tests/unit/test_publish.py tests/integration/test_publish_api.py tests/unit -k frontend -v` |
+| Docs or repo organization | `README.md`, `CONTRIBUTING.md`, `MIGRATION.md`, this file | `python scripts/run_all.py --skip-js` |
+| Migration, environment, or deployment assumptions | `MIGRATION.md`, `image_curator/native_settings.py`, `ai_curate/config.py` | Review env vars in `.env.example`; native settings tests |
 
 ## Mission
 
@@ -160,18 +154,17 @@ Maintain a fast operator-facing curation workflow for generated images with opti
 
 ## STRICT RULE
 
-- The production `image-curator.service` may contain sensitive information. Never read it. Use `image-curator.service.example` as the reference template instead.
+- Never read `.env` files, an operator's native `config.json`/`state.json` under ComfyUI's user directory, or a production `image-curator.service`. They may contain secrets (API keys) or host-specific paths. Use `.env.example` as the reference for environment variables instead.
 
 ## Public Compatibility Surfaces
 
 Treat these as stability-sensitive:
 
-- Flask API request/response shapes consumed by the frontend
+- Native `/api/curator/*` request/response shapes consumed by the frontend
 - Batch directory structure under `BATCHES_DIR/<batch>/` (configured by `IMAGE_CURATOR_BATCHES`)
 - AI run-history files under `BATCHES_DIR/<batch>/ai-curate/`
 - `curate.py` CLI flags and default behaviors while the CLI remains active
-- Runtime state file location (configured by `IMAGE_CURATOR_STATE`)
-- `image-curator.service.example` template expectations
+- Native settings and active-batch state locations under ComfyUI's Curator system-user directory
 - Header Help modal content, contextual shortcut-learning copy/dismissal semantics, keyboard shortcuts, and sidebar toggle labels
 - Header Activity indicator/panel lifecycle labels and supported Retry/Cancel actions
 - Lightbox PNG metadata route shape, toggle shortcut (`M`), and displayed field set
@@ -183,25 +176,27 @@ Treat these as stability-sensitive:
 - Public API shapes, batch `public/` generated-output view, All Public sidebar entry, public action labels, public export-root destination browser/history, and derivative-only safety copy
 - Library Search Images / Prompt groups tabs, Images-to-workspace query/scope/source chips and Edit/Clear actions, per-batch index status/age/count labels, cancellable media-index job routes and `cancel_accepted` semantics, Prompt History controls, search and prompt-history API shapes, and manual cache file semantics
 - Native extension entrypoint (`__init__.py` exports), `WEB_DIRECTORY`, `/curator` page route, `/curator_static` static mount, and `/api/curator/health` route
-- `templates/curator.html` two-transform parity with `index.html` (`/static/` → `/curator_static/` plus `window.CURATOR_NATIVE = true` before ordered scripts)
-- Shared frontend `ccApiPath`/`ccThumbUrl`/`ccImageUrl` URL helper behavior and mode-detection through `window.CURATOR_NATIVE`
+- `templates/curator.html` as the single page template plus the `/curator_static` asset paths it references
+- Shared frontend `ccApiPath`/`ccThumbUrl`/`ccImageUrl`/`ccPreviewUrl` URL helper behavior
 
 ## Structure Rules
 
-- Root-level entrypoints remain active for now: `app.py` and `curate.py`
+- Root-level entrypoints are `__init__.py` (ComfyUI custom node), `py/curator_manager.py` (native registration), and `curate.py` (CLI); do not add a standalone web server
 - New shared non-AI backend logic goes in `image_curator/`
 - New shared AI backend logic goes in `ai_curate/`
 - Keep HTML in `templates/`, browser logic in `static/js/`, styling in `static/css/`
 - Put isolated logic tests in `tests/unit/`
 - Put in-process multi-module checks in `tests/component/`
-- Put Flask/API/filesystem workflow checks in `tests/integration/`
+- Put native API/filesystem workflow checks in `tests/integration/`
+- Keep the native adapters free of Flask/Werkzeug imports; `tests/unit/test_native_no_flask_import.py` enforces this
 - Keep local helper scripts in `scripts/`
 
 ## Task Playbooks
 
 ### UI change
 
-- Read `templates/index.html`, the relevant ordered `static/js/*.js` files, and the relevant `static/css/*.css` files
+- Read `templates/curator.html`, the relevant ordered `static/js/*.js` files, and the relevant `static/css/*.css` files
+- Edit `templates/curator.html` directly: there is no second template and no generator step
 - Preserve the center grid as the primary review surface
 - Preserve the compact workspace toolbar grouping unless the task explicitly changes it
 - Preserve the unified right inspector and its Overview / Metadata / AI Evidence hierarchy unless the task explicitly changes them
@@ -236,7 +231,7 @@ Treat these as stability-sensitive:
 
 ### API or backend change
 
-- Read `app.py` and related modules in `image_curator/` or `ai_curate/`
+- Read the native adapters (`py/curator_manager.py`, `image_curator/native_routes.py`, `image_curator/native_ai_routes.py`) and related modules in `image_curator/` or `ai_curate/`
 - Keep route validation and JSON response contracts synchronized with the frontend
 - Add or update integration tests
 
@@ -244,23 +239,21 @@ Treat these as stability-sensitive:
 
 - Verify all path assumptions
 - Confirm runtime artifacts remain ignored by git
-- Update `README.md` and `AGENTS.md`
+- Update `README.md` and `AGENTS.md`; document data-affecting changes in `MIGRATION.md` too
 
 ## Agent Instructions
 
 - **Start:** Read this file, then use the Decision Tree to locate the right files for your task. Check for per-directory `README.md` files (`ai_curate/`, `image_curator/`, `static/`, `tests/`, `scripts/`) -- each has module-scoped startup guidance: architecture, contracts, gotchas, and verification commands specific to that directory.
-- **Never:** Read `image-curator.service` (use `.example`). Read `.env` files. Commit secrets or tokens.
+- **Never:** Read `.env` files, an operator's native `config.json`/`state.json`, or a production `image-curator.service`. Commit secrets or tokens.
 - **Always:** Use `.venv/`. Run `python scripts/run_all.py --quick` after changes. Re-read changed files before claiming completion.
-- **Template source rule:** Edit `templates/index.html`, then run
-  `.venv\Scripts\python.exe scripts\generate_curator_template.py --write` and
-  commit both shipped templates; the runner's template check is read-only.
+- **Single-template rule:** `templates/curator.html` is the only page template; edit it directly. There is no generator step and no second template to keep synchronized.
 - **Know your layer:** Unit tests for isolated logic. Component tests for multi-module interactions. Integration tests for full HTTP/filesystem workflows. Manual browser validation for interactive UI changes.
 - **Before committing:** `ruff check` and `ruff format --check` must pass on all touched paths.
 - **Completion:** State files changed, commands run, manual verification performed, and remaining risk or follow-up work.
 
 ## Gotchas
 
-- **`load_dotenv()` before imports:** `app.py` and `curate.py` call `load_dotenv()` before importing `ai_curate` modules so env vars are visible at module import time. The `E402` ruff rule is suppressed for these two files. Do not reorder imports.
+- **`load_dotenv()` before imports:** `curate.py` calls `load_dotenv()` before importing `ai_curate` modules so env vars are visible at module import time. The `E402` ruff rule is suppressed for that file. Do not reorder imports. Native mode never loads `.env`; ComfyUI's process environment is the only native fallback source.
 - **`--panel` flag is deprecated (curate.py):** Use `--prompt`. `--panel` still works but prints a warning. `--prompt` takes precedence if both are provided.
 - **AI worker threads are daemons:** They die with the process. Shutdown tries to join for 5 seconds, then exits.
 - **Frontend tests are Python source-scraping:** The `test_frontend_*.py` files regex-scan ordered split JS/CSS sources through `tests/unit/frontend_source.py` for function names and invariants. No headless browser or JS test framework. Browser-only changes need manual verification.
@@ -270,7 +263,7 @@ Treat these as stability-sensitive:
 - **Prompt history is manual:** Build/rebuild is synchronous and operator-triggered. Staleness checks compare total image count only.
 - **Media search-index builds:** The legacy synchronous build route remains compatible, while the frontend uses the shared asynchronous job lifecycle. Jobs are pinned to the root at submission, cancellable cooperatively, preserve a prior valid index on cancellation, and expose truthful terminal states. A cancel response with `cancel_accepted: false` means the build is finishing and the Activity Center must remain actionable/running.
 - **Score < 0 means failed:** `ImageResult.score` defaults to -1 for unscored/failed images. `normalized_score` also returns -1. Frontend checks `score >= 0` to distinguish scored from failed.
-- **No CORS headers:** The app binds to `127.0.0.1` by default. For remote access, use a reverse proxy with auth (nginx, Caddy).
+- **Binding belongs to ComfyUI:** Curator adds no bind address or port settings. For remote access, use ComfyUI's own `--listen`/`--port` options behind a reverse proxy with auth (nginx, Caddy).
 - **Media cache keys include folder and source extension:** `<folder>__<stem>--<ext>.webp|.mp4` prevents folder and same-stem cross-format collisions.
 - **Typed-media boundaries:** Review/favorites/moves/reject deletion and general media search accept PNG/JPG/JPEG/WebP/GIF/MP4/MP3. AI scoring and public derivatives remain still-only; Prompt History remains PNG-only. Adjacent JSON sidecars are auxiliary (never listed independently), searchable through the media index, and follow imports, review moves/undo, and reject cleanup.
 - **External-favorites sidecar schema:** Flat objects may use
@@ -279,17 +272,15 @@ Treat these as stability-sensitive:
   values generally remain strings while `favorite_id`/`total` may be integers.
   Preserve those source types in backend responses.
 - **Large native folders:** Native real-folder views use immutable background revisions, 256-item pages, lightweight polls, and <=500 live thumbnails. Snapshot Select All is revision plus exclusions and undo is tokenized server-side.
-- **Durable move history:** `<batches-root>/.curator-undo/history.json` is generated recovery state, not a rebuildable cache. Never edit it manually. `image_curator/move_history.py` backs `/api/move-history` and operation-token undo in both adapters; retention is 100 operations / 30 days. It covers manual review moves only, not imports, deletions, AI moves, or public derivatives. Read `tests/unit/test_move_history_review.py` for independent recovery acceptance cases.
+- **Durable move history:** `<batches-root>/.curator-undo/history.json` is generated recovery state, not a rebuildable cache. Never edit it manually. `image_curator/move_history.py` backs `/api/curator/move-history` and operation-token undo in the native adapter; retention is 100 operations / 30 days. It covers manual review moves only, not imports, deletions, AI moves, or public derivatives. Read `tests/unit/test_move_history_review.py` for independent recovery acceptance cases.
 - **Configured library links:** The batches root may be an operator-configured symlink or directory junction to an existing library. Resolve and pin that trusted root for manual move recovery; do not extend that trust to links inside batches or the journal. Do not retarget the configured link during operation. See `tests/component/test_symlink_root_review.py` for alias/restart/containment acceptance checks.
 - **`ELEMENT_CAP` (12) truncation is silent:** `scoring.py` caps elements without logging a warning.
 - **Native extension scope:** Native settings, batch/image/thumbnail foundation routes, curation mutations, favorites, public workflow, prompt history, media search, and AI scoring lifecycle are namespaced under `/api/curator/*` and `/curator/{thumb,image}/*`. Native AI uses a lifecycle-owned queue with bounded shutdown.
 - **Native public export root default:** `NativeCuratorSettings.from_host_paths()` resolves a ComfyUI-owned `public-exports` directory under the curator system user directory (`<system_dir>/public-exports`). The editable path appears only in the dedicated local-operator settings response, not general page or batch payloads.
-- **Native settings:** `<system_dir>/config.json` is the normal native source. Persisted values precede environment fallbacks and ComfyUI-owned defaults. The dedicated settings endpoint returns editable paths and API-key set status, never the key; saves support explicit replacement and clearing and are rejected while AI work is active.
-- **curator.html must stay synchronized with index.html:** After editing
-  `index.html`, run `.venv\Scripts\python.exe scripts\generate_curator_template.py --write`.
-  The transforms are `/static/` → `/curator_static/` and inserting
-  `window.CURATOR_NATIVE = true` before the first `<script src="...">`.
-- **Shared frontend mode detection:** `static/js/state.js` checks `window.CURATOR_NATIVE === true` to select API paths, thumb URLs, and image URLs. Do not remove or rename `CURATOR_NATIVE` without updating both templates and all URL helpers.
+- **Native settings:** `<system_dir>/config.json` is the normal native source. Persisted values precede environment fallbacks and ComfyUI-owned defaults. The dedicated settings endpoint returns editable paths and API-key set status, never the key; saves support explicit replacement and clearing and are rejected while AI work is active. `state.json` sits beside `config.json`; the old standalone `IMAGE_CURATOR_STATE` path is not read.
+- **Single page template:** `templates/curator.html` is the only template and is served at `/curator` with `/curator_static/` asset paths. Do not reintroduce `templates/index.html`, `/static/` page paths, or a `window.CURATOR_NATIVE` mode flag.
+- **Native URL helpers:** `static/js/state.js` helpers always build `/api/curator`, `/curator/thumb`, `/curator/preview`, and `/curator/image` paths. There is no mode switch; do not reintroduce one.
+- **Host-provided modules:** `aiohttp`, ComfyUI's `server`, and `folder_paths` come from ComfyUI and are intentionally not pinned in `requirements.in`. Keep Flask/Werkzeug out of the native import path; `tests/unit/test_native_no_flask_import.py` enforces it.
 
 ## Verification Standard
 
@@ -306,9 +297,11 @@ Use the smallest proof that supports the claim, then broaden if needed:
 | Unit tests only | `python -m pytest tests/unit -v` |
 | Component tests only | `python -m pytest tests/component -m component -v` |
 | Integration tests only | `python -m pytest tests/integration -m integration -v` |
-| Syntax/compile | `python -m compileall app.py curate.py image_curator ai_curate` |
+| Syntax/compile | `python -m compileall __init__.py curate.py image_curator ai_curate py` |
 
 `scripts/run_all.py` does not replace manual browser validation for interactive UI changes.
+
+`scripts/run_all.py` shells out to `python -m ruff`, so it uses the Ruff installed in the active environment. `requirements-dev-lock.txt` pins the reviewed toolchain (Ruff 0.15.15); a newer Ruff reports additional default rules that are unrelated to current changes.
 
 When adding new verification surfaces, update `scripts/run_all.py`, `tests/unit/test_run_all_script.py`, `README.md`, and `CONTRIBUTING.md` together.
 

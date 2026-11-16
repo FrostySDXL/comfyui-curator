@@ -1,5 +1,6 @@
-"""Unit tests for ComfyUI native template and URL compatibility."""
+"""Unit tests for the native ComfyUI template and URL compatibility."""
 
+import json
 import re
 import subprocess
 import sys
@@ -14,52 +15,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 # ---------------------------------------------------------------------------
-# Template parity
-# ---------------------------------------------------------------------------
-
-
-class TestTemplateParity:
-    """curator.html equals index.html after two intentional transforms."""
-
-    def _read_html(self, name):
-        return (REPO_ROOT / "templates" / name).read_text(encoding="utf-8")
-
-    def test_curator_html_equals_index_after_static_rewrite_and_native_script(self):
-        index = self._read_html("index.html")
-        curator = self._read_html("curator.html")
-
-        # Transform 1: /static/ -> /curator_static/
-        expected = index.replace("/static/", "/curator_static/")
-        # Transform 2: insert native-mode script before the first <script src=...>
-        native_script_block = "<script>window.CURATOR_NATIVE = true;</script>\n    "
-        first_script = expected.index('<script src="')
-        expected = expected[:first_script] + native_script_block + expected[first_script:]
-
-        assert curator == expected, (
-            "curator.html must be index.html after /static/ -> /curator_static/ "
-            "and inserting native-mode script before ordered JS assets"
-        )
-
-    def test_curator_html_content_length_matches_expected(self):
-        index = self._read_html("index.html")
-        curator = self._read_html("curator.html")
-        # curator.html = index.html + native mode script line + /static/ ->
-        # /curator_static/ (same lengths since both are 7 chars removed, 17 chars
-        # added per occurrence). The overall delta should be exactly the native-mode
-        # script tag length plus any small path-length diffs.
-        assert len(curator) > len(index)
-        assert len(curator) - len(index) < 450, (
-            "curator.html should be only slightly larger than index.html"
-        )
-
-
-# ---------------------------------------------------------------------------
 # curator.html structure
 # ---------------------------------------------------------------------------
 
 
 class TestCuratorHtmlStructure:
-    """Native curator.html completeness and /curator_static path coverage."""
+    """curator.html is the sole authoritative template."""
 
     def _read(self):
         return (REPO_ROOT / "templates" / "curator.html").read_text(encoding="utf-8")
@@ -74,33 +35,16 @@ class TestCuratorHtmlStructure:
         assert "/curator_static/js/" in html
         assert "/static/js/" not in html
 
-    def test_all_dom_ids_match_index(self):
-        index = (REPO_ROOT / "templates" / "index.html").read_text(encoding="utf-8")
-        curator = self._read()
-        index_ids = set(re.findall(r'id="([^"]+)"', index))
-        curator_ids = set(re.findall(r'id="([^"]+)"', curator))
-        missing = index_ids - curator_ids
-        assert not missing, f"missing DOM ids: {missing}"
+    def test_is_the_only_template(self):
+        assert not (REPO_ROOT / "templates" / "index.html").exists()
+        assert sorted(path.name for path in (REPO_ROOT / "templates").glob("*.html")) == [
+            "curator.html"
+        ]
 
-    def test_css_order_matches_index(self):
-        index_files = re.findall(
-            r'href="[^"]*css/([^"]+\.css)"',
-            (REPO_ROOT / "templates" / "index.html").read_text(encoding="utf-8"),
-        )
-        curator_files = re.findall(r'href="[^"]*css/([^"]+\.css)"', self._read())
-        assert index_files == curator_files
-
-    def test_js_order_matches_index(self):
-        index_files = re.findall(
-            r'src="[^"]*js/([^"]+\.js)"',
-            (REPO_ROOT / "templates" / "index.html").read_text(encoding="utf-8"),
-        )
-        curator_files = re.findall(r'src="[^"]*js/([^"]+\.js)"', self._read())
-        assert index_files == curator_files
-
-    def test_declares_native_mode(self):
+    def test_has_no_standalone_mode_flag(self):
         html = self._read()
-        assert "window.CURATOR_NATIVE = true" in html
+        assert "CURATOR_NATIVE" not in html
+        assert "CURATOR_NATIVE" not in read_frontend_js()
 
     def test_preserves_jinja_model_block(self):
         html = self._read()
@@ -108,38 +52,20 @@ class TestCuratorHtmlStructure:
         assert "{% for model in available_models %}" in html
 
 
-# ---------------------------------------------------------------------------
-# Standalone index.html integrity
-# ---------------------------------------------------------------------------
-
-
-class TestStandaloneIndexHtmlUnchanged:
-    def test_uses_static_paths(self):
-        index = (REPO_ROOT / "templates" / "index.html").read_text(encoding="utf-8")
-        assert "/static/css/" in index
-        assert "/static/js/" in index
-        assert "/curator_static/" not in index
-
-    def test_no_native_mode_flag(self):
-        index = (REPO_ROOT / "templates" / "index.html").read_text(encoding="utf-8")
-        assert "CURATOR_NATIVE" not in index
-
-
 class TestPageBootAssets:
-    """Both page modes reference the locally shipped ordered assets."""
+    """The native page references the locally shipped ordered assets."""
 
-    @pytest.mark.parametrize("template_name", ["index.html", "curator.html"])
-    def test_all_css_and_js_references_exist_locally(self, template_name):
-        html = (REPO_ROOT / "templates" / template_name).read_text(encoding="utf-8")
-        references = re.findall(r'(?:href|src)="/(static|curator_static)/([^"?]+)"', html)
+    def test_all_css_and_js_references_exist_locally(self):
+        html = (REPO_ROOT / "templates" / "curator.html").read_text(encoding="utf-8")
+        references = re.findall(r'(?:href|src)="/(curator_static)/([^"?]+)"', html)
 
-        assert references, f"{template_name} should reference local page assets"
+        assert references, "curator.html should reference local page assets"
         missing = [
             f"{prefix}/{asset}"
             for prefix, asset in references
             if not (REPO_ROOT / "static" / asset).is_file()
         ]
-        assert not missing, f"{template_name} references missing local assets: {missing}"
+        assert not missing, f"curator.html references missing local assets: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +74,7 @@ class TestPageBootAssets:
 
 
 class TestCuratorManagerPageHandlerContext:
-    def _setup_mocks(self):
+    def _setup_mocks(self, tmp_path, monkeypatch):
         for mod in ("server", "aiohttp", "aiohttp.web", "jinja2", "folder_paths"):
             sys.modules.pop(mod, None)
 
@@ -171,8 +97,8 @@ class TestCuratorManagerPageHandlerContext:
         sys.modules["jinja2"] = mock_jinja2
 
         mock_folder_paths = MagicMock()
-        mock_folder_paths.get_system_user_directory.return_value = "C:/comfy/user/__curator"
-        mock_folder_paths.get_output_directory.return_value = "C:/comfy/output"
+        mock_folder_paths.get_system_user_directory.return_value = str(tmp_path / "system")
+        mock_folder_paths.get_output_directory.return_value = str(tmp_path / "output")
         sys.modules["folder_paths"] = mock_folder_paths
 
         import importlib.util
@@ -182,10 +108,25 @@ class TestCuratorManagerPageHandlerContext:
         )
         cm = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cm)
+
+        from image_curator.native_settings import NativeCuratorSettings
+
+        settings = NativeCuratorSettings(
+            batch_root=tmp_path / "batches",
+            import_source=tmp_path / "output",
+            state_file=tmp_path / "system" / "state.json",
+            available_models=("native-model",),
+            default_model="native-model",
+        )
+        monkeypatch.setattr(
+            cm.NativeCuratorSettings,
+            "from_host_paths",
+            classmethod(lambda cls, **kwargs: settings),
+        )
         return cm, mock_jinja2
 
-    def test_page_handler_passes_empty_models_and_default(self):
-        cm, mock_jinja2 = self._setup_mocks()
+    def test_page_handler_passes_configured_native_models(self, tmp_path, monkeypatch):
+        cm, mock_jinja2 = self._setup_mocks(tmp_path, monkeypatch)
         cm.CuratorManager._registered = False
 
         import asyncio
@@ -207,8 +148,10 @@ class TestCuratorManagerPageHandlerContext:
         assert result.status == 200
 
         kwargs = mock_template.render.call_args[1]
-        assert kwargs.get("available_models") == []
-        assert kwargs.get("default_model") == ""
+        assert kwargs == {
+            "available_models": ["native-model"],
+            "default_model": "native-model",
+        }
 
     def test_does_not_import_env_config(self):
         source = (REPO_ROOT / "py" / "curator_manager.py").read_text(encoding="utf-8")
@@ -217,44 +160,23 @@ class TestCuratorManagerPageHandlerContext:
 
 
 # ---------------------------------------------------------------------------
-# URL helpers -- behavioral tests in both modes
+# URL helpers -- unconditional native paths
 # ---------------------------------------------------------------------------
 
 
 def _extract_cc_helpers():
-    """Extract ccApiPath, ccThumbUrl, ccImageUrl from state.js for node eval.
-
-    Returns a JS code block where CURATOR_NATIVE is a mutable var so test
-    IIFEs can toggle it before calling helpers.
-    """
+    """Extract the URL helpers from state.js for node evaluation."""
     source = read_frontend_js()
-    start = source.index("const CURATOR_NATIVE")
+    start = source.index("function ccApiPath(path)")
     end = source.index("const SIDEBAR_WIDTH_KEY")
-    block = source[start:end]
-    # Replace const with var so node tests can reassign it.
-    block = block.replace(
-        "const CURATOR_NATIVE = (window.CURATOR_NATIVE === true);",
-        "var CURATOR_NATIVE = false;",
-    )
-    return "var window = {};\n" + block
+    return source[start:end]
 
 
-class TestCcApiPathBehavior:
-    """Verify ccApiPath mapping in both modes using node subprocess."""
+class TestCcPathBehavior:
+    """Verify the unconditional native URL helpers using node subprocess."""
 
-    def _eval_native(self, expr):
-        """Evaluate expr with CURATOR_NATIVE=true at module level."""
-        helpers = _extract_cc_helpers()
-        code = helpers + "\nCURATOR_NATIVE = true;\nconsole.log(JSON.stringify(" + expr + "));"
-        return self._run_node(code)
-
-    def _eval_standalone(self, expr):
-        """Evaluate expr with CURATOR_NATIVE=false at module level."""
-        helpers = _extract_cc_helpers()
-        code = helpers + "\nCURATOR_NATIVE = false;\nconsole.log(JSON.stringify(" + expr + "));"
-        return self._run_node(code)
-
-    def _run_node(self, code):
+    def _eval(self, expr):
+        code = _extract_cc_helpers() + "\nconsole.log(JSON.stringify(" + expr + "));"
         result = subprocess.run(
             ["node", "-e", code],
             capture_output=True,
@@ -263,57 +185,39 @@ class TestCcApiPathBehavior:
         )
         if result.returncode != 0:
             raise AssertionError(f"node failed: {result.stderr}")
-        import json
-
         return json.loads(result.stdout.strip())
 
-    def test_standalone_mode_identity(self):
-        """ccApiPath returns path unchanged when CURATOR_NATIVE is false."""
-        result = self._eval_standalone('ccApiPath("/api/batches")')
-        assert result == "/api/batches"
+    def test_maps_api_routes(self):
+        assert self._eval('ccApiPath("/api/batches")') == "/api/curator/batches"
 
-    def test_native_mode_maps_correctly(self):
-        """ccApiPath("/api/batches") -> "/api/curator/batches" when native."""
-        result = self._eval_native('ccApiPath("/api/batches")')
-        assert result == "/api/curator/batches"
-
-    def test_native_mode_maps_ai_routes(self):
-        result = self._eval_native('ccApiPath("/api/ai-curate/jobs")')
-        assert result == "/api/curator/ai-curate/jobs"
-
-    def test_standalone_mode_leaves_ai_routes_unchanged(self):
-        result = self._eval_standalone('ccApiPath("/api/ai-curate/jobs")')
-        assert result == "/api/ai-curate/jobs"
+    def test_maps_ai_routes(self):
+        assert self._eval('ccApiPath("/api/ai-curate/jobs")') == "/api/curator/ai-curate/jobs"
 
     def test_no_double_prefix(self):
-        """ccApiPath returns already-prefixed paths unchanged in native mode."""
-        result = self._eval_native('ccApiPath("/api/curator/batches")')
-        assert result == "/api/curator/batches"
+        assert self._eval('ccApiPath("/api/curator/batches")') == "/api/curator/batches"
 
-    def test_native_mode_preserves_query_string(self):
-        result = self._eval_native('ccApiPath("/api/images/b/x?sort=date")')
-        assert result == "/api/curator/images/b/x?sort=date"
+    def test_preserves_query_string(self):
+        assert (
+            self._eval('ccApiPath("/api/images/b/x?sort=date")')
+            == "/api/curator/images/b/x?sort=date"
+        )
 
-    def test_thumb_in_standalone(self):
-        result = self._eval_standalone('ccThumbUrl("b","f","n.png")')
-        assert result == "/thumb/b/f/n.png"
+    def test_non_api_paths_are_unchanged(self):
+        assert self._eval('ccApiPath("/curator/thumb/a")') == "/curator/thumb/a"
 
-    def test_thumb_in_native(self):
-        result = self._eval_native('ccThumbUrl("b","f","n.png")')
-        assert result == "/curator/thumb/b/f/n.png"
+    def test_thumb_url_is_always_native(self):
+        assert self._eval('ccThumbUrl("b","f","n.png")') == "/curator/thumb/b/f/n.png"
+
+    def test_image_url_is_always_native(self):
+        assert self._eval('ccImageUrl("b","f","n.png")') == "/curator/image/b/f/n.png"
+
+    def test_preview_url_is_always_native(self):
+        assert self._eval('ccPreviewUrl("b","f","n.png")') == "/curator/preview/b/f/n.png"
 
     def test_thumb_encodes_params(self):
-        result = self._eval_standalone('ccThumbUrl("my batch","inbox","image (1).png")')
+        result = self._eval('ccThumbUrl("my batch","inbox","image (1).png")')
         assert "%20" in result
         assert "(" in result
-
-    def test_image_in_standalone(self):
-        result = self._eval_standalone('ccImageUrl("b","f","n.png")')
-        assert result == "/image/b/f/n.png"
-
-    def test_image_in_native(self):
-        result = self._eval_native('ccImageUrl("b","f","n.png")')
-        assert result == "/curator/image/b/f/n.png"
 
 
 class TestNoRawFetchBypass:
@@ -346,7 +250,6 @@ class TestErrorPropagation:
     """ModuleNotFoundError for non-server modules propagates through __init__.py."""
 
     def _build_temp_package(self, tmp_path, curator_manager_content):
-        """Create a minimal extension package under tmp_path."""
         pkg = tmp_path / "test_pkg"
         pkg.mkdir()
         py_dir = pkg / "py"
@@ -365,7 +268,6 @@ class TestErrorPropagation:
 
     @pytest.fixture(autouse=True)
     def _clean_caches(self):
-        """Clear ComfyUI mock modules that leak across tests."""
         saved = {}
         for key in ("server", "aiohttp", "aiohttp.web", "jinja2", "py.curator_manager"):
             if key in sys.modules:
@@ -408,26 +310,12 @@ class TestErrorPropagation:
         self._assert_propagates(tmp_path, "nonexistent_jinja2_lib")
 
 
-# ---------------------------------------------------------------------------
-# Mode selection
-# ---------------------------------------------------------------------------
-
-
 class TestModeSelection:
-    def test_curator_html_declares_native(self):
-        html = (REPO_ROOT / "templates" / "curator.html").read_text(encoding="utf-8")
-        assert "window.CURATOR_NATIVE = true" in html
-
-    def test_index_html_is_standalone(self):
-        html = (REPO_ROOT / "templates" / "index.html").read_text(encoding="utf-8")
-        assert "CURATOR_NATIVE" not in html
-
-    def test_state_js_detects_native_mode(self):
+    def test_state_js_has_no_mode_detection(self):
         source = read_frontend_js()
-        assert "const CURATOR_NATIVE" in source
-        assert "window.CURATOR_NATIVE" in source
+        assert "CURATOR_NATIVE" not in source
 
     def test_helpers_defined(self):
         source = read_frontend_js()
-        for name in ("ccApiPath", "ccThumbUrl", "ccImageUrl"):
+        for name in ("ccApiPath", "ccThumbUrl", "ccImageUrl", "ccPreviewUrl"):
             assert f"function {name}(" in source, f"missing: {name}"

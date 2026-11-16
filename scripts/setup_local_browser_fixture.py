@@ -23,13 +23,12 @@ class FixtureResult:
     root: Path
     batches_dir: Path
     comfyui_dir: Path
-    state_file: Path
     host: str
     port: int
 
     @property
     def url(self) -> str:
-        return f"http://{self.host}:{self.port}"
+        return f"http://{self.host}:{self.port}/curator"
 
     def env_lines(self, shell: str) -> list[str]:
         shell = shell.lower()
@@ -37,17 +36,11 @@ class FixtureResult:
             return [
                 f'$env:IMAGE_CURATOR_BATCHES="{self.batches_dir}"',
                 f'$env:IMAGE_CURATOR_COMFYUI="{self.comfyui_dir}"',
-                f'$env:IMAGE_CURATOR_STATE="{self.state_file}"',
-                f'$env:IMAGE_CURATOR_HOST="{self.host}"',
-                f'$env:IMAGE_CURATOR_PORT="{self.port}"',
             ]
         if shell == "cmd":
             return [
                 f"set IMAGE_CURATOR_BATCHES={self.batches_dir}",
                 f"set IMAGE_CURATOR_COMFYUI={self.comfyui_dir}",
-                f"set IMAGE_CURATOR_STATE={self.state_file}",
-                f"set IMAGE_CURATOR_HOST={self.host}",
-                f"set IMAGE_CURATOR_PORT={self.port}",
             ]
         raise ValueError("shell must be 'powershell' or 'cmd'")
 
@@ -122,11 +115,10 @@ def _create_batch_dirs(batches_dir: Path, batch_name: str) -> None:
         (batches_dir / batch_name / folder).mkdir(parents=True, exist_ok=True)
 
 
-def create_fixture(root: Path, host: str = "127.0.0.1", port: int = 5000) -> FixtureResult:
+def create_fixture(root: Path, host: str = "127.0.0.1", port: int = 8188) -> FixtureResult:
     root = Path(root)
     batches_dir = root / "batches"
     comfyui_dir = root / "comfyui-outputs"
-    state_file = root / "state.json"
 
     _create_batch_dirs(batches_dir, "manual-test")
     _create_batch_dirs(batches_dir, "second-batch")
@@ -283,14 +275,10 @@ def create_fixture(root: Path, host: str = "127.0.0.1", port: int = 5000) -> Fix
         encoding="utf-8",
     )
 
-    state_file.parent.mkdir(parents=True, exist_ok=True)
-    state_file.write_text(json.dumps({"active_batch": "manual-test"}), encoding="utf-8")
-
     return FixtureResult(
         root=root,
         batches_dir=batches_dir,
         comfyui_dir=comfyui_dir,
-        state_file=state_file,
         host=host,
         port=port,
     )
@@ -304,8 +292,8 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_ROOT,
         help="Fixture root directory. Default: tmp/local-browser-fixture",
     )
-    parser.add_argument("--host", default="127.0.0.1", help="Host for the app launch command")
-    parser.add_argument("--port", type=int, default=5000, help="Port for the app launch command")
+    parser.add_argument("--host", default="127.0.0.1", help="Host of the running ComfyUI server")
+    parser.add_argument("--port", type=int, default=8188, help="Port of the running ComfyUI server")
     parser.add_argument(
         "--shell",
         choices=("powershell", "cmd"),
@@ -323,13 +311,19 @@ def main() -> int:
     print(f"- Fixture root: {result.root}")
     print(f"- Batches: {result.batches_dir}")
     print(f"- Fake ComfyUI output: {result.comfyui_dir}")
-    print(f"- State file: {result.state_file}")
     print(f"- Browser URL: {result.url}")
     print("")
-    print(f"Run these commands in {args.shell} before starting the app:")
+    print("Native ComfyUI setup:")
+    print(f"- Open {result.url} after installing this folder under custom_nodes.")
+    print(f"- In Curator Settings, set the batch root to {result.batches_dir}")
+    print(f"- Set the import source to {result.comfyui_dir}")
+    print(
+        "- Select the manual-test batch in the Curator sidebar; native mode does not read a fixture state file."
+    )
+    print("")
+    print(f"Optional {args.shell} fallbacks for a fresh native config:")
     for line in result.env_lines(args.shell):
         print(line)
-    print(".venv\\Scripts\\python.exe app.py")
     return 0
 
 

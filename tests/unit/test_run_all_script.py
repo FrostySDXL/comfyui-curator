@@ -27,7 +27,6 @@ def test_default_plan_uses_python_modules_and_all_test_layers():
         "ruff-check",
         "compileall",
         "css-assets",
-        "curator-template",
         "unit-tests",
         "component-tests",
         "integration-tests",
@@ -41,7 +40,28 @@ def test_default_plan_uses_python_modules_and_all_test_layers():
     assert ruff_check.command[:3] == [sys.executable, "-m", "ruff"]
     assert "check" in ruff_check.command
     assert checks[3].command == [sys.executable, "scripts/run_all.py", "--check-css-assets"]
-    assert checks[4].command == [sys.executable, "scripts/generate_curator_template.py", "--check"]
+
+
+def test_python_targets_include_native_entrypoints_and_shared_core():
+    run_all = load_run_all_module()
+
+    assert run_all.PYTHON_TARGETS == [
+        "__init__.py",
+        "curate.py",
+        "image_curator",
+        "ai_curate",
+        "py",
+        "tests",
+        "scripts",
+    ]
+    assert run_all.COMPILE_TARGETS == [
+        "__init__.py",
+        "curate.py",
+        "image_curator",
+        "ai_curate",
+        "py",
+    ]
+    assert "app.py" not in run_all.PYTHON_TARGETS
 
 
 def test_quick_plan_is_smaller_and_can_skip_js():
@@ -50,7 +70,7 @@ def test_quick_plan_is_smaller_and_can_skip_js():
     checks = run_all.build_checks(mode="quick", skip_js=True)
     names = [check.name for check in checks]
 
-    assert names == ["compileall", "css-assets", "curator-template", "unit-tests"]
+    assert names == ["compileall", "css-assets", "unit-tests"]
 
 
 def test_quick_plan_includes_all_javascript_checks():
@@ -129,14 +149,14 @@ def test_frontend_source_file_lists_match_runner_order():
 
 
 def test_template_script_tags_match_ordered_split_file_list():
-    template = Path("templates/index.html").read_text(encoding="utf-8")
+    template = Path("templates/curator.html").read_text(encoding="utf-8")
     script_srcs = [
         line.split('src="', 1)[1].split('"', 1)[0]
         for line in template.splitlines()
         if "<script" in line and 'src="' in line
     ]
 
-    assert script_srcs == [f"/static/js/{path.name}" for path in FRONTEND_JS_FILES]
+    assert script_srcs == [f"/curator_static/js/{path.name}" for path in FRONTEND_JS_FILES]
 
 
 def test_format_plan_mutates_only_when_requested():
@@ -148,13 +168,11 @@ def test_format_plan_mutates_only_when_requested():
     assert checks[0].command[:4] == [sys.executable, "-m", "ruff", "format"]
 
 
-def test_template_check_runs_in_all_non_format_modes():
-    run_all = load_run_all_module()
-
-    for mode in ("quick", "default", "full"):
-        names = [check.name for check in run_all.build_checks(mode=mode)]
-        assert "curator-template" in names
-    assert "curator-template" not in [check.name for check in run_all.build_checks(mode="format")]
+def test_template_source_is_curator_html():
+    template = Path("templates/curator.html").read_text(encoding="utf-8")
+    assert "/curator_static/css/" in template
+    assert "/curator_static/js/" in template
+    assert Path("templates/index.html").exists() is False
 
 
 def test_full_plan_includes_mypy():

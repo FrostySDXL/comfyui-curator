@@ -80,7 +80,6 @@ class EvaluationFixtureResult:
     root: Path
     batches_dir: Path
     comfyui_dir: Path
-    state_file: Path
     host: str
     port: int
     seed: int
@@ -95,7 +94,7 @@ class EvaluationFixtureResult:
 
     @property
     def url(self) -> str:
-        return f"http://{self.host}:{self.port}"
+        return f"http://{self.host}:{self.port}/curator"
 
     def env_lines(self, shell: str) -> list[str]:
         shell = shell.lower()
@@ -103,17 +102,11 @@ class EvaluationFixtureResult:
             return [
                 f'$env:IMAGE_CURATOR_BATCHES="{self.batches_dir}"',
                 f'$env:IMAGE_CURATOR_COMFYUI="{self.comfyui_dir}"',
-                f'$env:IMAGE_CURATOR_STATE="{self.state_file}"',
-                f'$env:IMAGE_CURATOR_HOST="{self.host}"',
-                f'$env:IMAGE_CURATOR_PORT="{self.port}"',
             ]
         if shell == "cmd":
             return [
                 f"set IMAGE_CURATOR_BATCHES={self.batches_dir}",
                 f"set IMAGE_CURATOR_COMFYUI={self.comfyui_dir}",
-                f"set IMAGE_CURATOR_STATE={self.state_file}",
-                f"set IMAGE_CURATOR_HOST={self.host}",
-                f"set IMAGE_CURATOR_PORT={self.port}",
             ]
         raise ValueError("shell must be 'powershell' or 'cmd'")
 
@@ -573,12 +566,11 @@ def create_fixture(
     seed: int = DEFAULT_SEED,
     skip_large: bool = False,
     host: str = "127.0.0.1",
-    port: int = 5000,
+    port: int = 8188,
 ) -> EvaluationFixtureResult:
     root = Path(root)
     batches_dir = root / "batches"
     comfyui_dir = root / "comfyui-outputs"
-    state_file = root / "state.json"
 
     started = time.perf_counter()
     pool: dict[tuple[object, ...], bytes] = {}
@@ -598,8 +590,6 @@ def create_fixture(
 
     if not skip_large:
         counts["paging"] = _generate_paging_batch(batches_dir, large_count, seed, pool)
-
-    state_file.write_text(json.dumps({"active_batch": BATCH_CULLING}), encoding="utf-8")
 
     tracked_dirs = {
         batches_dir / BATCH_CULLING / "inbox",
@@ -632,7 +622,6 @@ def create_fixture(
         root=root,
         batches_dir=batches_dir,
         comfyui_dir=comfyui_dir,
-        state_file=state_file,
         host=host,
         port=port,
         seed=seed,
@@ -675,17 +664,6 @@ def verify_fixture(root: Path) -> tuple[bool, list[str]]:
         actual = _count_files(directory)
         if actual != expected:
             problems.append(f"{relative}: expected {expected} files, found {actual}")
-
-    state_file = root / "state.json"
-    if not state_file.is_file():
-        problems.append("state.json is missing")
-    else:
-        try:
-            state = json.loads(state_file.read_text(encoding="utf-8"))
-            if state.get("active_batch") != BATCH_CULLING:
-                problems.append(f"state.json active_batch is {state.get('active_batch')!r}")
-        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-            problems.append(f"state.json is not valid JSON: {exc}")
 
     culling = root / "batches" / BATCH_CULLING
     for rel in ("inbox", "shortlisted", "finals", "rejects", "public"):
@@ -739,7 +717,7 @@ def _print_summary(result: EvaluationFixtureResult, shell: str) -> None:
     print("Evaluation fixture ready")
     print(f"- Fixture root: {result.root}")
     print(f"- Batches: {result.batches_dir}")
-    print(f"- State file: {result.state_file}")
+    print(f"- Native URL: {result.url}")
     print(f"- Seed: {result.seed}")
     print(
         f"- Small batch ({BATCH_CULLING}): {result.small_count} media images "
@@ -757,12 +735,12 @@ def _print_summary(result: EvaluationFixtureResult, shell: str) -> None:
     print(f"- Approx disk usage: {_format_bytes(result.disk_bytes)}")
     print(f"- Elapsed: {result.elapsed_seconds:.1f}s")
     print("")
-    print(f"Run these commands in {shell} before starting the app:")
+    print(f"Optional {shell} environment fallbacks for a fresh native config:")
     for line in result.env_lines(shell):
         print(line)
-    print(".venv\\Scripts\\python.exe app.py")
     print("")
-    print(f"Native note: point the ComfyUI native settings batch root at {result.batches_dir}")
+    print(f"Native setup: open /curator, set the batch root to {result.batches_dir},")
+    print(f"then select the {BATCH_CULLING} batch. No fixture state file is written.")
 
 
 def _safe_remove_root(root: Path) -> None:
@@ -789,8 +767,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--large-count", type=int, default=30000, help="Large batch file count")
     parser.add_argument("--small-count", type=int, default=800, help="Small batch image count")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Deterministic seed")
-    parser.add_argument("--host", default="127.0.0.1", help="Host for the app launch command")
-    parser.add_argument("--port", type=int, default=5000, help="Port for the app launch command")
+    parser.add_argument("--host", default="127.0.0.1", help="Host of the running ComfyUI server")
+    parser.add_argument("--port", type=int, default=8188, help="Port of the running ComfyUI server")
     parser.add_argument(
         "--shell",
         choices=("powershell", "cmd"),

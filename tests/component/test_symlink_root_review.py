@@ -1,4 +1,4 @@
-"""Independent acceptance: real directory aliases through both move adapters."""
+"""Independent acceptance: real directory aliases through the native adapter."""
 
 import asyncio
 import json
@@ -62,30 +62,6 @@ def _assert_restored(target):
     assert (target / "review/inbox/image.png").read_bytes() == b"original image"
     assert (target / "review/inbox/image.png.json").read_bytes() == b'{"seed":"123"}'
     assert list((target / "review/finals").iterdir()) == []
-
-
-def test_flask_alias_move_then_undo_using_real_root(app_module, monkeypatch, aliased_library):
-    alias, target = aliased_library
-    monkeypatch.setattr(app_module, "BATCHES_DIR", alias)
-    client = app_module.app.test_client()
-    moved = client.post(
-        "/api/move",
-        json={
-            "batch": "review",
-            "filename": "image.png",
-            "source": "inbox",
-            "destination": "finals",
-        },
-    )
-    assert moved.status_code == 200, moved.json
-    token = moved.json["operation_id"]
-    assert client.get("/api/move-history").json["operations"][0]["id"] == token
-    # Reconstruct through the canonical path; the journal must be the same.
-    monkeypatch.setattr(app_module, "BATCHES_DIR", target)
-    restored = client.post("/api/move-batch/undo", json={"operation_id": token})
-    assert restored.status_code == 200, restored.json
-    assert restored.json["status"] == "undone"
-    _assert_restored(target)
 
 
 def test_native_alias_bulk_move_and_restarted_undo(monkeypatch, tmp_path, aliased_library):
@@ -207,20 +183,12 @@ def test_store_stays_on_original_target_if_alias_changes(tmp_path, aliased_libra
     assert list((other / "review/inbox").iterdir()) == []
 
 
-def test_dangling_alias_history_routes_fail_as_json(app_module, monkeypatch, tmp_path):
+def test_dangling_alias_history_routes_fail_as_json(monkeypatch, tmp_path):
     target = tmp_path / "disconnected"
     target.mkdir()
     alias = tmp_path / "configured"
     _directory_alias(alias, target)
     target.rmdir()
-    monkeypatch.setattr(app_module, "BATCHES_DIR", alias)
-    client = app_module.app.test_client()
-    for response in (
-        client.get("/api/move-history"),
-        client.post("/api/move-batch/undo", json={"operation_id": "test-token"}),
-    ):
-        assert response.status_code == 500
-        assert response.json == {"error": "Move history is unavailable"}
 
     native = _load_native_routes(monkeypatch)
 

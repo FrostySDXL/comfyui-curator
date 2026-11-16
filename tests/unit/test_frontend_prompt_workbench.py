@@ -4,7 +4,6 @@ from pathlib import Path
 from tests.unit.frontend_source import extract_function_body
 
 
-INDEX_HTML = Path("templates/index.html")
 CURATOR_HTML = Path("templates/curator.html")
 PROMPTS_JS = Path("static/js/prompts.js")
 PROMPTS_CSS = Path("static/css/prompts.css")
@@ -14,7 +13,7 @@ KEYBOARD_JS = Path("static/js/keyboard.js")
 
 
 def _prompt_markup() -> str:
-    html = INDEX_HTML.read_text(encoding="utf-8")
+    html = CURATOR_HTML.read_text(encoding="utf-8")
     return html.split('id="prompts-modal"', 1)[1].split('id="settings-modal"', 1)[0]
 
 
@@ -400,17 +399,3 @@ def test_prompt_responsive_layout_keeps_copy_actions_and_context_controls_usable
         ".prompts-entry-heading { flex-direction: column; align-items: stretch; gap: 6px; }" in css
     )
     assert ".prompts-copy-actions { width: 100%; }" in css
-
-
-def test_prompt_template_keeps_exact_native_two_transform_parity() -> None:
-    index = INDEX_HTML.read_text(encoding="utf-8")
-    curator = CURATOR_HTML.read_text(encoding="utf-8")
-    expected = index.replace("/static/", "/curator_static/")
-    first_script = expected.index('<script src="')
-    expected = (
-        expected[:first_script]
-        + "<script>window.CURATOR_NATIVE = true;</script>\n    "
-        + expected[first_script:]
-    )
-
-    assert curator == expected

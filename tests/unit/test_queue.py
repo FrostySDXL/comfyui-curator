@@ -28,7 +28,7 @@ def _make_job(batch="test-batch", prompt="test prompt", **kwargs):
 
 
 def test_queue_manager_exposes_app_worker_interface():
-    """QueueManager keeps the methods consumed by app.py and ai_curate.worker."""
+    """QueueManager keeps the methods consumed by the native lifecycle and ai_curate.worker."""
     required_methods = {
         "fail_job",
         "is_cancel_requested",

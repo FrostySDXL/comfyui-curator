@@ -4,7 +4,6 @@ from pathlib import Path
 from tests.unit.frontend_source import extract_function_body
 
 
-INDEX_HTML = Path("templates/index.html")
 CURATOR_HTML = Path("templates/curator.html")
 PUBLISH_JS = Path("static/js/publish.js")
 MODALS_CSS = Path("static/css/modals.css")
@@ -14,7 +13,7 @@ EVENTS_JS = Path("static/js/events.js")
 
 
 def _publish_markup() -> str:
-    html = INDEX_HTML.read_text(encoding="utf-8")
+    html = CURATOR_HTML.read_text(encoding="utf-8")
     return html.split('id="publish-modal"', 1)[1].split('id="public-destination-modal"', 1)[0]
 
 
@@ -486,23 +485,6 @@ def test_defect_8_inflight_submission_not_reset_on_reopen() -> None:
 
     # Activity visibility and accessibility state derive from the flag.
     assert "syncPublishSubmitActivity(publishSubmitInflight);" in show_body
-
-
-def test_publish_template_keeps_exact_native_two_transform_parity() -> None:
-    index = INDEX_HTML.read_text(encoding="utf-8")
-    curator = CURATOR_HTML.read_text(encoding="utf-8")
-    expected = index.replace("/static/", "/curator_static/")
-    first_script = expected.index('<script src="')
-    expected = (
-        expected[:first_script]
-        + "<script>window.CURATOR_NATIVE = true;</script>\n    "
-        + expected[first_script:]
-    )
-
-    assert curator == expected
-
-
-# --- Acceptance gap 1: truthful preset persistence ---
 
 
 def test_normalize_presets_rejects_unsupported_version() -> None:

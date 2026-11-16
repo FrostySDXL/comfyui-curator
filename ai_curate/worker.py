@@ -1,10 +1,9 @@
 """Scoring worker orchestration for AI curation jobs.
 
-The queue object passed to ``run_scoring_worker_inner`` must expose the app-facing
+The queue object passed to ``run_scoring_worker_inner`` must expose the
 QueueManager methods used here: ``fail_job``, ``is_cancel_requested``,
-``finalize_cancelled``, and ``complete_job``. The Flask lifecycle helpers that
-remain in ``app.py`` also rely on ``submit``, ``list_jobs``, ``cancel``, and
-``get_job``.
+``finalize_cancelled``, and ``complete_job``. The native lifecycle owns job
+submission, cancellation, and worker tracking.
 """
 
 from collections.abc import Callable

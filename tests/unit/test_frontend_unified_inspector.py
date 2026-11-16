@@ -4,7 +4,7 @@ from tests.unit.frontend_source import extract_function_body, read_frontend_js
 
 
 def read_index_html() -> str:
-    return Path("templates/index.html").read_text(encoding="utf-8")
+    return Path("templates/curator.html").read_text(encoding="utf-8")
 
 
 def test_unified_inspector_shell_owns_context_tabs_and_active_state() -> None:

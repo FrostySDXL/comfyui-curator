@@ -25,7 +25,7 @@ def test_batch_sidebar_peek_lifecycle_executes_real_sources():
 
 
 def test_peek_reuses_navigation_and_has_accessible_touch_disclosure():
-    html = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    html = (ROOT / "templates/curator.html").read_text(encoding="utf-8")
     css = (ROOT / "static/css/sidebar.css").read_text(encoding="utf-8")
     assert html.count('id="batch-list"') == 1
     assert 'id="batch-peek-trigger"' in html
@@ -37,7 +37,7 @@ def test_peek_reuses_navigation_and_has_accessible_touch_disclosure():
 
 
 def test_peek_exposes_shared_sort_controls_in_a_separate_compact_header_row():
-    html = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    html = (ROOT / "templates/curator.html").read_text(encoding="utf-8")
     css = (ROOT / "static/css/sidebar.css").read_text(encoding="utf-8")
     for sort in ("alpha", "count", "recent", "ai"):
         assert html.count(f'data-bsort="{sort}"') == 1

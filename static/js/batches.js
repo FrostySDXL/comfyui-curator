@@ -14,9 +14,6 @@ let lastAutoImportFailureKey = '';
 let importStatusPollInFlight = false;
 let autoImportEnabled = false;
 let autoImportPaused = false;
-// Explicit imports need one deferred refresh after interactions finish.
-let pendingImportRefresh = null;
-let importSnapshotLoad = null;
 
 function updateAutoImportQuickAction(activeBatch) {
             const button = document.getElementById('set-auto-import-btn');
@@ -26,9 +23,9 @@ function updateAutoImportQuickAction(activeBatch) {
             button.disabled = !realReviewBatch || activeBatch === currentBatch;
             if (!realReviewBatch) return;
             if (activeBatch === currentBatch) {
-                button.textContent = CURATOR_NATIVE && autoImportEnabled && !autoImportPaused ? 'Auto-import active' : 'Import destination';
+                button.textContent = autoImportEnabled && !autoImportPaused ? 'Auto-import active' : 'Import destination';
             } else {
-                button.textContent = CURATOR_NATIVE ? 'Set as Auto-import' : 'Set as import destination';
+                button.textContent = 'Set as Auto-import';
             }
         }
 
@@ -56,11 +53,11 @@ async function pollImportAvailability() {
                 if (!resp || !resp.ok) return;
                 const data = await resp.json();
                 updatePendingImportUi(data.pending_count, data.active_batch);
-                autoImportEnabled = CURATOR_NATIVE && data.auto_import_enabled === true;
-                autoImportPaused = CURATOR_NATIVE && data.auto_import_paused === true;
+                autoImportEnabled = data.auto_import_enabled === true;
+                autoImportPaused = data.auto_import_paused === true;
                 updateAutoImportQuickAction(data.active_batch);
                 const status = document.getElementById('auto-import-status');
-                if (CURATOR_NATIVE && status) {
+                if (status) {
                     status.classList.remove('hidden');
                     status.textContent = `Auto-import ${data.auto_import_enabled ? 'On' : 'Off'}${data.auto_import_error ? (data.auto_import_paused ? ' (paused)' : ' (retrying)') : ''}`;
                     status.title = data.auto_import_error || '';
@@ -75,7 +72,7 @@ async function pollImportAvailability() {
         }
 
 async function pollNativeBatchSummaries() {
-            if (!CURATOR_NATIVE || isInteractionBusy()) return;
+            if (isInteractionBusy()) return;
             await loadBatches({background: true});
         }
 
@@ -719,10 +716,6 @@ async function importAll() {
                     });
                     showToast(importResult);
                     updatePendingImportUi(pendingCount, batch);
-                    if (importedCount && !CURATOR_NATIVE && !folderSnapshot
-                        && currentBatch === batch && currentFolder === 'inbox') {
-                        pendingImportRefresh = {batch};
-                    }
                     await loadBatches();
                     if (currentBatch === batch && currentFolder === 'inbox' && !isInteractionBusy())
                         await pollForChanges();

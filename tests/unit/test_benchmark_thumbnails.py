@@ -27,7 +27,6 @@ def test_cli_defaults_are_firefox_first_and_native(monkeypatch):
     assert args.browser == "firefox"
     assert args.sizes == [100, 500, 2000, 30000]
     assert args.url == "http://127.0.0.1:8188/curator"
-    assert args.mode == "native"
     assert args.headless is False
     assert args.output_root == Path("tmp/thumbnail-benchmarks")
     assert benchmark.browser_script_timeout(args) == 900.0
@@ -47,35 +46,18 @@ def test_dynamic_frame_budget_scales_for_thirty_thousand_items():
     assert benchmark.dynamic_frame_budget(30000) == 120000
 
 
-def test_standalone_requires_explicit_batch_root_under_output_root(tmp_path):
-    benchmark = load_benchmark_module()
-    output_root = tmp_path / "bench"
-
-    with pytest.raises(benchmark.BenchmarkError, match="--batch-root"):
-        benchmark.validate_standalone_root(None, output_root)
-    with pytest.raises(benchmark.BenchmarkError, match="under --output-root"):
-        benchmark.validate_standalone_root(tmp_path / "other", output_root)
-
-    assert (
-        benchmark.validate_standalone_root(output_root / "batches", output_root)
-        == (output_root / "batches").resolve()
-    )
-
-
-def test_runtime_paths_match_native_and_standalone_contracts():
+def test_runtime_paths_are_native_only():
     benchmark = load_benchmark_module()
 
     native = benchmark.runtime_paths("native")
-    standalone = benchmark.runtime_paths("standalone")
+
+    with pytest.raises(benchmark.BenchmarkError, match="Unsupported runtime mode"):
+        benchmark.runtime_paths("standalone")
 
     assert native.settings == "/api/curator/settings"
     assert native.batches == "/api/curator/batches"
     assert native.active_batch == "/api/curator/active-batch"
     assert native.thumbnail_prefix == "/curator/thumb/"
-    assert standalone.settings is None
-    assert standalone.batches == "/api/batches"
-    assert standalone.active_batch == "/api/active-batch"
-    assert standalone.thumbnail_prefix == "/thumb/"
 
 
 def test_report_url_rejects_credentials_and_query_data():

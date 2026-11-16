@@ -32,7 +32,7 @@ body:
       label: Primary surface
       options:
         - Web UI
-        - Flask API
+        - Native ComfyUI API
         - Batch filesystem workflow
         - AI scoring / queue / run history
         - CLI curate.py

@@ -42,7 +42,7 @@ CACHE_HEADERS = {"Cache-Control": "public, max-age=3600, immutable"}
 
 
 class NativeCuratorService:
-    """Native filesystem dependencies resolved independently of Flask."""
+    """Native filesystem dependencies resolved from ComfyUI-owned settings."""
 
     def __init__(self, settings: NativeCuratorSettings) -> None:
         self.settings = settings

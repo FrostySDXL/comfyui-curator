@@ -58,7 +58,7 @@ class AutoImport:
         self.error = ""
         self.retry_after = 0.0
         self.paused = False
-        self.failure = None
+        self.failure: dict[str, object] | None = None
         self.failure_id = 0
 
     def _set_error(self, message: str, *, paused: bool):

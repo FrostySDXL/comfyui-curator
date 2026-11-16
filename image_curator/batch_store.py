@@ -1,7 +1,7 @@
 """Batch filesystem and state helpers for Image Curator.
 
-This module owns reusable non-AI batch behavior so the Flask entrypoint can
-stay focused on route wiring and operator-facing service concerns.
+This module owns reusable non-AI batch behavior for the native ComfyUI
+extension and headless CLI.
 """
 
 import json
@@ -412,7 +412,7 @@ def _collision_safe_name(dest_dir: Path, name: str, source_path: Path | None = N
 def move_image(src: Path, dst: Path, *, no_overwrite: bool = False) -> bool:
     """Move a single file from ``src`` to ``dst``.
 
-    Centralised helper used by the Flask routes, the AI curate worker,
+    Centralised helper used by manual move recovery, the AI curate worker,
     and the CLI. Returns True on success, False if
     the source does not exist or the move raised ``OSError``. Never
     re-raises so callers don't have to wrap every call in try/except.

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-INDEX_HTML = Path("templates/index.html")
+CURATOR_HTML = Path("templates/curator.html")
 from tests.unit.frontend_source import extract_function_body, read_frontend_js
 
 
@@ -85,7 +85,7 @@ def test_native_mode_all_public_count_request_no_longer_skipped():
         "function normalizePublicItems", 1
     )[0]
 
-    assert "if (CURATOR_NATIVE)" not in function_source
+    assert "CURATOR_NATIVE" not in function_source
     assert "apiGetAllPublic()" in function_source
 
 
@@ -140,14 +140,14 @@ def test_prompts_modal_html_uses_rebuild_index_label_and_aria_live():
     The aria-live attribute must be present at page load (not just toggled in JS)
     so screen readers monitor the region from initial render.
     """
-    html = INDEX_HTML.read_text(encoding="utf-8")
+    html = CURATOR_HTML.read_text(encoding="utf-8")
     assert 'id="prompts-stale-warning"' in html
     assert 'aria-live="polite"' in html.split('id="prompts-stale-warning"')[1].split(">", 1)[0]
     assert ">Rebuild Index<" in html
 
 
 def test_prompt_history_keyboard_shortcut_and_aria_wiring():
-    html = INDEX_HTML.read_text(encoding="utf-8")
+    html = CURATOR_HTML.read_text(encoding="utf-8")
     # The batch filter input must be normally tabbable (no tabindex="-1").
     assert 'id="prompts-batch-filter"' in html
     assert 'id="prompts-batch-filter" type="text" placeholder="All Batches"' in html
@@ -176,7 +176,7 @@ def test_prompt_history_keyboard_shortcut_and_aria_wiring():
 
 
 def test_prompt_history_help_section_documented():
-    html = INDEX_HTML.read_text(encoding="utf-8")
+    html = CURATOR_HTML.read_text(encoding="utf-8")
     # Help modal covers unified library search and its prompt-group view.
     assert ">Library Search</h4>" in html
     assert "<strong>Prompt groups</strong>" in html
@@ -204,7 +204,7 @@ def test_prompt_history_stale_warning_renders_age_and_count():
 
 
 def test_favorites_and_prompts_controls_are_rendered():
-    html = INDEX_HTML.read_text(encoding="utf-8")
+    html = CURATOR_HTML.read_text(encoding="utf-8")
     assert 'id="favorites-filter-btn"' in html
     assert 'id="prompts-btn"' in html
     assert 'id="prompts-modal"' in html

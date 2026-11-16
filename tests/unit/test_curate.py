@@ -8,6 +8,11 @@ import pytest
 from curate import main
 
 
+@pytest.fixture(autouse=True)
+def _isolate_batches(tmp_path, monkeypatch):
+    monkeypatch.setattr("curate.BATCHES_DIR", tmp_path / "batches")
+
+
 class TestCurateCLI:
     """Basic smoke tests for the CLI entrypoint."""
 

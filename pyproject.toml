@@ -5,13 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "comfyui-curator"
 version = "1.0.0"
-description = "Operator-focused web application and curation toolkit for reviewing generated images with optional AI-assisted scoring"
+description = "ComfyUI-native curation workspace and CLI for reviewing generated images with optional AI-assisted scoring"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 authors = [{ name = "FrostySDXL" }]
 dependencies = [
-    "Flask>=3.1,<4.0",
+    "Jinja2>=3.1,<4.0",
     "Pillow>=10.0,<12.0",
     "python-dotenv>=1.0,<2.0",
 ]
@@ -43,11 +43,15 @@ line-length = 100
 exclude = [".venv", "venv", "__pycache__", ".git"]
 
 [tool.ruff.lint.per-file-ignores]
-# app.py and curate.py call load_dotenv() before importing application
-# modules that read environment variables at import time. The non-top
-# import order is intentional and required for the .env configuration to
-# be visible during import.
-"app.py" = ["E402"]
+# The custom-node folder must be named `comfyui-curator` (hyphenated) for
+# ComfyUI to load it, so every package anchored at that folder is seen by
+# Ruff with an invalid module name. Ignore only N999 on package markers.
+"__init__.py" = ["N999"]
+"**/__init__.py" = ["N999"]
+# curate.py calls load_dotenv() before importing application modules that
+# read environment variables at import time. The non-top import order is
+# intentional and required for the .env configuration to be visible during
+# import.
 "curate.py" = ["E402"]
 # Test files commonly put `pytestmark = pytest.mark.<layer>` between
 # stdlib and third-party imports. Allowing it here keeps the marker

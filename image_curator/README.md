@@ -2,7 +2,7 @@
 
 **One-sentence purpose:** Shared non-AI backend support for batch filesystem operations, web validation, media cache helpers, PNG generation metadata, and adjacent JSON sidecars.
 
-**Role in the Project:** Called by `app.py` (Flask) and `curate.py` (CLI) for filesystem-bound operations (batch creation, file moves, counts, import, state persistence), PNG metadata inspection, non-AI web validation, and thumbnail cache helpers. Contains no AI logic.
+**Role in the Project:** Called by the native ComfyUI adapters and by `curate.py` (CLI) for filesystem-bound operations (batch creation, file moves, counts, import, state persistence), PNG metadata inspection, native route validation, and thumbnail cache helpers. Contains no AI logic and imports no web framework.
 
 ## What This Module Does
 
@@ -13,7 +13,7 @@
 - **Public derivative workflow** (`publish.py`): Creates metadata-stripped optional-watermark copies under `<batch>/public/`, lists public images, and copy/move/delete generated public copies under a configured export root.
 - **Prompt history indexing** (`prompt_history.py`): Builds manual prompt indexes from PNG metadata, deduplicated by normalized prompt/negative prompt. New caches retain bounded per-file PNG fingerprints and extracted prompt records so unchanged rebuilds avoid metadata extraction; legacy caches still load and receive a full-scan upgrade. Safety: rejects symlinked review stages and resolves-containment escapes during build/count; rejects symlinked and non-regular cache entries during load; aggregate loading silently omits batches with unsafe caches.
 - **Media metadata search** (`search_index.py`, `search_index_jobs.py`): Builds atomic per-batch indexes for every reviewable media type from filenames, PNG generation fields, and bounded adjacent JSON keys/values. New caches retain per-file media plus preferred-sidecar identity/size/mtime fingerprints, reusing only unique exact matches (including safe folder moves) and scanning added/changed files. The shared job manager allows one cancellable build per pinned root+batch, preserves a prior valid index on cancellation, and bounds terminal job retention. Folder-mtime state prevents stale move/import results from being returned; in-place sidecar edits require an explicit rebuild. Builds compare initial and final manifests before commit so source mutations cannot be committed as a mixed snapshot.
-- **Web validation** (`web_validation.py`): Path traversal guard and existing-batch validation helpers used by Flask route wrappers.
+- **Web validation** (`web_validation.py`): Path traversal guard and existing-batch validation helpers used by the native adapter.
 - **Typed media cache helpers** (`media.py`): Extension-safe WebP posters,
   quality-first GIF/MP4 hover proxies, atomic cache writes, and stable decoder
   fallback tiles.
@@ -31,15 +31,15 @@ Modules are responsibility-scoped; keep AI-specific validation and worker orches
 ### Callers and What They Use
 
 ```
-app.py ──> batch_store (nearly all functions: create, list, move, counts, import, state)
-       ──> sidecar_metadata.extract_media_metadata (PNG + JSON lightbox metadata)
-       ──> favorites (favorite toggles, batch filter data, universal favorites)
-       ──> publish (public derivative export/list/copy/move/delete routes)
-       ──> prompt_history (manual prompt index build/load routes)
-       ──> search_index (manual typed-media metadata index + scoped query routes)
-       ──> web_validation (safe path and existing-batch route wrappers)
-       ──> media (typed poster/preview cache helpers)
-       ──> folder_index (immutable revisioned folder transport)
+native_routes.py ──> batch_store (nearly all functions: create, list, move, counts, import, state)
+                ──> sidecar_metadata.extract_media_metadata (PNG + JSON lightbox metadata)
+                ──> favorites (favorite toggles, batch filter data, universal favorites)
+                ──> publish (public derivative export/list/copy/move/delete routes)
+                ──> prompt_history (manual prompt index build/load routes)
+                ──> search_index (manual typed-media metadata index + scoped query routes)
+                ──> web_validation (safe path and existing-batch route wrappers)
+                ──> media (typed poster/preview cache helpers)
+                ──> folder_index (immutable revisioned folder transport)
 
 curate.py ──> batch_store.move_image (single-file moves in --move mode)
 
@@ -77,8 +77,9 @@ imports, folder moves, undo, and reject cleanup under the media's resulting name
 
 ### State File
 
-Location: `IMAGE_CURATOR_STATE` env var, default `~/.config/image-curator/state.json`.
-Format: JSON object. Default: `{"active_batch": null}`.
+Location: native mode always uses `<curator system-user dir>/state.json` beside `config.json`.
+The CLI does not read or write state, and the old standalone `IMAGE_CURATOR_STATE`
+override is gone. Format: JSON object. Default: `{"active_batch": null}`.
 Written atomically via `.tmp` + `os.replace()`.
 
 ## Constraints & Hard Rules
@@ -107,11 +108,11 @@ Written atomically via `.tmp` + `os.replace()`.
 | `publish.py` | `create_public_copies`, `list_batch_public`, `list_all_public`, `copy_public_items`, `move_public_items`, `delete_public_items`; strips metadata by re-saving with Pillow, applies text watermarks, and confines external destinations to `IMAGE_CURATOR_PUBLIC_EXPORTS`. |
 | `prompt_history.py` | `build_prompt_index`, `load_prompt_index`, `load_all_prompt_indices`; scans PNG metadata, strips LoRA tags with `png_metadata.LORA_RE`, hashes normalized prompt pairs, and writes `prompt-history.json` atomically. |
 | `search_index.py` | `build_search_index`, `query_search_indices`; safely scans review folders, flattens bounded sidecar scalar keys/values without mutating their source types, stores a rebuildable atomic cache, applies normalized AND-token matching, and omits stale batch indexes. |
-| `search_index_jobs.py` | `SearchIndexJobManager`; shared Flask/native cancellable search-index job lifecycle with pinned roots, cooperative cancellation, atomic prior-cache preservation, bounded terminal retention, and shutdown joins. |
-| `web_validation.py` | `safe_path(base, *parts)` blocks traversal/absolute path escape; `require_existing_batch()` validates app-provided batch lists while preserving Flask route response shape. |
+| `search_index_jobs.py` | `SearchIndexJobManager`; shared cancellable search-index job lifecycle with pinned roots, cooperative cancellation, atomic prior-cache preservation, bounded terminal retention, and shutdown joins. |
+| `web_validation.py` | `safe_path(base, *parts)` blocks traversal/absolute path escape; `require_existing_batch()` validates adapter-provided batch lists while preserving native route response shape. |
 | `media.py` | Extension-safe poster/preview cache paths, freshness checks, atomic WebP poster generation, FFmpeg-backed hover proxies, stable fallbacks, and safe derivative cleanup. |
 | `folder_index.py` | Immutable `FolderSnapshot` objects, revision metadata/polls, bounded pages, O(1) name lookup, mutation-triggered refresh, periodic reconciliation, and bulk-operation undo tokens. |
-| `move_history.py` | Manual review-move journaling, actual-member receipts, conflict-aware recovery, retention, and library-root locking. Web mutations go through this service; AI/CLI move behavior remains separate. |
+| `move_history.py` | Manual review-move journaling, actual-member receipts, conflict-aware recovery, retention, and library-root locking. Native mutations go through this service; AI/CLI move behavior remains separate. |
 | `native_settings.py` | Persists schema-versioned native operation settings beside `state.json`; rejects symlinked, escaping, and non-regular config/temp targets and unsafe editable directory paths; resolves environment fallbacks; and exposes API-key status without the secret. |
 | `native_routes.py` | Registers native settings, batch/state/import, legacy and v2 revisioned media lists plus O(1) filename lookup, typed posters/previews/originals, moves and revision selections, reject deletion, favorites, public, prompt-history, and media-search contracts. Filesystem scans and derivative work are dispatched off the aiohttp event loop. |
 | `native_ai_routes.py` | Registers namespaced native AI preview, submit, status, cancellation, run-history, latest-run, and element-history aiohttp contracts using `ai_curate.native_lifecycle.NativeAiLifecycle`. |
@@ -119,10 +120,10 @@ Written atomically via `.tmp` + `os.replace()`.
 ## Agent Instructions
 
 - For filesystem work (batch creation, moves, imports, counts): read `batch_store.py`.
-- For route path or existing-batch validation: read `web_validation.py` and the app-level wrappers in `app.py`.
-- For media cache/generation behavior: read `media.py` and the poster/preview/original routes in `app.py` and `native_routes.py`.
-- For large-folder transport: read `folder_index.py`, then the v2 routes in both adapters.
-- For manual move/undo: read `move_history.py`, both adapters, and
+- For route path or existing-batch validation: read `web_validation.py` and the native adapter.
+- For media cache/generation behavior: read `media.py` and the poster/preview/original routes in `native_routes.py`.
+- For large-folder transport: read `folder_index.py`, then the v2 routes in `native_routes.py`.
+- For manual move/undo: read `move_history.py`, `native_routes.py`, and
   `tests/unit/test_move_history_review.py`; test recovery after reconstructing
   the service, not just in-memory receipt lookup. See root `AGENTS.md` for the
   public retention/storage contract and excluded operation types.
@@ -144,7 +145,7 @@ Written atomically via `.tmp` + `os.replace()`.
 - **`_collision_safe_name` has no locking:** If two processes import simultaneously, both could see `exists() == False` and one file would overwrite. Low risk for single-user operation.
 - **LoRA hash is always `None`:** `_parse_loras()` hardcodes `"hash": None`. The field exists in the return schema but is never populated.
 - **Workflow JSON is size-only:** `extract_png_metadata` returns `workflow_available: bool` and `workflow_size: int` but not the workflow JSON content itself. Callers needing the full workflow must re-read the file.
-- **No delete operations in batch_store:** Reject cleanup (deleting files from `rejects/`) is handled in `app.py` and `native_routes.py`, not via batch_store.
+- **No delete operations in batch_store:** Reject cleanup (deleting files from `rejects/`) is handled in `native_routes.py`, not via batch_store.
 - **Typed media boundaries are deliberate:** Prompt History remains PNG-only;
   AI scoring and public export remain still-image-only. General listing,
   favorites, moves, delete-rejects, posters, and lightbox originals accept the
@@ -158,6 +159,6 @@ Written atomically via `.tmp` + `os.replace()`.
   display only.
 - **`get_batch_metadata` includes `ai-curate/` mtime:** The AI run-history directory's mtime contributes to batch `modified_at` for recent-first sorting, even though AI-curate is not a workflow folder.
 
-**Completion Standard:** For any task in this directory, include files changed, commands run (unit tests for the touched module), and verification that callers in `app.py` or `curate.py` are not broken.
+**Completion Standard:** For any task in this directory, include files changed, commands run (unit tests for the touched module), and verification that callers in the native adapters or `curate.py` are not broken.
 
 See root `AGENTS.md` for project-wide rules, verification standards, and overall philosophy.

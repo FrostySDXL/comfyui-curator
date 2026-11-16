@@ -3,7 +3,7 @@
  */
 function aiToggleOverlays() {
             aiShowOverlays = document.getElementById('ai-overlay-toggle').checked;
-            if (CURATOR_NATIVE && currentBatch && currentFolder && !isVirtualCollectionView() && !isPublicView() && aiFilterMode !== 'all') {
+            if (currentBatch && currentFolder && !isVirtualCollectionView() && !isPublicView() && aiFilterMode !== 'all') {
                 loadCurrentFolderImages({preserveScroll: true});
                 return;
             }
@@ -22,7 +22,7 @@ function aiApplyFilter() {
         }
 
 function aiRefreshFilteredGrid() {
-            if (CURATOR_NATIVE && currentBatch && currentFolder && !isVirtualCollectionView() && !isPublicView()) {
+            if (currentBatch && currentFolder && !isVirtualCollectionView() && !isPublicView()) {
                 loadCurrentFolderImages({preserveScroll: true});
                 return;
             }

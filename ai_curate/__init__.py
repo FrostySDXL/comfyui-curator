@@ -10,6 +10,6 @@ Provides reusable modules for:
 - Run history storage (storage)
 - Single-job queue management (queue)
 - Web job submission validation (job_validation)
-- Flask worker orchestration core (worker)
+- Shared scoring worker orchestration core (worker)
 - Native AI lifecycle: idempotent startup, submission gate, worker tracking, permanent shutdown (native_lifecycle)
 """

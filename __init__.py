@@ -1,17 +1,21 @@
 """ComfyUI Curator native extension for the image curation workspace."""
 
-CuratorManager = None
+from typing import Any
+
+CuratorManager: Any = None
 
 if __package__:
     try:
-        from .py.curator_manager import CuratorManager
+        from .py.curator_manager import CuratorManager as _CuratorManager
     except ModuleNotFoundError as exc:
-        # ComfyUI's server module is intentionally absent in standalone tests.
+        # ComfyUI's server module is intentionally absent in isolated tests.
         if exc.name != "server":
             raise
+    else:
+        CuratorManager = _CuratorManager
 
-NODE_CLASS_MAPPINGS = {}
-NODE_DISPLAY_NAME_MAPPINGS = {}
+NODE_CLASS_MAPPINGS: dict[str, Any] = {}
+NODE_DISPLAY_NAME_MAPPINGS: dict[str, str] = {}
 WEB_DIRECTORY = "./web/comfyui"
 
 if CuratorManager is not None:

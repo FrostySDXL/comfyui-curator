@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-# IMPORTANT: order must match the classic script load order in templates/index.html.
+# IMPORTANT: order must match the classic script load order in templates/curator.html.
 JS_FILES = [
     Path("static/js/state.js"),
     Path("static/js/dom-utils.js"),
@@ -63,18 +63,13 @@ def read_frontend_css() -> str:
     return "\n".join(path.read_text(encoding="utf-8") for path in existing)
 
 
-def extract_function_body(source: str, signature: str) -> str:
-    start = source.find(signature)
-    if start == -1:
-        raise AssertionError(f"Could not locate {signature}")
-    brace_start = source.find("{", start)
-    if brace_start == -1:
-        raise AssertionError(f"Could not locate function body for {signature}")
+def _find_matching(source: str, start: int, open_char: str, close_char: str) -> int:
+    """Return the index of the matching close character for a JS block."""
     depth = 0
     in_string: str | None = None
     in_line_comment = False
     in_block_comment = False
-    index = brace_start
+    index = start
     while index < len(source):
         char = source[index]
         next_char = source[index + 1] if index + 1 < len(source) else ""
@@ -110,11 +105,28 @@ def extract_function_body(source: str, signature: str) -> str:
             continue
         if char in {'"', "'", "`"}:
             in_string = char
-        elif char == "{":
+        elif char == open_char:
             depth += 1
-        elif char == "}":
+        elif char == close_char:
             depth -= 1
             if depth == 0:
-                return source[start : index + 1]
+                return index
         index += 1
-    raise AssertionError(f"Could not find end of function body for {signature}")
+    raise AssertionError(f"Could not find matching {close_char!r}")
+
+
+def extract_function_body(source: str, signature: str) -> str:
+    start = source.find(signature)
+    if start == -1:
+        raise AssertionError(f"Could not locate {signature}")
+    # Match the parameter list first: default object literals such as
+    # ``options = {}`` must not be mistaken for the function body brace.
+    paren_start = source.find("(", start)
+    if paren_start == -1:
+        raise AssertionError(f"Could not locate parameter list for {signature}")
+    paren_end = _find_matching(source, paren_start, "(", ")")
+    brace_start = source.find("{", paren_end)
+    if brace_start == -1:
+        raise AssertionError(f"Could not locate function body for {signature}")
+    brace_end = _find_matching(source, brace_start, "{", "}")
+    return source[start : brace_end + 1]

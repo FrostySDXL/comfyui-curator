@@ -1,4 +1,4 @@
-# Route-mode manual smoke checklist
+# Native Curator manual smoke checklist
 
 Use this checklist after a UI or route change. It records real browser evidence
 that the in-process tests cannot provide; do not treat it as browser automation.
@@ -8,26 +8,14 @@ that the in-process tests cannot provide; do not treat it as browser automation.
 Run the focused route/template checks from the repository root:
 
 ```powershell
-.venv\Scripts\python.exe -m pytest tests/unit/test_comfyui_static_ui.py tests/component/test_batch_api.py -v
+.venv\Scripts\python.exe -m pytest tests/unit/test_comfyui_static_ui.py tests/component/test_native_curator_api.py tests/integration -v
 ```
 
-Expected evidence: all tests pass, including local asset existence, template
-parity, standalone route status, native route registration, and dual-mode URL
-helper checks. These tests use local files, Flask's test client, Node source checks,
-and mocked ComfyUI modules; they do not start ComfyUI or a browser.
-
-## Standalone Flask route
-
-1. Start the app with isolated disposable batch and output roots (see
-   `scripts/README.md`) and open `http://127.0.0.1:5000/`. Do not use a
-   production library or output directory.
-2. Confirm the page renders with the batch sidebar, workspace toolbar, grid,
-   and inspector rather than a template or server error.
-3. In browser developer tools, confirm the ordered `/static/css/*.css` and
-   `/static/js/*.js` requests return successfully; there should be no asset 404s
-   or JavaScript parse errors.
-4. Use the shared read-only flow below; confirm requests remain on standalone
-   `/api/*`, `/thumb/*`, and `/image/*` paths.
+Expected evidence: all tests pass or skip cleanly, including sole-template asset
+existence, native route registration, native URL helpers, the real aiohttp HTTP
+workflow layer, Node source checks, and mocked ComfyUI modules. The HTTP tests
+start the native aiohttp adapter on a loopback port with disposable files; they
+do not start ComfyUI or a browser.
 
 ## Native ComfyUI route
 
@@ -35,10 +23,12 @@ and mocked ComfyUI modules; they do not start ComfyUI or a browser.
    isolated disposable batch, output, and native system roots, restart ComfyUI,
    and confirm the Curator action-bar button appears. Do not use a production
    library or output directory.
-2. Open `/curator` and confirm the same page shell renders without an error.
+2. Open `/curator` (default `http://127.0.0.1:8188/curator`) and confirm the page
+   shell renders without an error.
 3. In developer tools, confirm ordered `/curator_static/css/*.css` and
    `/curator_static/js/*.js` requests return successfully; there should be no
-   `/static/` asset requests, asset 404s, or JavaScript parse errors.
+   `/static/` asset requests, asset 404s, no `CURATOR_NATIVE` flag, and no
+   JavaScript parse errors.
 4. Confirm `GET /api/curator/health` returns JSON `{"ok":true}` and use the
    shared read-only flow below; confirm API requests use `/api/curator/*`,
    thumbnails use `/curator/thumb/*`, and originals use `/curator/image/*`.
@@ -70,7 +60,7 @@ and mocked ComfyUI modules; they do not start ComfyUI or a browser.
   move, or delete files. Record any popup/button click separately from direct
   `/curator` loading evidence; a click is not proof that a new tab opened.
 
-Record the date, checkout revision, route (`/` or `/curator`), browser, and any
+Record the date, checkout revision, the `/curator` route, browser, and any
 failed request or console error with the root task's real browser evidence.
 
 ## Move and durable undo verification (disposable fixtures only)
@@ -78,7 +68,7 @@ failed request or console error with the root task's real browser evidence.
 This is a separate, mutating check. Back up and hash the fixture media and
 sidecars first; never run it against an operator's working library.
 
-- In both modes, move a single lightbox image with `S`, `F`, or `R`. Confirm
+- Move a single lightbox image with `S`, `F`, or `R`. Confirm
   the viewer advances without closing when another item remains.
 - Wait for the toast to disappear. Open **Undo / History**, verify the batch,
   stages, count, timestamp, and latest Undo action, then reload the page and
@@ -86,8 +76,8 @@ sidecars first; never run it against an operator's working library.
 - Undo from History and with `Ctrl+Z` outside text inputs. Check that media and
   the selected adjacent JSON sidecars return unchanged. Undo two successive
   moves newest-first; older rows must not offer out-of-order undo.
-- Select multiple thumbnails and move from the toolbar. In native mode also
-  Select All, exclude one thumbnail, move, and undo; the excluded media and its
+- Select multiple thumbnails and move from the toolbar. Select All, exclude one
+  thumbnail, move, and undo; the excluded media and its
   sidecar must never leave the source folder.
 - Drag a selected thumbnail onto another review stage; verify ordinary
   multiselection and native snapshot exclusions. If automation cannot deliver

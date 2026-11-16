@@ -35,10 +35,7 @@ def test_fixture_builds_documented_layout(tmp_path):
     fixture, result = build(tmp_path)
 
     assert result.batches_dir == tmp_path / "batches"
-    assert result.state_file == tmp_path / "state.json"
-    assert json.loads((tmp_path / "state.json").read_text(encoding="utf-8")) == {
-        "active_batch": "eval-culling"
-    }
+    assert not (tmp_path / "state.json").exists()
 
     culling = tmp_path / "batches" / "eval-culling"
     for folder in ("inbox", "shortlisted", "finals", "rejects", "public"):
@@ -156,15 +153,16 @@ def test_verify_passes_then_fails(tmp_path):
     ok, problems = fixture.verify_fixture(tmp_path)
     assert ok, problems
 
-    (tmp_path / "state.json").unlink()
+    inbox = tmp_path / "batches" / "eval-culling" / "inbox"
+    next(inbox.glob("eval_cull_*.png")).unlink()
     ok, problems = fixture.verify_fixture(tmp_path)
     assert not ok
-    assert any("state.json" in problem for problem in problems)
+    assert any("batches/eval-culling/inbox" in problem for problem in problems)
 
 
 def test_verify_cli_returns_nonzero_on_failure(tmp_path, monkeypatch):
     fixture, result = build(tmp_path)
-    (tmp_path / "state.json").unlink()
+    (tmp_path / "fixture-manifest.json").unlink()
 
     monkeypatch.setattr(
         sys, "argv", ["setup_evaluation_fixture.py", "--root", str(tmp_path), "--verify"]

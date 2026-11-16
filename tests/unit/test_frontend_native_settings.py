@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_native_settings_modal_has_accessible_secret_safe_controls_and_wiring():
-    html = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    html = (ROOT / "templates" / "curator.html").read_text(encoding="utf-8")
     source = read_frontend_js()
     for marker in (
         'id="settings-btn"',
@@ -19,7 +19,8 @@ def test_native_settings_modal_has_accessible_secret_safe_controls_and_wiring():
         'id="settings-save-btn"',
     ):
         assert marker in html
-    assert "CURATOR_NATIVE" in source
+    assert "CURATOR_NATIVE" not in source
+    assert "settings-btn" in source
     assert "function showSettingsModal(" in source
     assert "function saveNativeSettings(" in source
     assert "apiGetNativeSettings" in source
@@ -29,7 +30,7 @@ def test_native_settings_modal_has_accessible_secret_safe_controls_and_wiring():
 
 
 def test_native_settings_modal_warns_before_replacing_invalid_stored_config():
-    html = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    html = (ROOT / "templates" / "curator.html").read_text(encoding="utf-8")
     source = read_frontend_js()
 
     assert 'id="settings-config-warning"' in html
@@ -42,7 +43,7 @@ def test_native_settings_modal_warns_before_replacing_invalid_stored_config():
 
 
 def test_native_settings_modal_explains_container_path_visibility():
-    html = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    html = (ROOT / "templates" / "curator.html").read_text(encoding="utf-8")
 
     assert 'id="settings-path-scope-note"' in html
     assert "inside the ComfyUI process" in html

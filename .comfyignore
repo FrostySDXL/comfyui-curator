@@ -9,7 +9,6 @@ requirements-dev.in
 requirements-dev.txt
 requirements-dev-lock.txt
 requirements-lock.txt
-image-curator.service.example
 
 # Generated and local artifacts (also covered by .gitignore where relevant).
 .venv/

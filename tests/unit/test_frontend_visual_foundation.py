@@ -257,7 +257,7 @@ def test_help_actions_share_the_modal_surface() -> None:
 
 
 def test_help_footer_is_outside_dedicated_scroll_region() -> None:
-    html = Path("templates/index.html").read_text(encoding="utf-8")
+    html = Path("templates/curator.html").read_text(encoding="utf-8")
     css = Path("static/css/modals.css").read_text(encoding="utf-8")
     js = Path("static/js/modals.js").read_text(encoding="utf-8")
     help_markup = html.split('id="help-modal"', 1)[1].split('id="prompts-modal"', 1)[0]

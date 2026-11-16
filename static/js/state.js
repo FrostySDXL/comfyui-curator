@@ -2,40 +2,32 @@
  * Defines: shared localStorage keys and mutable cross-feature state.
  */
         /* ---- URL construction helpers (loaded first so all later scripts can use) ---- */
-        const CURATOR_NATIVE = (window.CURATOR_NATIVE === true);
 
         function ccApiPath(path) {
-            /* Deterministic API path prefix for the current runtime mode.
+            /* Deterministic native API path prefix.
                Replaces the leading "/api/" section only.
-               Standalone: /api/batches    -> /api/batches (unchanged)
-               Native:     /api/batches    -> /api/curator/batches
-               Native:     /api/ai-curate/ -> /api/curator/ai-curate/
-               Native:     /api/curator/x  -> /api/curator/x (no double prefix). */
-            if (CURATOR_NATIVE) {
-                if (path.indexOf("/api/curator/") === 0) {
-                    return path;
-                }
-                if (path.indexOf("/api/") === 0) {
-                    return "/api/curator" + path.slice(4);
-                }
+               /api/batches    -> /api/curator/batches
+               /api/ai-curate/ -> /api/curator/ai-curate/
+               /api/curator/x  -> /api/curator/x (no double prefix). */
+            if (path.indexOf("/api/curator/") === 0) {
                 return path;
+            }
+            if (path.indexOf("/api/") === 0) {
+                return "/api/curator" + path.slice(4);
             }
             return path;
         }
 
         function ccThumbUrl(batch, folder, name) {
-            var prefix = CURATOR_NATIVE ? "/curator/thumb" : "/thumb";
-            return prefix + "/" + encodeURIComponent(batch) + "/" + encodeURIComponent(folder) + "/" + encodeURIComponent(name);
+            return "/curator/thumb/" + encodeURIComponent(batch) + "/" + encodeURIComponent(folder) + "/" + encodeURIComponent(name);
         }
 
         function ccImageUrl(batch, folder, name) {
-            var prefix = CURATOR_NATIVE ? "/curator/image" : "/image";
-            return prefix + "/" + encodeURIComponent(batch) + "/" + encodeURIComponent(folder) + "/" + encodeURIComponent(name);
+            return "/curator/image/" + encodeURIComponent(batch) + "/" + encodeURIComponent(folder) + "/" + encodeURIComponent(name);
         }
 
         function ccPreviewUrl(batch, folder, name) {
-            var prefix = CURATOR_NATIVE ? "/curator/preview" : "/preview";
-            return prefix + "/" + encodeURIComponent(batch) + "/" + encodeURIComponent(folder) + "/" + encodeURIComponent(name);
+            return "/curator/preview/" + encodeURIComponent(batch) + "/" + encodeURIComponent(folder) + "/" + encodeURIComponent(name);
         }
 
         const SIDEBAR_WIDTH_KEY = 'imageCurator.sidebarWidth';
@@ -61,7 +53,6 @@
         let folderPageInflight = new Map();
         let pagedFolderMode = false;
         const FOLDER_PAGE_SIZE = 256;
-        const PAGED_FOLDER_THRESHOLD = 2000;
         let currentIndex = 0;
         let allCounts = {};
         let currentSort = 'date';

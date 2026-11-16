@@ -7,7 +7,7 @@ def _source(name: str) -> str:
 
 def test_move_history_source_defines_persistent_history_contract():
     js = _source("moves.js")
-    template = Path("templates/index.html").read_text(encoding="utf-8")
+    template = Path("templates/curator.html").read_text(encoding="utf-8")
     assert "function loadMoveHistory" in js
     assert "ccApiPath('/api/move-history')" in js
     assert "function showMoveHistoryModal" in js

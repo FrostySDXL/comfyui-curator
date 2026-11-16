@@ -51,7 +51,7 @@ body:
       label: Affected surface
       options:
         - Web UI
-        - Flask API
+        - Native ComfyUI API
         - Batch filesystem workflow
         - AI scoring / queue / run history
         - CLI curate.py
@@ -75,7 +75,7 @@ body:
     attributes:
       label: Environment
       description: OS, Python version, browser, and deployment style if relevant.
-      placeholder: Windows 11, Python 3.14, Chrome, local Flask service
+      placeholder: Windows 11, Python 3.14, Chrome, ComfyUI custom node
 
   - type: textarea
     id: logs

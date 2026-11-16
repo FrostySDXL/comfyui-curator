@@ -10,7 +10,7 @@ def read(path: str) -> str:
 
 def test_contextual_shortcut_strip_exposes_four_truthful_contexts() -> None:
     js = read("static/js/shortcut-learning.js")
-    html = read("templates/index.html")
+    html = read("templates/curator.html")
 
     assert "function updateShortcutLearningContext" in js
     assert "shortcutLearningObserver.observe(grid, {childList: true});" in js
@@ -23,7 +23,7 @@ def test_contextual_shortcut_strip_exposes_four_truthful_contexts() -> None:
 
 def test_contextual_shortcut_strip_is_dismissible_and_keyboard_safe() -> None:
     js = read("static/js/shortcut-learning.js")
-    html = read("templates/index.html")
+    html = read("templates/curator.html")
     css = read("static/css/layout.css")
 
     assert "SHORTCUT_LEARNING_DISMISSED_KEY" in js
@@ -47,20 +47,9 @@ def test_lightbox_hint_measures_control_clearance_instead_of_using_a_fixed_offse
 
 
 def test_help_modal_matches_contextual_shortcut_copy() -> None:
-    html = read("templates/index.html")
+    html = read("templates/curator.html")
 
     assert "Browse: click an image to open" in html
     assert "Selection: Ctrl/Cmd+A select all" in html
     assert "Lightbox: Left / Right navigate" in html
     assert "Compare: Alt+Left/Right advance the pair" in html
-
-
-def test_native_template_keeps_shortcut_learning_markup_in_parity() -> None:
-    index = read("templates/index.html").replace("/static/", "/curator_static/")
-    index = index.replace('<script src="/curator_static/', '<script src="/curator_static/', 1)
-    curator = read("templates/curator.html")
-
-    assert "window.CURATOR_NATIVE = true;" in curator
-    assert 'id="shortcut-learning-strip"' in curator
-    assert 'id="shortcut-learning-dismiss"' in curator
-    assert "Browse: click an image to open" in curator

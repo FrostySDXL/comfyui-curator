@@ -466,9 +466,7 @@ function createHarness(options = {}) {
         let folderShuffleSeed = '';
         let viewTransitionToken = 0;
         let serverSelection = null;
-        const CURATOR_NATIVE = false;
         const FOLDER_PAGE_SIZE = 256;
-        const PAGED_FOLDER_THRESHOLD = 2000;
         function getImageIdentityKey(img, sourceOverride = null) {
             if (!img || !img.name) return '';
             const source = sourceOverride || {batch: currentBatch, folder: currentFolder};
@@ -482,6 +480,26 @@ function createHarness(options = {}) {
         const THUMBNAIL_BLOB_CACHE_MAX = 1000;
         const thumbnailBlobUrlCache = new Map();
         const thumbnailBlobInflight = new Map();
+    `, context);
+    vm.runInContext(`
+        let __harnessSnapshotItems = [];
+        async function apiGetFolderSnapshot(batch, folder, sort, order, shuffleSeed) {
+            const resp = await fetch(\`/api/images/\${batch}/\${folder}?sort=\${sort}&order=\${order}\`);
+            if (!resp.ok) return resp;
+            const items = await resp.json();
+            __harnessSnapshotItems = Array.isArray(items) ? items : [];
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({status: 'ready', revision: 'harness-revision', count: __harnessSnapshotItems.length}),
+            };
+        }
+        async function apiGetFolderPage(batch, folder, sort, order, revision, offset, limit) {
+            const page = __harnessSnapshotItems
+                .slice(offset, offset + limit)
+                .map((item, index) => ({...item, index: offset + index}));
+            return {ok: true, status: 200, json: async () => ({revision, items: page})};
+        }
     `, context);
     vm.runInContext(activitySource, context);
     vm.runInContext(gridSource, context);
@@ -1129,7 +1147,7 @@ async function testFolderLoadFailureShowsErrorAndRetryRecovers() {
     assert(!harness.document.grid.querySelector(".grid-retry"), "error state should be replaced after recovery");
 }
 
-async function testPollingDoesNotLegacyFetchKnownPagedFolderBeforeSnapshot() {
+async function testPollingWithoutSnapshotDoesNothing() {
     const harness = createHarness({loadPolling: true});
     const requests = [];
     harness.setCounts({"batch-a": {inbox: 30000}});
@@ -1144,33 +1162,8 @@ async function testPollingDoesNotLegacyFetchKnownPagedFolderBeforeSnapshot() {
 
     assert(
         requests.length === 0,
-        "polling a known large standalone folder before its snapshot is ready must not request the legacy full listing",
+        "polling without a snapshot must not issue image or AI-run requests",
     );
-}
-
-async function testPollingKeepsLegacyTransportForSmallStandaloneFolder() {
-    const harness = createHarness({loadPolling: true});
-    const requests = [];
-    const revisionPolls = [];
-    harness.setCounts({"batch-a": {inbox: 800}});
-    harness.context.apiPollFolderSnapshot = (...args) => {
-        revisionPolls.push(args);
-        return Promise.resolve({ok: true, json: () => Promise.resolve({status: "ready", changed: false})});
-    };
-    harness.setFetch((url) => {
-        requests.push(String(url));
-        const isImagesRequest = String(url).includes("/api/images/");
-        return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve(isImagesRequest ? [] : {runs: []}),
-        });
-    });
-
-    await harness.evaluate("pollForChanges()");
-
-    assert(revisionPolls.length === 0, "small standalone folders must not use revision polling without a snapshot");
-    assert(requests.some((url) => url.includes("/api/images/")), "small standalone polling must retain the legacy images request");
-    assert(requests.some((url) => url.includes("/api/ai-curate/batches/batch-a/runs")), "small standalone polling must request AI runs");
 }
 
 async function testPollingUsesRevisionTransportForLargeFolderSnapshot() {
@@ -1195,7 +1188,7 @@ async function testPollingUsesRevisionTransportForLargeFolderSnapshot() {
 
     assert(revisionPolls.length === 1, "large folders with a snapshot must use exactly one revision poll");
     assert(revisionPolls[0][4] === "revision-1", "revision polling must carry the active folder revision");
-    assert(!requests.some((url) => url.includes("/api/images/")), "large folders with a snapshot must never use the legacy images request");
+    assert(!requests.some((url) => url.includes("/api/images/")), "snapshot polling must never request the full images listing");
     assert(requests.length === 1 && requests[0].includes("/api/ai-curate/batches/batch-a/runs"), "large snapshot polling must still request AI runs");
 }
 
@@ -1227,7 +1220,7 @@ async function testFreshVisibleThumbnailIsNotEvictedFromFullResidentCache() {
     assert(!revoked.includes("blob:new-0"), "new visible thumbnail Blob URL must not be revoked by its own insertion");
 }
 
-async function testUnknownStandaloneCountUsesLargeSnapshotPaging() {
+async function testUnknownLargeSnapshotUsesPagedMode() {
     const harness = createHarness();
     const legacyRequests = [];
     harness.setCounts({"batch-a": {}});
@@ -1246,14 +1239,14 @@ async function testUnknownStandaloneCountUsesLargeSnapshotPaging() {
     });
     harness.setFetch((url) => {
         legacyRequests.push(String(url));
-        return Promise.reject(new Error("legacy listing should not be requested"));
+        return Promise.reject(new Error("full image listing should not be requested"));
     });
 
     await harness.evaluate("loadCurrentFolderImages()");
 
     assert(harness.evaluate("pagedFolderMode === true"), "unknown large folder should activate paged mode from its snapshot count");
     assert(harness.evaluate("folderSnapshot.revision === 'revision-large'"), "paged mode should retain the snapshot revision");
-    assert(legacyRequests.length === 0, "unknown large folder must not fall back to the legacy full listing");
+    assert(legacyRequests.length === 0, "unknown large folder must not request a full image listing");
 }
 
 async function testThumbnailFailuresAggregateAndRecover() {
@@ -1273,7 +1266,7 @@ async function testThumbnailFailuresAggregateAndRecover() {
     let record = latest();
     assert(record.status === "completed", `folder load should complete, got ${record.status}`);
     assert(record.completed === 3 && record.total === 3, "completed activity should read 3 of 3");
-    assert(record.detail === "Folder ready · thumbnails loaded on demand", `unexpected detail: ${record.detail}`);
+    assert(record.detail === "Folder ready · more thumbnails load as needed", `unexpected detail: ${record.detail}`);
 
     const thumbs = harness.document.grid.children;
     assert(thumbs.length === 3, `expected 3 rendered thumbs, got ${thumbs.length}`);
@@ -1302,7 +1295,7 @@ async function testThumbnailFailuresAggregateAndRecover() {
     record = latest();
     assert(record.status === "completed", `full recovery should complete, got ${record.status}`);
     assert(record.completed === 3 && record.total === 3, `completed should read 3 of 3, got ${record.completed} of ${record.total}`);
-    assert(record.detail === "Folder ready · thumbnails loaded on demand", `unexpected detail: ${record.detail}`);
+    assert(record.detail === "Folder ready · more thumbnails load as needed", `unexpected detail: ${record.detail}`);
 }
 
 function testLoaderNeverWritesLoadingDetailOntoTerminalRecord() {
@@ -1338,11 +1331,10 @@ async function main() {
     testAnchorUsesScrollerCoordinatesBelowToolbar();
     testNarrowerSidebarLayoutPresizesBeforeRestoringAnchor();
     testPagedLoadStatusTracksMaterialization();
-    await testPollingDoesNotLegacyFetchKnownPagedFolderBeforeSnapshot();
-    await testPollingKeepsLegacyTransportForSmallStandaloneFolder();
+    await testPollingWithoutSnapshotDoesNothing();
     await testPollingUsesRevisionTransportForLargeFolderSnapshot();
     await testFreshVisibleThumbnailIsNotEvictedFromFullResidentCache();
-    await testUnknownStandaloneCountUsesLargeSnapshotPaging();
+    await testUnknownLargeSnapshotUsesPagedMode();
     await testFolderLoadFailureShowsErrorAndRetryRecovers();
     await testThumbnailFailuresAggregateAndRecover();
     testLoaderNeverWritesLoadingDetailOntoTerminalRecord();

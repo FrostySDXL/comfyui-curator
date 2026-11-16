@@ -2,12 +2,12 @@
 
 **One-sentence purpose:** Browser-side UI assets -- single-page application behavior, layout styling, and the HTML template they attach to.
 
-**Role in the Project:** Served by Flask (`app.py`) to the operator's browser. All interactive curation behavior (grid browsing, drag/drop, lightbox, AI sidebar, keyboard shortcuts, polling) lives here. No server-side rendering except the initial model-list injection in the HTML template.
+**Role in the Project:** Served under `/curator_static/` by the ComfyUI native extension (`py/curator_manager.py` + the native aiohttp routes) to the operator's browser. All interactive curation behavior (grid browsing, drag/drop, lightbox, AI sidebar, keyboard shortcuts, polling) lives here. No server-side rendering except the initial model-list injection in `templates/curator.html`.
 
 ## What This Module Does
 
 - **Single-page review UI:** Asset-manager style batch sidebar, local folder-stage rail, compact workspace toolbar, center thumbnail grid (CSS Grid), right AI Curate sidebar.
-- **Dual-mode serving:** The same `static/js/*.js` and `static/css/*.css` files serve both the standalone Flask page (`templates/index.html`, `/static/` paths) and the native ComfyUI extension page (`templates/curator.html`, `/curator_static/` paths). Mode detection uses `window.CURATOR_NATIVE` in `state.js`.
+- **Native ComfyUI serving only:** `templates/curator.html` is the only page template; the same `static/js/*.js` and `static/css/*.css` files are served under `/curator_static/` by the ComfyUI extension. The former standalone Flask page (`templates/index.html`) and its dual-mode `window.CURATOR_NATIVE` switch have been removed.
 - **Keyboard-first navigation:** 15+ shortcuts for search, selection, AI toggles, lightbox, undo, plus dismissible per-context learning hints backed by the complete Help reference.
 - **Library search:** One modal keeps general filename/PNG/JSON sidecar media search and normalized Prompt History groups in separate remembered tabs; Images results can be applied as a persistent workspace review filter with query/scope/source chips, while index rows distinguish durable and transient states with age and item count.
 - **Drag/drop curation:** HTML5 drag from the grid to local folder-stage targets for single or multi-select moves.
@@ -15,9 +15,9 @@
 - **AI score integration:** Overlay badges, score gradient coloring, explicit score-cutoff preview/apply/clear, filter/sort by score, accessible Inspect / Score / Runs tabs, contextual image and batch inspection, bounded partial-failure evidence, guided scoring with a visible 12-check cap, and truthful job/history states.
 - **Public output workflow:** selected-image export modal, batch Public folder view, virtual All Public view, and derivative-only public copy/move/delete actions.
 - **Activity Center:** One header disclosure aggregates import, folder snapshot/thumbnail, prompt and media index, public export, and AI scoring work with truthful lifecycle states plus supported retry/cancel actions.
-- **Background polling:** interaction-aware 5-second content polling, a lightweight 1-second import-readiness poll, and 10-second native batch-summary refreshes. A standalone manual import that crosses the paging threshold adopts the snapshot's canonical order; a Shuffle view can therefore reorder once at that transition. Below the threshold, imported items append without reshuffling existing items.
+- **Background polling:** interaction-aware 5-second revision polling, a lightweight 1-second import-readiness poll, and 10-second native batch-summary refreshes. Folder polls send the last immutable revision, so an unchanged folder returns only revision/count metadata and a changed revision reloads the current view in place.
 - **Local storage persistence:** Sidebar widths, open states, last batch/folder, grid density, and batch sort.
-- **Native settings modal:** Native-only editable paths, public-export enablement,
+- **Settings modal:** Editable paths, public-export enablement,
   model/endpoint/timeout controls, and secret replace/clear controls backed by
   `/api/curator/settings`.
 
@@ -49,15 +49,13 @@ and All Public retain their own hidden-rail behavior.
   compare behavior while mutable state remains in `state.js`. Its lightbox and
   inspector callbacks are invoked at runtime after the ordered scripts have
   loaded; loading this file itself does not render or subscribe to events.
-- **Scripts load at bottom of `<body>`** in both `index.html` (standalone Flask) and `curator.html` (native ComfyUI extension) in deterministic order. Initialization lives in `bootstrap.js`.
-- **Split plain CSS files** under `static/css/`, loaded directly by both templates in deterministic order. No CSS framework, preprocessor, bundler, or build step.
-- **Dual-mode URL construction:** Three helpers in `state.js` (`ccApiPath`, `ccThumbUrl`, `ccImageUrl`) select the correct URL prefix for each mode:
-  - Standalone (`window.CURATOR_NATIVE` absent): `/api/...`, `/thumb/...`, `/image/...`
-  - Native (`window.CURATOR_NATIVE = true`): `/api/curator/...`, `/curator/thumb/...`, `/curator/image/...`
+- **Scripts load at bottom of `<body>`** in `curator.html` in deterministic order. Initialization lives in `bootstrap.js`.
+- **Split plain CSS files** under `static/css/`, loaded directly by `curator.html` in deterministic order. No CSS framework, preprocessor, bundler, or build step.
+- **Fixed native URL construction:** The helpers in `state.js` always build native URLs:
+  - `ccApiPath`: `/api/...` -> `/api/curator/...`; an already-prefixed `/api/curator/...` path passes through unchanged
+  - `ccThumbUrl` -> `/curator/thumb/...`, `ccImageUrl` -> `/curator/image/...`, `ccPreviewUrl` -> `/curator/preview/...`
   - All API calls and media URL construction must use these helpers; raw `/api/`, `/thumb/`, or `/image/` strings in `fetch()` are validated by test invariants.
-- **`curator.html` synchronization:** The native template must stay synchronized with `index.html`. The transform is: replace `/static/` with `/curator_static/` and insert `window.CURATOR_NATIVE = true` before the first `<script src="...">`. Tested by `test_comfyui_static_ui.py`.
-
-Edit `templates/index.html`, then run `.venv\Scripts\python.exe scripts\generate_curator_template.py --write` and commit both shipped templates. The read-only `--check` mode is included in the shared verification runner.
+- **Single page template:** `templates/curator.html` is the only shipped template. There is no `window.CURATOR_NATIVE` flag, no runtime mode branch, and no `/static/` path variant to keep synchronized.
 
 ### CSS File Map
 
@@ -79,7 +77,7 @@ Edit `templates/index.html`, then run `.venv\Scripts\python.exe scripts\generate
 
 | File | Responsibility |
 |------|----------------|
-| `state.js` | Shared localStorage keys and cross-feature mutable state |
+| `state.js` | Native URL helpers (`ccApiPath`, `ccThumbUrl`, `ccImageUrl`, `ccPreviewUrl`), shared localStorage keys, and cross-feature mutable state |
 | `dom-utils.js` | Text/format helpers, modal focus trap, clipboard helpers, toast helpers |
 | `api.js` | API wrapper helpers for route calls |
 | `activity-center.js` | Shared background-work records, aggregate indicator, lifecycle rendering, aging, and supported retry/cancel hooks |
@@ -103,9 +101,9 @@ Edit `templates/index.html`, then run `.venv\Scripts\python.exe scripts\generate
 | `ai-overlays.js` | AI score badges, cutoff preview/apply/clear, score filtering/sorting, score color helpers, and batch run counts |
 | `ai.js` | Compatibility stub for the split AI files |
 | `view-menu.js` | Workspace View disclosure, native-control focus flow, and dismissal behavior |
-| `polling.js` | Interaction-aware background polling helpers |
+| `polling.js` | Interaction-aware folder-revision polling helpers |
 | `modals.js` | Generic modal helpers plus new-batch and Help modal controls |
-| `settings.js` | Native Settings modal loading, validation feedback, secret-safe save, and UI refresh |
+| `settings.js` | Settings modal loading, validation feedback, secret-safe save, and UI refresh |
 | `combobox.js` | Active-batch custom combobox keyboard and outside-click binding |
 | `shortcut-learning.js` | Progressive grid/selection/lightbox/compare shortcut hints, per-context dismissal persistence, and measured lightbox-control clearance |
 | `keyboard.js` | Document keyboard shortcuts and lightbox wheel zoom binding |
@@ -128,7 +126,7 @@ Edit `templates/index.html`, then run `.venv\Scripts\python.exe scripts\generate
 | `sidebarOpen` | `boolean` | Left sidebar visibility, persisted in localStorage |
 | `gridThumbMap` | `Map<filename, Element>` | Persistent thumb DOM elements keyed by filename |
 | `currentDisplayImages` | `array` | Full canonical display-order list used by selection and lightbox navigation, including unrendered items |
-| `folderSnapshot` | `object\|null` | Current immutable native folder revision and canonical count |
+| `folderSnapshot` | `object\|null` | Current immutable folder revision and canonical count |
 | `displayIndexByName` | `Map<filename, index>` | O(1) lookup for loaded items and lightbox/selection navigation |
 | `serverSelection` | `object\|null` | Revision-bound Select All representation with a small exclusion set |
 | `_virtualGridWindowStart` / `_virtualGridWindowEnd` | `number` | Current overscanned row window; live thumbnail cap is 500 |
@@ -194,16 +192,16 @@ Edit `templates/index.html`, then run `.venv\Scripts\python.exe scripts\generate
 
 ### Frontend API Calls
 
-Routes consumed by the frontend JS. Not a complete backend route inventory -- see root `AGENTS.md` or `app.py` for all 28 routes.
+Routes consumed by the frontend JS. Not a complete backend route inventory -- see the native adapters (`py/curator_manager.py`, `image_curator/native_routes.py`, `image_curator/native_ai_routes.py`) for the full route set. Paths below are logical; `ccApiPath()` rewrites each `/api/` prefix to `/api/curator/`.
 
 | Fetch Call | JS Source Function | Trigger |
 |-----------|-------------|---------|
-| `GET /api/batches` | `loadBatches()`, `pollForChanges()` | Init, 5s poll, batch create |
+| `GET /api/batches` | `loadBatches()`, `pollNativeBatchSummaries()` | Init, 10s batch-summary poll, batch create |
 | `GET /api/import-status` | `pollImportAvailability()` | Init and 1s lightweight Import All readiness poll |
 | `POST /api/batches` | `createBatch()` | New batch form submit |
 | `POST /api/active-batch` | `setActiveBatch()`, `setCurrentBatchAsAutoImport()` | Auto-import target change |
 | `POST /api/import-all` | `importAll()` | Import button click |
-| `GET /api/images/<batch>/<folder>?sort=&order=` | `loadCurrentFolderImages()`, `pollForChanges()` | Batch switch, folder switch, 5s poll |
+| `GET /api/images/<batch>/<folder>?sort=&order=` | `loadCurrentFolderImages()` | Materialized favorites/score/AI-filter views |
 | `GET /api/v2/folders/<batch>/<folder>/{snapshot,poll,items}` | `loadCurrentFolderImages()`, `ensureFolderPageForIndex()`, `pollForChanges()` | Native revision metadata, unchanged lightweight polls, and 256-item pages |
 | `POST /api/move-batch` | `moveBatch()`, `moveSelected()` | Drag drop, action bar, snapshot selection |
 | `GET /api/move-history`, `POST /api/move-batch/undo` | `loadMoveHistory()`, `undoMoveOperation()` | Persistent manual-move history and newest-first operation-token undo |
@@ -304,13 +302,13 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
   sessions or when the modal reports a stale image count.
 - Background polling pauses during lightbox, drag, or resize so review is not
   interrupted.
-- Single-image lightbox moves in native paged folders refresh the folder revision
+- Single-image lightbox moves in paged folders refresh the folder revision
   and continue at the same display position; they close only when no review items
   remain. Closing after a move targets the replacement thumbnail for focus return.
-- Native real folders use immutable revision metadata and 256-item pages.
+- Real review folders use immutable revision metadata and 256-item pages.
   `images` stays sparse until a row window or lightbox navigation needs a page;
   unchanged five-second polls return revision/count only. Favorites/AI filters
-  materialize the legacy list on demand but continue using revision-only polls.
+  materialize the full folder listing on demand but continue using revision-only polls.
 - The grid computes visible rows plus two overscan rows and never creates more
   than 500 live thumbnail elements. Same-key elements inside an unchanged
   window retain identity, decoded sources, selection, inspection, and loader
@@ -346,10 +344,10 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 
 ## Constraints & Hard Rules
 
-- **Never:** Change keyboard shortcut keybindings without updating the Help modal in both `templates/index.html` and `templates/curator.html`.
+- **Never:** Change keyboard shortcut keybindings without updating the Help modal in `templates/curator.html`.
 - **Never:** Add a frontend framework or build step -- the project is intentionally vanilla JS.
 - **Never:** Use raw `/api/`, `/thumb/`, `/preview/`, or `/image/` URL strings in `fetch()` calls -- use `ccApiPath`, `ccThumbUrl`, `ccPreviewUrl`, or `ccImageUrl`.
-- **Always:** When changing `templates/index.html`, regenerate `templates/curator.html` with `.venv\Scripts\python.exe scripts\generate_curator_template.py --write` and commit both files.
+- **Always:** Edit `templates/curator.html` directly; it is the only page template served by the native ComfyUI extension.
 - **Always:** Use `folderRequestToken` pattern (increment + check) when making async fetch calls that may be superseded by a newer request.
 - **Always:** Check `isInteractionBusy()` before executing polling-triggered DOM updates to avoid interrupting drag, lightbox, or resize interactions.
 - **Verification:** No automated browser tests exist. All frontend changes require manual browser smoke testing. For JS syntax:
@@ -359,8 +357,8 @@ Routes consumed by the frontend JS. Not a complete backend route inventory -- se
 
 ## Agent Instructions
 
-- Start with `templates/index.html` to understand the DOM structure (IDs, CSS classes), then trace behavior in the focused `static/js/*.js` file from the JavaScript File Map above.
-- When changing `index.html`, run `.venv\Scripts\python.exe scripts\generate_curator_template.py --write` to regenerate `templates/curator.html`; the two transforms are `/static/` → `/curator_static/` and the native marker before the first `<script src="...">`.
+- Start with `templates/curator.html` to understand the DOM structure (IDs, CSS classes), then trace behavior in the focused `static/js/*.js` file from the JavaScript File Map above.
+- `templates/curator.html` is the sole authoritative template; edit it directly. Do not reintroduce a second template, a runtime mode flag, or a generated parity copy.
 - Changes to styling go in the focused `static/css/*.css` file for the affected surface. Keep selector names stable unless all HTML/JS/test references are updated. The dark theme is fixed -- no light mode.
 - When adding a new API call, route it through `ccApiPath()` and add it to the API Call Inventory table above.
 - The `test_frontend_*.py` files in `tests/unit/` regex-scan the ordered split JS/CSS sources via `tests/unit/frontend_source.py` for function names and invariants. They are NOT browser tests. After JS changes, run them to avoid regressions on the invariants they check, but always also test manually in a browser.

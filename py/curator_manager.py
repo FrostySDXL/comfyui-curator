@@ -3,7 +3,7 @@
 import asyncio
 from pathlib import Path
 
-# The host import must precede aiohttp for the standalone entrypoint's fallback.
+# Import the host first so non-ComfyUI test discovery can detect its absence.
 # isort: off
 from server import PromptServer
 from aiohttp import web
@@ -53,7 +53,7 @@ class CuratorManager:
 
         app.router.add_static("/curator_static", str(static_path))
 
-        # Jinja2 is required and available through Flask or ComfyUI.
+        # Jinja2 is an explicit runtime dependency for the native page.
         async def curator_page(_request):
             template_path = root / "templates"
             env = Environment(
@@ -64,7 +64,6 @@ class CuratorManager:
             html = template.render(
                 available_models=list(settings.available_models),
                 default_model=settings.default_model,
-                curator_native=True,
             )
             return web.Response(text=html, content_type="text/html")
 

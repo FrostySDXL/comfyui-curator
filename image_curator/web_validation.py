@@ -1,4 +1,4 @@
-"""Flask-adjacent validation helpers for batch web routes."""
+"""Framework-independent validation helpers for batch web routes."""
 
 from collections.abc import Callable
 from pathlib import Path

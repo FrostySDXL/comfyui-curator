@@ -5,7 +5,7 @@ from tests.unit.frontend_source import read_frontend_css, read_frontend_js
 
 
 def read_index_html() -> str:
-    return Path("templates/index.html").read_text(encoding="utf-8")
+    return Path("templates/curator.html").read_text(encoding="utf-8")
 
 
 def rule_body(css: str, selector: str) -> str:

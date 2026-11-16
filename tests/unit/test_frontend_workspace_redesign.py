@@ -5,7 +5,7 @@ from tests.unit.frontend_source import extract_function_body, read_frontend_css,
 
 
 def read_index_html() -> str:
-    return Path("templates/index.html").read_text(encoding="utf-8")
+    return Path("templates/curator.html").read_text(encoding="utf-8")
 
 
 def read_curator_html() -> str:

@@ -224,10 +224,13 @@ def test_failure_status_is_deduplicated_and_retained(tmp_path, monkeypatch):
 
 def test_native_auto_import_setting_defaults_off_and_persists(tmp_path):
     system = tmp_path / "system"
-    create = lambda: NativeCuratorSettings.from_host_paths(
-        get_system_user_directory=lambda _: str(system),
-        get_output_directory=lambda: str(tmp_path / "output"),
-    )
+
+    def create():
+        return NativeCuratorSettings.from_host_paths(
+            get_system_user_directory=lambda _: str(system),
+            get_output_directory=lambda: str(tmp_path / "output"),
+        )
+
     settings = create()
     assert settings.auto_import_enabled is False
     data = settings.editable_payload()

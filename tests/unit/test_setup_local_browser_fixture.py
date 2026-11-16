@@ -16,18 +16,15 @@ def load_fixture_module():
     return module
 
 
-def test_create_fixture_builds_isolated_batches_and_state(tmp_path):
+def test_create_fixture_builds_isolated_batches(tmp_path):
     fixture = load_fixture_module()
 
     result = fixture.create_fixture(tmp_path)
 
     assert result.batches_dir == tmp_path / "batches"
     assert result.comfyui_dir == tmp_path / "comfyui-outputs"
-    assert result.state_file == tmp_path / "state.json"
-    assert result.url == "http://127.0.0.1:5000"
-    assert (tmp_path / "state.json").read_text(encoding="utf-8") == (
-        '{"active_batch": "manual-test"}'
-    )
+    assert result.url == "http://127.0.0.1:8188/curator"
+    assert not (tmp_path / "state.json").exists()
 
     for batch in ("manual-test", "second-batch"):
         for folder in ("inbox", "shortlisted", "finals", "rejects"):
@@ -79,8 +76,18 @@ def test_env_lines_are_shell_specific_and_use_fixture_paths(tmp_path):
     powershell_lines = result.env_lines("powershell")
     cmd_lines = result.env_lines("cmd")
 
-    assert "$env:IMAGE_CURATOR_BATCHES=" in powershell_lines[0]
-    assert str(result.batches_dir) in powershell_lines[0]
-    assert '$env:IMAGE_CURATOR_PORT="5123"' in powershell_lines
-    assert "set IMAGE_CURATOR_BATCHES=" in cmd_lines[0]
-    assert str(result.comfyui_dir) in "\n".join(cmd_lines)
+    assert powershell_lines == [
+        f'$env:IMAGE_CURATOR_BATCHES="{result.batches_dir}"',
+        f'$env:IMAGE_CURATOR_COMFYUI="{result.comfyui_dir}"',
+    ]
+    assert cmd_lines == [
+        f"set IMAGE_CURATOR_BATCHES={result.batches_dir}",
+        f"set IMAGE_CURATOR_COMFYUI={result.comfyui_dir}",
+    ]
+    assert result.url == "http://127.0.0.1:5123/curator"
+    assert not any(
+        "IMAGE_CURATOR_STATE" in line
+        or "IMAGE_CURATOR_HOST" in line
+        or "IMAGE_CURATOR_PORT" in line
+        for line in powershell_lines + cmd_lines
+    )

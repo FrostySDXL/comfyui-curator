@@ -11,11 +11,11 @@ def write_png(path, parameters):
     Image.new("RGB", (1, 1), color="blue").save(path, pnginfo=png_info)
 
 
-def test_build_prompt_index_for_batch(client, app_module):
-    app_module.create_batch("alpha")
-    write_png(app_module.BATCHES_DIR / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")
+def test_build_prompt_index_for_batch(client, create_batch, native_settings):
+    create_batch("alpha")
+    write_png(native_settings.batch_root / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")
 
-    response = client.post("/api/prompt-history/alpha/build")
+    response = client.post("/api/curator/prompt-history/alpha/build")
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -23,53 +23,54 @@ def test_build_prompt_index_for_batch(client, app_module):
     assert payload["prompt_count"] == 1
 
 
-def test_get_cached_prompt_index_matches_built(client, app_module):
-    app_module.create_batch("alpha")
-    write_png(app_module.BATCHES_DIR / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")
-    built = client.post("/api/prompt-history/alpha/build").get_json()
+def test_get_cached_prompt_index_matches_built(client, create_batch, native_settings):
+    create_batch("alpha")
+    write_png(native_settings.batch_root / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")
+    built = client.post("/api/curator/prompt-history/alpha/build").get_json()
 
-    response = client.get("/api/prompt-history/alpha")
+    response = client.get("/api/curator/prompt-history/alpha")
 
     assert response.status_code == 200
     assert response.get_json() == built
 
 
-def test_rebuild_prompt_index_overwrites_cache(client, app_module):
-    app_module.create_batch("alpha")
-    write_png(app_module.BATCHES_DIR / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")
-    first = client.post("/api/prompt-history/alpha/build").get_json()
-    write_png(app_module.BATCHES_DIR / "alpha" / "inbox" / "two.png", "dog\nSteps: 1")
+def test_rebuild_prompt_index_overwrites_cache(client, create_batch, native_settings):
+    create_batch("alpha")
+    write_png(native_settings.batch_root / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")
+    first = client.post("/api/curator/prompt-history/alpha/build").get_json()
+    write_png(native_settings.batch_root / "alpha" / "inbox" / "two.png", "dog\nSteps: 1")
 
-    second = client.post("/api/prompt-history/alpha/build").get_json()
+    second = client.post("/api/curator/prompt-history/alpha/build").get_json()
     assert second["image_count"] == first["image_count"] + 1
     assert (
-        client.get("/api/prompt-history/alpha").get_json()["image_count"] == second["image_count"]
+        client.get("/api/curator/prompt-history/alpha").get_json()["image_count"]
+        == second["image_count"]
     )
 
 
-def test_staleness_check_false_when_counts_match(client, app_module):
-    app_module.create_batch("alpha")
-    write_png(app_module.BATCHES_DIR / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")
-    client.post("/api/prompt-history/alpha/build")
+def test_staleness_check_false_when_counts_match(client, create_batch, native_settings):
+    create_batch("alpha")
+    write_png(native_settings.batch_root / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")
+    client.post("/api/curator/prompt-history/alpha/build")
 
-    response = client.get("/api/prompt-history/alpha?check_stale=true")
+    response = client.get("/api/curator/prompt-history/alpha", query_string={"check_stale": "true"})
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["stale"] is False
     assert payload["current_image_count"] == 1
 
 
-def test_staleness_check_detects_same_total_folder_move(client, app_module):
-    app_module.create_batch("alpha")
-    inbox = app_module.BATCHES_DIR / "alpha" / "inbox"
-    shortlisted = app_module.BATCHES_DIR / "alpha" / "shortlisted"
+def test_staleness_check_detects_same_total_folder_move(client, create_batch, native_settings):
+    create_batch("alpha")
+    inbox = native_settings.batch_root / "alpha" / "inbox"
+    shortlisted = native_settings.batch_root / "alpha" / "shortlisted"
     write_png(inbox / "one.png", "cat\nSteps: 1")
     write_png(inbox / "two.png", "dog\nSteps: 1")
-    client.post("/api/prompt-history/alpha/build")
+    client.post("/api/curator/prompt-history/alpha/build")
 
     (inbox / "two.png").rename(shortlisted / "two.png")
 
-    response = client.get("/api/prompt-history/alpha?check_stale=true")
+    response = client.get("/api/curator/prompt-history/alpha", query_string={"check_stale": "true"})
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -79,15 +80,15 @@ def test_staleness_check_detects_same_total_folder_move(client, app_module):
     assert payload["current_folder_counts"]["shortlisted"] == 1
 
 
-def test_staleness_check_ignores_non_png_review_images(client, app_module):
-    app_module.create_batch("alpha")
-    write_png(app_module.BATCHES_DIR / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")
+def test_staleness_check_ignores_non_png_review_images(client, create_batch, native_settings):
+    create_batch("alpha")
+    write_png(native_settings.batch_root / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")
     Image.new("RGB", (1, 1), color="red").save(
-        app_module.BATCHES_DIR / "alpha" / "inbox" / "sidecar.jpg"
+        native_settings.batch_root / "alpha" / "inbox" / "sidecar.jpg"
     )
-    client.post("/api/prompt-history/alpha/build")
+    client.post("/api/curator/prompt-history/alpha/build")
 
-    response = client.get("/api/prompt-history/alpha?check_stale=true")
+    response = client.get("/api/curator/prompt-history/alpha", query_string={"check_stale": "true"})
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -95,22 +96,22 @@ def test_staleness_check_ignores_non_png_review_images(client, app_module):
     assert payload["current_image_count"] == 1
 
 
-def test_get_missing_prompt_index_returns_404(client, app_module):
-    app_module.create_batch("alpha")
+def test_get_missing_prompt_index_returns_404(client, create_batch):
+    create_batch("alpha")
 
-    response = client.get("/api/prompt-history/alpha")
+    response = client.get("/api/curator/prompt-history/alpha")
     assert response.status_code == 404
 
 
-def test_aggregate_endpoint_returns_all_built_indices(client, app_module):
-    app_module.create_batch("alpha")
-    app_module.create_batch("beta")
-    write_png(app_module.BATCHES_DIR / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")
-    write_png(app_module.BATCHES_DIR / "beta" / "inbox" / "two.png", "dog\nSteps: 1")
-    client.post("/api/prompt-history/alpha/build")
-    client.post("/api/prompt-history/beta/build")
+def test_aggregate_endpoint_returns_all_built_indices(client, create_batch, native_settings):
+    create_batch("alpha")
+    create_batch("beta")
+    write_png(native_settings.batch_root / "alpha" / "inbox" / "one.png", "cat\nSteps: 1")
+    write_png(native_settings.batch_root / "beta" / "inbox" / "two.png", "dog\nSteps: 1")
+    client.post("/api/curator/prompt-history/alpha/build")
+    client.post("/api/curator/prompt-history/beta/build")
 
-    response = client.get("/api/prompt-history")
+    response = client.get("/api/curator/prompt-history")
 
     assert response.status_code == 200
     payload = response.get_json()
