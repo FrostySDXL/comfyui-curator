@@ -218,6 +218,18 @@ def test_view_menu_layout_is_anchored_and_narrow_toolbar_stays_intentional() -> 
     assert ".view-summary" not in responsive
 
 
+def test_toolbar_button_fonts_use_valid_inherited_family_longhands() -> None:
+    css = Path("static/css/layout.css").read_text(encoding="utf-8")
+
+    for selector, size in ((".view-menu-button", "12px"), (".selection-mode-btn", "11px")):
+        body = rule_body(css, selector)
+        assert "font-family: inherit;" in body
+        assert f"font-size: {size};" in body
+        assert "font-weight: 600;" in body
+        assert "line-height: 1;" in body
+        assert not re.search(r"\bfont\s*:", body)
+
+
 def test_toolbar_controls_share_one_compact_geometry_token() -> None:
     css = Path("static/css/layout.css").read_text(encoding="utf-8")
     toolbar = rule_body(css, ".workspace-toolbar")

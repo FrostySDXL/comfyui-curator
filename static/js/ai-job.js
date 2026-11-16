@@ -288,6 +288,8 @@ async function aiPollJobStatus() {
         }
 
 async function aiCancelJob(jobId = aiCurrentJobId) {
+            // A direct click listener can forward a DOM event here; only a run id string is actionable.
+            if (typeof jobId !== 'string' || !jobId) jobId = aiCurrentJobId;
             if (!jobId) return false;
             try {
                 const resp = await fetch(ccApiPath(`/api/ai-curate/jobs/${jobId}/cancel`), {method: 'POST'});

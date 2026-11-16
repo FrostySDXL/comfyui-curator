@@ -555,7 +555,7 @@ class TestCancelJob:
             )
         )
         assert status == 404
-        assert "error" in data
+        assert data["error"] == "job not found"
 
 
 # ---------------------------------------------------------------------------

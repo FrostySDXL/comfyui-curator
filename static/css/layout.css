@@ -507,7 +507,10 @@
             border-right: 1px solid var(--border-strong);
             background: var(--surface-1);
             color: var(--text-muted);
-            font: 600 11px/1 inherit;
+            font-family: inherit;
+            font-size: 11px;
+            font-weight: 600;
+            line-height: 1;
             cursor: pointer;
         }
         .selection-mode-btn:last-child { border-right: 0; }
@@ -549,7 +552,10 @@
             border-radius: var(--toolbar-control-radius);
             background: var(--surface-2);
             color: var(--text-primary);
-            font: 600 12px/1 inherit;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            line-height: 1;
             cursor: pointer;
             white-space: nowrap;
         }

@@ -483,9 +483,9 @@ function _bindDelegatedEvents() {
             const aiSubmitBtn = document.getElementById('ai-submit-btn');
             if (aiSubmitBtn) aiSubmitBtn.addEventListener('click', aiSubmitJob);
 
-            // AI cancel button
+            // AI cancel button (never forward the click event as a run id)
             const aiCancelBtn = document.getElementById('ai-cancel-btn');
-            if (aiCancelBtn) aiCancelBtn.addEventListener('click', aiCancelJob);
+            if (aiCancelBtn) aiCancelBtn.addEventListener('click', () => aiCancelJob());
 
             // AI run history selectors
             const aiRunSelect = document.getElementById('ai-run-select');
